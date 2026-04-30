@@ -5,10 +5,15 @@
 //! and one-shot fork execution.
 
 use crate::agent::adapter;
+use crate::agent::windows_msvc_env::{
+    merge_extra_env_into_spawn_env_plan, resolve_spawn_env_plan, MsvcEnvStatus, MsvcEnvWarning,
+    SpawnEnvPlan, SpawnPathPolicy,
+};
 use crate::models::RemoteHost;
+use crate::models::WindowsMsvcEnvMode;
 use crate::process_ext::HideConsole;
 use serde_json::Value;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tokio::time::Duration;
 
@@ -196,6 +201,64 @@ pub fn which_binary(name: &str) -> Option<String> {
     result
 }
 
+fn log_msvc_spawn_plan(scope: &str, status: &MsvcEnvStatus, warnings: &[MsvcEnvWarning]) {
+    let status_label = match status {
+        MsvcEnvStatus::Skipped(reason) => format!("skipped:{reason:?}"),
+        MsvcEnvStatus::Injected(source) => format!(
+            "injected:{}:{}:{}",
+            source.installation_path.display(),
+            source.arch,
+            source.host_arch
+        ),
+        MsvcEnvStatus::Warning => "warning".to_string(),
+    };
+    let warning_codes = warnings
+        .iter()
+        .map(|warning| warning.code.as_str())
+        .collect::<Vec<_>>();
+    log::debug!(
+        "[{scope}] MSVC env plan: status={}, warning_codes={:?}",
+        status_label,
+        warning_codes
+    );
+}
+
+fn build_fork_oneshot_base_env_plan(
+    cwd: &str,
+    windows_msvc_env_mode: WindowsMsvcEnvMode,
+    base_path: &str,
+) -> SpawnEnvPlan {
+    resolve_spawn_env_plan(
+        Path::new(cwd),
+        false,
+        windows_msvc_env_mode,
+        SpawnPathPolicy::AlwaysUseAugmentedPath,
+        Some(base_path),
+    )
+}
+
+#[cfg(test)]
+fn build_fork_oneshot_env_plan_from_decision(
+    cwd: &str,
+    windows_msvc_env_mode: WindowsMsvcEnvMode,
+    base_path: &str,
+    decision: crate::agent::windows_msvc_env::MsvcEnvDecision,
+    extra_env: Option<&std::collections::HashMap<String, String>>,
+) -> SpawnEnvPlan {
+    let mut plan = crate::agent::windows_msvc_env::build_spawn_env_plan(
+        Path::new(cwd),
+        false,
+        windows_msvc_env_mode,
+        SpawnPathPolicy::AlwaysUseAugmentedPath,
+        Some(base_path),
+        decision,
+    );
+    if let Some(extra) = extra_env {
+        merge_extra_env_into_spawn_env_plan(&mut plan, extra);
+    }
+    plan
+}
+
 fn which_binary_inner(name: &str) -> Option<String> {
     #[cfg(windows)]
     {
@@ -260,6 +323,7 @@ pub async fn fork_oneshot(
     auth_token: Option<&str>,
     base_url: Option<&str>,
     models: Option<&[String]>,
+    windows_msvc_env_mode: WindowsMsvcEnvMode,
     extra_env: Option<&std::collections::HashMap<String, String>>,
 ) -> Result<String, String> {
     let claude_bin = resolve_claude_path();
@@ -315,13 +379,25 @@ pub async fn fork_oneshot(
         for arg in &claude_args {
             local_cmd.arg(arg);
         }
-        let path_env = augmented_path();
+        let base_path = augmented_path();
+        let spawn_env_plan =
+            build_fork_oneshot_base_env_plan(cwd, windows_msvc_env_mode, &base_path);
+        log_msvc_spawn_plan(
+            "fork_oneshot",
+            &spawn_env_plan.status,
+            &spawn_env_plan.warnings,
+        );
         local_cmd
             .current_dir(cwd)
-            .env("PATH", &path_env)
             .env_remove("CLAUDECODE")
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
+        if let Some(path) = &spawn_env_plan.path_override {
+            local_cmd.env("PATH", path);
+        }
+        for (key, value) in &spawn_env_plan.msvc_env {
+            local_cmd.env(key, value);
+        }
         // Inject auth environment variables (mutually exclusive — remove the other to
         // prevent inherited shell env vars from interfering).
         // Use env_remove (not empty string) — CLI may treat empty as "set but invalid".
@@ -344,9 +420,21 @@ pub async fn fork_oneshot(
         }
         // Inject extra env vars for third-party platforms
         if let Some(extra) = extra_env {
-            for (k, v) in extra {
-                local_cmd.env(k, v);
+            let mut merged_plan = spawn_env_plan.clone();
+            merge_extra_env_into_spawn_env_plan(&mut merged_plan, extra);
+            if merged_plan.path_override != spawn_env_plan.path_override {
+                if let Some(path) = &merged_plan.path_override {
+                    local_cmd.env("PATH", path);
+                }
             }
+            for (key, value) in &merged_plan.msvc_env {
+                local_cmd.env(key, value);
+            }
+            log::debug!(
+                "[fork_oneshot] applied extra env keys for local CLI: count={}, keys={:?}",
+                extra.len(),
+                extra.keys().collect::<Vec<_>>()
+            );
         }
         log::debug!(
             "[fork_oneshot] spawning local fork process, flags={:?}",
@@ -514,4 +602,47 @@ pub(crate) fn resolve_claude_path() -> String {
 pub fn invalidate_claude_path_cache() {
     *CLAUDE_PATH_CACHE.lock().unwrap() = None;
     log::debug!("[claude_stream] claude path cache invalidated");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::windows_msvc_env::{MsvcEnvDecision, MsvcEnvSource, MsvcEnvStatus};
+    use crate::models::WindowsMsvcEnvMode;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    #[test]
+    fn fork_oneshot_env_plan_injects_msvc_and_merges_extra_env() {
+        let plan = build_fork_oneshot_env_plan_from_decision(
+            "C:\\native",
+            WindowsMsvcEnvMode::Always,
+            "C:\\App\\bin",
+            MsvcEnvDecision::Inject {
+                env: HashMap::from([
+                    ("PATH".to_string(), "C:\\VS\\bin".to_string()),
+                    ("INCLUDE".to_string(), "C:\\VS\\include".to_string()),
+                ]),
+                source: MsvcEnvSource {
+                    installation_path: PathBuf::from("C:\\VS"),
+                    arch: "x64".to_string(),
+                    host_arch: "x64".to_string(),
+                },
+            },
+            Some(&HashMap::from([
+                ("PATH".to_string(), "C:\\User\\bin".to_string()),
+                ("INCLUDE".to_string(), "C:\\User\\include".to_string()),
+            ])),
+        );
+
+        assert_eq!(
+            plan.path_override.as_deref(),
+            Some("C:\\User\\bin;C:\\VS\\bin;C:\\App\\bin")
+        );
+        assert_eq!(
+            plan.msvc_env.get("INCLUDE").map(String::as_str),
+            Some("C:\\User\\include;C:\\VS\\include")
+        );
+        assert!(matches!(plan.status, MsvcEnvStatus::Injected(_)));
+    }
 }

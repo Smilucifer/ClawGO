@@ -1,4 +1,5 @@
 use crate::agent::pipe_parser::{CodexStdoutParser, PipeStdoutParser};
+use crate::agent::windows_msvc_env::SpawnEnvPlan;
 use crate::models::{ChatDelta, ChatDone, RunEventType};
 use crate::process_ext::HideConsole;
 use crate::storage;
@@ -16,6 +17,7 @@ pub fn new_process_map() -> ProcessMap {
     Arc::new(Mutex::new(HashMap::new()))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run_agent(
     app: AppHandle,
     process_map: ProcessMap,
@@ -24,6 +26,7 @@ pub async fn run_agent(
     args: Vec<String>,
     cwd: String,
     agent: String,
+    spawn_env_plan: SpawnEnvPlan,
 ) -> Result<(), String> {
     log::debug!(
         "[stream] run_agent: run_id={}, cmd={}, args={:?}, cwd={}, agent={}",
@@ -53,12 +56,21 @@ pub async fn run_agent(
         }),
     );
 
-    let mut child = Command::new(&command)
-        .args(&args)
+    let mut cmd = Command::new(&command);
+    cmd.args(&args)
         .current_dir(&cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    if let Some(path) = &spawn_env_plan.path_override {
+        cmd.env("PATH", path);
+    }
+    for (key, value) in &spawn_env_plan.msvc_env {
+        cmd.env(key, value);
+    }
+
+    let mut child = cmd
         .env("OPENCOVIBE_TASK_ID", &run_id)
         .env("OPENCOVIBE_RUN_ID", &run_id)
         .env_remove("CLAUDECODE") // Allow running inside a Claude Code session

@@ -11,3 +11,4 @@ pub mod spawn_locks;
 pub mod ssh;
 pub mod stream;
 pub mod turn_engine;
+pub mod windows_msvc_env;

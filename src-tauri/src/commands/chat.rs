@@ -1,9 +1,35 @@
 use crate::agent::spawn::build_agent_command;
 use crate::agent::stream::{run_agent, ProcessMap};
+use crate::agent::windows_msvc_env::{
+    resolve_spawn_env_plan, MsvcEnvStatus, MsvcEnvWarning, SpawnPathPolicy,
+};
 use crate::models::{max_attachment_size, Attachment, RunEventType, RunStatus};
 use crate::storage;
 use std::fs;
+use std::path::Path;
 use tauri::Emitter;
+
+fn log_pipe_msvc_plan(status: &MsvcEnvStatus, warnings: &[MsvcEnvWarning]) {
+    let status_label = match status {
+        MsvcEnvStatus::Skipped(reason) => format!("skipped:{reason:?}"),
+        MsvcEnvStatus::Injected(source) => format!(
+            "injected:{}:{}:{}",
+            source.installation_path.display(),
+            source.arch,
+            source.host_arch
+        ),
+        MsvcEnvStatus::Warning => "warning".to_string(),
+    };
+    let warning_codes = warnings
+        .iter()
+        .map(|warning| warning.code.as_str())
+        .collect::<Vec<_>>();
+    log::debug!(
+        "[chat] MSVC env plan: status={}, warning_codes={:?}",
+        status_label,
+        warning_codes
+    );
+}
 
 fn safe_filename(name: &str) -> String {
     let cleaned: String = name
@@ -207,6 +233,15 @@ pub async fn send_chat_message(
     let run_id_clone = run_id.clone();
     let agent_clone = run.agent.clone();
     let cwd = run.cwd.clone();
+    let inherited_path = std::env::var("PATH").unwrap_or_default();
+    let spawn_env_plan = resolve_spawn_env_plan(
+        Path::new(&cwd),
+        false,
+        user_settings.windows_msvc_env_mode,
+        SpawnPathPolicy::InheritUnlessInjected,
+        Some(&inherited_path),
+    );
+    log_pipe_msvc_plan(&spawn_env_plan.status, &spawn_env_plan.warnings);
 
     tokio::spawn(async move {
         if let Err(e) = run_agent(
@@ -217,6 +252,7 @@ pub async fn send_chat_message(
             args,
             cwd,
             agent_clone,
+            spawn_env_plan,
         )
         .await
         {

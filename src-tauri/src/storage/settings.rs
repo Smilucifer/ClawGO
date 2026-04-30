@@ -1,4 +1,4 @@
-use crate::models::{AgentSettings, AllSettings, UserSettings};
+use crate::models::{AgentSettings, AllSettings, UserSettings, WindowsMsvcEnvMode};
 use std::fs;
 use std::path::PathBuf;
 
@@ -525,6 +525,10 @@ pub fn update_user_settings(patch: serde_json::Value) -> Result<UserSettings, St
     if let Some(v) = patch.get("onboarding_completed") {
         all.user.onboarding_completed = v.as_bool().unwrap_or(false);
     }
+    if let Some(v) = patch.get("windows_msvc_env_mode") {
+        all.user.windows_msvc_env_mode = serde_json::from_value::<WindowsMsvcEnvMode>(v.clone())
+            .map_err(|e| format!("Invalid windows_msvc_env_mode: {}", e))?;
+    }
     all.user.updated_at = crate::models::now_iso();
     save(&all)?;
     Ok(all.user)
@@ -661,6 +665,45 @@ mod tests {
         let mut s = AllSettings::default();
         s.user.platform_credentials.push(cred);
         s
+    }
+
+    fn settings_json_with_user_patch(patch: serde_json::Value) -> String {
+        let mut value = serde_json::to_value(AllSettings::default()).unwrap();
+        let user = value.get_mut("user").unwrap().as_object_mut().unwrap();
+        if let Some(patch) = patch.as_object() {
+            for (key, value) in patch {
+                user.insert(key.clone(), value.clone());
+            }
+        }
+        serde_json::to_string(&value).unwrap()
+    }
+
+    #[test]
+    fn user_settings_defaults_windows_msvc_env_mode_to_auto() {
+        let json = settings_json_with_user_patch(serde_json::json!({}));
+        let settings: AllSettings = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(
+            settings.user.windows_msvc_env_mode,
+            WindowsMsvcEnvMode::Auto
+        );
+    }
+
+    #[test]
+    fn user_settings_deserializes_explicit_windows_msvc_env_modes() {
+        let off_json =
+            settings_json_with_user_patch(serde_json::json!({ "windows_msvc_env_mode": "off" }));
+        let always_json =
+            settings_json_with_user_patch(serde_json::json!({ "windows_msvc_env_mode": "always" }));
+
+        let off: AllSettings = serde_json::from_str(&off_json).unwrap();
+        let always: AllSettings = serde_json::from_str(&always_json).unwrap();
+
+        assert_eq!(off.user.windows_msvc_env_mode, WindowsMsvcEnvMode::Off);
+        assert_eq!(
+            always.user.windows_msvc_env_mode,
+            WindowsMsvcEnvMode::Always
+        );
     }
 
     #[test]

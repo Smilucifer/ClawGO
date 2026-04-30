@@ -212,6 +212,18 @@ pub struct RunArtifact {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum WindowsMsvcEnvMode {
+    Auto,
+    Always,
+    Off,
+}
+
+fn default_windows_msvc_env_mode() -> WindowsMsvcEnvMode {
+    WindowsMsvcEnvMode::Auto
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserSettings {
     pub default_agent: String,
@@ -261,6 +273,8 @@ pub struct UserSettings {
     pub web_server_allowed_origins: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub web_server_tunnel_url: Option<String>,
+    #[serde(default = "default_windows_msvc_env_mode")]
+    pub windows_msvc_env_mode: WindowsMsvcEnvMode,
     pub updated_at: String,
 }
 
@@ -349,6 +363,7 @@ impl Default for UserSettings {
             web_server_bind: None,
             web_server_allowed_origins: None,
             web_server_tunnel_url: None,
+            windows_msvc_env_mode: WindowsMsvcEnvMode::Auto,
             updated_at: now_iso(),
         }
     }

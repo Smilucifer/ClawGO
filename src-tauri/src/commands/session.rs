@@ -2,10 +2,17 @@ use crate::agent::adapter::{self, ActorSessionMap};
 use crate::agent::claude_stream;
 use crate::agent::session_actor::{self, ActorCommand, AttachmentData, RalphCancelResult};
 use crate::agent::spawn_locks::SpawnLocks;
-use crate::models::{BusEvent, RemoteHost, RunMeta, RunStatus, SessionMode, UserSettings};
+use crate::agent::windows_msvc_env::{
+    merge_extra_env_into_spawn_env_plan, resolve_spawn_env_plan, MsvcEnvStatus, MsvcEnvWarning,
+    SpawnPathPolicy,
+};
+use crate::models::{
+    BusEvent, RemoteHost, RunMeta, RunStatus, SessionMode, UserSettings, WindowsMsvcEnvMode,
+};
 use crate::process_ext::HideConsole;
 use crate::storage;
 use crate::web_server::broadcaster::BroadcastEmitter;
+use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
 use tokio_util::sync::CancellationToken;
@@ -20,6 +27,28 @@ fn truncate_str(s: &str, max: usize) -> &str {
         end -= 1;
     }
     &s[..end]
+}
+
+fn log_msvc_spawn_plan(scope: &str, status: &MsvcEnvStatus, warnings: &[MsvcEnvWarning]) {
+    let status_label = match status {
+        MsvcEnvStatus::Skipped(reason) => format!("skipped:{reason:?}"),
+        MsvcEnvStatus::Injected(source) => format!(
+            "injected:{}:{}:{}",
+            source.installation_path.display(),
+            source.arch,
+            source.host_arch
+        ),
+        MsvcEnvStatus::Warning => "warning".to_string(),
+    };
+    let warning_codes = warnings
+        .iter()
+        .map(|warning| warning.code.as_str())
+        .collect::<Vec<_>>();
+    log::debug!(
+        "[{scope}] MSVC env plan: status={}, warning_codes={:?}",
+        status_label,
+        warning_codes
+    );
 }
 
 /// Helper: get the actor command sender for a run_id.
@@ -649,6 +678,7 @@ pub(crate) async fn start_session_impl(
         resolved.base_url.as_deref(),
         &run_id,
         resolved.models.as_deref(),
+        user_settings.windows_msvc_env_mode,
         resolved.extra_env.as_ref(),
     )
     .await?;
@@ -1080,6 +1110,7 @@ pub(crate) async fn fork_session_impl(
         resolved.auth_token.as_deref(),
         resolved.base_url.as_deref(),
         resolved.models.as_deref(),
+        user_settings.windows_msvc_env_mode,
         resolved.extra_env.as_ref(),
     )
     .await
@@ -1242,6 +1273,7 @@ pub(crate) async fn approve_session_tool_impl(
         resolved.base_url.as_deref(),
         &run_id,
         resolved.models.as_deref(),
+        user.windows_msvc_env_mode,
         resolved.extra_env.as_ref(),
     )
     .await?;
@@ -1668,6 +1700,7 @@ async fn spawn_cli_process(
     base_url: Option<&str>,
     _run_id: &str,
     models: Option<&[String]>,
+    windows_msvc_env_mode: WindowsMsvcEnvMode,
     extra_env: Option<&std::collections::HashMap<String, String>>,
 ) -> Result<
     (
@@ -1761,20 +1794,33 @@ async fn spawn_cli_process(
             cmd.arg(arg);
         }
 
-        let path_env = claude_stream::augmented_path();
-        log::debug!("[session] PATH: {}", path_env);
+        let base_path = claude_stream::augmented_path();
+        let spawn_env_plan = resolve_spawn_env_plan(
+            Path::new(cwd),
+            false,
+            windows_msvc_env_mode,
+            SpawnPathPolicy::AlwaysUseAugmentedPath,
+            Some(&base_path),
+        );
+        log_msvc_spawn_plan("session", &spawn_env_plan.status, &spawn_env_plan.warnings);
         log::debug!(
             "[session] cwd: {}, prompt: {:?}",
             cwd,
             truncate_str(prompt, 80)
         );
         cmd.current_dir(cwd)
-            .env("PATH", &path_env)
             .env_remove("CLAUDECODE")
             .env("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "1")
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
+
+        if let Some(path) = &spawn_env_plan.path_override {
+            cmd.env("PATH", path);
+        }
+        for (key, value) in &spawn_env_plan.msvc_env {
+            cmd.env(key, value);
+        }
 
         // Pass API key to CLI when using API Key authentication mode (x-api-key header).
         // MUST remove AUTH_TOKEN to avoid inherited shell env vars taking priority.
@@ -1808,10 +1854,21 @@ async fn spawn_cli_process(
 
         // Pass extra env vars for third-party platforms (e.g. API_TIMEOUT_MS for DeepSeek)
         if let Some(extra) = extra_env {
-            for (k, v) in extra {
-                log::debug!("[session] setting extra env {}={}", k, v);
-                cmd.env(k, v);
+            let mut merged_plan = spawn_env_plan.clone();
+            merge_extra_env_into_spawn_env_plan(&mut merged_plan, extra);
+            if merged_plan.path_override != spawn_env_plan.path_override {
+                if let Some(path) = &merged_plan.path_override {
+                    cmd.env("PATH", path);
+                }
             }
+            for (key, value) in &merged_plan.msvc_env {
+                cmd.env(key, value);
+            }
+            log::debug!(
+                "[session] applied extra env keys for local CLI: count={}, keys={:?}",
+                extra.len(),
+                extra.keys().collect::<Vec<_>>()
+            );
         }
 
         cmd.hide_console().kill_on_drop(true).spawn().map_err(|e| {
@@ -1943,13 +2000,26 @@ pub async fn side_question(
         for arg in &claude_args {
             local_cmd.arg(arg);
         }
-        let path_env = claude_stream::augmented_path();
+        let base_path = claude_stream::augmented_path();
+        let spawn_env_plan = resolve_spawn_env_plan(
+            Path::new(effective_cwd),
+            false,
+            user_settings.windows_msvc_env_mode,
+            SpawnPathPolicy::AlwaysUseAugmentedPath,
+            Some(&base_path),
+        );
+        log_msvc_spawn_plan("btw", &spawn_env_plan.status, &spawn_env_plan.warnings);
         local_cmd
             .current_dir(effective_cwd)
-            .env("PATH", &path_env)
             .env_remove("CLAUDECODE")
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
+        if let Some(path) = &spawn_env_plan.path_override {
+            local_cmd.env("PATH", path);
+        }
+        for (key, value) in &spawn_env_plan.msvc_env {
+            local_cmd.env(key, value);
+        }
         // Auth env (mutually exclusive)
         if let Some(key) = &resolved.api_key {
             local_cmd.env("ANTHROPIC_API_KEY", key);
@@ -1968,9 +2038,21 @@ pub async fn side_question(
             }
         }
         if let Some(extra) = &resolved.extra_env {
-            for (k, v) in extra {
-                local_cmd.env(k, v);
+            let mut merged_plan = spawn_env_plan.clone();
+            merge_extra_env_into_spawn_env_plan(&mut merged_plan, extra);
+            if merged_plan.path_override != spawn_env_plan.path_override {
+                if let Some(path) = &merged_plan.path_override {
+                    local_cmd.env("PATH", path);
+                }
             }
+            for (key, value) in &merged_plan.msvc_env {
+                local_cmd.env(key, value);
+            }
+            log::debug!(
+                "[btw] applied extra env keys for local CLI: count={}, keys={:?}",
+                extra.len(),
+                extra.keys().collect::<Vec<_>>()
+            );
         }
         local_cmd
     };
