@@ -135,6 +135,28 @@ export class RoomStore {
     }
   }
 
+  async sendMessage(message: string): Promise<void> {
+    if (!this.selectedRoomId) throw new Error("No room selected");
+    const roomId = this.selectedRoomId;
+    const trimmed = message.trim();
+    if (!trimmed) return;
+    this.saving = true;
+    this.error = null;
+    try {
+      const updated = await api.sendRoomMessage(roomId, trimmed);
+      if (this.selectedRoomId === roomId) {
+        this.room = updated;
+      }
+      await this.loadRooms();
+    } catch (e) {
+      this.error = errorMessage(e);
+      dbgWarn("rooms", "sendMessage error", e);
+      throw e;
+    } finally {
+      this.saving = false;
+    }
+  }
+
   async deleteRoom(id: string): Promise<void> {
     this.saving = true;
     this.error = null;

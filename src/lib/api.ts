@@ -182,6 +182,11 @@ export async function updateRoomMemo(roomId: string, memo: string): Promise<Room
   return invoke<RoomDetail>("update_room_memo", { roomId, memo });
 }
 
+export async function sendRoomMessage(roomId: string, message: string): Promise<RoomDetail> {
+  dbg("api", "sendRoomMessage", { roomId, messageLength: message.length });
+  return invoke<RoomDetail>("send_room_message", { roomId, message });
+}
+
 export async function deleteRoom(id: string): Promise<void> {
   dbg("api", "deleteRoom", { id });
   return invoke<void>("delete_room", { id });

@@ -1,8 +1,11 @@
 use crate::models::now_iso;
-use crate::room::models::{Room, RoomParticipant, RoomSummary};
+use crate::room::models::{Room, RoomKind, RoomParticipant, RoomSummary, RoomTurn};
 use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -27,6 +30,14 @@ fn room_dir(id: &str) -> PathBuf {
 
 fn room_file(id: &str) -> PathBuf {
     room_dir(id).join("room.json")
+}
+
+fn public_timeline_file(id: &str) -> PathBuf {
+    room_dir(id).join("timeline.jsonl")
+}
+
+fn private_file(id: &str) -> PathBuf {
+    room_dir(id).join("private.json")
 }
 
 fn validate_room_id(id: &str) -> Result<(), String> {
@@ -66,6 +77,7 @@ pub fn create_room(name: String, description: String, cwd: Option<String>) -> Re
     let now = now_iso();
     let room = Room {
         id: uuid::Uuid::new_v4().to_string(),
+        kind: RoomKind::Roundtable,
         name: trimmed_name.to_string(),
         description: description.trim().to_string(),
         cwd: cwd.filter(|s| !s.trim().is_empty()),
@@ -107,6 +119,7 @@ pub fn list_rooms() -> Vec<RoomSummary> {
                 let memo_preview = memo_preview(&room.memo);
                 RoomSummary {
                     id: room.id,
+                    kind: room.kind,
                     name: room.name,
                     description: room.description,
                     cwd: room.cwd,
@@ -182,6 +195,103 @@ pub fn update_memo(room_id: &str, memo: String) -> Result<Room, String> {
     room.updated_at = now_iso();
     save_room(&room)?;
     Ok(room)
+}
+
+pub fn append_public_turn(room_id: &str, turn: &RoomTurn) -> Result<(), String> {
+    append_turn_jsonl(room_id, public_timeline_file(room_id), turn)
+}
+
+pub fn list_public_turns(room_id: &str) -> Result<Vec<RoomTurn>, String> {
+    list_turns_jsonl(room_id, public_timeline_file(room_id))
+}
+
+pub fn append_private_turn(room_id: &str, turn: &RoomTurn) -> Result<(), String> {
+    validate_room_id(room_id)?;
+    let room_lock = room_lock(room_id);
+    let _guard = room_lock.lock().unwrap_or_else(|e| e.into_inner());
+    let mut file = read_private_file(room_id)?;
+    file.turns.push(turn.clone());
+    write_private_file(room_id, &file)?;
+    touch_room_updated_at(room_id)
+}
+
+pub fn list_private_turns(room_id: &str) -> Result<Vec<RoomTurn>, String> {
+    Ok(read_private_file(room_id)?.turns)
+}
+
+fn append_turn_jsonl(room_id: &str, path: PathBuf, turn: &RoomTurn) -> Result<(), String> {
+    validate_room_id(room_id)?;
+    let room_lock = room_lock(room_id);
+    let _guard = room_lock.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = room_dir(room_id);
+    super::ensure_dir(&dir).map_err(|e| e.to_string())?;
+    let line = serde_json::to_string(turn).map_err(|e| e.to_string())?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| format!("open room timeline: {e}"))?;
+    writeln!(file, "{}", line).map_err(|e| format!("write room timeline: {e}"))?;
+    touch_room_updated_at(room_id)
+}
+
+fn touch_room_updated_at(room_id: &str) -> Result<(), String> {
+    let mut room = get_room(room_id).ok_or_else(|| format!("Room {} not found", room_id))?;
+    room.updated_at = now_iso();
+    save_room(&room)
+}
+
+fn list_turns_jsonl(room_id: &str, path: PathBuf) -> Result<Vec<RoomTurn>, String> {
+    validate_room_id(room_id)?;
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let content = fs::read_to_string(path).map_err(|e| format!("read room timeline: {e}"))?;
+    Ok(content
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| serde_json::from_str::<RoomTurn>(line).ok())
+        .collect())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PrivateTurnsFile {
+    schema_version: u32,
+    turns: Vec<RoomTurn>,
+}
+
+fn read_private_file(room_id: &str) -> Result<PrivateTurnsFile, String> {
+    validate_room_id(room_id)?;
+    let path = private_file(room_id);
+    if !path.exists() {
+        return Ok(PrivateTurnsFile {
+            schema_version: 1,
+            turns: vec![],
+        });
+    }
+    let content = fs::read_to_string(path).map_err(|e| format!("read private turns: {e}"))?;
+    serde_json::from_str(&content).map_err(|e| format!("parse private turns: {e}"))
+}
+
+fn write_private_file(room_id: &str, file: &PrivateTurnsFile) -> Result<(), String> {
+    validate_room_id(room_id)?;
+    let dir = room_dir(room_id);
+    super::ensure_dir(&dir).map_err(|e| e.to_string())?;
+    let path = private_file(room_id);
+    let tmp = dir.join(format!(
+        "private.json.{}.{}.tmp",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    let json = serde_json::to_string_pretty(file).map_err(|e| e.to_string())?;
+    fs::write(&tmp, json).map_err(|e| format!("write private tmp: {e}"))?;
+    fs::rename(&tmp, &path).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        format!("rename private file: {e}")
+    })
 }
 
 pub fn delete_room(room_id: &str) -> Result<(), String> {
@@ -365,6 +475,90 @@ mod tests {
                 list_rooms()[0].memo_preview.as_deref(),
                 Some("Remember the API boundary.")
             );
+        });
+    }
+
+    #[test]
+    fn room_defaults_to_roundtable_kind_and_lists_timeline() {
+        with_temp_data_dir(|| {
+            let room = create_room("Room".to_string(), "".to_string(), None).unwrap();
+            let original_updated_at = room.updated_at.clone();
+            assert_eq!(room.kind, crate::room::models::RoomKind::Roundtable);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+
+            let turn = crate::room::models::RoomTurn {
+                id: "turn-1".to_string(),
+                idx: 1,
+                mode: crate::room::models::RoomTurnMode::Fanout,
+                user_input: "Compare options".to_string(),
+                target_participant_ids: vec!["p1".to_string()],
+                responses: vec![crate::room::models::RoomResponseRef {
+                    participant_id: "p1".to_string(),
+                    run_id: "run-1".to_string(),
+                    event_seq_start: 2,
+                    event_seq_end: 5,
+                    preview: Some("Use the smaller API.".to_string()),
+                    status: "complete".to_string(),
+                    error: None,
+                }],
+                started_at: "2026-04-30T00:00:00Z".to_string(),
+                completed_at: Some("2026-04-30T00:00:01Z".to_string()),
+            };
+
+            append_public_turn(&room.id, &turn).unwrap();
+            let turns = list_public_turns(&room.id).unwrap();
+
+            assert_eq!(turns, vec![turn]);
+            assert_ne!(get_room(&room.id).unwrap().updated_at, original_updated_at);
+        });
+    }
+
+    #[test]
+    fn private_turns_are_stored_separately_from_public_timeline() {
+        with_temp_data_dir(|| {
+            let room = create_room("Room".to_string(), "".to_string(), None).unwrap();
+            let private_turn = crate::room::models::RoomTurn {
+                id: "private-1".to_string(),
+                idx: 1,
+                mode: crate::room::models::RoomTurnMode::Private,
+                user_input: "@Reviewer check this privately".to_string(),
+                target_participant_ids: vec!["p1".to_string()],
+                responses: vec![],
+                started_at: "2026-04-30T00:00:00Z".to_string(),
+                completed_at: Some("2026-04-30T00:00:01Z".to_string()),
+            };
+
+            append_private_turn(&room.id, &private_turn).unwrap();
+
+            assert!(list_public_turns(&room.id).unwrap().is_empty());
+            assert_eq!(list_private_turns(&room.id).unwrap(), vec![private_turn]);
+        });
+    }
+
+    #[test]
+    fn legacy_room_json_without_kind_reopens_as_roundtable() {
+        with_temp_data_dir(|| {
+            let id = "legacy-room";
+            let dir = room_dir(id);
+            super::super::ensure_dir(&dir).unwrap();
+            fs::write(
+                room_file(id),
+                r#"{
+  "id": "legacy-room",
+  "name": "Legacy",
+  "description": "",
+  "cwd": null,
+  "memo": "",
+  "participants": [],
+  "created_at": "2026-04-30T00:00:00Z",
+  "updated_at": "2026-04-30T00:00:00Z"
+}"#,
+            )
+            .unwrap();
+
+            let room = get_room(id).unwrap();
+
+            assert_eq!(room.kind, crate::room::models::RoomKind::Roundtable);
         });
     }
 }

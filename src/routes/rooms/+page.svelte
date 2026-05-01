@@ -17,6 +17,7 @@
   let participantPrompt = $state("");
   let participantCwd = $state("");
   let memoDraft = $state("");
+  let roundtableMessage = $state("");
   let deletingRoomId = $state("");
 
   let claudeRuns = $derived(runs.filter((run) => run.agent === "claude"));
@@ -80,6 +81,13 @@
     await store.updateMemo(memoDraft);
   }
 
+  async function handleSendRoundtableMessage() {
+    const message = roundtableMessage.trim();
+    if (!message) return;
+    await store.sendMessage(message);
+    roundtableMessage = "";
+  }
+
   async function handleDeleteRoom(id: string) {
     await store.deleteRoom(id);
     deletingRoomId = "";
@@ -94,10 +102,31 @@
   }
 
   function statusClass(status?: string): string {
-    if (status === "running" || status === "idle") return "bg-emerald-500/15 text-emerald-500";
+    if (
+      status === "running" ||
+      status === "idle" ||
+      status === "complete" ||
+      status === "completed"
+    )
+      return "bg-emerald-500/15 text-emerald-500";
     if (status === "failed") return "bg-red-500/15 text-red-500";
     if (status === "pending") return "bg-amber-500/15 text-amber-500";
+    if (status === "stopped") return "bg-muted text-muted-foreground";
     return "bg-muted text-muted-foreground";
+  }
+
+  function turnModeLabel(mode: string): string {
+    if (mode === "debate") return t("room_turnDebate");
+    if (mode === "summary") return t("room_turnSummary");
+    if (mode === "private") return t("room_turnPrivate");
+    return t("room_turnFanout");
+  }
+
+  function participantLabel(participantId: string): string {
+    const participant = store.room?.participants.find(
+      (item) => item.participant.id === participantId,
+    );
+    return participant?.participant.label ?? participantId;
   }
 </script>
 
@@ -224,58 +253,138 @@
       </div>
 
       <div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px] overflow-hidden">
-        <div class="min-w-0 overflow-y-auto p-5">
-          <div class="mb-4 flex items-center justify-between">
-            <h3 class="text-sm font-semibold">{t("room_participants")}</h3>
-            <button
-              class="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
-              onclick={refreshParticipants}
-            >
-              {t("room_refreshRuns")}
-            </button>
-          </div>
-
-          <div class="space-y-2">
-            {#if store.room.participants.length === 0}
-              <p
-                class="rounded-md border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground"
-              >
-                {t("room_noParticipants")}
-              </p>
-            {:else}
-              {#each store.room.participants as item}
-                <div class="rounded-md border border-border bg-card p-3">
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="min-w-0">
-                      <div class="flex items-center gap-2">
-                        <span class="text-sm font-medium">{item.participant.label}</span>
+        <div class="flex min-w-0 flex-col overflow-hidden">
+          <div class="min-h-0 flex-1 overflow-y-auto p-5">
+            <section class="mb-6">
+              <h3 class="mb-3 text-sm font-semibold">{t("room_timeline")}</h3>
+              <div class="space-y-2">
+                {#if store.room.turns.length === 0}
+                  <p
+                    class="rounded-md border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground"
+                  >
+                    {t("room_noTurns")}
+                  </p>
+                {:else}
+                  {#each store.room.turns as turn}
+                    <div class="rounded-md border border-border bg-card p-3">
+                      <div class="flex flex-wrap items-center gap-2">
                         <span
-                          class="rounded px-1.5 py-0.5 text-[10px] {statusClass(item.run?.status)}"
-                          >{item.run?.status ?? "missing"}</span
+                          class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                          >{turnModeLabel(turn.mode)}</span
                         >
+                        <span class="text-xs text-muted-foreground">#{turn.idx}</span>
                       </div>
-                      <p class="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                        {truncate(runLabel(item.run), 180)}
-                      </p>
-                      <div class="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                        <span>{item.participant.agent}</span>
-                        <span>{item.participant.role}</span>
-                        {#if item.run?.model}<span>{item.run.model}</span>{/if}
-                        {#if item.run?.last_activity_at}
-                          <span>{relativeTime(item.run.last_activity_at)}</span>
-                        {/if}
+                      <p class="mt-2 text-sm text-foreground">{turn.user_input}</p>
+                      {#if turn.responses.length > 0}
+                        <div class="mt-3 space-y-1.5">
+                          {#each turn.responses as response}
+                            <div class="rounded border border-border/70 px-2 py-1.5">
+                              <div class="flex flex-wrap items-center gap-2 text-xs">
+                                <span class="font-medium"
+                                  >{participantLabel(response.participant_id)}</span
+                                >
+                                <span class="rounded px-1.5 py-0.5 {statusClass(response.status)}"
+                                  >{response.status}</span
+                                >
+                              </div>
+                              {#if response.preview}
+                                <p class="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                                  {response.preview}
+                                </p>
+                              {/if}
+                              {#if response.error}
+                                <p class="mt-1 text-xs text-destructive">{response.error}</p>
+                              {/if}
+                            </div>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                  {/each}
+                {/if}
+              </div>
+            </section>
+
+            <section>
+              <div class="mb-4 flex items-center justify-between">
+                <h3 class="text-sm font-semibold">{t("room_participants")}</h3>
+                <button
+                  class="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
+                  onclick={refreshParticipants}
+                >
+                  {t("room_refreshRuns")}
+                </button>
+              </div>
+
+              <div class="space-y-2">
+                {#if store.room.participants.length === 0}
+                  <p
+                    class="rounded-md border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground"
+                  >
+                    {t("room_noParticipants")}
+                  </p>
+                {:else}
+                  {#each store.room.participants as item}
+                    <div class="rounded-md border border-border bg-card p-3">
+                      <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <div class="flex items-center gap-2">
+                            <span class="text-sm font-medium">{item.participant.label}</span>
+                            <span
+                              class="rounded px-1.5 py-0.5 text-[10px] {statusClass(
+                                item.run?.status,
+                              )}">{item.run?.status ?? "missing"}</span
+                            >
+                          </div>
+                          <p class="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                            {truncate(runLabel(item.run), 180)}
+                          </p>
+                          <div class="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                            <span>{item.participant.agent}</span>
+                            <span>{item.participant.role}</span>
+                            {#if item.run?.model}<span>{item.run.model}</span>{/if}
+                            {#if item.run?.last_activity_at}
+                              <span>{relativeTime(item.run.last_activity_at)}</span>
+                            {/if}
+                          </div>
+                        </div>
+                        <button
+                          class="shrink-0 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
+                          onclick={() => goto(`/chat?run=${item.participant.run_id}`)}
+                        >
+                          {t("room_open")}
+                        </button>
                       </div>
                     </div>
-                    <button
-                      class="shrink-0 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
-                      onclick={() => goto(`/chat?run=${item.participant.run_id}`)}
-                    >
-                      {t("room_open")}
-                    </button>
-                  </div>
-                </div>
-              {/each}
-            {/if}
+                  {/each}
+                {/if}
+              </div>
+            </section>
+          </div>
+
+          <div class="border-t border-border p-3">
+            <div class="flex gap-2">
+              <textarea
+                class="min-h-12 flex-1 resize-none rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                placeholder={t("room_roundtablePlaceholder")}
+                bind:value={roundtableMessage}
+                onkeydown={(event) => {
+                  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                    event.preventDefault();
+                    void handleSendRoundtableMessage();
+                  }
+                }}
+              ></textarea>
+              <button
+                class="w-24 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
+                disabled={!roundtableMessage.trim() ||
+                  store.saving ||
+                  store.room.participants.length === 0}
+                onclick={handleSendRoundtableMessage}
+              >
+                {t("room_send")}
+              </button>
+            </div>
           </div>
         </div>
 

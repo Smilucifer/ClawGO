@@ -1,8 +1,10 @@
+use crate::agent::session_actor::{ActorCommand, AttachmentData};
 use crate::models::{RunMeta, RunStatus, TaskRun};
 use crate::storage;
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
+use tokio::sync::mpsc;
 
 pub type AdapterResult<T> = Result<T, AgentAdapterError>;
 pub type AdapterFuture<'a, T> = Pin<Box<dyn Future<Output = AdapterResult<T>> + Send + 'a>>;
@@ -109,6 +111,7 @@ pub trait AgentAdapter: Send {
 pub struct RunBackedAgentAdapter {
     run_id: String,
     kind: AgentKind,
+    cmd_tx: Option<mpsc::Sender<ActorCommand>>,
     poll_interval: Duration,
     max_polls: usize,
 }
@@ -118,9 +121,15 @@ impl RunBackedAgentAdapter {
         Self {
             run_id: run.id.clone(),
             kind: AgentKind::from_agent(&run.agent),
+            cmd_tx: None,
             poll_interval: Duration::from_millis(250),
             max_polls: 1200,
         }
+    }
+
+    pub fn with_command_sender(mut self, cmd_tx: mpsc::Sender<ActorCommand>) -> Self {
+        self.cmd_tx = Some(cmd_tx);
+        self
     }
 
     #[cfg(test)]
@@ -161,9 +170,22 @@ impl AgentAdapter for RunBackedAgentAdapter {
 
     fn stream_message<'a>(&'a mut self, _msg: &'a str) -> AdapterFuture<'a, ()> {
         Box::pin(async move {
-            Err(AgentAdapterError::new(
-                "Room participant streaming is not wired in Phase 2",
-            ))
+            let cmd_tx = self.cmd_tx.clone().ok_or_else(|| {
+                AgentAdapterError::new("Room participant is not attached to an active session")
+            })?;
+            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+            cmd_tx
+                .send(ActorCommand::SendMessage {
+                    text: _msg.to_string(),
+                    attachments: Vec::<AttachmentData>::new(),
+                    reply: reply_tx,
+                })
+                .await
+                .map_err(|_| AgentAdapterError::new("Room participant actor is not available"))?;
+            reply_rx
+                .await
+                .map_err(|_| AgentAdapterError::new("Room participant actor dropped reply"))?
+                .map_err(AgentAdapterError::new)
         })
     }
 
@@ -174,7 +196,9 @@ impl AgentAdapter for RunBackedAgentAdapter {
     }
 
     fn capabilities(&self) -> AgentCapabilities {
-        AgentCapabilities::for_kind(self.kind)
+        let mut capabilities = AgentCapabilities::for_kind(self.kind);
+        capabilities.can_stream_message = self.cmd_tx.is_some();
+        capabilities
     }
 }
 
@@ -186,6 +210,7 @@ pub fn adapter_for_task_run(run: &TaskRun) -> RunBackedAgentAdapter {
     RunBackedAgentAdapter {
         run_id: run.id.clone(),
         kind: AgentKind::from_agent(&run.agent),
+        cmd_tx: None,
         poll_interval: Duration::from_millis(250),
         max_polls: 1200,
     }
@@ -266,5 +291,51 @@ mod tests {
         let outcome = outcome.unwrap();
         assert_eq!(outcome.status, TurnOutcomeStatus::Complete);
         assert_eq!(outcome.run_id, "run-1");
+    }
+
+    #[test]
+    fn active_actor_adapter_streams_message_through_mailbox() {
+        with_temp_data_dir(|| {
+            crate::storage::runs::create_run(
+                "run-1",
+                "hello",
+                "D:/work/app",
+                "claude",
+                RunStatus::Idle,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            let run = crate::storage::runs::get_run("run-1").unwrap();
+            let (tx, mut rx) =
+                tokio::sync::mpsc::channel::<crate::agent::session_actor::ActorCommand>(1);
+            let mut adapter = adapter_for_run(&run).with_command_sender(tx);
+
+            assert!(adapter.capabilities().can_stream_message);
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async move {
+                let send_task =
+                    tokio::spawn(async move { adapter.stream_message("Hello peers").await });
+                let command = rx.recv().await.expect("message should be sent");
+                match command {
+                    crate::agent::session_actor::ActorCommand::SendMessage {
+                        text,
+                        attachments,
+                        reply,
+                    } => {
+                        assert_eq!(text, "Hello peers");
+                        assert!(attachments.is_empty());
+                        reply.send(Ok(())).unwrap();
+                    }
+                    _ => panic!("expected SendMessage command"),
+                }
+                send_task.await.unwrap().unwrap();
+            });
+        });
     }
 }

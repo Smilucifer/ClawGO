@@ -164,6 +164,7 @@ pub fn run() {
             commands::rooms::attach_room_run,
             commands::rooms::create_room_claude_participant,
             commands::rooms::update_room_memo,
+            commands::rooms::send_room_message,
             commands::rooms::delete_room,
             commands::memos::list_memos,
             commands::memos::add_memo,

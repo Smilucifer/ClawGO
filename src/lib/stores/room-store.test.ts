@@ -8,6 +8,7 @@ vi.mock("$lib/api", () => ({
   attachRoomRun: vi.fn(),
   createRoomClaudeParticipant: vi.fn(),
   updateRoomMemo: vi.fn(),
+  sendRoomMessage: vi.fn(),
   deleteRoom: vi.fn(),
 }));
 
@@ -22,6 +23,7 @@ import * as api from "$lib/api";
 function summary(id: string, name: string): RoomSummary {
   return {
     id,
+    kind: "roundtable",
     name,
     description: "",
     cwd: undefined,
@@ -34,11 +36,13 @@ function summary(id: string, name: string): RoomSummary {
 function detail(id: string, name: string): RoomDetail {
   return {
     id,
+    kind: "roundtable",
     name,
     description: "",
     cwd: undefined,
     memo: "",
     participants: [],
+    turns: [],
     created_at: "2026-04-30T00:00:00Z",
     updated_at: "2026-04-30T00:00:00Z",
   };
@@ -119,6 +123,57 @@ describe("RoomStore", () => {
 
     expect(api.updateRoomMemo).toHaveBeenCalledWith("r1", "remember");
     expect(store.room?.memo).toBe("remember");
+  });
+
+  it("sends a roundtable message and updates the selected room timeline", async () => {
+    const updated = detail("r1", "Room");
+    updated.turns = [
+      {
+        id: "turn-1",
+        idx: 1,
+        mode: "fanout",
+        user_input: "Compare options",
+        target_participant_ids: ["p1"],
+        responses: [],
+        started_at: "2026-04-30T00:00:00Z",
+        completed_at: "2026-04-30T00:00:01Z",
+      },
+    ];
+    vi.mocked(api.sendRoomMessage).mockResolvedValue(updated);
+
+    store.selectedRoomId = "r1";
+    await store.sendMessage("Compare options");
+
+    expect(api.sendRoomMessage).toHaveBeenCalledWith("r1", "Compare options");
+    expect(store.room?.turns).toHaveLength(1);
+  });
+
+  it("ignores stale roundtable send responses after switching rooms", async () => {
+    const updated = detail("r1", "Room 1");
+    updated.turns = [
+      {
+        id: "turn-1",
+        idx: 1,
+        mode: "fanout",
+        user_input: "Compare options",
+        target_participant_ids: ["p1"],
+        responses: [],
+        started_at: "2026-04-30T00:00:00Z",
+        completed_at: "2026-04-30T00:00:01Z",
+      },
+    ];
+    vi.mocked(api.sendRoomMessage).mockResolvedValue(updated);
+
+    store.selectedRoomId = "r1";
+    const send = store.sendMessage("Compare options");
+    store.selectedRoomId = "r2";
+    store.room = detail("r2", "Room 2");
+
+    await send;
+
+    expect(store.selectedRoomId).toBe("r2");
+    expect(store.room?.id).toBe("r2");
+    expect(store.room?.turns).toHaveLength(0);
   });
 
   it("clears selection after deleting the selected room", async () => {

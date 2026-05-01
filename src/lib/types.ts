@@ -72,8 +72,34 @@ export interface RoomParticipant {
   joined_at: string;
 }
 
+export type RoomKind = "roundtable";
+
+export type RoomTurnMode = "fanout" | "debate" | "summary" | "private";
+
+export interface RoomResponseRef {
+  participant_id: string;
+  run_id: string;
+  event_seq_start: number;
+  event_seq_end: number;
+  preview?: string;
+  status: string;
+  error?: string;
+}
+
+export interface RoomTurn {
+  id: string;
+  idx: number;
+  mode: RoomTurnMode;
+  user_input: string;
+  target_participant_ids: string[];
+  responses: RoomResponseRef[];
+  started_at: string;
+  completed_at?: string;
+}
+
 export interface RoomSummary {
   id: string;
+  kind: RoomKind;
   name: string;
   description: string;
   cwd?: string;
@@ -89,11 +115,13 @@ export interface RoomParticipantDetail {
 
 export interface RoomDetail {
   id: string;
+  kind: RoomKind;
   name: string;
   description: string;
   cwd?: string;
   memo: string;
   participants: RoomParticipantDetail[];
+  turns: RoomTurn[];
   created_at: string;
   updated_at: string;
 }
