@@ -69,7 +69,7 @@ Rooms are the entry point for multi-agent collaboration. You can create a Room, 
 - Driver review 会生成 room-local `.arena/context.md`、`.arena/state.md` 和 `.arena/memory`，用于稳定引用 room / run 上下文。
 - `.arena` 文件是本地运行上下文镜像，可能包含 run references、memo 和最近的公开 preview；不要把它当成对外分享材料。
 - 创建 Research Room，把一个研究主题分发给多个活跃 participant。
-- Research Room 会把本轮结果汇总到 room-local `research/artifact.json` 结构化产物；当前该文件是最近一次研究快照，历史回合仍保留在 timeline 中。
+- Research Room 会把本轮结果汇总到 room-local `research/artifact.json` 结构化产物，向 `research/artifacts.jsonl` 追加 artifact 历史，并把 `[fact]`、`[decision]`、`[lesson]` 标记行展示为 Arena Memory 候选。
 
 Currently useful for:
 
@@ -83,7 +83,7 @@ Currently useful for:
 - Driver review generates room-local `.arena/context.md`, `.arena/state.md`, and `.arena/memory` files for stable room / run context references.
 - `.arena` files are local runtime context mirrors and may include run references, memo text, and recent public previews; do not treat them as shareable artifacts.
 - Creating a Research Room that fans out one research topic to multiple active participants.
-- Research Room writes a room-local structured `research/artifact.json` artifact for the latest research turn; previous turns remain in the timeline.
+- Research Room writes a room-local structured `research/artifact.json` artifact for the latest research turn, appends artifact history to `research/artifacts.jsonl`, and surfaces `[fact]`, `[decision]`, and `[lesson]` lines as Arena Memory candidates.
 
 ### Windows Native Toolchain Support
 
@@ -111,26 +111,26 @@ You can switch the mode in Settings and view the MSVC environment status for the
 
 - Roundtable、Driver/Copilot 和 Research 当前依赖活跃的本地 Claude participant；更完整的 Codex / Gemini / 多 CLI 能力矩阵仍在后续阶段。
 - Driver/Copilot 目前是 MVP：Copilot 只读行为通过 review prompt 约束，危险操作审批和硬权限限制仍在后续阶段。
-- Research Room 目前是 MVP：支持研究分发和最近一次 room-local artifact 快照，事实抽取、artifact 历史归档和 Arena Memory 提升仍在后续阶段。
+- Research Room 支持研究分发、artifact 历史归档和标记式 Arena Memory 候选抽取；候选提升为永久项目 Arena Memory 仍在后续阶段。
 - 仍有部分上游基线检查需要后续清理。
 
 Current limitations:
 
 - Roundtable, Driver/Copilot, and Research currently depend on active local Claude participants; the fuller Codex / Gemini / multi-CLI capability matrix is still planned for a later phase.
 - Driver/Copilot is currently an MVP: copilot read-only behavior is guided by the review prompt, while dangerous-operation review and hard permission enforcement remain later work.
-- Research Room is currently an MVP: research fanout and the latest room-local artifact snapshot are available, while fact extraction, artifact history, and Arena Memory promotion remain later work.
+- Research Room can fan out research, keep artifact history, and extract marked Arena Memory candidates; promotion into permanent project Arena Memory remains later work.
 - Some upstream baseline checks still need cleanup.
 
 ## 后续计划 / Roadmap
 
 计划：
 
-- Arena Memory：项目事实、决策、经验沉淀。
+- Arena Memory 候选提升：项目事实、决策、经验沉淀。
 - Multi-CLI capability matrix。
 
 Plan:
 
-- Arena Memory for project facts, decisions, and lessons.
+- Arena Memory promotion for project facts, decisions, and lessons.
 - Multi-CLI capability matrix.
 
 ## 开发 / Development

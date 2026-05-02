@@ -29,6 +29,7 @@ fn room_detail(room_id: &str) -> Result<RoomDetail, String> {
         memo: room.memo,
         participants,
         turns: storage::rooms::list_public_turns(room_id)?,
+        research_artifact: storage::rooms::read_research_artifact(room_id)?,
         created_at: room.created_at,
         updated_at: room.updated_at,
     })
@@ -343,6 +344,33 @@ mod tests {
             super::mark_participant_run_failed_and_deleted(&run_id, "startup failed").unwrap();
 
             assert!(crate::storage::runs::get_run(&run_id).is_none());
+        });
+    }
+
+    #[test]
+    fn room_detail_includes_latest_research_artifact() {
+        with_temp_data_dir(|| {
+            let room = crate::storage::rooms::create_room_with_kind(
+                "Research Room".into(),
+                "".into(),
+                None,
+                crate::room::models::RoomKind::Research,
+            )
+            .unwrap();
+            let artifact = crate::room::models::ResearchArtifact {
+                schema_version: 2,
+                room_id: room.id.clone(),
+                topic: "Compare search tools".into(),
+                turn_id: "turn-1".into(),
+                generated_at: "2026-05-02T00:00:00Z".into(),
+                results: vec![],
+                memory_candidates: vec![],
+            };
+            crate::storage::rooms::write_research_artifact(&room.id, &artifact).unwrap();
+
+            let detail = super::room_detail(&room.id).unwrap();
+
+            assert_eq!(detail.research_artifact, Some(artifact));
         });
     }
 }

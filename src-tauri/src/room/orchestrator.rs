@@ -2,8 +2,8 @@ use crate::agent::adapter::ActorSessionMap;
 use crate::agent::session_actor::ActorCommand;
 use crate::room::adapter::{adapter_for_run, AgentAdapter, TurnOutcomeStatus};
 use crate::room::models::{
-    ResearchArtifact, ResearchResult, RoomKind, RoomParticipant, RoomResponseRef, RoomTurn,
-    RoomTurnMode,
+    ArenaMemoryCandidate, ArenaMemoryKind, ResearchArtifact, ResearchResult, RoomKind,
+    RoomParticipant, RoomResponseRef, RoomTurn, RoomTurnMode,
 };
 use crate::{models::now_iso, storage};
 use once_cell::sync::Lazy;
@@ -715,7 +715,10 @@ pub fn build_research_prompt(
     }
 
     body.push_str(
-        "\nReturn markdown with sections: Findings, Evidence, Risks, Open Questions, Next Steps.",
+        "\nReturn markdown with sections: Findings, Evidence, Risks, Open Questions, Next Steps, Arena Memory Candidates.",
+    );
+    body.push_str(
+        "\nIn Arena Memory Candidates, mark durable project knowledge as lines starting with [fact], [decision], or [lesson].",
     );
     body
 }
@@ -727,7 +730,7 @@ fn build_research_artifact(
     generated_at: &str,
 ) -> ResearchArtifact {
     ResearchArtifact {
-        schema_version: 1,
+        schema_version: 2,
         room_id: room.id.clone(),
         topic: topic.to_string(),
         turn_id: turn.id.clone(),
@@ -744,7 +747,105 @@ fn build_research_artifact(
                 error: response.error.clone(),
             })
             .collect(),
+        memory_candidates: extract_arena_memory_candidates(turn, generated_at),
     }
+}
+
+fn extract_arena_memory_candidates(
+    turn: &RoomTurn,
+    generated_at: &str,
+) -> Vec<ArenaMemoryCandidate> {
+    let mut candidates = Vec::new();
+    for response in &turn.responses {
+        let text = full_response_text(response).or_else(|| response.preview.clone());
+        let Some(text) = text else {
+            continue;
+        };
+        for line in text.lines() {
+            let line = line
+                .trim()
+                .trim_start_matches("- ")
+                .trim_start_matches("* ")
+                .trim();
+            let Some((kind, text)) = parse_memory_candidate_line(line) else {
+                continue;
+            };
+            if text.is_empty() {
+                continue;
+            }
+            candidates.push(ArenaMemoryCandidate {
+                id: uuid::Uuid::new_v4().to_string(),
+                kind,
+                text: text.to_string(),
+                source_participant_id: response.participant_id.clone(),
+                source_run_id: response.run_id.clone(),
+                source_turn_id: turn.id.clone(),
+                created_at: generated_at.to_string(),
+            });
+        }
+    }
+    candidates
+}
+
+fn full_response_text(response: &RoomResponseRef) -> Option<String> {
+    if response.event_seq_end < response.event_seq_start {
+        return None;
+    }
+
+    let mut texts = Vec::new();
+
+    for event in crate::storage::events::list_bus_events(
+        &response.run_id,
+        Some(response.event_seq_start.saturating_sub(1)),
+    ) {
+        let seq = event.get("_seq").and_then(|v| v.as_u64()).unwrap_or(0);
+        if seq > response.event_seq_end {
+            continue;
+        }
+        if event.get("type").and_then(|v| v.as_str()) == Some("message_complete") {
+            if let Some(text) = event.get("text").and_then(|v| v.as_str()) {
+                if !text.trim().is_empty() {
+                    texts.push(text.to_string());
+                }
+            }
+        }
+    }
+
+    for event in crate::storage::events::list_events(
+        &response.run_id,
+        response.event_seq_start.saturating_sub(1),
+    ) {
+        if event.seq > response.event_seq_end {
+            continue;
+        }
+        if matches!(event.event_type, crate::models::RunEventType::Assistant) {
+            if let Some(text) = event.payload.get("text").and_then(|v| v.as_str()) {
+                if !text.trim().is_empty() {
+                    texts.push(text.to_string());
+                }
+            }
+        }
+    }
+
+    if texts.is_empty() {
+        None
+    } else {
+        Some(texts.join("\n"))
+    }
+}
+
+fn parse_memory_candidate_line(line: &str) -> Option<(ArenaMemoryKind, &str)> {
+    let lower = line.to_ascii_lowercase();
+    if lower.starts_with("[fact]") {
+        return Some((ArenaMemoryKind::Fact, line[6..].trim()));
+    }
+    if lower.starts_with("[decision]") {
+        return Some((ArenaMemoryKind::Decision, line[10..].trim()));
+    }
+    if lower.starts_with("[lesson]") {
+        return Some((ArenaMemoryKind::Lesson, line[8..].trim()));
+    }
+    None
 }
 
 fn participant_label(participants: &[RoomParticipant], participant_id: &str) -> String {
@@ -1601,6 +1702,186 @@ mod tests {
         assert!(prompt.contains("structured research result"));
         assert!(prompt.contains("Prefer local-first tools."));
         assert!(prompt.contains("Which API should we use?"));
+        assert!(prompt.contains("Arena Memory Candidates"));
+        assert!(prompt.contains("[fact]"));
+        assert!(prompt.contains("[decision]"));
+        assert!(prompt.contains("[lesson]"));
+    }
+
+    #[test]
+    fn research_artifact_extracts_arena_memory_candidates_from_marked_previews() {
+        let alice = participant("p1", "Alice");
+        let room = crate::room::models::Room {
+            id: "room-1".to_string(),
+            kind: RoomKind::Research,
+            name: "Research Room".to_string(),
+            description: String::new(),
+            cwd: Some("D:/work/app".to_string()),
+            memo: String::new(),
+            participants: vec![alice.clone()],
+            created_at: "2026-05-02T00:00:00Z".to_string(),
+            updated_at: "2026-05-02T00:00:00Z".to_string(),
+        };
+        let turn = RoomTurn {
+            id: "turn-1".to_string(),
+            idx: 1,
+            mode: RoomTurnMode::Research,
+            user_input: "Compare options".to_string(),
+            target_participant_ids: vec![alice.id.clone()],
+            responses: vec![RoomResponseRef {
+                participant_id: alice.id.clone(),
+                run_id: alice.run_id.clone(),
+                event_seq_start: 1,
+                event_seq_end: 2,
+                preview: Some(
+                    "[fact] SQLite is already embedded.\n- [decision] Prefer local storage first.\n* [lesson] Keep snapshots append-only."
+                        .to_string(),
+                ),
+                status: "complete".to_string(),
+                error: None,
+            }],
+            started_at: "2026-05-02T00:00:00Z".to_string(),
+            completed_at: Some("2026-05-02T00:00:01Z".to_string()),
+        };
+
+        let artifact =
+            build_research_artifact(&room, &turn, "Compare options", "2026-05-02T00:00:01Z");
+
+        assert_eq!(artifact.schema_version, 2);
+        assert_eq!(artifact.memory_candidates.len(), 3);
+        assert_eq!(artifact.memory_candidates[0].kind, ArenaMemoryKind::Fact);
+        assert_eq!(
+            artifact.memory_candidates[1].text,
+            "Prefer local storage first."
+        );
+        assert_eq!(
+            artifact.memory_candidates[2].source_turn_id,
+            "turn-1".to_string()
+        );
+    }
+
+    #[test]
+    fn research_artifact_extracts_memory_candidates_from_full_response_events() {
+        with_temp_data_dir(|| {
+            create_run("run-p1");
+            let alice = participant("p1", "Alice");
+            let room = crate::room::models::Room {
+                id: "room-1".to_string(),
+                kind: RoomKind::Research,
+                name: "Research Room".to_string(),
+                description: String::new(),
+                cwd: Some("D:/work/app".to_string()),
+                memo: String::new(),
+                participants: vec![alice.clone()],
+                created_at: "2026-05-02T00:00:00Z".to_string(),
+                updated_at: "2026-05-02T00:00:00Z".to_string(),
+            };
+            let full_text = format!(
+                "{}\n\nArena Memory Candidates\n[fact] SQLite is already embedded.",
+                "Introductory research context. ".repeat(8)
+            );
+            let event = crate::storage::events::append_event(
+                &alice.run_id,
+                crate::models::RunEventType::Assistant,
+                serde_json::json!({ "text": full_text }),
+            )
+            .unwrap();
+            let turn = RoomTurn {
+                id: "turn-1".to_string(),
+                idx: 1,
+                mode: RoomTurnMode::Research,
+                user_input: "Compare options".to_string(),
+                target_participant_ids: vec![alice.id.clone()],
+                responses: vec![RoomResponseRef {
+                    participant_id: alice.id.clone(),
+                    run_id: alice.run_id.clone(),
+                    event_seq_start: event.seq,
+                    event_seq_end: event.seq,
+                    preview: Some("Introductory research context.".to_string()),
+                    status: "complete".to_string(),
+                    error: None,
+                }],
+                started_at: "2026-05-02T00:00:00Z".to_string(),
+                completed_at: Some("2026-05-02T00:00:01Z".to_string()),
+            };
+
+            let artifact =
+                build_research_artifact(&room, &turn, "Compare options", "2026-05-02T00:00:01Z");
+
+            assert_eq!(artifact.memory_candidates.len(), 1);
+            assert_eq!(
+                artifact.memory_candidates[0].text,
+                "SQLite is already embedded."
+            );
+        });
+    }
+
+    #[test]
+    fn research_artifact_extracts_memory_candidates_from_bus_message_complete_events() {
+        with_temp_data_dir(|| {
+            create_run("run-p1");
+            let alice = participant("p1", "Alice");
+            let writer = crate::storage::events::EventWriter::new();
+            crate::storage::events::persist_bus_event(
+                &writer,
+                &alice.run_id,
+                &crate::models::BusEvent::MessageComplete {
+                    run_id: alice.run_id.clone(),
+                    message_id: "msg-1".to_string(),
+                    text: format!(
+                        "{}\n\nArena Memory Candidates\n[decision] Keep research artifacts append-only.",
+                        "Detailed findings before candidates. ".repeat(8)
+                    ),
+                    parent_tool_use_id: None,
+                    model: None,
+                    stop_reason: None,
+                    message_usage: None,
+                },
+            )
+            .unwrap();
+            let room = crate::room::models::Room {
+                id: "room-1".to_string(),
+                kind: RoomKind::Research,
+                name: "Research Room".to_string(),
+                description: String::new(),
+                cwd: Some("D:/work/app".to_string()),
+                memo: String::new(),
+                participants: vec![alice.clone()],
+                created_at: "2026-05-02T00:00:00Z".to_string(),
+                updated_at: "2026-05-02T00:00:00Z".to_string(),
+            };
+            let turn = RoomTurn {
+                id: "turn-1".to_string(),
+                idx: 1,
+                mode: RoomTurnMode::Research,
+                user_input: "Compare options".to_string(),
+                target_participant_ids: vec![alice.id.clone()],
+                responses: vec![RoomResponseRef {
+                    participant_id: alice.id.clone(),
+                    run_id: alice.run_id.clone(),
+                    event_seq_start: 1,
+                    event_seq_end: 1,
+                    preview: Some("Detailed findings before candidates.".to_string()),
+                    status: "complete".to_string(),
+                    error: None,
+                }],
+                started_at: "2026-05-02T00:00:00Z".to_string(),
+                completed_at: Some("2026-05-02T00:00:01Z".to_string()),
+            };
+
+            let artifact =
+                build_research_artifact(&room, &turn, "Compare options", "2026-05-02T00:00:01Z");
+
+            assert_eq!(artifact.memory_candidates.len(), 1);
+            assert_eq!(
+                artifact.memory_candidates[0].kind,
+                ArenaMemoryKind::Decision
+            );
+            assert_eq!(
+                artifact.memory_candidates[0].text,
+                "Keep research artifacts append-only."
+            );
+        });
     }
 
     #[test]
@@ -1657,11 +1938,19 @@ mod tests {
                 let artifact = crate::storage::rooms::read_research_artifact(&room.id)
                     .unwrap()
                     .unwrap();
+                assert_eq!(artifact.schema_version, 2);
                 assert_eq!(artifact.topic, "Compare local vector database options");
                 assert_eq!(artifact.turn_id, turn.id);
                 assert_eq!(artifact.results.len(), 2);
                 assert_eq!(artifact.results[0].label, "Alice");
                 assert_eq!(artifact.results[1].label, "Bob");
+                assert!(artifact.memory_candidates.is_empty());
+                assert_eq!(
+                    crate::storage::rooms::list_research_artifacts(&room.id)
+                        .unwrap()
+                        .len(),
+                    1
+                );
             });
         });
     }

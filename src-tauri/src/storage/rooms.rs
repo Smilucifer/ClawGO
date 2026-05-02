@@ -46,6 +46,10 @@ fn research_artifact_file(id: &str) -> PathBuf {
     room_dir(id).join("research").join("artifact.json")
 }
 
+fn research_artifact_history_file(id: &str) -> PathBuf {
+    room_dir(id).join("research").join("artifacts.jsonl")
+}
+
 fn validate_room_id(id: &str) -> Result<(), String> {
     if id.is_empty() || id.contains('/') || id.contains('\\') || id == "." || id == ".." {
         return Err(format!("Invalid room id: {}", id));
@@ -289,6 +293,7 @@ pub fn write_research_artifact(
         let _ = fs::remove_file(&tmp);
         format!("rename research artifact: {e}")
     })?;
+    append_research_artifact_history(room_id, artifact)?;
     Ok(path)
 }
 
@@ -302,6 +307,35 @@ pub fn read_research_artifact(room_id: &str) -> Result<Option<ResearchArtifact>,
     serde_json::from_str(&content)
         .map(Some)
         .map_err(|e| format!("parse research artifact: {e}"))
+}
+
+pub fn list_research_artifacts(room_id: &str) -> Result<Vec<ResearchArtifact>, String> {
+    validate_room_id(room_id)?;
+    let path = research_artifact_history_file(room_id);
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let content =
+        fs::read_to_string(path).map_err(|e| format!("read research artifact history: {e}"))?;
+    Ok(content
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| serde_json::from_str::<ResearchArtifact>(line).ok())
+        .collect())
+}
+
+fn append_research_artifact_history(
+    room_id: &str,
+    artifact: &ResearchArtifact,
+) -> Result<(), String> {
+    let path = research_artifact_history_file(room_id);
+    let line = serde_json::to_string(artifact).map_err(|e| e.to_string())?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| format!("open research artifact history: {e}"))?;
+    writeln!(file, "{}", line).map_err(|e| format!("write research artifact history: {e}"))
 }
 
 pub fn write_driver_arena_files(
@@ -886,7 +920,7 @@ mod tests {
             )
             .unwrap();
             let artifact = crate::room::models::ResearchArtifact {
-                schema_version: 1,
+                schema_version: 2,
                 room_id: room.id.clone(),
                 topic: "Compare approaches".to_string(),
                 turn_id: "turn-1".to_string(),
@@ -899,6 +933,7 @@ mod tests {
                     preview: Some("Use approach A".to_string()),
                     error: None,
                 }],
+                memory_candidates: vec![],
             };
 
             write_research_artifact(&room.id, &artifact).unwrap();
@@ -907,6 +942,8 @@ mod tests {
             assert!(research_dir.join("artifact.json").exists());
             let stored = read_research_artifact(&room.id).unwrap().unwrap();
             assert_eq!(stored, artifact);
+            let history = list_research_artifacts(&room.id).unwrap();
+            assert_eq!(history, vec![artifact]);
         });
     }
 
@@ -921,20 +958,22 @@ mod tests {
             )
             .unwrap();
             let first = crate::room::models::ResearchArtifact {
-                schema_version: 1,
+                schema_version: 2,
                 room_id: room.id.clone(),
                 topic: "First topic".to_string(),
                 turn_id: "turn-1".to_string(),
                 generated_at: "2026-05-02T00:00:00Z".to_string(),
                 results: vec![],
+                memory_candidates: vec![],
             };
             let second = crate::room::models::ResearchArtifact {
-                schema_version: 1,
+                schema_version: 2,
                 room_id: room.id.clone(),
                 topic: "Second topic".to_string(),
                 turn_id: "turn-2".to_string(),
                 generated_at: "2026-05-02T00:00:01Z".to_string(),
                 results: vec![],
+                memory_candidates: vec![],
             };
 
             write_research_artifact(&room.id, &first).unwrap();
@@ -943,6 +982,10 @@ mod tests {
             let stored = read_research_artifact(&room.id).unwrap().unwrap();
             assert_eq!(stored.topic, "Second topic");
             assert_eq!(stored.turn_id, "turn-2");
+            let history = list_research_artifacts(&room.id).unwrap();
+            assert_eq!(history.len(), 2);
+            assert_eq!(history[0].turn_id, "turn-1");
+            assert_eq!(history[1].turn_id, "turn-2");
         });
     }
 

@@ -79,6 +79,25 @@ pub struct ResearchResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ArenaMemoryKind {
+    Fact,
+    Decision,
+    Lesson,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ArenaMemoryCandidate {
+    pub id: String,
+    pub kind: ArenaMemoryKind,
+    pub text: String,
+    pub source_participant_id: String,
+    pub source_run_id: String,
+    pub source_turn_id: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ResearchArtifact {
     pub schema_version: u32,
     pub room_id: String,
@@ -86,6 +105,8 @@ pub struct ResearchArtifact {
     pub turn_id: String,
     pub generated_at: String,
     pub results: Vec<ResearchResult>,
+    #[serde(default)]
+    pub memory_candidates: Vec<ArenaMemoryCandidate>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -116,6 +137,7 @@ pub struct RoomDetail {
     pub memo: String,
     pub participants: Vec<RoomParticipantDetail>,
     pub turns: Vec<RoomTurn>,
+    pub research_artifact: Option<ResearchArtifact>,
     pub created_at: String,
     pub updated_at: String,
 }

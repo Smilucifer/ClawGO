@@ -143,6 +143,12 @@
     );
     return participant?.participant.label ?? participantId;
   }
+
+  function memoryKindLabel(kind: string): string {
+    if (kind === "decision") return t("room_memoryDecision");
+    if (kind === "lesson") return t("room_memoryLesson");
+    return t("room_memoryFact");
+  }
 </script>
 
 <div class="flex h-full min-h-0 bg-background">
@@ -397,7 +403,7 @@
                   ? t("room_driverPlaceholder")
                   : store.room.kind === "research"
                     ? t("room_researchPlaceholder")
-                  : t("room_roundtablePlaceholder")}
+                    : t("room_roundtablePlaceholder")}
                 bind:value={roundtableMessage}
                 onkeydown={(event) => {
                   if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
@@ -476,6 +482,38 @@
                 {t("room_saveMemo")}
               </button>
             </section>
+
+            {#if store.room.kind === "research" && store.room.research_artifact}
+              <section>
+                <h3 class="mb-2 text-sm font-semibold">{t("room_researchArtifact")}</h3>
+                <div class="rounded-md border border-border bg-card p-3 text-sm">
+                  <div class="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <span>{store.room.research_artifact.topic}</span>
+                    <span>v{store.room.research_artifact.schema_version}</span>
+                  </div>
+                  <p class="mt-2 text-xs text-muted-foreground">
+                    {store.room.research_artifact.generated_at}
+                  </p>
+                  {#if store.room.research_artifact.memory_candidates.length > 0}
+                    <div class="mt-3 space-y-2">
+                      {#each store.room.research_artifact.memory_candidates as candidate}
+                        <div class="rounded border border-border/70 px-2 py-1.5">
+                          <div class="flex flex-wrap gap-2 text-xs">
+                            <span class="rounded bg-muted px-1.5 py-0.5 text-muted-foreground"
+                              >{memoryKindLabel(candidate.kind)}</span
+                            >
+                            <span class="text-muted-foreground">{candidate.source_run_id}</span>
+                          </div>
+                          <p class="mt-1 text-xs text-foreground">{candidate.text}</p>
+                        </div>
+                      {/each}
+                    </div>
+                  {:else}
+                    <p class="mt-3 text-xs text-muted-foreground">{t("room_noMemoryCandidates")}</p>
+                  {/if}
+                </div>
+              </section>
+            {/if}
           </div>
         </aside>
       </div>

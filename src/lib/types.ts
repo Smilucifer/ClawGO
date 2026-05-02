@@ -76,6 +76,18 @@ export type RoomKind = "roundtable" | "driver" | "research";
 
 export type RoomTurnMode = "fanout" | "debate" | "summary" | "private" | "review" | "research";
 
+export type ArenaMemoryKind = "fact" | "decision" | "lesson";
+
+export interface ArenaMemoryCandidate {
+  id: string;
+  kind: ArenaMemoryKind;
+  text: string;
+  source_participant_id: string;
+  source_run_id: string;
+  source_turn_id: string;
+  created_at: string;
+}
+
 export interface RoomResponseRef {
   participant_id: string;
   run_id: string;
@@ -84,6 +96,25 @@ export interface RoomResponseRef {
   preview?: string;
   status: string;
   error?: string;
+}
+
+export interface ResearchResult {
+  participant_id: string;
+  run_id: string;
+  label: string;
+  status: string;
+  preview?: string;
+  error?: string;
+}
+
+export interface ResearchArtifact {
+  schema_version: number;
+  room_id: string;
+  topic: string;
+  turn_id: string;
+  generated_at: string;
+  results: ResearchResult[];
+  memory_candidates: ArenaMemoryCandidate[];
 }
 
 export interface RoomTurn {
@@ -122,6 +153,7 @@ export interface RoomDetail {
   memo: string;
   participants: RoomParticipantDetail[];
   turns: RoomTurn[];
+  research_artifact?: ResearchArtifact | null;
   created_at: string;
   updated_at: string;
 }

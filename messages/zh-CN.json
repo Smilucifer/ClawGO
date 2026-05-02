@@ -1505,6 +1505,11 @@
   "room_turnPrivate": "私聊",
   "room_turnReview": "审查",
   "room_turnResearch": "研究",
+  "room_researchArtifact": "研究成果",
+  "room_noMemoryCandidates": "暂无记忆候选",
+  "room_memoryFact": "事实",
+  "room_memoryDecision": "决策",
+  "room_memoryLesson": "教训",
   "room_selectOrCreate": "选择或创建一个会议室",
 
   "appUpdate_available": "发现新版本（{version}）。",
