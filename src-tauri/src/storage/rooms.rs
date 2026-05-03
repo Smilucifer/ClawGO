@@ -50,6 +50,26 @@ fn research_artifact_history_file(id: &str) -> PathBuf {
     room_dir(id).join("research").join("artifacts.jsonl")
 }
 
+fn driver_mcp_file(id: &str) -> PathBuf {
+    room_dir(id).join(".arena").join("driver-mcp.json")
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DriverMcpBundle {
+    schema_version: u32,
+    room_id: String,
+    room_name: String,
+    room_description: String,
+    room_kind: RoomKind,
+    cwd: Option<String>,
+    request: String,
+    prompt: String,
+    arena_dir: String,
+    generated_at: String,
+    participants: Vec<RoomParticipant>,
+    recent_public_turns: Vec<RoomTurn>,
+}
+
 fn validate_room_id(id: &str) -> Result<(), String> {
     if id.is_empty() || id.contains('/') || id.contains('\\') || id == "." || id == ".." {
         return Err(format!("Invalid room id: {}", id));
@@ -411,6 +431,52 @@ pub fn write_driver_arena_files(
     fs::write(arena.join("state.md"), state).map_err(|e| format!("write arena state: {e}"))?;
     fs::write(arena.join("memory"), memory).map_err(|e| format!("write arena memory: {e}"))?;
     Ok(arena)
+}
+
+pub fn write_driver_mcp_bundle(
+    room: &Room,
+    public_turns: &[RoomTurn],
+    request: &str,
+    prompt: &str,
+) -> Result<PathBuf, String> {
+    validate_room_id(&room.id)?;
+    let arena = room_dir(&room.id).join(".arena");
+    super::ensure_dir(&arena).map_err(|e| e.to_string())?;
+    let path = driver_mcp_file(&room.id);
+    let tmp = arena.join(format!(
+        "driver-mcp.json.{}.{}.tmp",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    let recent_public_turns = public_turns
+        .iter()
+        .skip(public_turns.len().saturating_sub(8))
+        .cloned()
+        .collect();
+    let bundle = DriverMcpBundle {
+        schema_version: 1,
+        room_id: room.id.clone(),
+        room_name: room.name.clone(),
+        room_description: room.description.clone(),
+        room_kind: room.kind.clone(),
+        cwd: room.cwd.clone(),
+        request: request.trim().to_string(),
+        prompt: prompt.trim().to_string(),
+        arena_dir: arena.to_string_lossy().to_string(),
+        generated_at: now_iso(),
+        participants: room.participants.clone(),
+        recent_public_turns,
+    };
+    let json = serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())?;
+    fs::write(&tmp, json).map_err(|e| format!("write driver MCP tmp: {e}"))?;
+    fs::rename(&tmp, &path).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        format!("rename driver MCP bundle: {e}")
+    })?;
+    Ok(path)
 }
 
 fn append_turn_jsonl(room_id: &str, path: PathBuf, turn: &RoomTurn) -> Result<(), String> {
@@ -1015,6 +1081,101 @@ mod tests {
             assert!(fs::read_to_string(arena.join("context.md"))
                 .unwrap()
                 .contains("Driver Room"));
+        });
+    }
+
+    #[test]
+    fn writes_driver_mcp_bundle_with_stable_schema_and_recent_turns() {
+        with_temp_data_dir(|| {
+            let room = create_room_with_kind(
+                "Driver Room".to_string(),
+                "Review implementation".to_string(),
+                Some("D:/work/app".to_string()),
+                RoomKind::Driver,
+            )
+            .unwrap();
+            crate::storage::runs::create_run(
+                "run-driver",
+                "lead",
+                "D:/work/app",
+                "claude",
+                RunStatus::Idle,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            crate::storage::runs::create_run(
+                "run-a",
+                "reviewer",
+                "D:/work/app",
+                "claude",
+                RunStatus::Idle,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            let room = attach_run(
+                &room.id,
+                "run-driver",
+                Some("Lead".to_string()),
+                Some("driver".to_string()),
+            )
+            .unwrap();
+            let room = attach_run(
+                &room.id,
+                "run-a",
+                Some("Alice".to_string()),
+                Some("copilot".to_string()),
+            )
+            .unwrap();
+            let turns = (1..=9)
+                .map(|idx| crate::room::models::RoomTurn {
+                    id: format!("turn-{idx}"),
+                    idx,
+                    mode: crate::room::models::RoomTurnMode::Review,
+                    user_input: format!("Review turn {idx}"),
+                    target_participant_ids: vec![room.participants[1].id.clone()],
+                    responses: vec![crate::room::models::RoomResponseRef {
+                        participant_id: room.participants[1].id.clone(),
+                        run_id: "run-a".to_string(),
+                        event_seq_start: idx,
+                        event_seq_end: idx,
+                        preview: Some(format!("Finding {idx}")),
+                        status: "complete".to_string(),
+                        error: None,
+                    }],
+                    started_at: format!("2026-05-03T00:00:0{idx}Z"),
+                    completed_at: Some(format!("2026-05-03T00:00:1{idx}Z")),
+                })
+                .collect::<Vec<_>>();
+
+            let path =
+                write_driver_mcp_bundle(&room, &turns, " patch risk ", " Review prompt body ")
+                    .unwrap();
+
+            let bundle: DriverMcpBundle =
+                serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+            assert_eq!(bundle.schema_version, 1);
+            assert_eq!(bundle.room_id, room.id);
+            assert_eq!(bundle.room_name, "Driver Room");
+            assert_eq!(bundle.room_description, "Review implementation");
+            assert_eq!(bundle.room_kind, RoomKind::Driver);
+            assert_eq!(bundle.cwd.as_deref(), Some("D:/work/app"));
+            assert_eq!(bundle.request, "patch risk");
+            assert_eq!(bundle.prompt, "Review prompt body");
+            assert_eq!(bundle.participants.len(), 2);
+            assert!(bundle.arena_dir.ends_with(".arena"));
+            assert_eq!(bundle.recent_public_turns.len(), 8);
+            assert_eq!(bundle.recent_public_turns[0].idx, 2);
+            assert_eq!(bundle.recent_public_turns[7].idx, 9);
         });
     }
 }

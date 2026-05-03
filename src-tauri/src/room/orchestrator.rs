@@ -254,6 +254,7 @@ pub async fn run_driver_turn(
         &arena_dir.to_string_lossy(),
     );
     storage::rooms::write_driver_arena_files(&room, &public_turns, &input, &prompt)?;
+    storage::rooms::write_driver_mcp_bundle(&room, &public_turns, &input, &prompt)?;
 
     let started_at = now_iso();
     let mut response_tasks = Vec::with_capacity(targets.len());
@@ -1793,6 +1794,11 @@ mod tests {
                 assert!(arena.join("context.md").exists());
                 assert!(arena.join("state.md").exists());
                 assert!(arena.join("memory").exists());
+                let driver_mcp = arena.join("driver-mcp.json");
+                assert!(driver_mcp.exists());
+                let driver_mcp_text = std::fs::read_to_string(driver_mcp).unwrap();
+                assert!(driver_mcp_text.contains("Review implementation"));
+                assert!(driver_mcp_text.contains("patch risk"));
             });
         });
     }
