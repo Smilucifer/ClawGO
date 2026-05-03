@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { TaskNotificationItem } from "$lib/stores/session-store.svelte";
-import { isActiveBackgroundTask, sortBackgroundTasks } from "./background-tasks";
+import {
+  getBackgroundTaskDisplayStatus,
+  isActiveBackgroundTask,
+  sortBackgroundTasks,
+} from "./background-tasks";
 
 function task(
   task_id: string,
@@ -29,6 +33,15 @@ describe("background task helpers", () => {
     expect(isActiveBackgroundTask(task("failed", "failed", 1))).toBe(false);
     expect(isActiveBackgroundTask(task("error", "error", 1))).toBe(false);
     expect(isActiveBackgroundTask(task("cancelled", "cancelled", 1))).toBe(false);
+    expect(isActiveBackgroundTask(task("canceled", "canceled", 1))).toBe(false);
+  });
+
+  it("classifies cancelled tasks as inactive neutral display states", () => {
+    expect(getBackgroundTaskDisplayStatus(task("running", "running", 1))).toBe("running");
+    expect(getBackgroundTaskDisplayStatus(task("completed", "completed", 1))).toBe("done");
+    expect(getBackgroundTaskDisplayStatus(task("failed", "failed", 1))).toBe("error");
+    expect(getBackgroundTaskDisplayStatus(task("cancelled", "cancelled", 1))).toBe("other");
+    expect(getBackgroundTaskDisplayStatus(task("canceled", "canceled", 1))).toBe("other");
   });
 
   it("sorts active tasks first, then newest first", () => {

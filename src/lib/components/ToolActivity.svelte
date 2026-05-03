@@ -25,7 +25,12 @@
   } from "$lib/utils/file-entries";
   import { extractTaskToolMeta, type TaskToolMeta } from "$lib/utils/tool-rendering";
   import type { TaskNotificationItem } from "$lib/stores/session-store.svelte";
-  import { isActiveBackgroundTask, sortBackgroundTasks } from "$lib/utils/background-tasks";
+  import {
+    type BackgroundTaskDisplayStatus,
+    getBackgroundTaskDisplayStatus,
+    isActiveBackgroundTask,
+    sortBackgroundTasks,
+  } from "$lib/utils/background-tasks";
 
   let {
     timeline = [],
@@ -173,6 +178,15 @@
     const ms = Date.now() - startedAt;
     if (ms < 1000) return "<1s";
     return `${Math.floor(ms / 1000)}s`;
+  }
+
+  function backgroundTaskRowClass(displayStatus: BackgroundTaskDisplayStatus): string {
+    if (displayStatus === "done") return "text-foreground/40 hover:bg-accent/30";
+    if (displayStatus === "error")
+      return "bg-destructive/5 text-foreground/50 hover:bg-destructive/10";
+    if (displayStatus === "running")
+      return "bg-blue-500/5 text-foreground/70 hover:bg-blue-500/10";
+    return "text-foreground/45 hover:bg-accent/30";
   }
 
   let useTimeline = $derived(timeline.some((e) => e.kind === "tool"));
@@ -668,9 +682,8 @@
         {:else}
           <div class="py-1 space-y-0.5">
             {#each sortedBgTasks as item (item.task_id)}
-              {@const isDone = item.status === "completed"}
-              {@const isFailed = item.status === "failed" || item.status === "error"}
-              {@const isActive = !isDone && !isFailed}
+              {@const displayStatus = getBackgroundTaskDisplayStatus(item)}
+              {@const isActive = displayStatus === "running"}
               {@const rawData = (item.data as Record<string, unknown> | undefined)?.data as
                 | Record<string, unknown>
                 | undefined}
@@ -679,18 +692,16 @@
                 | undefined}
               {@const toolUseId = item.tool_use_id}
               <button
-                class="w-full text-left mx-1.5 rounded px-2 py-1.5 transition-colors {isDone
-                  ? 'text-foreground/40 hover:bg-accent/30'
-                  : isFailed
-                    ? 'bg-destructive/5 text-foreground/50 hover:bg-destructive/10'
-                    : 'bg-blue-500/5 text-foreground/70 hover:bg-blue-500/10'}"
+                class="w-full text-left mx-1.5 rounded px-2 py-1.5 transition-colors {backgroundTaskRowClass(
+                  displayStatus,
+                )}"
                 onclick={() => {
                   if (toolUseId) onScrollToTool?.(toolUseId);
                 }}
                 title={toolUseId ? t("toolActivity_scrollToTool") : ""}
               >
                 <div class="flex items-center gap-2">
-                  <StatusIcon status={isActive ? "running" : isDone ? "done" : "error"} size="sm" />
+                  <StatusIcon status={displayStatus} size="sm" />
                   <span class="flex-1 min-w-0 truncate text-[11px]"
                     >{item.summary || item.message}</span
                   >

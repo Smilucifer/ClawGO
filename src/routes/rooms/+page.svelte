@@ -11,6 +11,11 @@
     UserSettings,
   } from "$lib/types";
   import { truncate } from "$lib/utils/format";
+  import {
+    canSendRoomMessage,
+    roomMessagePlaceholderKey,
+    roomRequiresThreeParticipants,
+  } from "$lib/utils/room-ui";
 
   type SeatAgent = RoundtableSeatDraft["agent"];
 
@@ -48,7 +53,13 @@
 
   let ccProfiles = $derived((settings?.cc_agent_profiles ?? []).filter((p) => p.enabled !== false));
   let seatPanels = $derived(fixedSeatPanels(store.room?.participants ?? []));
-  let hasThreeParticipants = $derived((store.room?.participants.length ?? 0) >= 3);
+  let roomParticipantCount = $derived(store.room?.participants.length ?? 0);
+  let roomComposerPlaceholderKey = $derived(
+    store.room ? roomMessagePlaceholderKey(store.room.kind) : "room_roundtablePlaceholder",
+  );
+  let canSendCurrentRoomMessage = $derived(
+    store.room ? canSendRoomMessage(store.room.kind, roomParticipantCount, roundtableMessage) : false,
+  );
 
   onMount(async () => {
     await Promise.all([store.loadRooms(), loadSettings()]);
@@ -127,7 +138,8 @@
 
   async function handleSendRoundtableMessage() {
     const message = roundtableMessage.trim();
-    if (!message || !hasThreeParticipants) return;
+    if (!store.room) return;
+    if (!canSendRoomMessage(store.room.kind, roomParticipantCount, message)) return;
     await store.sendMessage(message);
     roundtableMessage = "";
   }
@@ -277,6 +289,12 @@
     if (kind === "driver") return t("room_kindDriver");
     return t("room_kindRoundtable");
   }
+
+  function memoryKindLabel(kind: string): string {
+    if (kind === "decision") return t("room_memoryDecision");
+    if (kind === "lesson") return t("room_memoryLesson");
+    return t("room_memoryFact");
+  }
 </script>
 
 <div class="flex h-full min-h-0 bg-background">
@@ -391,71 +409,160 @@
       <div class="min-h-0 flex-1 overflow-y-auto p-5">
         <section>
           <div class="mb-3 flex items-center justify-between gap-3">
-            <h3 class="text-sm font-semibold">{t("room_threeSeatBoard")}</h3>
-            {#if !hasThreeParticipants}
+            <h3 class="text-sm font-semibold">
+              {roomRequiresThreeParticipants(store.room.kind)
+                ? t("room_threeSeatBoard")
+                : t("room_participants")}
+            </h3>
+            {#if roomRequiresThreeParticipants(store.room.kind) && roomParticipantCount < 3}
               <span class="text-xs text-amber-600">{t("room_needThreeParticipants")}</span>
             {/if}
           </div>
-          <div class="grid min-h-[360px] grid-cols-1 gap-3 xl:grid-cols-3">
-            {#each seatPanels as panel}
-              {@const participant = panel.participant}
-              {@const latest = latestResponse(participant?.participant.id)}
-              <article class="flex min-h-[320px] flex-col rounded-md border border-border bg-card">
-                <header class="border-b border-border px-4 py-3">
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="min-w-0">
-                      <div class="flex items-center gap-2">
-                        <span
-                          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-sm font-semibold"
-                          >{panel.index + 1}</span
-                        >
-                        <div class="min-w-0">
-                          <h4 class="truncate text-sm font-semibold">
-                            {participant?.participant.label ?? t("room_waitingForParticipant")}
-                          </h4>
-                          <p class="truncate text-xs text-muted-foreground">
-                            {participant
-                              ? `${participant.participant.agent}${participant.run?.model ? ` · ${participant.run.model}` : ""}`
-                              : t("room_waitingResponse")}
-                          </p>
+          {#if roomRequiresThreeParticipants(store.room.kind)}
+            <div class="grid min-h-[360px] grid-cols-1 gap-3 xl:grid-cols-3">
+              {#each seatPanels as panel}
+                {@const participant = panel.participant}
+                {@const latest = latestResponse(participant?.participant.id)}
+                <article class="flex min-h-[320px] flex-col rounded-md border border-border bg-card">
+                  <header class="border-b border-border px-4 py-3">
+                    <div class="flex items-start justify-between gap-3">
+                      <div class="min-w-0">
+                        <div class="flex items-center gap-2">
+                          <span
+                            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-sm font-semibold"
+                            >{panel.index + 1}</span
+                          >
+                          <div class="min-w-0">
+                            <h4 class="truncate text-sm font-semibold">
+                              {participant?.participant.label ?? t("room_waitingForParticipant")}
+                            </h4>
+                            <p class="truncate text-xs text-muted-foreground">
+                              {participant
+                                ? `${participant.participant.agent}${participant.run?.model ? ` · ${participant.run.model}` : ""}`
+                                : t("room_waitingResponse")}
+                            </p>
+                          </div>
                         </div>
                       </div>
+                      <span
+                        class={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${statusClass(
+                          participantStatus(panel),
+                        )}`}
+                      >
+                        {participantStatus(panel)}
+                      </span>
                     </div>
-                    <span
-                      class={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${statusClass(
-                        participantStatus(panel),
-                      )}`}
-                    >
-                      {participantStatus(panel)}
-                    </span>
-                  </div>
-                </header>
+                  </header>
 
-                <div class="flex min-h-0 flex-1 flex-col px-4 py-3">
-                  <div class="mb-2 text-xs font-medium text-muted-foreground">
-                    {t("room_latestAnswer")}
-                  </div>
-                  {#if latest?.response.preview}
-                    <p class="min-h-0 flex-1 whitespace-pre-wrap break-words text-sm leading-6">
-                      {latest.response.preview}
-                    </p>
-                    <p class="mt-3 rounded bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground">
-                      {t("room_lastPrompt")}: {truncate(latest.turn.user_input, 180)}
-                    </p>
-                  {:else if latest?.response.error}
-                    <p class="text-sm text-destructive">{latest.response.error}</p>
-                  {:else}
-                    <div
-                      class="flex flex-1 items-center justify-center rounded-md border border-dashed border-border px-4 text-center text-sm text-muted-foreground"
-                    >
-                      {participant ? t("room_noResponseYet") : t("room_waitingForParticipant")}
+                  <div class="flex min-h-0 flex-1 flex-col px-4 py-3">
+                    <div class="mb-2 text-xs font-medium text-muted-foreground">
+                      {t("room_latestAnswer")}
                     </div>
-                  {/if}
-                </div>
-              </article>
-            {/each}
-          </div>
+                    {#if latest?.response.preview}
+                      <p class="min-h-0 flex-1 whitespace-pre-wrap break-words text-sm leading-6">
+                        {latest.response.preview}
+                      </p>
+                      <p class="mt-3 rounded bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground">
+                        {t("room_lastPrompt")}: {truncate(latest.turn.user_input, 180)}
+                      </p>
+                    {:else if latest?.response.error}
+                      <p class="text-sm text-destructive">{latest.response.error}</p>
+                    {:else}
+                      <div
+                        class="flex flex-1 items-center justify-center rounded-md border border-dashed border-border px-4 text-center text-sm text-muted-foreground"
+                      >
+                        {participant ? t("room_noResponseYet") : t("room_waitingForParticipant")}
+                      </div>
+                    {/if}
+                  </div>
+                </article>
+              {/each}
+            </div>
+          {:else}
+            <div class="grid gap-3 xl:grid-cols-3">
+              {#if store.room.participants.length === 0}
+                <p
+                  class="rounded-md border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground xl:col-span-3"
+                >
+                  {t("room_noParticipants")}
+                </p>
+              {:else}
+                {#each store.room.participants as participant}
+                  {@const latest = latestResponse(participant.participant.id)}
+                  <article class="flex min-h-[220px] flex-col rounded-md border border-border bg-card">
+                    <header class="border-b border-border px-4 py-3">
+                      <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <h4 class="truncate text-sm font-semibold">
+                            {participant.participant.label}
+                          </h4>
+                          <p class="truncate text-xs text-muted-foreground">
+                            {participant.participant.agent}
+                            {participant.run?.model ? ` · ${participant.run.model}` : ""}
+                          </p>
+                        </div>
+                        <span
+                          class={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${statusClass(
+                            participant.run?.status,
+                          )}`}
+                        >
+                          {participant.run?.status ?? "missing"}
+                        </span>
+                      </div>
+                    </header>
+                    <div class="flex min-h-0 flex-1 flex-col px-4 py-3">
+                      {#if latest?.response.preview}
+                        <p class="flex-1 whitespace-pre-wrap break-words text-sm leading-6">
+                          {latest.response.preview}
+                        </p>
+                      {:else if latest?.response.error}
+                        <p class="text-sm text-destructive">{latest.response.error}</p>
+                      {:else}
+                        <div
+                          class="flex flex-1 items-center justify-center rounded-md border border-dashed border-border px-4 text-center text-sm text-muted-foreground"
+                        >
+                          {t("room_noResponseYet")}
+                        </div>
+                      {/if}
+                    </div>
+                  </article>
+                {/each}
+              {/if}
+            </div>
+          {/if}
         </section>
+
+        {#if store.room.kind === "research" && store.room.research_artifact}
+          <section class="mt-6">
+            <h3 class="mb-3 text-sm font-semibold">{t("room_researchArtifact")}</h3>
+            <div class="rounded-md border border-border bg-card p-3 text-sm">
+              <div class="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                <span>{store.room.research_artifact.topic}</span>
+                <span>v{store.room.research_artifact.schema_version}</span>
+              </div>
+              <p class="mt-2 text-xs text-muted-foreground">
+                {store.room.research_artifact.generated_at}
+              </p>
+              {#if store.room.research_artifact.memory_candidates.length > 0}
+                <div class="mt-3 space-y-2">
+                  {#each store.room.research_artifact.memory_candidates as candidate}
+                    <div class="rounded border border-border/70 px-2 py-1.5">
+                      <div class="flex flex-wrap gap-2 text-xs">
+                        <span class="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">
+                          {memoryKindLabel(candidate.kind)}
+                        </span>
+                        <span class="text-muted-foreground">{candidate.source_run_id}</span>
+                      </div>
+                      <p class="mt-1 text-xs text-foreground">{candidate.text}</p>
+                    </div>
+                  {/each}
+                </div>
+              {:else}
+                <p class="mt-3 text-xs text-muted-foreground">{t("room_noMemoryCandidates")}</p>
+              {/if}
+            </div>
+          </section>
+        {/if}
 
         <section class="mt-6">
           <h3 class="mb-3 text-sm font-semibold">{t("room_memo")}</h3>
@@ -529,7 +636,7 @@
         <div class="flex gap-2">
           <textarea
             class="min-h-12 flex-1 resize-none rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-            placeholder={t("room_roundtablePlaceholder")}
+            placeholder={t(roomComposerPlaceholderKey)}
             bind:value={roundtableMessage}
             onkeydown={(event) => {
               if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
@@ -540,7 +647,7 @@
           ></textarea>
           <button
             class="w-24 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
-            disabled={!roundtableMessage.trim() || store.saving || !hasThreeParticipants}
+            disabled={store.saving || !canSendCurrentRoomMessage}
             onclick={handleSendRoundtableMessage}
           >
             {t("room_send")}
