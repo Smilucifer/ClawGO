@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { t } from "$lib/i18n/index.svelte";
   import { MemoStore } from "$lib/stores/memo-store.svelte";
+  import { shouldApplyMemoProjectCwdChange } from "$lib/utils/memo-page";
   import type { MemoItem, MemoScope } from "$lib/types";
 
   const store = new MemoStore();
@@ -125,6 +126,7 @@
     void loadCurrentScope();
 
     function onProjectChanged(e: Event) {
+      if (!shouldApplyMemoProjectCwdChange(selectedScope, isDirty, confirmDiscard)) return;
       projectCwd = (e as CustomEvent).detail?.cwd ?? "";
       if (selectedScope === "project") {
         void loadCurrentScope();

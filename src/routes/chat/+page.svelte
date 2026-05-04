@@ -85,6 +85,7 @@
   import type { RewindCandidate, RewindMarker } from "$lib/utils/rewind";
   import { truncate, cwdDisplayLabel, formatTokenCount } from "$lib/utils/format";
   import { mapSettled } from "$lib/utils/async-utils";
+  import { getPipeExecTerminalReplayKey } from "$lib/utils/pipe-terminal-replay";
   import { uuid } from "$lib/utils/uuid";
   import RewindModal from "$lib/components/RewindModal.svelte";
   import type { ElementSelection } from "$lib/types";
@@ -1613,8 +1614,8 @@
   $effect(() => {
     const run = store.run;
     const terminal = xtermRef;
-    if (!run || store.useStreamSession || !terminal) return;
-    const key = `${run.id}:${run.status}`;
+    const key = getPipeExecTerminalReplayKey(run, store.useStreamSession, Boolean(terminal));
+    if (!key || !terminal) return;
     if (terminalReplayKey === key) return;
     terminalReplayKey = key;
     void store.loadRun(run.id, terminal);
