@@ -1,11 +1,13 @@
 use crate::models::{BalanceCacheEntry, BalanceHelperSettings};
 use crate::storage;
-use reqwest::header::{COOKIE, USER_AGENT};
+use reqwest::header::{COOKIE, HeaderMap, HeaderValue, USER_AGENT};
 use serde_json::Value;
 use std::time::Duration;
 
 const DEEPSEEK_BALANCE_BASE_URL: &str = "https://api.deepseek.com";
-const PACKY_CONSOLE_URL: &str = "https://www.packyapi.com/console";
+const PACKY_API_BASE_URL: &str = "https://www.packyapi.com";
+const PACKY_QUOTA_PER_UNIT: f64 = 500_000.0;
+const PACKY_DISPLAY_CURRENCY: &str = "USD";
 
 fn balance_cache_entry(source: &str, result: Result<String, String>) -> BalanceCacheEntry {
     match result {
@@ -127,103 +129,82 @@ async fn query_deepseek_balance(
     format_deepseek_balance(&body)
 }
 
-fn html_to_visible_text(html: &str) -> String {
-    let mut out = String::with_capacity(html.len());
-    let mut in_tag = false;
-    for ch in html.chars() {
-        match ch {
-            '<' => {
-                in_tag = true;
-                out.push(' ');
-            }
-            '>' => {
-                in_tag = false;
-                out.push(' ');
-            }
-            _ if !in_tag => out.push(ch),
-            _ => {}
-        }
+fn format_packy_balance(body: &Value) -> Result<String, String> {
+    let data = body
+        .get("data")
+        .ok_or_else(|| "Packy user response did not include data".to_string())?;
+
+    let quota = data
+        .get("quota")
+        .and_then(Value::as_i64)
+        .or_else(|| data.get("quota").and_then(Value::as_u64).map(|v| v as i64))
+        .ok_or_else(|| "Packy user response did not include quota".to_string())?;
+
+    let amount = quota as f64 / PACKY_QUOTA_PER_UNIT;
+    Ok(format!("{} {:.2}", PACKY_DISPLAY_CURRENCY, amount))
+}
+
+fn build_packy_headers(
+    session: &str,
+    tdc_itoken: &str,
+    user_id: &str,
+) -> Result<HeaderMap, String> {
+    let trimmed_session = session.trim();
+    let trimmed_itoken = tdc_itoken.trim();
+    let trimmed_user_id = user_id.trim();
+
+    if trimmed_session.is_empty() {
+        return Err("Packy session is not configured".to_string());
+    }
+    if trimmed_itoken.is_empty() {
+        return Err("Packy TDC_itoken is not configured".to_string());
+    }
+    if trimmed_user_id.is_empty() {
+        return Err("Packy user id is not configured".to_string());
     }
 
-    out.replace("&yen;", "¥")
-        .replace("&#165;", "¥")
-        .replace("&nbsp;", " ")
-        .replace("&amp;", "&")
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn has_digit(value: &str) -> bool {
-    value.chars().any(|ch| ch.is_ascii_digit())
-}
-
-fn trim_amount_token(value: &str) -> String {
-    value
-        .trim_matches(|ch: char| {
-            ch == ','
-                || ch == ';'
-                || ch == ':'
-                || ch == '"'
-                || ch == '\''
-                || ch == ')'
-                || ch == ']'
-                || ch == '}'
-        })
-        .to_string()
-}
-
-fn is_currency_token(value: &str) -> bool {
-    matches!(value, "¥" | "￥" | "$" | "USD" | "CNY" | "RMB")
-}
-
-fn extract_packy_balance_text(html: &str) -> Result<String, String> {
-    let visible = html_to_visible_text(html);
-    let tokens = visible.split_whitespace().collect::<Vec<_>>();
-
-    for pair in tokens.windows(2) {
-        let marker = trim_amount_token(pair[0]);
-        let amount = trim_amount_token(pair[1]);
-        if is_currency_token(&marker) && has_digit(&amount) {
-            return Ok(format!("{marker} {amount}"));
-        }
-        if marker.chars().any(|ch| matches!(ch, '¥' | '￥' | '$')) && has_digit(&marker) {
-            return Ok(marker);
-        }
-    }
-
-    for triple in tokens.windows(3) {
-        let label = triple[0].to_ascii_lowercase();
-        if label.contains("balance") || triple[0].contains("余额") || triple[0].contains("剩余")
-        {
-            let marker = trim_amount_token(triple[1]);
-            let amount = trim_amount_token(triple[2]);
-            if is_currency_token(&marker) && has_digit(&amount) {
-                return Ok(format!("{marker} {amount}"));
-            }
-            if has_digit(&marker) {
-                return Ok(marker);
-            }
-        }
-    }
-
-    Err("Packy balance was not found in the console page".to_string())
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        COOKIE,
+        HeaderValue::from_str(&format!(
+            "session={}; TDC_itoken={}",
+            trimmed_session, trimmed_itoken
+        ))
+        .map_err(|_| "Packy credentials contain invalid header characters".to_string())?,
+    );
+    headers.insert(
+        "New-API-User",
+        HeaderValue::from_str(trimmed_user_id)
+            .map_err(|_| "Packy user id contains invalid header characters".to_string())?,
+    );
+    headers.insert(
+        USER_AGENT,
+        HeaderValue::from_static(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+        ),
+    );
+    headers.insert("Accept", HeaderValue::from_static("application/json, text/plain, */*"));
+    headers.insert(
+        "Referer",
+        HeaderValue::from_static("https://www.packyapi.com/console"),
+    );
+    headers.insert(
+        "Origin",
+        HeaderValue::from_static("https://www.packyapi.com"),
+    );
+    Ok(headers)
 }
 
 async fn query_packy_balance(
     client: &reqwest::Client,
-    cookies: &str,
-    console_url: &str,
+    session: &str,
+    tdc_itoken: &str,
+    user_id: &str,
 ) -> Result<String, String> {
-    let trimmed_cookies = cookies.trim();
-    if trimmed_cookies.is_empty() {
-        return Err("Packy cookies are not configured".to_string());
-    }
-
+    let headers = build_packy_headers(session, tdc_itoken, user_id)?;
     let response = client
-        .get(console_url)
-        .header(COOKIE, trimmed_cookies)
-        .header(USER_AGENT, "OpenCovibe balance helper")
+        .get(format!("{}/api/user/self", PACKY_API_BASE_URL))
+        .headers(headers)
         .send()
         .await
         .map_err(|e| {
@@ -235,18 +216,31 @@ async fn query_packy_balance(
         })?;
 
     let status = response.status();
+    let body = response
+        .json::<Value>()
+        .await
+        .map_err(|_| "Packy balance response was not valid JSON".to_string())?;
+
     if !status.is_success() {
         return Err(match status.as_u16() {
-            401 | 403 => "Packy cookies were rejected".to_string(),
+            401 | 403 => body
+                .get("message")
+                .and_then(Value::as_str)
+                .map(|s| format!("Packy authentication failed: {s}"))
+                .unwrap_or_else(|| "Packy authentication failed".to_string()),
             code => format!("Packy balance request failed with HTTP {code}"),
         });
     }
 
-    let body = response
-        .text()
-        .await
-        .map_err(|_| "Packy console response could not be read".to_string())?;
-    extract_packy_balance_text(&body)
+    if body.get("success").and_then(Value::as_bool) == Some(false) {
+        return Err(body
+            .get("message")
+            .and_then(Value::as_str)
+            .map(|s| format!("Packy balance request failed: {s}"))
+            .unwrap_or_else(|| "Packy balance request failed".to_string()));
+    }
+
+    format_packy_balance(&body)
 }
 
 async fn refresh_balance_status_inner(
@@ -279,8 +273,13 @@ async fn refresh_balance_status_inner(
     }
 
     if requested == "all" || requested == "packy" {
-        let cookies = helper.packy_session_cookies.as_deref().unwrap_or("");
-        let result = query_packy_balance(&client, cookies, PACKY_CONSOLE_URL).await;
+        let result = query_packy_balance(
+            &client,
+            helper.packy_session.as_deref().unwrap_or(""),
+            helper.packy_tdc_itoken.as_deref().unwrap_or(""),
+            helper.packy_user_id.as_deref().unwrap_or(""),
+        )
+        .await;
         helper
             .cache
             .insert("packy".to_string(), balance_cache_entry("packy", result));
@@ -320,14 +319,27 @@ mod tests {
     }
 
     #[test]
-    fn extracts_packy_balance_from_console_html() {
-        let html = r#"
-            <html><body>
-              <main><span>账户余额</span><strong>¥ 88.12</strong></main>
-            </body></html>
-        "#;
+    fn formats_packy_balance_from_quota() {
+        let body = serde_json::json!({
+            "success": true,
+            "data": {
+                "quota": 87_304_703
+            }
+        });
 
-        assert_eq!(extract_packy_balance_text(html).unwrap(), "¥ 88.12");
+        assert_eq!(format_packy_balance(&body).unwrap(), "USD 174.61");
+    }
+
+    #[test]
+    fn rejects_packy_headers_when_required_values_missing() {
+        let err = build_packy_headers("", "595383047:1776349439", "98264").unwrap_err();
+        assert_eq!(err, "Packy session is not configured");
+
+        let err = build_packy_headers("session", "", "98264").unwrap_err();
+        assert_eq!(err, "Packy TDC_itoken is not configured");
+
+        let err = build_packy_headers("session", "595383047:1776349439", "").unwrap_err();
+        assert_eq!(err, "Packy user id is not configured");
     }
 
     #[test]

@@ -281,7 +281,9 @@ export interface BalanceCacheEntry {
 }
 
 export interface BalanceHelperSettings {
-  packy_session_cookies?: string | null;
+  packy_session?: string | null;
+  packy_tdc_itoken?: string | null;
+  packy_user_id?: string | null;
   auto_refresh_secs: number;
   cache: Record<string, BalanceCacheEntry>;
 }

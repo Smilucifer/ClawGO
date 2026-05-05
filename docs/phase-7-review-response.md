@@ -68,6 +68,24 @@ Validation:
 - `npm run test -- src/lib/utils/room-ui.test.ts src/lib/utils/provider-catalog.test.ts`
 - `npm run build`
 
+## Balance Helper Progress - 2026-05-06
+
+Accepted and implemented:
+
+- **Packy auth model corrected:** Packy balance no longer assumes a single cookie blob. The helper now uses the same browser-observed auth shape validated against Packy: `session`, `TDC_itoken`, and `New-API-User`.
+- **Backend balance source corrected:** `refresh_balance_status` no longer scrapes `/console` HTML for Packy. It now queries `GET /api/user/self`, reads `data.quota`, and formats the displayed Packy balance from quota units.
+- **Settings UI corrected:** the Packy balance card now stores three explicit fields (`session`, `TDC_itoken`, `user id`) instead of a single opaque cookie input, matching the validated request shape.
+- **Redaction boundary preserved:** operational errors still avoid surfacing raw credentials in the UI.
+
+Validation:
+
+- External Packy demo verification succeeded against `GET /api/user/self` using `session`, `TDC_itoken`, and `New-API-User`.
+- `npm run build`
+
+Known validation gap:
+
+- Rust unit tests remain blocked on this machine by a pre-existing Windows runtime test-process failure (`STATUS_ENTRYPOINT_NOT_FOUND`) unrelated to the Packy balance logic itself. The issue reproduces with older pre-change test binaries as well, so this fix is being treated as functionally complete while Rust automated verification remains environment-blocked.
+
 ## Balance Helper Progress - 2026-05-05
 
 Accepted and implemented:

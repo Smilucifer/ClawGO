@@ -85,8 +85,10 @@
   let settings = $state<UserSettings | null>(null);
   let showApiKey = $state(false);
   let platformCredentials = $state<PlatformCredential[]>([]);
-  let packyCookieInput = $state("");
-  let showPackyCookie = $state(false);
+  let packySessionInput = $state("");
+  let packyTdcItokenInput = $state("");
+  let packyUserIdInput = $state("");
+  let showPackySession = $state(false);
   let balanceHelperSaving = $state(false);
   let balanceRefreshing = $state(false);
   let balanceRefreshError = $state<string | null>(null);
@@ -189,35 +191,43 @@
       : t("settings_balance_failed");
   }
 
-  async function savePackyCookies() {
+  async function savePackyCredentials() {
     balanceHelperSaving = true;
     try {
       const next = {
         ...(settings?.balance_helper ?? { auto_refresh_secs: 120, cache: {} }),
-        packy_session_cookies: packyCookieInput.trim() || null,
+        packy_session: packySessionInput.trim() || null,
+        packy_tdc_itoken: packyTdcItokenInput.trim() || null,
+        packy_user_id: packyUserIdInput.trim() || null,
       };
       settings = await api.updateUserSettings({ balance_helper: next } as Partial<UserSettings>);
-      packyCookieInput = settings.balance_helper?.packy_session_cookies ?? "";
+      packySessionInput = settings.balance_helper?.packy_session ?? "";
+      packyTdcItokenInput = settings.balance_helper?.packy_tdc_itoken ?? "";
+      packyUserIdInput = settings.balance_helper?.packy_user_id ?? "";
       void refreshBalanceStatus("packy");
     } catch (e) {
-      dbgWarn("settings", "savePackyCookies error", e);
+      dbgWarn("settings", "savePackyCredentials error", e);
     } finally {
       balanceHelperSaving = false;
     }
   }
 
-  async function clearPackyCookies() {
+  async function clearPackyCredentials() {
     balanceHelperSaving = true;
     try {
       const next = {
         ...(settings?.balance_helper ?? { auto_refresh_secs: 120, cache: {} }),
-        packy_session_cookies: null,
+        packy_session: null,
+        packy_tdc_itoken: null,
+        packy_user_id: null,
       };
       settings = await api.updateUserSettings({ balance_helper: next } as Partial<UserSettings>);
-      packyCookieInput = "";
+      packySessionInput = "";
+      packyTdcItokenInput = "";
+      packyUserIdInput = "";
       balanceRefreshError = null;
     } catch (e) {
-      dbgWarn("settings", "clearPackyCookies error", e);
+      dbgWarn("settings", "clearPackyCredentials error", e);
     } finally {
       balanceHelperSaving = false;
     }
@@ -933,7 +943,9 @@
       settings = await api.getUserSettings();
       remoteHosts = settings.remote_hosts ?? [];
       platformCredentials = settings.platform_credentials ?? [];
-      packyCookieInput = settings.balance_helper?.packy_session_cookies ?? "";
+      packySessionInput = settings.balance_helper?.packy_session ?? "";
+      packyTdcItokenInput = settings.balance_helper?.packy_tdc_itoken ?? "";
+      packyUserIdInput = settings.balance_helper?.packy_user_id ?? "";
     } catch (e) {
       dbgWarn("settings", "error", e);
     }
@@ -1828,35 +1840,51 @@
                 <span
                   class="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground"
                 >
-                  Cookie
+                  Packy Auth
                 </span>
               </div>
-              <div class="flex gap-2">
+              <div class="space-y-2">
                 <Input
-                  type={showPackyCookie ? "text" : "password"}
-                  placeholder={t("settings_balance_packyCookie")}
-                  value={packyCookieInput}
+                  type={showPackySession ? "text" : "password"}
+                  placeholder={t("settings_balance_packySession")}
+                  value={packySessionInput}
                   oninput={(event) =>
-                    (packyCookieInput = (event.currentTarget as HTMLInputElement).value)}
+                    (packySessionInput = (event.currentTarget as HTMLInputElement).value)}
                 />
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onclick={() => (showPackyCookie = !showPackyCookie)}
-                >
-                  {showPackyCookie ? t("settings_general_hide") : t("settings_general_show")}
-                </Button>
+                <Input
+                  type="text"
+                  placeholder={t("settings_balance_packyTdcItoken")}
+                  value={packyTdcItokenInput}
+                  oninput={(event) =>
+                    (packyTdcItokenInput = (event.currentTarget as HTMLInputElement).value)}
+                />
+                <Input
+                  type="text"
+                  placeholder={t("settings_balance_packyUserId")}
+                  value={packyUserIdInput}
+                  oninput={(event) =>
+                    (packyUserIdInput = (event.currentTarget as HTMLInputElement).value)}
+                />
+                <div class="flex justify-end">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onclick={() => (showPackySession = !showPackySession)}
+                  >
+                    {showPackySession ? t("settings_general_hide") : t("settings_general_show")}
+                  </Button>
+                </div>
               </div>
               <div class="mt-3 flex justify-end gap-2">
                 <Button
                   size="sm"
                   variant="outline"
                   disabled={balanceHelperSaving}
-                  onclick={clearPackyCookies}
+                  onclick={clearPackyCredentials}
                 >
                   {t("settings_balance_clear")}
                 </Button>
-                <Button size="sm" disabled={balanceHelperSaving} onclick={savePackyCookies}>
+                <Button size="sm" disabled={balanceHelperSaving} onclick={savePackyCredentials}>
                   {balanceHelperSaving ? t("settings_balance_saving") : t("settings_balance_save")}
                 </Button>
               </div>

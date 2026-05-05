@@ -426,7 +426,11 @@ pub struct BalanceCacheEntry {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BalanceHelperSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub packy_session_cookies: Option<String>,
+    pub packy_session: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub packy_tdc_itoken: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub packy_user_id: Option<String>,
     #[serde(default = "default_balance_auto_refresh_secs")]
     pub auto_refresh_secs: u64,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -436,7 +440,9 @@ pub struct BalanceHelperSettings {
 impl Default for BalanceHelperSettings {
     fn default() -> Self {
         Self {
-            packy_session_cookies: None,
+            packy_session: None,
+            packy_tdc_itoken: None,
+            packy_user_id: None,
             auto_refresh_secs: default_balance_auto_refresh_secs(),
             cache: HashMap::new(),
         }
