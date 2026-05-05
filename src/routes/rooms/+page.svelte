@@ -16,6 +16,7 @@
   import {
     canSendRoomMessage,
     roomParticipantBadge,
+    roomParticipantMetaLabel,
     roomMessagePlaceholderKey,
     roomRequiresThreeParticipants,
   } from "$lib/utils/room-ui";
@@ -515,7 +516,11 @@
                             </h4>
                             <p class="truncate text-xs text-muted-foreground">
                               {participant
-                                ? `${participant.participant.agent}${participant.run?.model ? ` · ${participant.run.model}` : ""}`
+                                ? roomParticipantMetaLabel(
+                                    participant.participant.agent,
+                                    participant.run?.platform_id,
+                                    participant.run?.model,
+                                  )
                                 : t("room_waitingResponse")}
                             </p>
                           </div>
@@ -576,8 +581,11 @@
                             {participant.participant.label}
                           </h4>
                           <p class="truncate text-xs text-muted-foreground">
-                            {participant.participant.agent}
-                            {participant.run?.model ? ` · ${participant.run.model}` : ""}
+                            {roomParticipantMetaLabel(
+                              participant.participant.agent,
+                              participant.run?.platform_id,
+                              participant.run?.model,
+                            )}
                           </p>
                         </div>
                         <span
@@ -743,7 +751,8 @@
                 disabled={store.saving || summaryParticipants.length === 0}
               >
                 {#each summaryParticipants as participant}
-                  <option value={participant.participant.id}>{participant.participant.label}</option>
+                  <option value={participant.participant.id}>{participant.participant.label}</option
+                  >
                 {/each}
               </select>
             </label>

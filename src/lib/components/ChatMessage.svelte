@@ -10,11 +10,13 @@
     message,
     attachments,
     thinkingText,
+    assistantLabel,
     onRewind,
   }: {
     message: ChatMessage;
     attachments?: Attachment[];
     thinkingText?: string;
+    assistantLabel?: string;
     onRewind?: () => void;
   } = $props();
 
@@ -101,7 +103,9 @@
             />
           </svg>
         </div>
-        <span class="text-sm font-semibold text-foreground">{t("chat_roleClaude")}</span>
+        <span class="text-sm font-semibold text-foreground">
+          {assistantLabel || t("chat_roleClaude")}
+        </span>
       {/if}
       {#if onRewind}
         <button

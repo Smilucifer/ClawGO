@@ -36,6 +36,7 @@ import { getTransport } from "$lib/transport";
 import { getAgentFeatures, type AgentFeatures } from "$lib/utils/agent-features";
 import { dedupeMcpServersByName } from "$lib/utils/mcp";
 import { isActiveBackgroundTask } from "$lib/utils/background-tasks";
+import { isNativeAgent } from "$lib/utils/native-permission";
 
 // ── CLI permission mode normalization ──
 // CLI may return different names for the same mode across versions.
@@ -1607,6 +1608,8 @@ export class SessionStore {
           return;
         }
         const hasAssistantEvent = events.some((event) => event.type === "assistant");
+        const suppressTerminalStdout =
+          isNativeAgent(this.run?.agent ?? "") && this.run?.execution_path === "pipe_exec";
         const pipeTimeline: TimelineEntry[] = [];
         let assistantText = "";
         let assistantTs = "";
@@ -1657,7 +1660,7 @@ export class SessionStore {
             xtermRef?.writeText(`\x1b[90m${text}\x1b[0m\r\n`);
           } else if (event.type === "stderr") {
             xtermRef?.writeText(`\x1b[31m${text}\x1b[0m\r\n`);
-          } else if (event.type === "stdout" && !hasAssistantEvent) {
+          } else if (event.type === "stdout" && !hasAssistantEvent && !suppressTerminalStdout) {
             assistantText += text.endsWith("\n") ? text : `${text}\n`;
             assistantTs = event.timestamp;
             xtermRef?.writeText(`\x1b[32m${text}\x1b[0m\r\n`);

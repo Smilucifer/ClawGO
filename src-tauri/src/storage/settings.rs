@@ -1,5 +1,6 @@
 use crate::models::{
-    AgentSettings, AllSettings, ConnectionProfile, UserSettings, WindowsMsvcEnvMode,
+    AgentSettings, AllSettings, BalanceHelperSettings, ConnectionProfile, UserSettings,
+    WindowsMsvcEnvMode,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -438,6 +439,18 @@ fn validate_ui_zoom(v: &serde_json::Value) -> Result<Option<f64>, String> {
     Ok(Some(f))
 }
 
+fn validate_balance_helper(
+    settings: BalanceHelperSettings,
+) -> Result<BalanceHelperSettings, String> {
+    if !(60..=180).contains(&settings.auto_refresh_secs) {
+        return Err(format!(
+            "balance_helper.auto_refresh_secs must be between 60 and 180, got {}",
+            settings.auto_refresh_secs
+        ));
+    }
+    Ok(settings)
+}
+
 pub fn update_user_settings(patch: serde_json::Value) -> Result<UserSettings, String> {
     let mut all = load();
     if let Some(agent) = patch.get("default_agent").and_then(|v| v.as_str()) {
@@ -527,6 +540,34 @@ pub fn update_user_settings(patch: serde_json::Value) -> Result<UserSettings, St
         } else {
             all.user.connection_profiles = serde_json::from_value(v.clone())
                 .map_err(|e| format!("Invalid connection_profiles: {}", e))?;
+        }
+    }
+    if let Some(v) = patch.get("balance_helper") {
+        if v.is_null() {
+            all.user.balance_helper = BalanceHelperSettings::default();
+        } else {
+            let mut next = all.user.balance_helper.clone();
+            if let Some(cookies) = v.get("packy_session_cookies") {
+                next.packy_session_cookies = cookies
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
+            }
+            if let Some(secs) = v.get("auto_refresh_secs") {
+                next.auto_refresh_secs = secs.as_u64().ok_or_else(|| {
+                    "balance_helper.auto_refresh_secs must be a number".to_string()
+                })?;
+            }
+            if let Some(cache) = v.get("cache") {
+                next.cache = if cache.is_null() {
+                    Default::default()
+                } else {
+                    serde_json::from_value(cache.clone())
+                        .map_err(|e| format!("Invalid balance_helper.cache: {}", e))?
+                };
+            }
+            all.user.balance_helper = validate_balance_helper(next)?;
         }
     }
     if let Some(v) = patch.get("active_platform_id") {
@@ -752,6 +793,86 @@ mod tests {
             settings.user.windows_msvc_env_mode,
             WindowsMsvcEnvMode::Auto
         );
+    }
+
+    #[test]
+    fn user_settings_defaults_balance_helper_to_empty_state() {
+        let json = settings_json_with_user_patch(serde_json::json!({}));
+        let settings: AllSettings = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(settings.user.balance_helper.packy_session_cookies, None);
+        assert_eq!(settings.user.balance_helper.auto_refresh_secs, 120);
+        assert!(settings.user.balance_helper.cache.is_empty());
+    }
+
+    #[test]
+    fn update_user_settings_persists_balance_helper_without_touching_platform_credentials() {
+        let _guard = crate::storage::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let tmp = tempfile::tempdir().unwrap();
+        let previous = std::env::var_os("OPENCOVIBE_DATA_DIR");
+        std::env::set_var("OPENCOVIBE_DATA_DIR", tmp.path());
+
+        let initial = update_user_settings(serde_json::json!({
+            "platform_credentials": [
+                {
+                    "platform_id": "deepseek",
+                    "api_key": "sk-deepseek"
+                }
+            ]
+        }))
+        .unwrap();
+        assert_eq!(initial.platform_credentials.len(), 1);
+
+        let updated = update_user_settings(serde_json::json!({
+            "balance_helper": {
+                "packy_session_cookies": "packy_session=secret",
+                "auto_refresh_secs": 180
+            }
+        }))
+        .unwrap();
+
+        match previous {
+            Some(value) => std::env::set_var("OPENCOVIBE_DATA_DIR", value),
+            None => std::env::remove_var("OPENCOVIBE_DATA_DIR"),
+        }
+
+        assert_eq!(updated.platform_credentials.len(), 1);
+        assert_eq!(
+            updated.platform_credentials[0].platform_id.as_str(),
+            "deepseek"
+        );
+        assert_eq!(
+            updated.balance_helper.packy_session_cookies.as_deref(),
+            Some("packy_session=secret")
+        );
+        assert_eq!(updated.balance_helper.auto_refresh_secs, 180);
+    }
+
+    #[test]
+    fn update_user_settings_rejects_balance_helper_refresh_outside_phase7_bounds() {
+        let _guard = crate::storage::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let tmp = tempfile::tempdir().unwrap();
+        let previous = std::env::var_os("OPENCOVIBE_DATA_DIR");
+        std::env::set_var("OPENCOVIBE_DATA_DIR", tmp.path());
+
+        let result = update_user_settings(serde_json::json!({
+            "balance_helper": {
+                "auto_refresh_secs": 30
+            }
+        }));
+
+        match previous {
+            Some(value) => std::env::set_var("OPENCOVIBE_DATA_DIR", value),
+            None => std::env::remove_var("OPENCOVIBE_DATA_DIR"),
+        }
+
+        assert!(result
+            .unwrap_err()
+            .contains("balance_helper.auto_refresh_secs"));
     }
 
     #[test]

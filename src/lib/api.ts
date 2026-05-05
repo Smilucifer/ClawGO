@@ -48,6 +48,7 @@ import type {
   RoomDetail,
   RoomKind,
   RoomSummary,
+  BalanceHelperSettings,
 } from "./types";
 
 // Runs
@@ -363,6 +364,13 @@ export async function getUserSettings(): Promise<UserSettings> {
 export async function updateUserSettings(patch: Partial<UserSettings>): Promise<UserSettings> {
   dbg("api", "updateUserSettings");
   return invoke<UserSettings>("update_user_settings", { patch });
+}
+
+export async function refreshBalanceStatus(
+  source?: "all" | "deepseek" | "packy",
+): Promise<BalanceHelperSettings> {
+  dbg("api", "refreshBalanceStatus", { source });
+  return invoke<BalanceHelperSettings>("refresh_balance_status", { source: source ?? null });
 }
 
 export async function getAgentSettings(agent: string): Promise<AgentSettings> {

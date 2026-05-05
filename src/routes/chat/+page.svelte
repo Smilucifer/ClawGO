@@ -3736,6 +3736,59 @@
   </div>
 {/snippet}
 
+{#snippet welcomeState()}
+  <div class="flex h-full items-center justify-center">
+    <div class="flex max-w-sm flex-col items-center">
+      <div class="text-center animate-slide-up">
+        <img src="/logo.png?v=2" alt="OC" class="mx-auto mb-4 h-12 w-12 rounded-2xl" />
+        <h2 class="mb-1 text-lg font-semibold text-primary">{t("layout_appName")}</h2>
+        {#if !store.run}
+          {@const welcomeCwd =
+            store.effectiveCwd ||
+            folderCwdOverride ||
+            localStorage.getItem("ocv:project-cwd") ||
+            ""}
+          {#if welcomeCwd}
+            <p
+              class="mb-3 max-w-[280px] truncate text-xs text-muted-foreground/60"
+              title={welcomeCwd}
+            >
+              {cwdDisplayLabel(welcomeCwd)}
+            </p>
+          {:else}
+            <div class="mb-3"></div>
+          {/if}
+          {#if lastContinuableRun}
+            <button
+              class="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-foreground transition-all duration-150 hover:border-ring/30 hover:bg-accent"
+              onclick={() => goto(`/chat?run=${lastContinuableRun!.id}&resume=continue`)}
+            >
+              <svg
+                class="h-4 w-4 text-muted-foreground"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"><path d="m5 12 7-7 7 7" /><path d="M12 19V5" /></svg
+              >
+              {t("chat_continueLastSession")}
+            </button>
+            <p class="mt-2 text-xs text-muted-foreground">{t("chat_orTypeToStart")}</p>
+          {:else}
+            <p class="text-sm text-muted-foreground">{t("chat_typeToStart")}</p>
+          {/if}
+        {:else}
+          <div class="mb-3"></div>
+          <p class="text-sm text-muted-foreground">{t("chat_typeToStartSession")}</p>
+        {/if}
+        {@render initHintCard()}
+      </div>
+      {@render heroMetaFooter()}
+    </div>
+  </div>
+{/snippet}
+
 <div class="flex h-full overflow-hidden bg-background relative">
   <!-- Page-level drag overlay (drag-hover or processing spinner) -->
   {#if pageDragActive || dragProcessing}
@@ -3942,68 +3995,7 @@
         >
           {#if welcomeVisible}
             <!-- Welcome state -->
-            <div class="flex h-full items-center justify-center">
-              <div class="flex flex-col items-center max-w-sm">
-                <div class="text-center animate-slide-up">
-                  <img src="/logo.png?v=2" alt="OC" class="mx-auto mb-4 h-12 w-12 rounded-2xl" />
-                  <h2 class="text-lg font-semibold text-primary mb-1">{t("layout_appName")}</h2>
-                  {#if !store.run}
-                    {@const welcomeCwd =
-                      store.effectiveCwd ||
-                      folderCwdOverride ||
-                      localStorage.getItem("ocv:project-cwd") ||
-                      ""}
-                    {#if welcomeCwd}
-                      <p
-                        class="mb-3 text-xs text-muted-foreground/60 truncate max-w-[280px]"
-                        title={welcomeCwd}
-                      >
-                        {cwdDisplayLabel(welcomeCwd)}
-                      </p>
-                    {:else}
-                      <div class="mb-3"></div>
-                    {/if}
-                  {:else}
-                    <div class="mb-3"></div>
-                  {/if}
-                  {#if lastContinuableRun}
-                    <button
-                      class="w-full flex items-center justify-center gap-2 rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-foreground hover:bg-accent hover:border-ring/30 transition-all duration-150"
-                      onclick={() => goto(`/chat?run=${lastContinuableRun!.id}&resume=continue`)}
-                    >
-                      <svg
-                        class="h-4 w-4 text-muted-foreground"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"><path d="m5 12 7-7 7 7" /><path d="M12 19V5" /></svg
-                      >
-                      {t("chat_continueLastSession")}
-                    </button>
-                    <p class="mt-2 text-xs text-muted-foreground">
-                      {t("chat_orTypeToStart")}
-                    </p>
-                  {:else}
-                    <p class="text-sm text-muted-foreground">{t("chat_typeToStart")}</p>
-                  {/if}
-                  {@render initHintCard()}
-                </div>
-                <!-- Footer outside animate-slide-up: AuthSourceBadge needs transform-free ancestor for fixed dropdown -->
-                <div
-                  class="mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground"
-                >
-                  {#if hasStartupConnectionEntry}
-                    {@render startupConnectionEntry()}
-                  {/if}
-                  {#if hasStartupConnectionEntry && hasHeroMetaItems}
-                    <span class="text-muted-foreground">·</span>
-                  {/if}
-                  {@render heroMetaItems()}
-                </div>
-              </div>
-            </div>
+            {@render welcomeState()}
           {:else if store.phase === "loading" && store.timeline.length === 0}
             <!-- Loading state — avoids welcome page flash during loadRun -->
             <div class="flex h-full items-center justify-center">
@@ -4168,6 +4160,7 @@
                           content: entry.content,
                           timestamp: entry.ts,
                         }}
+                        assistantLabel={activeProvider.label}
                         thinkingText={entry.thinkingText}
                       />
                     {:else if entry.kind === "tool"}
@@ -4413,7 +4406,9 @@
                           />
                         </svg>
                       </div>
-                      <span class="text-sm font-semibold text-foreground">{t("chat_claude")}</span>
+                      <span class="text-sm font-semibold text-foreground">
+                        {activeProvider.label}
+                      </span>
                     </div>
                     <div class="pl-7 prose-chat">
                       <MarkdownContent text={store.streamingText} streaming={true} />
@@ -4458,7 +4453,9 @@
                           />
                         </svg>
                       </div>
-                      <span class="text-sm font-semibold text-foreground">{t("chat_claude")}</span>
+                      <span class="text-sm font-semibold text-foreground">
+                        {activeProvider.label}
+                      </span>
                       {#if thinkingElapsed > 0}
                         <span class="ml-auto text-[10px] tabular-nums text-muted-foreground"
                           >{formatElapsed(thinkingElapsed)}</span
@@ -4543,50 +4540,7 @@
         />
       {:else}
         <!-- CLI mode: welcome state -->
-        <div class="flex h-full items-center justify-center">
-          <div class="text-center max-w-md animate-slide-up">
-            <img src="/logo.png?v=2" alt="OC" class="mx-auto mb-4 h-12 w-12 rounded-2xl" />
-            <h2 class="text-lg font-semibold text-primary mb-2">{t("layout_appName")}</h2>
-            {#if !store.run}
-              {@const welcomeCwd =
-                store.effectiveCwd ||
-                folderCwdOverride ||
-                localStorage.getItem("ocv:project-cwd") ||
-                ""}
-              {#if welcomeCwd}
-                <p class="mb-3 truncate text-xs text-muted-foreground/60" title={welcomeCwd}>
-                  {cwdDisplayLabel(welcomeCwd)}
-                </p>
-              {:else}
-                <div class="mb-3"></div>
-              {/if}
-              {#if lastContinuableRun}
-                <button
-                  class="mx-auto flex w-full max-w-[220px] items-center justify-center gap-2 rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-foreground transition-all duration-150 hover:border-ring/30 hover:bg-accent"
-                  onclick={() => goto(`/chat?run=${lastContinuableRun!.id}&resume=continue`)}
-                >
-                  <svg
-                    class="h-4 w-4 text-muted-foreground"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"><path d="m5 12 7-7 7 7" /><path d="M12 19V5" /></svg
-                  >
-                  {t("chat_continueLastSession")}
-                </button>
-                <p class="mt-2 text-xs text-muted-foreground">{t("chat_orTypeToStart")}</p>
-              {:else}
-                <p class="text-sm text-muted-foreground">{t("chat_typeToStart")}</p>
-              {/if}
-            {:else}
-              <p class="text-sm text-muted-foreground mb-4">{t("chat_typeToStartSession")}</p>
-            {/if}
-            {@render initHintCard()}
-            {@render heroMetaFooter()}
-          </div>
-        </div>
+        {@render welcomeState()}
       {/if}
 
       <!-- Fork overlay -->

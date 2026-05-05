@@ -66,6 +66,9 @@ tempfile = "3"
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[patch.crates-io]
+portable-pty = { path = "vendor/portable-pty-0.9.0" }
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

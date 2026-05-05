@@ -293,7 +293,7 @@ pub async fn send_chat_message(
                 crate::models::ChatDone {
                     ok: false,
                     code: 1,
-                    error: None,
+                    error: Some(e),
                 },
             );
         }

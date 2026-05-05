@@ -27,7 +27,16 @@ fn build_codex_base_args(settings: &AdapterSettings) -> Vec<String> {
     if settings.no_session_persistence {
         args.push("--ephemeral".to_string());
     }
-    args.extend(settings.extra_args.iter().cloned());
+    append_extra_args_without_controlled_flags(
+        &mut args,
+        &settings.extra_args,
+        &[
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--no-alt-screen",
+            "--yolo",
+        ],
+        &[],
+    );
     args
 }
 
@@ -41,12 +50,49 @@ fn build_gemini_base_args(settings: &AdapterSettings) -> Vec<String> {
     }
     args.push("--approval-mode".to_string());
     args.push("yolo".to_string());
+    args.push("--skip-trust".to_string());
     for dir in &settings.add_dirs {
         args.push("--include-directories".to_string());
         args.push(dir.to_string());
     }
-    args.extend(settings.extra_args.iter().cloned());
+    append_extra_args_without_controlled_flags(
+        &mut args,
+        &settings.extra_args,
+        &["--skip-trust", "--yolo"],
+        &["--approval-mode"],
+    );
     args
+}
+
+fn append_extra_args_without_controlled_flags(
+    args: &mut Vec<String>,
+    extra_args: &[String],
+    singleton_flags: &[&str],
+    value_flags: &[&str],
+) {
+    let mut skip_next = false;
+    for arg in extra_args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        let trimmed = arg.trim();
+        if singleton_flags.iter().any(|flag| trimmed == *flag) {
+            continue;
+        }
+        if value_flags.iter().any(|flag| trimmed == *flag) {
+            skip_next = true;
+            continue;
+        }
+        if value_flags.iter().any(|flag| {
+            trimmed
+                .strip_prefix(*flag)
+                .is_some_and(|rest| rest.starts_with('='))
+        }) {
+            continue;
+        }
+        args.push(arg.clone());
+    }
 }
 
 /// Build the command + args for a given agent (pipe-exec mode, not stream session)
@@ -177,6 +223,7 @@ mod tests {
                 "gemini-2.5-pro",
                 "--approval-mode",
                 "yolo",
+                "--skip-trust",
                 "--prompt-interactive",
                 "Explain this repo"
             ]
@@ -202,6 +249,35 @@ mod tests {
     }
 
     #[test]
+    fn codex_native_bypass_flag_is_not_duplicated_from_extra_args() {
+        let mut s = settings(None);
+        s.extra_args = vec![
+            "--dangerously-bypass-approvals-and-sandbox".to_string(),
+            "--no-alt-screen".to_string(),
+            "--yolo".to_string(),
+            "--search".to_string(),
+        ];
+
+        let (_command, args) =
+            build_agent_command("codex", "Fix it", &s, true).expect("codex command");
+
+        assert_eq!(
+            args.iter()
+                .filter(|arg| arg.as_str() == "--dangerously-bypass-approvals-and-sandbox")
+                .count(),
+            1
+        );
+        assert_eq!(
+            args.iter()
+                .filter(|arg| arg.as_str() == "--no-alt-screen")
+                .count(),
+            1
+        );
+        assert!(!args.contains(&"--yolo".to_string()));
+        assert!(args.contains(&"--search".to_string()));
+    }
+
+    #[test]
     fn builds_gemini_yolo_and_include_directories_args() {
         let mut s = settings(Some("gemini-2.5-pro"));
         s.add_dirs = vec!["D:/shared".to_string()];
@@ -211,6 +287,7 @@ mod tests {
             build_agent_command("gemini", "Explain this repo", &s, true).expect("gemini command");
 
         assert!(args.windows(2).any(|w| w == ["--approval-mode", "yolo"]));
+        assert!(args.contains(&"--skip-trust".to_string()));
         assert!(args
             .windows(2)
             .any(|w| w == ["--include-directories", "D:/shared"]));
@@ -232,6 +309,7 @@ mod tests {
         assert!(gemini_args
             .windows(2)
             .any(|w| w == ["--approval-mode", "yolo"]));
+        assert!(gemini_args.contains(&"--skip-trust".to_string()));
     }
 
     #[test]
@@ -254,6 +332,7 @@ mod tests {
 
         assert_eq!(command, "gemini");
         assert!(args.windows(2).any(|w| w == ["--approval-mode", "yolo"]));
+        assert!(args.contains(&"--skip-trust".to_string()));
         assert!(args.windows(2).any(|w| w == ["--resume", "latest"]));
         assert!(args
             .windows(2)

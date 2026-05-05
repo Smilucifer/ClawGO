@@ -131,6 +131,12 @@ Deferred review suggestions:
 3. Show missing-key state for DeepSeek/GLM until configured.
 4. Remove visible saved login method and redundant native/API profile controls.
 5. Keep controls compact and operational, not a marketing-style page.
+6. Add a separate balance/status panel directly below the "AI 模型" card instead of expanding the provider rows themselves.
+7. Show DeepSeek balance state in that panel using the configured official DeepSeek API key.
+8. Add a Packy balance section that accepts persisted session cookies for `packycode.com` / `packyapi.com`, keeps the value masked by default, and provides explicit save and clear actions.
+9. Treat Packy as a balance-only helper surface. Do not add it as a provider row, do not route model execution through it, and do not mix its cookie storage into `platform_credentials`.
+10. Reuse cached balance results on page load, then refresh only on user action or on the bounded auto-refresh timer.
+11. Keep all balance-related errors operational and redacted: never surface raw cookies, response headers, or full HTML in UI, logs, or event payloads.
 
 ### Task 3A: Spike Codex/Gemini Native CLI Protocol
 
@@ -179,6 +185,7 @@ Deferred review suggestions:
 - DeepSeek and GLM map to Claude Code execution with `platform_id` metadata (`deepseek` / `zhipu`) so their API config can be injected even when the global app auth mode remains CLI.
 - The chat empty state now shows provider-specific startup status: CLI detection/version and default permission mode for official CLI providers, and API key/model/base URL status for DeepSeek/GLM.
 - The settings connection tab now uses the simplified five-row "AI 模型" surface; legacy profile/login-method UI is no longer rendered, while existing settings data remains loadable.
+- DeepSeek and GLM are already operational in the simplified settings/chat path. Remaining Phase 7 work in this area should focus on missing entry-path verification, run metadata parity, and the new balance/status helper surface rather than rebuilding the existing launch path.
 
 ### Task 3B: Define Native CLI Launch Paths
 
@@ -223,6 +230,67 @@ Deferred review suggestions:
 7. Show CLI auth success/failure and CLI version for official CLI providers; show key/config status for DeepSeek/GLM.
 8. Show the current default approval mode in the empty state or startup surface.
 9. Avoid showing connection profile selectors for Codex/Gemini.
+
+### Task 4A: Audit Claude-Compatible Provider Entry Parity for DeepSeek and GLM
+
+**Files:**
+
+- Modify: `src-tauri/src/commands/session.rs`
+- Modify: `src-tauri/src/commands/runs.rs`
+- Modify: `src-tauri/src/commands/rooms.rs`
+- Modify: `src-tauri/src/storage/runs.rs`
+- Modify: `src/routes/chat/+page.svelte`
+- Modify tests covering Claude-compatible provider routing and run metadata snapshots
+
+**Steps:**
+
+1. Audit the DeepSeek/GLM entry matrix across new chat, continue/resume, fork, approval restart, side question, and roundtable participant flows.
+2. Verify each path preserves Claude execution plus provider identity, including `platform_id`, effective base URL, selected model, and visible provider label.
+3. Keep existing helper-based routing if it already works; only patch paths that still bypass the centralized provider-resolution logic.
+4. Add or expand Rust tests around `resolve_auth_env_for_platform` callers and run snapshot creation so DeepSeek/GLM identity drift is caught automatically.
+5. Add or expand UI/store coverage where needed so DeepSeek/GLM resume/fork surfaces do not collapse back to generic Claude labeling.
+
+### Task 4B: Add DeepSeek and Packy Balance Status Panel
+
+**Files:**
+
+- Modify: `src/routes/settings/+page.svelte`
+- Modify: `src/lib/types.ts`
+- Modify: `src/lib/api.ts`
+- Modify: `src-tauri/src/models.rs`
+- Modify: `src-tauri/src/storage/settings.rs`
+- Create if helpful: `src-tauri/src/commands/balance.rs`
+- Modify: `src-tauri/src/commands/mod.rs` if command registration is centralized there
+- Modify: `messages/en.json`
+- Modify: `messages/zh-CN.json`
+- Modify tests covering settings persistence and connection-page rendering
+
+**Steps:**
+
+1. Add a new persisted settings section for balance-helper state instead of overloading `platform_credentials`.
+2. Store Packy session cookies in that balance-helper state, keep them masked by default in the UI, and provide explicit save and clear actions.
+3. Add a DeepSeek balance command path that uses the configured DeepSeek credential without changing provider execution settings.
+4. Add a Packy balance command path that uses the saved session cookies to query `https://www.packyapi.com/console` and extract the visible balance server-side.
+5. Keep Packy strictly balance-only: it must not appear as a provider, alter GLM/DeepSeek routing, or inject base URL/model changes anywhere else.
+6. Show cached balance state plus last refresh time on page load, then allow both manual refresh and bounded automatic refresh while the connection page is active.
+7. Default automatic refresh to a mid-range interval in the requested 1-3 minute window, and prevent overlapping refresh requests for the same source.
+8. Redact cookies and raw HTML from logs, diagnostics, and user-facing errors.
+9. Add frontend and Rust coverage for missing credentials, expired cookies, parser failure, saved-state masking, clear-cookie behavior, and auto-refresh lifecycle.
+
+**Implementation status - 2026-05-05:**
+
+- Completed the persisted `balance_helper` settings structure and bounded refresh validation.
+- Added `refresh_balance_status` for Tauri IPC and web dispatch. DeepSeek uses the configured DeepSeek API key against the official balance endpoint, while Packy uses saved console cookies and remains balance-only.
+- Added the connection-page balance card with cached status, manual refresh, masked Packy cookie save/clear, and bounded auto-refresh while the connection tab is active.
+- Added Rust parser/redaction coverage and i18n keys for the balance panel.
+- Remaining: manual validation with a real Packy session cookie and broader UI lifecycle tests when the existing Svelte type-check baseline is repaired.
+
+### Task Ordering Note
+
+- Tasks 1-4 capture the original Phase 7 foundation and chat-entry parity work.
+- Task 3B and the Task 4/5 implementation note record work that has already landed in part, but the acceptance bar for Codex/Gemini native parity remains open.
+- Task 4A and Task 4B are follow-up tasks added after review and owner clarification. They extend Phase 7 without replacing the original Task 4 scope.
+- Tasks 5-9 remain the main Roundtable, Memory, Memo, and Room presentation backlog.
 
 ### Task 5: Update Roundtable Provider Selection
 
@@ -374,14 +442,15 @@ Deferred review suggestions:
 
 ## Verification
 
-- Rust unit tests for settings migration, command argv generation, and capability selection.
-- Frontend tests for settings row rendering and chat empty-state parity.
+- Rust unit tests for settings migration, command argv generation, capability selection, and Claude-compatible provider routing snapshots.
+- Frontend tests for settings row rendering, balance panel state transitions, and chat empty-state parity.
 - `cargo test --manifest-path src-tauri/Cargo.toml`
 - `npm run lint`
 - `npm run check`
 - `npm run i18n:check`
 - `npm run build`
-- Playwright/browser screenshots for settings, chat empty states, and roundtable cards.
+- Playwright/browser screenshots for settings, chat empty states, roundtable cards, and the new balance/status panel.
+- Manual validation of automatic balance refresh timing, page-leave cleanup, and refresh-button reset behavior.
 
 ### Provider Entry Matrix
 
@@ -408,13 +477,17 @@ Deferred review suggestions:
 - Official CLI missing.
 - Official CLI installed but not logged in.
 - DeepSeek key missing.
+- DeepSeek balance query unavailable, unauthorized, or rate-limited.
+- Packy session cookies missing, expired, rejected, or no longer parseable from the console page.
 - GLM key missing, base URL missing/invalid, or model missing.
 - Codex/Gemini native protocol cannot determine completion.
 - Room Debate requested before any public turn.
 - Room Summary target missing, inactive, errored, or lacking relevant public history.
+- Automatic balance refresh fires after the page is inactive or starts overlapping requests.
 - Old settings, old connection profiles, old `/memo` links, and old room memo data still load without crashing.
 
 ## Open Technical Risks
 
 - Codex/Gemini native interactive protocols may not expose the same event model as Claude stream-json. If they cannot support long-lived structured sessions cleanly, the implementation should add an explicit native PTY/stdio adapter and document the behavioral difference.
 - Existing stored connection profiles should remain backward-compatible on disk, but the simplified UI should not encourage editing obsolete Codex/Gemini API profile data.
+- Choice-prompt UX is still split between plain markdown messages and structured elicitation flows. Future UI work should unify these paths so user-facing multiple-choice questions consistently render as clickable options instead of sometimes requiring typed answers.

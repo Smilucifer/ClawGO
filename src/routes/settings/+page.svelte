@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, getContext } from "svelte";
+  import { onMount, getContext, untrack } from "svelte";
   import { page } from "$app/stores";
   import * as api from "$lib/api";
   import { loadCliInfo, KeybindingStore } from "$lib/stores";
@@ -85,6 +85,11 @@
   let settings = $state<UserSettings | null>(null);
   let showApiKey = $state(false);
   let platformCredentials = $state<PlatformCredential[]>([]);
+  let packyCookieInput = $state("");
+  let showPackyCookie = $state(false);
+  let balanceHelperSaving = $state(false);
+  let balanceRefreshing = $state(false);
+  let balanceRefreshError = $state<string | null>(null);
 
   type ConnectionAgentTab = "claude" | "codex" | "gemini";
   const connectionAgentTabs: Array<{ id: ConnectionAgentTab; label: string; command: string }> = [
@@ -171,6 +176,53 @@
     saveGeneralPatch({ platform_credentials: platformCredentials });
   }
 
+  function balanceCacheStatus(source: "deepseek" | "packy"): string {
+    const entry = settings?.balance_helper?.cache?.[source];
+    if (!entry) return t("settings_balance_notChecked");
+    if (entry.status === "ok") {
+      return entry.balance_text
+        ? `${entry.balance_text} · ${entry.refreshed_at}`
+        : t("settings_balance_ok");
+    }
+    return entry.error
+      ? `${t("settings_balance_failed")} · ${entry.error}`
+      : t("settings_balance_failed");
+  }
+
+  async function savePackyCookies() {
+    balanceHelperSaving = true;
+    try {
+      const next = {
+        ...(settings?.balance_helper ?? { auto_refresh_secs: 120, cache: {} }),
+        packy_session_cookies: packyCookieInput.trim() || null,
+      };
+      settings = await api.updateUserSettings({ balance_helper: next } as Partial<UserSettings>);
+      packyCookieInput = settings.balance_helper?.packy_session_cookies ?? "";
+      void refreshBalanceStatus("packy");
+    } catch (e) {
+      dbgWarn("settings", "savePackyCookies error", e);
+    } finally {
+      balanceHelperSaving = false;
+    }
+  }
+
+  async function clearPackyCookies() {
+    balanceHelperSaving = true;
+    try {
+      const next = {
+        ...(settings?.balance_helper ?? { auto_refresh_secs: 120, cache: {} }),
+        packy_session_cookies: null,
+      };
+      settings = await api.updateUserSettings({ balance_helper: next } as Partial<UserSettings>);
+      packyCookieInput = "";
+      balanceRefreshError = null;
+    } catch (e) {
+      dbgWarn("settings", "clearPackyCookies error", e);
+    } finally {
+      balanceHelperSaving = false;
+    }
+  }
+
   async function refreshConnectionCliChecks() {
     connectionCliChecking = true;
     const entries = await Promise.all(
@@ -187,6 +239,32 @@
       CliCheckResult | null
     >;
     connectionCliChecking = false;
+  }
+
+  async function refreshBalanceStatus(source: "all" | "deepseek" | "packy" = "all") {
+    if (balanceRefreshing) return;
+    balanceRefreshing = true;
+    balanceRefreshError = null;
+    try {
+      const helper = await api.refreshBalanceStatus(source);
+      if (settings) {
+        settings = { ...settings, balance_helper: helper };
+      }
+    } catch (e) {
+      balanceRefreshError = String(e);
+      dbgWarn("settings", "refreshBalanceStatus error", e);
+    } finally {
+      balanceRefreshing = false;
+    }
+  }
+
+  function startBalanceAutoRefresh() {
+    const secs = Math.max(60, Math.min(180, settings?.balance_helper?.auto_refresh_secs ?? 120));
+    void refreshBalanceStatus("all");
+    const timer = setInterval(() => {
+      void refreshBalanceStatus("all");
+    }, secs * 1000);
+    return () => clearInterval(timer);
   }
 
   // ── Web Server state (desktop-only) ──
@@ -836,6 +914,11 @@
     }
   });
 
+  $effect(() => {
+    if (activeTab !== "connection") return;
+    return untrack(() => startBalanceAutoRefresh());
+  });
+
   // Refresh log count periodically when debug is on
   $effect(() => {
     if (!debugOn) return;
@@ -850,6 +933,7 @@
       settings = await api.getUserSettings();
       remoteHosts = settings.remote_hosts ?? [];
       platformCredentials = settings.platform_credentials ?? [];
+      packyCookieInput = settings.balance_helper?.packy_session_cookies ?? "";
     } catch (e) {
       dbgWarn("settings", "error", e);
     }
@@ -1690,6 +1774,93 @@
                 </div>
               </div>
             {/each}
+          </div>
+        </Card>
+
+        <Card class="p-6 space-y-4">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h2 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                {t("settings_balance_title")}
+              </h2>
+              <p class="mt-1 text-xs text-muted-foreground">
+                {t("settings_balance_desc")}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={balanceRefreshing}
+              onclick={() => refreshBalanceStatus("all")}
+            >
+              {balanceRefreshing ? t("settings_balance_refreshing") : t("settings_balance_refresh")}
+            </Button>
+          </div>
+          {#if balanceRefreshError}
+            <p class="text-xs text-red-400">{balanceRefreshError}</p>
+          {/if}
+
+          <div class="grid gap-3 md:grid-cols-2">
+            <div class="rounded-md border border-border p-4">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="text-sm font-medium">DeepSeek</div>
+                  <div class="mt-1 text-xs text-muted-foreground">
+                    {balanceCacheStatus("deepseek")}
+                  </div>
+                </div>
+                <span
+                  class="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                >
+                  API
+                </span>
+              </div>
+            </div>
+
+            <div class="rounded-md border border-border p-4">
+              <div class="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <div class="text-sm font-medium">Packy</div>
+                  <div class="mt-1 text-xs text-muted-foreground">
+                    {balanceCacheStatus("packy")}
+                  </div>
+                </div>
+                <span
+                  class="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                >
+                  Cookie
+                </span>
+              </div>
+              <div class="flex gap-2">
+                <Input
+                  type={showPackyCookie ? "text" : "password"}
+                  placeholder={t("settings_balance_packyCookie")}
+                  value={packyCookieInput}
+                  oninput={(event) =>
+                    (packyCookieInput = (event.currentTarget as HTMLInputElement).value)}
+                />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onclick={() => (showPackyCookie = !showPackyCookie)}
+                >
+                  {showPackyCookie ? t("settings_general_hide") : t("settings_general_show")}
+                </Button>
+              </div>
+              <div class="mt-3 flex justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={balanceHelperSaving}
+                  onclick={clearPackyCookies}
+                >
+                  {t("settings_balance_clear")}
+                </Button>
+                <Button size="sm" disabled={balanceHelperSaving} onclick={savePackyCookies}>
+                  {balanceHelperSaving ? t("settings_balance_saving") : t("settings_balance_save")}
+                </Button>
+              </div>
+            </div>
           </div>
         </Card>
       </div>

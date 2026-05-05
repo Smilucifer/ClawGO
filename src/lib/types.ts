@@ -259,6 +259,7 @@ export interface UserSettings {
   platform_credentials?: PlatformCredential[];
   cc_agent_profiles?: CcAgentProfile[];
   connection_profiles?: ConnectionProfile[];
+  balance_helper?: BalanceHelperSettings;
   active_platform_id?: string;
   ui_zoom?: number;
   onboarding_completed: boolean;
@@ -269,6 +270,20 @@ export interface UserSettings {
   web_server_tunnel_url?: string;
   windows_msvc_env_mode?: WindowsMsvcEnvMode;
   updated_at: string;
+}
+
+export interface BalanceCacheEntry {
+  source: string;
+  status: string;
+  balance_text?: string;
+  error?: string;
+  refreshed_at: string;
+}
+
+export interface BalanceHelperSettings {
+  packy_session_cookies?: string | null;
+  auto_refresh_secs: number;
+  cache: Record<string, BalanceCacheEntry>;
 }
 
 export type WindowsMsvcEnvMode = "auto" | "always" | "off";

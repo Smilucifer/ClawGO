@@ -4012,6 +4012,40 @@ describe("SessionStore reducer", () => {
           testStore.timeline[0].kind === "assistant" && testStore.timeline[0].content,
         ).toBe("Hello world");
       });
+
+      it("does not replay native CLI terminal stdout as chat text", async () => {
+        const run = makeRun("run-pipe-stdout", {
+          status: "running",
+          agent: "gemini",
+          execution_path: "pipe_exec",
+        });
+        mockGetRun.mockResolvedValue(run);
+        mockGetRunEvents.mockResolvedValue([
+          {
+            id: "ev-1",
+            task_id: "run-pipe-stdout",
+            seq: 1,
+            type: "user",
+            payload: { text: "hello" },
+            timestamp: "2026-05-05T00:00:01.000Z",
+          },
+          {
+            id: "ev-2",
+            task_id: "run-pipe-stdout",
+            seq: 2,
+            type: "stdout",
+            payload: { text: "\u001b[38;2;175;175;175mworkspace /directory\u001b[0m" },
+            timestamp: "2026-05-05T00:00:02.000Z",
+          },
+        ]);
+
+        const testStore = new SessionStore();
+        await testStore.loadRun("run-pipe-stdout");
+
+        expect(testStore.streamingText).toBe("");
+        expect(testStore.timeline).toHaveLength(1);
+        expect(testStore.timeline[0].kind).toBe("user");
+      });
     });
 
     describe("snapshot hit vs miss deep comparison", () => {

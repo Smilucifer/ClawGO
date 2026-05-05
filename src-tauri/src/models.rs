@@ -325,6 +325,8 @@ pub struct UserSettings {
     pub cc_agent_profiles: Vec<CcAgentProfile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub connection_profiles: Vec<ConnectionProfile>,
+    #[serde(default)]
+    pub balance_helper: BalanceHelperSettings,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_platform_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -406,6 +408,41 @@ pub struct PlatformCredential {
     pub extra_env: Option<HashMap<String, String>>,
 }
 
+fn default_balance_auto_refresh_secs() -> u64 {
+    120
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BalanceCacheEntry {
+    pub source: String,
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub balance_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub refreshed_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BalanceHelperSettings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub packy_session_cookies: Option<String>,
+    #[serde(default = "default_balance_auto_refresh_secs")]
+    pub auto_refresh_secs: u64,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub cache: HashMap<String, BalanceCacheEntry>,
+}
+
+impl Default for BalanceHelperSettings {
+    fn default() -> Self {
+        Self {
+            packy_session_cookies: None,
+            auto_refresh_secs: default_balance_auto_refresh_secs(),
+            cache: HashMap::new(),
+        }
+    }
+}
+
 impl Default for UserSettings {
     fn default() -> Self {
         Self {
@@ -426,6 +463,7 @@ impl Default for UserSettings {
             platform_credentials: vec![],
             cc_agent_profiles: vec![],
             connection_profiles: vec![],
+            balance_helper: BalanceHelperSettings::default(),
             active_platform_id: None,
             ui_zoom: None,
             onboarding_completed: false,

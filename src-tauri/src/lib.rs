@@ -175,6 +175,7 @@ pub fn run() {
             commands::chat::send_chat_message,
             commands::events::get_run_events,
             commands::artifacts::get_run_artifacts,
+            commands::balance::refresh_balance_status,
             commands::settings::get_user_settings,
             commands::settings::update_user_settings,
             commands::settings::get_agent_settings,

@@ -208,6 +208,14 @@ pub async fn dispatch_command(
             }
             Ok(val)
         }
+        "refresh_balance_status" => {
+            let source = params
+                .get("source")
+                .and_then(|value| value.as_str())
+                .map(str::to_string);
+            let result = crate::commands::balance::refresh_balance_status(source).await?;
+            serde_json::to_value(result).map_err(|e| e.to_string())
+        }
         "get_agent_settings" => {
             let agent = extract_str(&params, "agent")?;
             let settings = crate::commands::settings::get_agent_settings(agent);

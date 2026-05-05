@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   canSendRoomMessage,
+  roomParticipantMetaLabel,
+  roomParticipantProviderLabel,
   roomParticipantBadge,
   roomMessagePlaceholderKey,
   roomRequiresThreeParticipants,
@@ -31,5 +33,19 @@ describe("room UI helpers", () => {
     expect(roomParticipantBadge("roundtable", 2)).toBe("2/3");
     expect(roomParticipantBadge("driver", 2)).toBe("2");
     expect(roomParticipantBadge("research", 1)).toBe("1");
+  });
+
+  it("shows visible provider identity instead of only execution identity", () => {
+    expect(roomParticipantProviderLabel("claude", "deepseek")).toBe("DeepSeek");
+    expect(roomParticipantProviderLabel("claude", "zhipu")).toBe("GLM");
+    expect(roomParticipantProviderLabel("codex")).toBe("Codex");
+    expect(roomParticipantProviderLabel("gemini")).toBe("Gemini");
+  });
+
+  it("includes the model after the visible provider label when present", () => {
+    expect(roomParticipantMetaLabel("claude", "deepseek", "deepseek-chat")).toBe(
+      "DeepSeek · deepseek-chat",
+    );
+    expect(roomParticipantMetaLabel("claude", null, "")).toBe("Claude");
   });
 });
