@@ -52,6 +52,7 @@ Accepted follow-up, not blocking this repair:
 - Continue strengthening prompt tests around attribution and truncation boundaries as Roundtable presentation work continues.
 - Treat DeepSeek/GLM as already working for baseline execution. Follow-up work in this area should be framed as parity audit plus missing helper UX, not as a rebuild of the current launch chain.
 - Keep Packy out of the provider matrix for this phase. Its session cookies are only for the new balance helper surface and must not alter execution routing or `platform_credentials`.
+- Improve the visual design of the balance/status card. The current helper surface is functionally correct, but follow-up UI work should make it feel integrated and polished rather than raw or purely utilitarian.
 - Unify user-choice interactions in the chat UI. Today plain assistant text choices render as markdown while structured elicitation renders interactive controls, so future UX work should make choice prompts consistently appear as clickable options instead of requiring typed `A/B/C` or `1/2/3` replies.
 
 ## Provider Display Repair - 2026-05-05

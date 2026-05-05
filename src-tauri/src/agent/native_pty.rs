@@ -23,9 +23,123 @@ enum NativeWaitOutcome {
     ProcessExited(i32),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+enum NativeTurnTerminal {
+    Completed {
+        assistant_text: String,
+        conversation_ref: Option<crate::models::ConversationRef>,
+    },
+    Stopped,
+    Failed { exit_code: i32, error: String },
+}
+
+fn resolve_native_turn_terminal(
+    agent: &str,
+    run_id: &str,
+    wait_outcome: NativeWaitOutcome,
+) -> NativeTurnTerminal {
+    match wait_outcome {
+        NativeWaitOutcome::Transcript(Ok(result)) => NativeTurnTerminal::Completed {
+            assistant_text: result.text,
+            conversation_ref: result.conversation_ref,
+        },
+        NativeWaitOutcome::Transcript(Err(error)) => {
+            if take_native_pty_stop_requested(run_id) {
+                NativeTurnTerminal::Stopped
+            } else {
+                NativeTurnTerminal::Failed {
+                    exit_code: 1,
+                    error,
+                }
+            }
+        }
+        NativeWaitOutcome::ProcessExited(code) => {
+            if code == -1 {
+                NativeTurnTerminal::Stopped
+            } else {
+                NativeTurnTerminal::Failed {
+                    exit_code: code,
+                    error: format!(
+                        "Native {agent} process exited with code {code} before transcript completion"
+                    ),
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::native_transcript::NativeTranscriptResult;
+
+    #[test]
+    fn transcript_success_resolves_to_completed() {
+        let terminal = resolve_native_turn_terminal(
+            "codex",
+            "run-complete",
+            NativeWaitOutcome::Transcript(Ok(NativeTranscriptResult {
+                text: "done".to_string(),
+                conversation_ref: None,
+            })),
+        );
+
+        assert_eq!(
+            terminal,
+            NativeTurnTerminal::Completed {
+                assistant_text: "done".to_string(),
+                conversation_ref: None,
+            }
+        );
+    }
+
+    #[test]
+    fn transcript_error_without_stop_marker_resolves_to_failed_even_if_process_missing() {
+        let terminal = resolve_native_turn_terminal(
+            "codex",
+            "run-missing-no-stop",
+            NativeWaitOutcome::Transcript(Err("transcript parse failed".to_string())),
+        );
+
+        assert_eq!(
+            terminal,
+            NativeTurnTerminal::Failed {
+                exit_code: 1,
+                error: "transcript parse failed".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn transcript_error_with_stop_marker_resolves_to_stopped() {
+        mark_native_pty_stop_requested("run-stop-marked");
+        let terminal = resolve_native_turn_terminal(
+            "codex",
+            "run-stop-marked",
+            NativeWaitOutcome::Transcript(Err("wait cancelled".to_string())),
+        );
+
+        assert_eq!(terminal, NativeTurnTerminal::Stopped);
+        assert!(!take_native_pty_stop_requested("run-stop-marked"));
+    }
+
+    #[test]
+    fn process_exit_before_transcript_completion_resolves_to_failed() {
+        let terminal = resolve_native_turn_terminal(
+            "gemini",
+            "run-failed",
+            NativeWaitOutcome::ProcessExited(23),
+        );
+
+        assert_eq!(
+            terminal,
+            NativeTurnTerminal::Failed {
+                exit_code: 23,
+                error: "Native gemini process exited with code 23 before transcript completion"
+                    .to_string()
+            }
+        );
+    }
 
     #[test]
     fn replies_to_cursor_position_report_query() {
@@ -68,6 +182,30 @@ mod tests {
 static NATIVE_PTY_PROCESSES: Lazy<Arc<Mutex<HashMap<String, NativePtyProcess>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
+static NATIVE_PTY_STOP_REQUESTS: Lazy<Arc<Mutex<std::collections::HashSet<String>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(std::collections::HashSet::new())));
+
+fn native_stop_requests() -> Arc<Mutex<std::collections::HashSet<String>>> {
+    NATIVE_PTY_STOP_REQUESTS.clone()
+}
+
+fn mark_native_pty_stop_requested(run_id: &str) {
+    if let Ok(mut stops) = native_stop_requests().lock() {
+        stops.insert(run_id.to_string());
+    }
+}
+
+fn take_native_pty_stop_requested(run_id: &str) -> bool {
+    native_stop_requests()
+        .lock()
+        .map(|mut stops| stops.remove(run_id))
+        .unwrap_or(false)
+}
+
+fn clear_native_pty_stop_requested(run_id: &str) {
+    let _ = take_native_pty_stop_requested(run_id);
+}
+
 fn native_map() -> Arc<Mutex<HashMap<String, NativePtyProcess>>> {
     NATIVE_PTY_PROCESSES.clone()
 }
@@ -80,6 +218,7 @@ pub fn has_native_pty_process(run_id: &str) -> bool {
 }
 
 pub fn stop_native_pty_process(run_id: &str) -> bool {
+    mark_native_pty_stop_requested(run_id);
     let removed = native_map()
         .lock()
         .ok()
@@ -295,56 +434,58 @@ pub async fn run_native_pty_agent(
         }
     };
 
-    let (exit_code, assistant_text) = match wait_outcome {
-        NativeWaitOutcome::Transcript(Ok(result)) => {
-            if let Some(conversation_ref) = result.conversation_ref {
-                let rid = run_id.clone();
-                if let Err(e) = storage::runs::with_meta(&rid, |meta| {
-                    meta.conversation_ref = Some(conversation_ref);
-                    Ok(())
-                }) {
-                    log::warn!("[native-pty] failed to persist conversation_ref: {}", e);
-                }
-            }
+    let terminal = resolve_native_turn_terminal(&agent, &run_id, wait_outcome);
+
+    let (exit_code, assistant_text, conversation_ref, done_error) = match terminal {
+        NativeTurnTerminal::Completed {
+            assistant_text,
+            conversation_ref,
+        } => {
+            clear_native_pty_stop_requested(&run_id);
+            let _ = stop_native_pty_process(&run_id);
+            (0, assistant_text, conversation_ref, None)
+        }
+        NativeTurnTerminal::Stopped => {
+            let _ = stop_native_pty_process(&run_id);
+            (-1, String::new(), None, Some("Stopped by user".to_string()))
+        }
+        NativeTurnTerminal::Failed { exit_code, error } => {
+            clear_native_pty_stop_requested(&run_id);
+            emit_event(
+                &run_id,
+                RunEventType::Stderr,
+                serde_json::json!({ "text": error, "source": "ui_chat" }),
+            );
             let _ = app.emit(
-                "chat-delta",
-                ChatDelta {
-                    text: result.text.clone(),
-                },
+                "run-event",
+                serde_json::json!({
+                    "run_id": run_id,
+                    "type": "stderr",
+                    "text": error
+                }),
             );
             let _ = stop_native_pty_process(&run_id);
-            (0, result.text)
-        }
-        NativeWaitOutcome::Transcript(Err(e)) => {
-            let _ = stop_native_pty_process(&run_id);
-            return Err(e);
-        }
-        NativeWaitOutcome::ProcessExited(code) => {
-            if code == -1 {
-                (-1, String::new())
-            } else {
-                let error = format!(
-                    "Native {agent} process exited with code {code} before transcript completion"
-                );
-                emit_event(
-                    &run_id,
-                    RunEventType::Stderr,
-                    serde_json::json!({ "text": error, "source": "ui_chat" }),
-                );
-                let _ = app.emit(
-                    "run-event",
-                    serde_json::json!({
-                        "run_id": run_id,
-                        "type": "stderr",
-                        "text": error
-                    }),
-                );
-                return Err(error);
-            }
+            (exit_code, String::new(), None, Some(error))
         }
     };
 
+    if let Some(conversation_ref) = conversation_ref {
+        let rid = run_id.clone();
+        if let Err(e) = storage::runs::with_meta(&rid, |meta| {
+            meta.conversation_ref = Some(conversation_ref);
+            Ok(())
+        }) {
+            log::warn!("[native-pty] failed to persist conversation_ref: {}", e);
+        }
+    }
+
     if !assistant_text.trim().is_empty() {
+        let _ = app.emit(
+            "chat-delta",
+            ChatDelta {
+                text: assistant_text.clone(),
+            },
+        );
         emit_event(
             &run_id,
             RunEventType::Assistant,
@@ -356,13 +497,22 @@ pub async fn run_native_pty_agent(
         if let Err(e) = storage::runs::update_status(&run_id, RunStatus::Completed, Some(0), None) {
             log::warn!("[native-pty] failed to update status to Completed: {}", e);
         }
+    } else if exit_code == -1 {
+        if let Err(e) = storage::runs::update_status(
+            &run_id,
+            RunStatus::Stopped,
+            None,
+            Some("Stopped by user".to_string()),
+        ) {
+            log::warn!("[native-pty] failed to update status to Stopped: {}", e);
+        }
     } else if let Err(e) = storage::runs::update_status(
         &run_id,
-        RunStatus::Stopped,
-        None,
-        Some("Stopped by user".to_string()),
+        RunStatus::Failed,
+        Some(exit_code),
+        done_error.clone(),
     ) {
-        log::warn!("[native-pty] failed to update status to Stopped: {}", e);
+        log::warn!("[native-pty] failed to update status to Failed: {}", e);
     }
 
     emit_event(
@@ -375,7 +525,7 @@ pub async fn run_native_pty_agent(
         ChatDone {
             ok: exit_code == 0,
             code: exit_code,
-            error: None,
+            error: done_error,
         },
     );
 

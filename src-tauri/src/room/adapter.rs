@@ -316,6 +316,64 @@ mod tests {
     }
 
     #[test]
+    fn wait_turn_complete_treats_stopped_run_as_terminal() {
+        let outcome = with_temp_data_dir(|| {
+            crate::storage::runs::create_run(
+                "run-stop",
+                "hello",
+                "D:/work/app",
+                "codex",
+                RunStatus::Stopped,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            let run = crate::storage::runs::get_run("run-stop").unwrap();
+            let mut adapter = adapter_for_run(&run).with_polling(Duration::from_millis(1), 0);
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(adapter.wait_turn_complete())
+        })
+        .unwrap();
+
+        assert_eq!(outcome.status, TurnOutcomeStatus::Stopped);
+        assert_eq!(outcome.run_id, "run-stop");
+    }
+
+    #[test]
+    fn wait_turn_complete_treats_failed_run_as_terminal() {
+        let outcome = with_temp_data_dir(|| {
+            crate::storage::runs::create_run(
+                "run-fail",
+                "hello",
+                "D:/work/app",
+                "gemini",
+                RunStatus::Failed,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            let run = crate::storage::runs::get_run("run-fail").unwrap();
+            let mut adapter = adapter_for_run(&run).with_polling(Duration::from_millis(1), 0);
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(adapter.wait_turn_complete())
+        })
+        .unwrap();
+
+        assert_eq!(outcome.status, TurnOutcomeStatus::Failed);
+        assert_eq!(outcome.run_id, "run-fail");
+    }
+
+    #[test]
     fn maps_known_agent_capabilities() {
         let claude = AgentCapabilities::for_kind(AgentKind::Claude);
         assert!(claude.stream_session);

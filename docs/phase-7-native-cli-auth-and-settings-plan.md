@@ -276,6 +276,7 @@ Deferred review suggestions:
 7. Default automatic refresh to a mid-range interval in the requested 1-3 minute window, and prevent overlapping refresh requests for the same source.
 8. Redact cookies and raw HTML from logs, diagnostics, and user-facing errors.
 9. Add frontend and Rust coverage for missing credentials, expired cookies, parser failure, saved-state masking, clear-cookie behavior, and auto-refresh lifecycle.
+10. Polish the balance/status card presentation so the helper surface feels integrated with the settings page rather than looking like a raw diagnostic block.
 
 **Implementation status - 2026-05-05:**
 

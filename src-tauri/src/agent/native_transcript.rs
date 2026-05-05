@@ -502,6 +502,44 @@ mod tests {
     use super::*;
 
     #[test]
+    fn matching_baseline_len_only_applies_to_same_path() {
+        let baseline = NativeTranscriptBaseline {
+            path: PathBuf::from("same.jsonl"),
+            byte_len: 42,
+        };
+
+        assert_eq!(matching_baseline_len(Path::new("same.jsonl"), Some(&baseline)), 42);
+        assert_eq!(matching_baseline_len(Path::new("other.jsonl"), Some(&baseline)), 0);
+    }
+
+    #[test]
+    fn codex_parser_prefers_latest_completion_after_baseline_in_reused_rollout() {
+        let raw = concat!(
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_complete\",\"last_agent_message\":\"old\"}}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"next\"}}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_complete\",\"last_agent_message\":\"new-1\"}}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_complete\",\"last_agent_message\":\"new-2\"}}\n"
+        );
+        let baseline = raw.find("{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\"")
+            .unwrap() as u64;
+
+        assert_eq!(parse_codex_turn_after(raw, baseline).as_deref(), Some("new-2"));
+    }
+
+    #[test]
+    fn gemini_parser_prefers_latest_finalized_completion_after_baseline_in_reused_session() {
+        let raw = concat!(
+            "{\"type\":\"gemini\",\"content\":\"old\",\"tokens\":{\"total\":10}}\n",
+            "{\"type\":\"user\",\"content\":[{\"text\":\"next\"}]}\n",
+            "{\"type\":\"message_update\",\"content\":\"new-1\",\"status\":\"finalized\"}\n",
+            "{\"type\":\"result\",\"response\":\"new-2\"}\n"
+        );
+        let baseline = raw.find("{\"type\":\"user\",\"content\"").unwrap() as u64;
+
+        assert_eq!(parse_gemini_turn_after(raw, baseline).as_deref(), Some("new-2"));
+    }
+
+    #[test]
     fn parses_latest_codex_task_complete() {
         let raw = r#"{"type":"event_msg","payload":{"type":"task_complete","last_agent_message":"first"}}
 {"type":"event_msg","payload":{"type":"task_complete","last_agent_message":"second"}}"#;
