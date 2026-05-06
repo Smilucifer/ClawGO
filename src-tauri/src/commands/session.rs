@@ -628,7 +628,7 @@ pub(crate) async fn start_session_impl(
             match cred_lookup {
                 Some((provider_id, cred)) => {
                     match crate::agent::provider_claude_config::write_provider_claude_config(
-                        provider_id, pid, cred,
+                        provider_id, pid, cred, &run_id,
                     ) {
                         Ok(materialized) => {
                             log::info!(
@@ -763,6 +763,7 @@ pub(crate) async fn start_session_impl(
         resolved.models.as_deref(),
         user_settings.windows_msvc_env_mode,
         resolved.extra_env.as_ref(),
+        provider_config.as_ref().map(|c| c.json_path.as_path()),
     )
     .await?;
 
@@ -1350,6 +1351,7 @@ pub(crate) async fn approve_session_tool_impl(
         resolved.models.as_deref(),
         user.windows_msvc_env_mode,
         resolved.extra_env.as_ref(),
+        None,
     )
     .await?;
 
@@ -1777,6 +1779,7 @@ async fn spawn_cli_process(
     models: Option<&[String]>,
     windows_msvc_env_mode: WindowsMsvcEnvMode,
     extra_env: Option<&std::collections::HashMap<String, String>>,
+    provider_config_path: Option<&std::path::Path>,
 ) -> Result<
     (
         tokio::process::Child,
@@ -1796,6 +1799,17 @@ async fn spawn_cli_process(
         "--permission-prompt-tool".into(),
         "stdio".into(),
     ];
+
+    // Point CLI at the provider-specific settings JSON so it uses the
+    // third-party API key / base URL / model instead of global ~/.claude/settings.json.
+    if let Some(config_path) = provider_config_path {
+        claude_args.push("--settings".into());
+        claude_args.push(config_path.to_string_lossy().into_owned());
+        log::info!(
+            "[session] --settings {}",
+            config_path.display()
+        );
+    }
 
     // Session mode args
     match session_mode {

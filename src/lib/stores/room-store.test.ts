@@ -364,7 +364,7 @@ describe("RoomStore", () => {
       "claude",
       "Review this",
       "D:/work",
-      "glm-4.7",
+      "glm-5",
       "zhipu",
       undefined,
       undefined,

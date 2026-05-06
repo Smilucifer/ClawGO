@@ -66,7 +66,7 @@ export const PHASE7_PROVIDERS: Phase7ProviderEntry[] = [
     mode: "claude_compatible_api",
     executionAgent: "claude",
     platformId: "zhipu",
-    defaultModel: "glm-4.7",
+    defaultModel: "glm-5",
     defaultBaseUrl: "https://open.bigmodel.cn/api/anthropic",
     requiredConfig: ["api_key", "base_url", "model"],
     defaultPermissionMode: "bypass",

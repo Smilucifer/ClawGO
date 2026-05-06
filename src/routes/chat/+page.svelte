@@ -246,7 +246,10 @@
     store.permissionModeSetByUser = false;
     store.permissionModePersistFailed = false;
     if (provider.mode === "claude_compatible_api") {
-      store.model = provider.defaultModel ?? "";
+      const cred = provider.platformId
+        ? findCredential(settings?.platform_credentials ?? [], provider.platformId)
+        : undefined;
+      store.model = cred?.models?.[0] ?? provider.defaultModel ?? "";
     } else if (agent !== "claude") {
       store.model = "";
     } else if (!store.model && settings?.default_model && store.platformId === "anthropic") {

@@ -51,6 +51,7 @@ export const PLATFORM_PRESETS: PlatformPreset[] = [
     description: "Zhipu AI — bigmodel.cn",
     key_placeholder: "your-zhipu-key",
     category: "provider",
+    models: ["glm-5", "glm-4.7", "glm-4.5-air", "glm-4.5-flash"],
     docs_url: "https://docs.bigmodel.cn/cn/guide/develop/claude/introduction",
   },
   {
@@ -61,6 +62,7 @@ export const PLATFORM_PRESETS: PlatformPreset[] = [
     description: "Zhipu AI — z.ai",
     key_placeholder: "your-zhipu-key",
     category: "provider",
+    models: ["glm-5", "glm-4.7", "glm-4.5-air", "glm-4.5-flash"],
     docs_url: "https://docs.z.ai/devpack/tool/claude",
   },
   {

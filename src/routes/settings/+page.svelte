@@ -16,7 +16,7 @@
   import Input from "$lib/components/Input.svelte";
   import KeybindingEditor from "$lib/components/KeybindingEditor.svelte";
   import { formatKeyDisplay } from "$lib/stores/keybindings.svelte";
-  import { findCredential } from "$lib/utils/platform-presets";
+  import { findCredential, PLATFORM_PRESETS } from "$lib/utils/platform-presets";
   import { PHASE7_PROVIDERS, type Phase7ProviderEntry } from "$lib/utils/provider-catalog";
   import type {
     PlatformCredential,
@@ -163,22 +163,21 @@
       };
     }
 
-    if (provider.id === "deepseek") {
-      return {
-        showApiKey: true,
-        showBaseUrl: false,
-        showModel: true,
-        modelOptions: ["deepseek-v4-pro", "deepseek-v4-flash"],
-        gridClass: "md:grid-cols-2",
-      };
-    }
+    // Look up model options from platform presets (not hardcoded per provider)
+    const preset = provider.platformId
+      ? PLATFORM_PRESETS.find((p) => p.id === provider.platformId)
+      : undefined;
+    const modelOptions: string[] | null =
+      preset?.models && preset.models.length > 0 ? preset.models : null;
+
+    const showBaseUrl = provider.id !== "deepseek";
 
     return {
       showApiKey: true,
-      showBaseUrl: true,
+      showBaseUrl,
       showModel: true,
-      modelOptions: null as string[] | null,
-      gridClass: "md:grid-cols-3",
+      modelOptions,
+      gridClass: showBaseUrl ? "md:grid-cols-3" : "md:grid-cols-2",
     };
   }
 

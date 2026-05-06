@@ -104,6 +104,7 @@ fn known_provider_defaults(pid: &str) -> Option<ProviderDefaults> {
         "zhipu" => Some(ProviderDefaults {
             base_url: Some("https://open.bigmodel.cn/api/anthropic"),
             models: Some(vec![
+                "glm-5".to_string(),
                 "glm-4.7".to_string(),
                 "glm-4.5-air".to_string(),
                 "glm-4.5-flash".to_string(),
@@ -115,6 +116,7 @@ fn known_provider_defaults(pid: &str) -> Option<ProviderDefaults> {
         "zhipu-intl" => Some(ProviderDefaults {
             base_url: Some("https://api.z.ai/api/anthropic"),
             models: Some(vec![
+                "glm-5".to_string(),
                 "glm-4.7".to_string(),
                 "glm-4.5-air".to_string(),
                 "glm-4.5-flash".to_string(),
