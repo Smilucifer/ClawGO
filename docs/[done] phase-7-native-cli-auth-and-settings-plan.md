@@ -1,7 +1,7 @@
 # Phase 7 Native CLI Auth and Settings Simplification Plan
 
 **Feature:** Phase 7 - Native CLI auth, simplified provider settings, and chat-entry parity
-**Status:** All 9 tasks complete (2026-05-06). Ready for Phase 7 verification pass.
+**Status:** COMPLETE (2026-05-06). All 9 tasks implemented, code reviewed, and verified.
 **Goal:** Align Claude, Codex, Gemini, DeepSeek, and GLM around the intended auth model while simplifying setup and making Codex/Gemini session entry feel like Claude.
 **Acceptance Criteria:**
 
