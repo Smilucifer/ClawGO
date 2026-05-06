@@ -241,6 +241,11 @@ async fn execute_actor_turn(
 ) -> RoomResponseRef {
     let event_seq_start = storage::events::next_seq(&participant.run_id);
     let mut adapter = adapter_for_run(run).with_command_sender(cmd_tx);
+    // Transition to Running so wait_turn_complete does not mistake a
+    // pre-existing Idle status (from a previous turn) for an immediate
+    // completion.  The session actor also calls persist_idle_running later,
+    // but that call is a no-op when the status is already Running.
+    let _ = storage::runs::update_status(&participant.run_id, RunStatus::Running, None, None);
     match adapter.stream_message(target_prompt).await {
         Ok(()) => match adapter.wait_turn_complete().await {
             Ok(outcome) => {
@@ -258,7 +263,16 @@ async fn execute_actor_turn(
             }
             Err(error) => failed_response(participant, event_seq_start, error.message),
         },
-        Err(error) => failed_response(participant, event_seq_start, error.message),
+        Err(error) => {
+            // Revert Running status if the message could not be delivered
+            let _ = storage::runs::update_status(
+                &participant.run_id,
+                RunStatus::Failed,
+                Some(1),
+                Some(error.message.clone()),
+            );
+            failed_response(participant, event_seq_start, error.message)
+        }
     }
 }
 
