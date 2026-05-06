@@ -1,7 +1,8 @@
 # Phase 7 Review Response
 
-**Date:** 2026-05-05  
+**Date:** 2026-05-05 (updated 2026-05-06)  
 **Sources:** `C:\Users\InBlu\review\claude.md`, `codex.md`, `gemini.md`, and `user.md`
+**Status:** Tasks 1-8 complete; balance helper + memo panel done; Task 9 (Roundtable layout) next.
 
 ## Owner Requirement
 
@@ -138,3 +139,21 @@ Validation:
 Known validation gap:
 
 - `npm run check` still fails on pre-existing repository-wide type errors unrelated to this balance helper work.
+
+## Memo Panel Replacement - 2026-05-06
+
+Accepted and implemented (Task 8):
+
+- **Global Memo pop-out panel:** created `src/lib/components/GlobalMemoPanel.svelte` as a slide-out panel from the right side, using global scope only with a single-line input, add button, and flat list of memo items (timestamp, text, copy, delete).
+- **Navigation removed:** `/memo` removed from the sidebar icon rail navItems.
+- **Top bar toggle:** added a memo toggle button (clipboard icon) to the non-chat page header, with active state highlighting.
+- **Command palette wired:** `ocv:open-memo` replaced with `ocv:toggle-memo` event, layout listens and toggles the panel.
+- **Room memo section removed:** the "会议室备忘录" textarea and save button removed from the Room page. `memo_preview` also removed from room list items.
+- **Old route compatibility:** `/memo` route now shows a brief redirect hint and navigates to `/chat` after 800ms.
+- **Backward compatibility preserved:** `updateRoomMemo` API and store method kept intact; backend room memo fields are not removed.
+
+Validation:
+- `npm run build`
+- `npm run i18n:check` (0 errors)
+- `npm test -- src/lib/stores/memo-store.test.ts` (9 tests pass)
+- `npm test -- src/lib/utils/memo-page.test.ts` (2 tests pass)

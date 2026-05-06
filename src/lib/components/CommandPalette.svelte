@@ -105,7 +105,7 @@
         else if (cmd.payload === "permissions") {
           window.dispatchEvent(new CustomEvent("ocv:open-permissions"));
         } else if (cmd.payload === "memo") {
-          window.dispatchEvent(new CustomEvent("ocv:open-memo"));
+          window.dispatchEvent(new CustomEvent("ocv:toggle-memo"));
         }
         break;
 

@@ -149,8 +149,8 @@ export const commands: CommandDef[] = [
     description: "Open global and project memos",
     category: "navigation",
     agent: "both",
-    action: "navigate",
-    payload: "/memo",
+    action: "open_modal",
+    payload: "memo",
   },
 
   // Navigation

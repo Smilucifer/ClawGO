@@ -1,7 +1,7 @@
 # Phase 7 Native CLI Auth and Settings Simplification Plan
 
 **Feature:** Phase 7 - Native CLI auth, simplified provider settings, and chat-entry parity
-**Status:** In progress on 2026-05-05.
+**Status:** Tasks 1-8 complete, Task 9 remaining (2026-05-06).
 **Goal:** Align Claude, Codex, Gemini, DeepSeek, and GLM around the intended auth model while simplifying setup and making Codex/Gemini session entry feel like Claude.
 **Acceptance Criteria:**
 
@@ -428,6 +428,18 @@ Deferred review suggestions:
 10. Keep `/memo` route compatibility by redirecting, rendering the pop-out shell, or showing a clear lightweight fallback instead of a broken route.
 11. Consider one-time import of old room memos into the global memo list, or expose a documented recovery path for old room memo data.
 12. Add tests for add/copy/delete UI behavior and for room pages no longer rendering room memo controls.
+
+**Task 8 Implementation Note - 2026-05-06**
+
+- Created `src/lib/components/GlobalMemoPanel.svelte`: a slide-out panel from the right side with backdrop overlay, global scope only, single-line input + add button, flat list with timestamp/text/copy/delete.
+- Removed `/memo` from `navItems` in `+layout.svelte`; removed the `ocv:open-memo` listener and `pageName` reference.
+- Added memo toggle button (clipboard icon) to the non-chat page header bar with active-state highlighting.
+- Wired `ocv:toggle-memo` custom event in both CommandPalette (dispatch) and layout (listen).
+- Removed the Room memo section ("会议室备忘录" textarea + save button), `memoDraft` state, `handleSaveMemo`, and `memo_preview` from room list items.
+- Simplified `/memo` route to a redirect page that shows `memo_redirectHint` and navigates to `/chat` after 800ms.
+- Kept `updateRoomMemo` API and `RoomStore.updateMemo` method unchanged for backward compatibility.
+- Added i18n keys: `memo_panelTitle`, `memo_panelPlaceholder`, `memo_redirectHint` (zh-CN + en).
+- Build, i18n check, and memo-related frontend tests all pass.
 
 ### Task 9: Improve Roundtable Answer Presentation
 

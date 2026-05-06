@@ -52,7 +52,6 @@
   let showCreateDialog = $state(false);
   let settings = $state<UserSettings | null>(null);
   let seatForms = $state<SeatForm[]>(defaultSeatForms());
-  let memoDraft = $state("");
   let roundtableMessage = $state("");
   let summaryParticipantId = $state("");
   let deletingRoomId = $state("");
@@ -118,7 +117,6 @@
 
   async function selectRoom(id: string) {
     await store.selectRoom(id);
-    memoDraft = store.room?.memo ?? "";
     roundtableMessage = "";
     deletingRoomId = "";
   }
@@ -166,11 +164,6 @@
     showCreateDialog = false;
     createName = "Roundtable";
     createDescription = "";
-    memoDraft = store.room?.memo ?? "";
-  }
-
-  async function handleSaveMemo() {
-    await store.updateMemo(memoDraft);
   }
 
   async function handleSendRoundtableMessage() {
@@ -423,9 +416,6 @@
             {#if room.description}
               <p class="truncate text-xs text-muted-foreground">{room.description}</p>
             {/if}
-            {#if room.memo_preview}
-              <p class="truncate text-xs text-muted-foreground/80">{room.memo_preview}</p>
-            {/if}
           </button>
         {/each}
       {/if}
@@ -650,23 +640,6 @@
             </div>
           </section>
         {/if}
-
-        <section class="mt-6">
-          <h3 class="mb-3 text-sm font-semibold">{t("room_memo")}</h3>
-          <div class="flex gap-2">
-            <textarea
-              class="min-h-20 flex-1 resize-y rounded-md border border-border bg-background px-3 py-2 text-sm"
-              bind:value={memoDraft}
-            ></textarea>
-            <button
-              class="w-24 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
-              disabled={store.saving}
-              onclick={handleSaveMemo}
-            >
-              {t("room_saveMemo")}
-            </button>
-          </div>
-        </section>
 
         <section class="mt-6">
           <h3 class="mb-3 text-sm font-semibold">{t("room_history")}</h3>

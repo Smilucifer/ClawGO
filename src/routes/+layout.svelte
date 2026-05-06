@@ -19,6 +19,7 @@
   import PermissionsModal from "$lib/components/PermissionsModal.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import CliSessionBrowser from "$lib/components/CliSessionBrowser.svelte";
+  import GlobalMemoPanel from "$lib/components/GlobalMemoPanel.svelte";
   import UpdateBanner from "$lib/components/UpdateBanner.svelte";
   import type {
     TaskRun,
@@ -82,6 +83,7 @@
   let showSetupWizard = $state(false);
   let showAbout = $state(false);
   let showCliBrowser = $state(false);
+  let showMemoPanel = $state(false);
   let permissionsModalOpen = $state(false);
 
   // Team store (shared via context with /teams page)
@@ -436,7 +438,6 @@
     { path: "/chat", label: () => t("nav_chat"), icon: "message" },
     { path: "/explorer", label: () => t("nav_explorer"), icon: "folder" },
     { path: "/plugins", label: () => t("nav_extend"), icon: "zap" },
-    { path: "/memo", label: () => t("memo_title"), icon: "memo" },
     { path: "/memory", label: () => t("nav_memory"), icon: "book" },
     { path: "/rooms", label: () => t("nav_rooms"), icon: "rooms" },
     { path: "/usage", label: () => t("nav_usage"), icon: "chart" },
@@ -785,10 +786,10 @@
     }
     window.addEventListener("ocv:open-permissions", onOpenPermissions);
 
-    function onOpenMemo() {
-      goto("/memo");
+    function onToggleMemo() {
+      showMemoPanel = !showMemoPanel;
     }
-    window.addEventListener("ocv:open-memo", onOpenMemo);
+    window.addEventListener("ocv:toggle-memo", onToggleMemo);
 
     // ── External link interceptor ──
     // Prevent webview from navigating away to external URLs.
@@ -872,7 +873,7 @@
       window.removeEventListener("ocv:memory-file-selected", onMemoryFileSelected);
       window.removeEventListener("ocv:memory-file-saved", onMemoryFileSaved);
       window.removeEventListener("ocv:open-permissions", onOpenPermissions);
-      window.removeEventListener("ocv:open-memo", onOpenMemo);
+      window.removeEventListener("ocv:toggle-memo", onToggleMemo);
       document.removeEventListener("click", handleExternalLink, true);
       window.removeEventListener("ocv:explorer-file-selected", onExplorerFileSelected);
     };
@@ -1132,7 +1133,6 @@
   // Breadcrumb for non-chat pages
   let pageName = $derived.by(() => {
     if (routeMatches(currentPath, "/memory")) return t("nav_memory");
-    if (routeMatches(currentPath, "/memo")) return t("memo_title");
     const nav = navItems.find((n) => navMatches(n.path));
     if (nav) return nav.label();
     if (currentPath.startsWith("/release-notes")) return t("release_cliChangelog");
@@ -2412,6 +2412,25 @@
           >
           <span class="font-medium">{pageName}</span>
         </div>
+
+        <button
+          class="ml-auto rounded-md p-1.5 hover:bg-accent transition-all duration-150"
+          onclick={() => (showMemoPanel = !showMemoPanel)}
+          title={t("memo_panelTitle")}
+        >
+          <svg
+            class="h-4 w-4 {showMemoPanel ? 'text-primary' : ''}"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            ><path d="M15.5 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z" /><path
+              d="M15 3v5h5"
+            /><path d="M8 13h8" /><path d="M8 17h5" /></svg
+          >
+        </button>
       </header>
     {/if}
 
@@ -2466,6 +2485,11 @@
     </button>
   </div>
 </Modal>
+
+<GlobalMemoPanel
+  bind:open={showMemoPanel}
+  onclose={() => (showMemoPanel = false)}
+/>
 
 <Modal bind:open={removeProjectConfirmOpen} title={t("sidebar_removeProjectConfirm")}>
   <p class="text-sm text-muted-foreground mb-4">{t("sidebar_removeProjectDesc")}</p>
