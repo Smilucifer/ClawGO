@@ -1557,6 +1557,8 @@
   "room_turnPrivate": "私聊",
   "room_turnReview": "审查",
   "room_turnResearch": "研究",
+  "room_turnSingleTarget": "指名回答",
+  "room_dmHelp": "使用 /dm @名称 消息 发送私有回合",
   "room_researchArtifact": "研究成果",
   "room_noMemoryCandidates": "暂无记忆候选",
   "room_memoryFact": "事实",

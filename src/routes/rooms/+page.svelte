@@ -17,6 +17,7 @@
     roomParticipantBadge,
     roomParticipantMetaLabel,
     roomMessagePlaceholderKey,
+    roomTurnModeLabel,
   } from "$lib/utils/room-ui";
 
   type SeatAgent = RoundtableSeatDraft["agent"];
@@ -639,7 +640,7 @@
                           {turn.user_input}
                         </span>
                         <span class="shrink-0 text-[10px] text-muted-foreground/60">
-                          {turn.mode}
+                          {roomTurnModeLabel(turn.mode)}
                         </span>
                         <div class="flex shrink-0 items-center gap-1">
                           {#each store.room.participants as p}

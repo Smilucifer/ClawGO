@@ -77,7 +77,7 @@ export interface RoomParticipant {
 
 export type RoomKind = "roundtable" | "driver" | "research";
 
-export type RoomTurnMode = "fanout" | "debate" | "summary" | "private" | "review" | "research";
+export type RoomTurnMode = "fanout" | "debate" | "summary" | "private" | "review" | "research" | "singletarget";
 
 export type AgentKind = "claude" | "codex" | "unknown";
 export type ResumeCapability = "session_id" | "latest" | "none";

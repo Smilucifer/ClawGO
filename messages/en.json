@@ -1557,6 +1557,8 @@
   "room_turnPrivate": "Private",
   "room_turnReview": "Review",
   "room_turnResearch": "Research",
+  "room_turnSingleTarget": "Single Target",
+  "room_dmHelp": "Use /dm @Name msg for private turns",
   "room_researchArtifact": "Research Artifact",
   "room_noMemoryCandidates": "No memory candidates yet",
   "room_memoryFact": "Fact",
