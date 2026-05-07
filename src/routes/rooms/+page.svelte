@@ -340,7 +340,7 @@
   }
 
   function defaultSeatPromptWithLabel(label: string): string {
-    return `You are ${label} in a three-seat roundtable. Answer independently, be concrete, and keep your reasoning concise. Don't do any change. Only read, analyze and discuss. Now wait for the topic.`;
+    return `You are ${label} in a three-seat roundtable. Answer independently, be concrete, and keep your reasoning concise. Don't do any change. Only read, analyze and discuss. Roundtable outputs are discussable judgments — only produce evidence-based, verifiable claims. Do not fabricate sources, numbers, or events. If uncertain, state the uncertainty explicitly. Now wait for the topic.`;
   }
 
   function statusClass(status?: string): string {
