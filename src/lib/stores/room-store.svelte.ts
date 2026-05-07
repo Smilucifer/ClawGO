@@ -240,20 +240,49 @@ export class RoomStore {
     const roomId = this.selectedRoomId;
     const trimmed = message.trim();
     if (!trimmed) return;
+    const pollSeq = ++this._loadSeq;
     this.saving = true;
     this.error = null;
+
+    const MAX_POLLS = 120; // 120 × 1500ms = 3 min max polling
+    let pollCount = 0;
+
+    const poll = (): Promise<void> =>
+      api.getRoom(roomId).then((current) => {
+        if (pollSeq !== this._loadSeq) return;
+        if (current && this.selectedRoomId === roomId) {
+          this.room = current;
+        }
+      });
+
     try {
-      const updated = await api.sendRoomMessage(roomId, trimmed);
-      if (this.selectedRoomId === roomId) {
-        this.room = updated;
+      const sendPromise = api.sendRoomMessage(roomId, trimmed);
+
+      // Poll for incremental updates while turn is in progress,
+      // so each participant's response appears as soon as it completes.
+      const pollTimer = setInterval(() => {
+        if (++pollCount > MAX_POLLS) return;
+        poll().catch(() => {
+          // ignore poll errors
+        });
+      }, 1500);
+
+      try {
+        const updated = await sendPromise;
+        if (pollSeq === this._loadSeq && this.selectedRoomId === roomId) {
+          this.room = updated;
+        }
+        await this.loadRooms();
+      } finally {
+        clearInterval(pollTimer);
       }
-      await this.loadRooms();
     } catch (e) {
+      if (pollSeq !== this._loadSeq) return;
       this.error = errorMessage(e);
       dbgWarn("rooms", "sendMessage error", e);
       throw e;
     } finally {
-      this.saving = false;
+      if (pollSeq === this._loadSeq) this.saving = false;
     }
   }
 
@@ -277,6 +306,9 @@ export class RoomStore {
       if (this.selectedRoomId === id) {
         this.selectedRoomId = "";
         this.room = null;
+      }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("ocv:runs-changed"));
       }
     } catch (e) {
       this.error = errorMessage(e);

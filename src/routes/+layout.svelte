@@ -11,6 +11,7 @@
     searchPrompts,
     listMemoryFiles,
     softDeleteRuns,
+    stopSession,
   } from "$lib/api";
   import ProjectFolderItem from "$lib/components/ProjectFolderItem.svelte";
   import CommandPalette from "$lib/components/CommandPalette.svelte";
@@ -964,6 +965,24 @@
   function cancelDeleteConversation() {
     deleteConfirmOpen = false;
     deleteTarget = null;
+  }
+
+  async function forceRemoveConversation(conv: ConversationGroup) {
+    const ids = conv.runs.map((r) => r.id);
+    const activeIds = conv.runs
+      .filter((r) => r.status !== "completed" && r.status !== "failed" && r.status !== "stopped")
+      .map((r) => r.id);
+    try {
+      await Promise.allSettled(activeIds.map((id) => stopSession(id)));
+      await softDeleteRuns(ids);
+      dbg("layout", "forceRemoveConversation success", { ids, stopped: activeIds });
+      window.dispatchEvent(new Event("ocv:runs-changed"));
+      if (conv.runs.some((r) => r.id === selectedRunId)) {
+        goto("/chat");
+      }
+    } catch (e) {
+      dbgWarn("layout", "forceRemoveConversation failed", e);
+    }
   }
 
   // ── Remove project folder confirm flow ──
@@ -2286,6 +2305,7 @@
                     onSelectConversation={(runId) => goto(`/chat?run=${runId}`)}
                     onResume={(runId, mode) => goto(`/chat?run=${runId}&resume=${mode}`)}
                     onDelete={requestDeleteConversation}
+                    onForceRemove={forceRemoveConversation}
                     onTogglePin={togglePinnedConversation}
                     {pinnedConversationKeys}
                     {seenMessageCounts}

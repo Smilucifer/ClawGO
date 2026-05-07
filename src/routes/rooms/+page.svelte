@@ -225,9 +225,15 @@
   }
 
   function updateSeat<K extends keyof SeatForm>(index: number, key: K, value: SeatForm[K]) {
-    seatForms = seatForms.map((seat, seatIndex) =>
-      seatIndex === index ? { ...seat, [key]: value } : seat,
-    );
+    seatForms = seatForms.map((seat, seatIndex) => {
+      if (seatIndex !== index) return seat;
+      const next = { ...seat, [key]: value };
+      // When label changes and prompt still looks auto-generated, sync it
+      if (key === "label" && seat.prompt.trimStart().startsWith("You are ")) {
+        next.prompt = defaultSeatPromptWithLabel(String(value));
+      }
+      return next;
+    });
   }
 
   function defaultSeatForms(): SeatForm[] {
@@ -330,7 +336,11 @@
   }
 
   function defaultSeatPrompt(index: number, agent: SeatAgent): string {
-    return `You are ${defaultSeatLabel(index, agent)} in a three-seat roundtable. Answer independently, be concrete, and keep your reasoning concise.`;
+    return defaultSeatPromptWithLabel(defaultSeatLabel(index, agent));
+  }
+
+  function defaultSeatPromptWithLabel(label: string): string {
+    return `You are ${label} in a three-seat roundtable. Answer independently, be concrete, and keep your reasoning concise. Don't do any change. Only read, analyze and discuss. Now wait for the topic.`;
   }
 
   function statusClass(status?: string): string {
@@ -346,6 +356,22 @@
     if (status === "waiting") return "bg-muted text-muted-foreground";
     if (status === "stopped") return "bg-muted text-muted-foreground";
     return "bg-muted text-muted-foreground";
+  }
+
+  const STATUS_LABEL_KEY: Record<string, string> = {
+    pending: "room_statusLabelStarting",
+    running: "room_statusLabelRunning",
+    idle: "room_statusLabelIdle",
+    completed: "room_statusLabelCompleted",
+    complete: "room_statusLabelCompleted",
+    failed: "room_statusLabelFailed",
+    stopped: "room_statusLabelStopped",
+    waiting: "room_statusLabelWaiting",
+  };
+
+  function participantStatusLabel(status: string): string {
+    const key = STATUS_LABEL_KEY[status];
+    return key ? t(key) : status;
   }
 
   function roomKindLabel(kind: string): string {
@@ -531,7 +557,7 @@
                       <span class="text-[10px] text-muted-foreground/70 tabular-nums">{runElapsed}</span>
                     {/if}
                     <span class={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${statusClass(status)}`}>
-                      {status}
+                      {participantStatusLabel(status)}
                     </span>
                   </div>
                 </div>
@@ -634,7 +660,7 @@
                                 {participantLabelMap[response.participant_id] ?? response.participant_id}:
                               </span>
                               <span class={`shrink-0 rounded px-1 py-px text-[10px] ${statusClass(response.status)}`}>
-                                {response.status}
+                                {participantStatusLabel(response.status)}
                               </span>
                               {#if response.preview}
                                 <span class="min-w-0 flex-1 truncate text-muted-foreground/70">

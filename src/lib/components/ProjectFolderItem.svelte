@@ -30,6 +30,7 @@
     onSelectConversation: (runId: string) => void;
     onResume: (runId: string, mode: "resume") => void;
     onDelete?: (conversation: ConversationGroup) => void;
+    onForceRemove?: (conversation: ConversationGroup) => void;
     onNewChat?: () => void;
   };
 
@@ -39,6 +40,7 @@
     onSelectConversation?: never;
     onResume?: never;
     onDelete?: never;
+    onForceRemove?: never;
     onNewChat?: never;
   };
 
@@ -54,6 +56,7 @@
     onSelectConversation,
     onResume,
     onDelete,
+    onForceRemove,
     onNewChat,
     pinnedConversationKeys = new Set<string>(),
     seenMessageCounts = {},
@@ -248,6 +251,7 @@
             onclick={() => onSelectConversation?.(conv.latestRun.id)}
             onresume={onResume}
             ondelete={onDelete}
+            onForceRemove={onForceRemove}
             {onTogglePin}
             pinned={pinnedConversationKeys.has(conv.groupKey)}
             unreadCount={conversationUnreadCount(conv, seenMessageCounts)}

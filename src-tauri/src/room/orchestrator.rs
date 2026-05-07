@@ -144,8 +144,18 @@ pub async fn run_roundtable_turn_with_runtime(
     }
 
     let started_at = now_iso();
-    let mut response_tasks = Vec::with_capacity(targets.len());
+    let idx = if is_private {
+        storage::rooms::list_private_turns(room_id)?.len() as u64 + 1
+    } else {
+        public_turns.len() as u64 + 1
+    };
+    let turn_id = uuid::Uuid::new_v4().to_string();
+    let participant_ids: Vec<String> = targets
+        .iter()
+        .map(|target| target.participant.id.clone())
+        .collect();
 
+    let mut join_set = tokio::task::JoinSet::new();
     for target in &targets {
         let target = target.clone();
         let participant = target.participant.clone();
@@ -158,36 +168,47 @@ pub async fn run_roundtable_turn_with_runtime(
         };
         let pipe_runtime = pipe_runtime.clone();
 
-        response_tasks.push(tokio::spawn(async move {
+        join_set.spawn(async move {
             let run_lock = run_orchestration_lock(&participant.run_id);
             let _run_guard = run_lock.lock().await;
             execute_roundtable_target(target, &participant, &run, &target_prompt, pipe_runtime)
                 .await
-        }));
+        });
     }
 
-    let mut responses = Vec::with_capacity(response_tasks.len());
-    for task in response_tasks {
-        responses.push(
-            task.await
-                .map_err(|e| format!("Room participant task failed: {e}"))?,
-        );
+    let mut responses: Vec<RoomResponseRef> = Vec::with_capacity(targets.len());
+    while let Some(result) = join_set.join_next().await {
+        let response = result.map_err(|e| format!("Room participant task failed: {e}"))?;
+        responses.push(response);
+
+        // Save incremental turn so frontend sees responses as they arrive.
+        // This appends one JSONL line per completed participant (same turn_id).
+        // Trade-off: N participant turns = N+1 lines (N snapshots + 1 final).
+        // The dedup in list_turns_jsonl keeps the latest per turn_id, so
+        // the read path is correct at the cost of file size growth over time.
+        let incremental_turn = RoomTurn {
+            id: turn_id.clone(),
+            idx,
+            mode: mode.clone(),
+            user_input: user_input.clone(),
+            target_participant_ids: participant_ids.clone(),
+            responses: responses.clone(),
+            started_at: started_at.clone(),
+            completed_at: None, // not yet finished
+        };
+        if is_private {
+            storage::rooms::append_private_turn(room_id, &incremental_turn)?;
+        } else {
+            storage::rooms::append_public_turn(room_id, &incremental_turn)?;
+        }
     }
 
-    let idx = if is_private {
-        storage::rooms::list_private_turns(room_id)?.len() as u64 + 1
-    } else {
-        public_turns.len() as u64 + 1
-    };
     let turn = RoomTurn {
-        id: uuid::Uuid::new_v4().to_string(),
+        id: turn_id,
         idx,
         mode,
         user_input,
-        target_participant_ids: targets
-            .iter()
-            .map(|target| target.participant.id.clone())
-            .collect(),
+        target_participant_ids: participant_ids,
         responses,
         started_at,
         completed_at: Some(now_iso()),

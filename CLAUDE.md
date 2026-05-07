@@ -11,7 +11,7 @@ The core product model is:
 - `Room` is an orchestration layer built on top of one or more runs.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 7 complete (2026-05-06). Post-phase additions (2026-05-07): provider config fully dynamized (reads from settings page instead of hardcoded models/URLs), per-session temp JSON (`--settings session-{run_id}.json`), MiMo Pro provider added, and MiMo balance/usage checker (cookie-based auth to platform.xiaomimimo.com, dual API: `/api/v1/balance` + `/api/v1/tokenPlan/usage`, amber-themed card on usage page). All tasks implemented, code reviewed, and verified. 3 svelte-check errors (CodeEditor false positive), 22 a11y warnings, frontend tests passing. Installers built at `src-tauri/target/release/bundle/`.
+**Current phase:** Phase 7 complete (2026-05-06). Post-phase additions (2026-05-07): provider config fully dynamized (reads from settings page instead of hardcoded models/URLs), per-session temp JSON (`--settings session-{run_id}.json`), MiMo Pro provider added, and MiMo balance/usage checker (cookie-based auth to platform.xiaomimimo.com, dual API: `/api/v1/balance` + `/api/v1/tokenPlan/usage`, amber-themed card on usage page). Room optimizations (2026-05-07): delete active room now stops participant sessions and soft-deletes runs, roundtable turns stream incrementally via JSONL dedup + 1500ms frontend polling, right-click "Remove Session" context menu with force-stop, participant status labels localized (pending→Starting..., running→Thinking..., etc.), seat label change auto-syncs prompt. 3 svelte-check errors (CodeEditor false positive), 22 a11y warnings, 1217 frontend tests passing, cargo check clean. Installers built at `src-tauri/target/release/bundle/`.
 
 ## Standard workflow
 
@@ -304,6 +304,7 @@ Key phases and their status:
 | 6 | Driver MCP | [done] |
 | 7 | Native CLI auth, provider settings, roundtable layout | [done] |
 | 7.x | Provider config dynamization, per-session JSON, MiMo Pro | [done] |
+| 7.y | Room optimizations: delete cleanup, incremental turns, status labels, context menu | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

@@ -19,6 +19,7 @@
     onclick,
     onresume,
     ondelete,
+    onForceRemove,
     onTogglePin,
     pinned = false,
     unreadCount = 0,
@@ -29,6 +30,7 @@
     onclick?: () => void;
     onresume?: (runId: string, mode: "resume") => void;
     ondelete?: (conversation: ConversationGroup) => void;
+    onForceRemove?: (conversation: ConversationGroup) => void;
     onTogglePin?: (groupKey: string) => void;
     pinned?: boolean;
     unreadCount?: number;
@@ -55,6 +57,20 @@
   let contextMenuOpen = $state(false);
   let contextMenuX = $state(0);
   let contextMenuY = $state(0);
+  let closeMenuTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function scheduleMenuClose() {
+    closeMenuTimer = setTimeout(() => {
+      contextMenuOpen = false;
+    }, 150);
+  }
+
+  function cancelMenuClose() {
+    if (closeMenuTimer) {
+      clearTimeout(closeMenuTimer);
+      closeMenuTimer = undefined;
+    }
+  }
 
   function startRename() {
     editValue = conversation.title;
@@ -102,7 +118,7 @@
   }
 
   function openContextMenu(e: MouseEvent) {
-    if (!onTogglePin) return;
+    if (!onTogglePin && !onForceRemove) return;
     e.preventDefault();
     e.stopPropagation();
     contextMenuX = e.clientX;
@@ -111,8 +127,15 @@
   }
 
   function togglePinFromMenu() {
+    cancelMenuClose();
     contextMenuOpen = false;
     onTogglePin?.(conversation.groupKey);
+  }
+
+  function removeFromMenu() {
+    cancelMenuClose();
+    contextMenuOpen = false;
+    onForceRemove?.(conversation);
   }
 </script>
 
@@ -290,13 +313,33 @@
 </div>
 
 {#if contextMenuOpen}
-  <button
-    type="button"
-    class="fixed z-50 min-w-36 rounded-md border border-border bg-popover px-3 py-2 text-left text-xs text-popover-foreground shadow-lg hover:bg-accent"
+  <div
+    class="fixed z-50 min-w-36 rounded-md border border-border bg-popover py-1 shadow-lg"
     style="left: {contextMenuX}px; top: {contextMenuY}px;"
-    onclick={togglePinFromMenu}
-    onmouseleave={() => (contextMenuOpen = false)}
+    role="menu"
+    tabindex="-1"
+    onpointerleave={scheduleMenuClose}
+    onpointerenter={cancelMenuClose}
   >
-    {pinned ? t("sidebar_unpinConversation") : t("sidebar_pinConversation")}
-  </button>
+    {#if onTogglePin}
+      <button
+        type="button"
+        class="w-full px-3 py-1.5 text-left text-xs text-popover-foreground hover:bg-accent"
+        role="menuitem"
+        onclick={togglePinFromMenu}
+      >
+        {pinned ? t("sidebar_unpinConversation") : t("sidebar_pinConversation")}
+      </button>
+    {/if}
+    {#if onForceRemove}
+      <button
+        type="button"
+        class="w-full px-3 py-1.5 text-left text-xs text-destructive hover:bg-accent"
+        role="menuitem"
+        onclick={removeFromMenu}
+      >
+        {t("sidebar_removeConversation")}
+      </button>
+    {/if}
+  </div>
 {/if}

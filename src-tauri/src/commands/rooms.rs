@@ -409,7 +409,32 @@ pub async fn send_room_message(
 }
 
 #[tauri::command]
-pub fn delete_room(id: String) -> Result<(), String> {
+pub async fn delete_room(
+    emitter: State<'_, Arc<BroadcastEmitter>>,
+    sessions: State<'_, ActorSessionMap>,
+    spawn_locks: State<'_, SpawnLocks>,
+    id: String,
+) -> Result<(), String> {
+    let room = storage::rooms::get_room(&id)
+        .ok_or_else(|| format!("Room {} not found", id))?;
+
+    let run_ids: Vec<String> = room.participants.iter().map(|p| p.run_id.clone()).collect();
+    for run_id in &run_ids {
+        // Stop the session if it's running; ignore errors (session may not exist)
+        let _ = crate::commands::session::stop_session_impl(
+            emitter.inner(),
+            sessions.inner(),
+            spawn_locks.inner(),
+            run_id.clone(),
+        )
+        .await;
+    }
+
+    // Batch soft-delete so runs disappear from sidebar
+    if let Err(e) = storage::runs::soft_delete_runs(&run_ids) {
+        log::warn!("[rooms] delete_room: soft_delete_runs failed (runs may still appear in sidebar): {e}");
+    }
+
     storage::rooms::delete_room(&id)
 }
 
