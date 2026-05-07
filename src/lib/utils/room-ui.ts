@@ -45,30 +45,17 @@ export function roomParticipantMetaLabel(
   return cleanModel ? `${providerLabel} · ${cleanModel}` : providerLabel;
 }
 
-const TURN_MODE_LABELS: Record<RoomTurnMode, string> = {
-  fanout: "Fanout",
-  debate: "Debate",
-  summary: "Summary",
-  private: "Private",
-  review: "Review",
-  research: "Research",
-  singletarget: "Single Target",
+const TURN_MODE_LABEL_KEYS: Record<RoomTurnMode, string> = {
+  fanout: "room_turnFanout",
+  debate: "room_turnDebate",
+  summary: "room_turnSummary",
+  private: "room_turnPrivate",
+  review: "room_turnReview",
+  research: "room_turnResearch",
+  singletarget: "room_turnSingleTarget",
 };
 
-export function roomTurnModeLabel(mode: RoomTurnMode): string {
-  return TURN_MODE_LABELS[mode] ?? mode;
-}
-
-const TURN_MODE_COLORS: Record<RoomTurnMode, string> = {
-  fanout: "bg-blue-100 text-blue-700",
-  debate: "bg-orange-100 text-orange-700",
-  summary: "bg-purple-100 text-purple-700",
-  private: "bg-gray-100 text-gray-500",
-  review: "bg-green-100 text-green-700",
-  research: "bg-cyan-100 text-cyan-700",
-  singletarget: "bg-pink-100 text-pink-700",
-};
-
-export function roomTurnModeColor(mode: RoomTurnMode): string {
-  return TURN_MODE_COLORS[mode] ?? "bg-gray-100 text-gray-500";
+/** Returns the i18n key for a turn mode label. Caller should pass to `t()`. */
+export function roomTurnModeKey(mode: RoomTurnMode): string {
+  return TURN_MODE_LABEL_KEYS[mode] ?? mode;
 }

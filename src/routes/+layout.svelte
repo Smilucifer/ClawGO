@@ -2341,10 +2341,10 @@
                     onTogglePin={togglePinnedConversation}
                     {pinnedConversationKeys}
                     {seenMessageCounts}
-                    onRemove={folder.isUncategorized
+                    onRemove={folder.isUncategorized || folder.cwd === "__rooms__"
                       ? undefined
                       : () => requestRemoveProject(folder.cwd)}
-                    onNewChat={folder.isUncategorized
+                    onNewChat={folder.isUncategorized || folder.cwd === "__rooms__"
                       ? undefined
                       : () => newChatInFolder(folder.cwd)}
                   />

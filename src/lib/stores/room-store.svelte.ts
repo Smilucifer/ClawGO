@@ -58,6 +58,7 @@ export class RoomStore {
 
   async selectRoom(id: string): Promise<void> {
     this.selectedRoomId = id;
+    this.activeSnapshot = null;
     if (!id) {
       this.room = null;
       return;
@@ -241,6 +242,7 @@ export class RoomStore {
     const roomId = this.selectedRoomId;
     const trimmed = message.trim();
     if (!trimmed) return;
+    this.activeSnapshot = null;
     const pollSeq = ++this._loadSeq;
     this.saving = true;
     this.error = null;
@@ -305,6 +307,7 @@ export class RoomStore {
       await api.deleteRoom(id);
       this.rooms = this.rooms.filter((room) => room.id !== id);
       if (this.selectedRoomId === id) {
+        this.activeSnapshot = null;
         this.selectedRoomId = "";
         this.room = null;
       }

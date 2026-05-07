@@ -242,7 +242,7 @@
       {#if children}
         {@render children()}
       {:else}
-        {#if onNewChat}
+        {#if onNewChat && !isRoomsFolder}
           <button
             class="flex w-full items-center gap-1.5 px-3 py-1 text-xs text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50 rounded-md transition-colors"
             onclick={(e) => {

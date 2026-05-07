@@ -502,7 +502,11 @@
             {@const latest = latestResponse(participant?.participant.id)}
             {@const status = latest?.response.status ?? participant?.run?.status ?? "waiting"}
             {@const runElapsed = elapsedTime(participant?.run?.started_at)}
-            <article class="flex min-h-0 flex-col rounded-md border border-border bg-card overflow-hidden">
+            {@const snapshot = store.activeSnapshot?.participant_contents.find(
+              (c) => c.participant_id === participant?.participant.id,
+            )}
+            {@const isSnapshot = !!store.activeSnapshot}
+            <article class="flex min-h-0 flex-col rounded-md border {isSnapshot ? 'border-purple-300 dark:border-purple-700' : 'border-border'} bg-card overflow-hidden">
               <header class="shrink-0 border-b border-border px-4 py-2.5">
                 <div class="flex items-start justify-between gap-2">
                   <div class="min-w-0 flex-1">
@@ -527,18 +531,29 @@
                     </div>
                   </div>
                   <div class="flex shrink-0 items-center gap-1.5">
-                    {#if runElapsed}
+                    {#if !isSnapshot && runElapsed}
                       <span class="text-[10px] text-muted-foreground/70 tabular-nums">{runElapsed}</span>
                     {/if}
-                    <span class={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${statusClass(status)}`}>
-                      {participantStatusLabel(status)}
+                    <span class={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${statusClass(snapshot?.status ?? status)}`}>
+                      {participantStatusLabel(snapshot?.status ?? status)}
                     </span>
                   </div>
                 </div>
               </header>
 
               <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-                {#if latest?.response.preview}
+                {#if snapshot}
+                  <p class="whitespace-pre-wrap break-words text-sm leading-6">
+                    {snapshot.content || t("room_noResponseYet")}
+                  </p>
+                  {#if snapshot.status === "failed" && snapshot.error}
+                    <p class="mt-2 text-sm text-destructive">{snapshot.error}</p>
+                  {/if}
+                {:else if isSnapshot}
+                  <div class="flex h-full items-center justify-center rounded-md border border-dashed border-purple-300 dark:border-purple-700 px-4 text-center text-sm text-muted-foreground">
+                    {t("room_noResponseYet")}
+                  </div>
+                {:else if latest?.response.preview}
                   <p class="whitespace-pre-wrap break-words text-sm leading-6">
                     {latest.response.preview}
                   </p>

@@ -126,9 +126,7 @@ pub async fn run_roundtable_turn_with_runtime(
             target,
             message: private_message,
         } => {
-            let participant = find_participant(&room.participants, &target)
-                .ok_or_else(|| format!("Room participant @{target} not found"))?
-                .clone();
+            let participant = find_participant_unique(&room.participants, &target)?.clone();
             let target = active_target_for_participant(participant, sessions).await?;
             (
                 RoomTurnMode::Private,
