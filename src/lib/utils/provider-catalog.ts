@@ -1,9 +1,8 @@
 export type ProviderMode = "official_cli" | "claude_compatible_api";
-export type ExecutionAgent = "claude" | "codex" | "gemini";
+export type ExecutionAgent = "claude" | "codex";
 export type Phase7ProviderId =
   | "claude"
   | "codex"
-  | "gemini"
   | "deepseek"
   | "glm"
   | "qwen"
@@ -40,15 +39,6 @@ export const PHASE7_PROVIDERS: Phase7ProviderEntry[] = [
     defaultModel: "gpt-5.5",
     requiredConfig: [],
     defaultPermissionMode: "dangerously_bypass",
-  },
-  {
-    id: "gemini",
-    label: "Gemini",
-    mode: "official_cli",
-    executionAgent: "gemini",
-    defaultModel: "gemini-2.5-flash",
-    requiredConfig: [],
-    defaultPermissionMode: "yolo",
   },
   {
     id: "deepseek",
@@ -117,6 +107,6 @@ export function providerIdForRun(agent: string, platformId?: string | null): Pha
   if (platformId === "bailian") return "qwen";
   if (platformId === "kimi") return "kimi";
   if (platformId === "mimo-pro") return "mimo-pro";
-  if (agent === "codex" || agent === "gemini") return agent;
+  if (agent === "codex") return "codex";
   return "claude";
 }

@@ -31,7 +31,7 @@ export function capabilitiesForAgent(agent: string): AgentCapabilities {
   return {
     kind,
     stream_session: false,
-    pipe_exec: kind === "gemini",
+    pipe_exec: false,
     interactive_pty: false,
     resume: "none",
     prompt_injection: null,
@@ -60,7 +60,7 @@ export function canUseRoomParticipantRun(run: {
 
 function normalizeAgentKind(agent: string): AgentKind {
   const normalized = agent.trim().toLowerCase();
-  if (normalized === "claude" || normalized === "codex" || normalized === "gemini") {
+  if (normalized === "claude" || normalized === "codex") {
     return normalized;
   }
   return "unknown";

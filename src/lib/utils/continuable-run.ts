@@ -13,9 +13,6 @@ export function findLastContinuableRun(runs: TaskRun[], providerId: string): Tas
       if (normalizedProvider === "codex") {
         return run.conversation_ref?.kind === "codex_thread";
       }
-      if (normalizedProvider === "gemini") {
-        return run.agent === "gemini";
-      }
       return run.agent === "claude" && !!run.session_id;
     }) ?? null
   );

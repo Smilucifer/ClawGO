@@ -4,7 +4,7 @@ import { dbg, dbgWarn, redactSensitive } from "./utils/debug";
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   return getTransport().invoke<T>(cmd, args);
 }
-export type ManagedCliApp = "claude" | "codex" | "gemini";
+export type ManagedCliApp = "claude" | "codex";
 import type {
   TaskRun,
   RunEvent,
@@ -189,7 +189,7 @@ export async function createRoomClaudeParticipant(
 
 export async function createRoomParticipant(
   roomId: string,
-  agent: "claude" | "codex" | "gemini",
+  agent: "claude" | "codex",
   prompt: string,
   cwd: string,
   model?: string,

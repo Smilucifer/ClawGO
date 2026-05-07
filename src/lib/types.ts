@@ -2,7 +2,7 @@ export interface MemoryFileCandidate {
   path: string;
   label: string;
   scope: "project" | "global" | "memory";
-  provider?: "claude" | "codex" | "gemini";
+  provider?: "claude" | "codex";
   exists: boolean;
 }
 
@@ -79,7 +79,7 @@ export type RoomKind = "roundtable" | "driver" | "research";
 
 export type RoomTurnMode = "fanout" | "debate" | "summary" | "private" | "review" | "research";
 
-export type AgentKind = "claude" | "codex" | "gemini" | "unknown";
+export type AgentKind = "claude" | "codex" | "unknown";
 export type ResumeCapability = "session_id" | "latest" | "none";
 export type PromptInjection = "system_prompt" | "append_file" | "instruction_file" | "env";
 
@@ -419,7 +419,7 @@ export interface AgentSettings {
 export interface ConnectionProfile {
   id: string;
   label: string;
-  agent: "claude" | "codex" | "gemini";
+  agent: "claude" | "codex";
   auth_mode: string;
   platform_id?: string;
   command_path?: string;
@@ -1568,7 +1568,7 @@ export interface PlatformCredential {
 export interface CcAgentProfile {
   id: string;
   label: string;
-  agent?: "claude" | "codex" | "gemini";
+  agent?: "claude" | "codex";
   platform_id?: string;
   model?: string;
   prompt?: string;

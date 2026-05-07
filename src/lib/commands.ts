@@ -1,5 +1,5 @@
 export type CommandCategory = "chat" | "tools" | "navigation" | "settings" | "diagnostics";
-export type CommandAgent = "claude" | "codex" | "gemini" | "both";
+export type CommandAgent = "claude" | "codex" | "both";
 export type CommandAction =
   | "send_prompt"
   | "navigate"
@@ -94,15 +94,6 @@ export const commands: CommandDef[] = [
     agent: "both",
     action: "navigate",
     payload: "/chat?agent=codex",
-  },
-  {
-    id: "new-gemini",
-    name: "New Gemini Chat",
-    description: "Start a new Gemini conversation",
-    category: "chat",
-    agent: "both",
-    action: "navigate",
-    payload: "/chat?agent=gemini",
   },
   {
     id: "stop-run",

@@ -34,7 +34,6 @@ const MINIMAL_FEATURES: AgentFeatures = {
 const FEATURES_MAP: Record<string, AgentFeatures> = {
   claude: CLAUDE_FEATURES,
   codex: CODEX_FEATURES,
-  gemini: CODEX_FEATURES,
 };
 
 /** Get UI feature flags for a given agent. Unknown agents get minimal features. */

@@ -1,4 +1,4 @@
-const NATIVE_AGENTS = new Set(["codex", "gemini"]);
+const NATIVE_AGENTS = new Set(["codex"]);
 const NATIVE_NO_REVIEW_MODES = new Set(["bypassPermissions", "dontAsk", "yolo", "auto_all"]);
 const NATIVE_VISIBLE_MODES = new Set(["bypassPermissions"]);
 
