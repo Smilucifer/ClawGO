@@ -7,7 +7,8 @@ export type Phase7ProviderId =
   | "glm"
   | "qwen"
   | "kimi"
-  | "mimo-pro";
+  | "mimo-pro"
+  | "packy-cx2cc";
 
 export interface Phase7ProviderEntry {
   id: Phase7ProviderId;
@@ -95,6 +96,16 @@ export const PHASE7_PROVIDERS: Phase7ProviderEntry[] = [
     requiredConfig: ["api_key"],
     defaultPermissionMode: "bypass",
   },
+  {
+    id: "packy-cx2cc",
+    label: "Packy CX2CC",
+    mode: "claude_compatible_api",
+    executionAgent: "claude",
+    platformId: "packy-cx2cc",
+    defaultBaseUrl: "https://www.packyapi.com",
+    requiredConfig: ["api_key", "base_url", "model"],
+    defaultPermissionMode: "bypass",
+  },
 ];
 
 export function getPhase7Provider(id: string): Phase7ProviderEntry {
@@ -107,6 +118,7 @@ export function providerIdForRun(agent: string, platformId?: string | null): Pha
   if (platformId === "bailian") return "qwen";
   if (platformId === "kimi") return "kimi";
   if (platformId === "mimo-pro") return "mimo-pro";
+  if (platformId === "packy-cx2cc") return "packy-cx2cc";
   if (agent === "codex") return "codex";
   return "claude";
 }

@@ -178,6 +178,13 @@ fn known_provider_defaults(pid: &str) -> Option<ProviderDefaults> {
             key_optional: false,
             auth_env_var: None,
         }),
+        "packy-cx2cc" => Some(ProviderDefaults {
+            base_url: Some("https://www.packyapi.com"),
+            models: None,
+            extra_env: None,
+            key_optional: false,
+            auth_env_var: None,
+        }),
         "openrouter" => Some(ProviderDefaults {
             base_url: Some("https://openrouter.ai/api"),
             models: None,
@@ -253,6 +260,7 @@ fn migrate_platform_credentials(settings: &mut AllSettings) -> bool {
         ("bailian", "ANTHROPIC_AUTH_TOKEN"),
         ("kimi-coding", "ANTHROPIC_AUTH_TOKEN"),
         ("kimi", "ANTHROPIC_AUTH_TOKEN"),
+        ("packy-cx2cc", "ANTHROPIC_AUTH_TOKEN"),
         ("aihubmix", "ANTHROPIC_AUTH_TOKEN"),
     ];
     let mut changed = false;

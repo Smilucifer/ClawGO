@@ -77,6 +77,15 @@ export const PLATFORM_PRESETS: PlatformPreset[] = [
     category: "provider",
     models: ["mimo-v2.5-pro"],
   },
+  {
+    id: "packy-cx2cc",
+    name: "Packy CX2CC",
+    base_url: "https://www.packyapi.com",
+    auth_env_var: "ANTHROPIC_AUTH_TOKEN",
+    description: "Packy CX2CC",
+    key_placeholder: "your-packy-cx2cc-key",
+    category: "provider",
+  },
 
   // ── API Proxy ──
   {

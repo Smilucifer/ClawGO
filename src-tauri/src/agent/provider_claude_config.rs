@@ -25,6 +25,7 @@ pub fn platform_to_provider_id(platform_id: &str) -> Option<&'static str> {
         "bailian" => Some("qwen"),
         "kimi" => Some("kimi"),
         "mimo-pro" => Some("mimo-pro"),
+        "packy-cx2cc" => Some("packy-cx2cc"),
         _ => None,
     }
 }
@@ -77,7 +78,7 @@ pub(crate) fn provider_env_from_credential(
 ) -> Result<HashMap<String, String>, String> {
     match platform_id {
         "deepseek" => build_deepseek_env(cred),
-        "zhipu" | "zhipu-intl" | "bailian" | "kimi" | "mimo-pro" => build_parameterized_env(platform_id, cred),
+        "zhipu" | "zhipu-intl" | "bailian" | "kimi" | "mimo-pro" | "packy-cx2cc" => build_parameterized_env(platform_id, cred),
         _ => Err(format!("unsupported provider-backed Claude platform: {platform_id}")),
     }
 }
@@ -117,6 +118,7 @@ fn default_base_url(platform_id: &str) -> Option<&'static str> {
         "bailian" => Some("https://coding.dashscope.aliyuncs.com/apps/anthropic"),
         "kimi" => Some("https://api.moonshot.cn/anthropic"),
         "mimo-pro" => Some("https://token-plan-cn.xiaomimimo.com/anthropic"),
+        "packy-cx2cc" => Some("https://www.packyapi.com"),
         _ => None,
     }
 }
@@ -322,6 +324,7 @@ mod tests {
         assert_eq!(platform_to_provider_id("bailian"), Some("qwen"));
         assert_eq!(platform_to_provider_id("kimi"), Some("kimi"));
         assert_eq!(platform_to_provider_id("mimo-pro"), Some("mimo-pro"));
+        assert_eq!(platform_to_provider_id("packy-cx2cc"), Some("packy-cx2cc"));
         assert_eq!(platform_to_provider_id("anthropic"), None);
     }
 

@@ -438,6 +438,7 @@ pub(crate) fn preset_name(pid: &str) -> String {
         "ccswitch" => "CC Switch",
         "ccr" => "Claude Code Router",
         "zenmux" => "ZenMux",
+        "packy-cx2cc" => "Packy CX2CC",
         "custom" => "Custom",
         _ => return pid.to_string(),
     }
