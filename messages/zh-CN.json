@@ -1560,6 +1560,12 @@
   "room_statusLabelWaiting": "等待中...",
   "room_snapshotBanner": "只读历史 · 第 {turn} 轮快照",
   "room_snapshotExit": "退出快照",
+  "room_cancelTurn": "取消",
+  "room_cancelling": "取消中...",
+  "room_longRunning": "运行较久",
+  "room_longRunningHint": "此轮运行时间较长，代理可能仍在工作中。",
+  "room_lastActivity": "最近活动",
+  "room_ago": "前",
 
   "appUpdate_available": "发现新版本（{version}）。",
   "appUpdate_download": "下载",

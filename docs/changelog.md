@@ -1,5 +1,18 @@
 # Changelog / 更新日志
 
+## Phase 9.x (2026-05-09)
+
+- Room adapter timeout 重构：固定 5 分钟 `max_polls` 改为活动感知双层超时（10 分钟不活跃 + 30 分钟硬截止）
+- `RunMeta.active_at` 字段：EventWriter 节流写入（1s 间隔），用于检测 run 是否仍在活跃
+- `events.rs` lock scoping 改进：per-run 锁在调用 `update_active_at_throttled` 前释放，避免潜在死锁
+- `cancel_room_turn` Tauri 命令：遍历 room participants 停止活跃 run，过滤非 Running 状态
+- 前端 Cancel 按钮：turn 进行中时替换 Send 按钮，`cancelGeneration` 防止竞态
+- 前端长时间运行警告：运行超过 5 分钟显示 amber 标签
+- 前端最近活动显示：使用 `active_at` 优先于 event-derived `last_activity_at`
+- `get_run()` 修复：SessionActor 运行的 `last_activity_at` 不再为 `undefined`
+- Adapter 测试补充：`with_deadlines()` + 硬截止超时测试 + 不活跃超时测试
+- Adapter I/O 优化：每次循环只读一次 `meta.json`，移除死代码 `read_outcome`
+
 ## Phase 9 (2026-05-08)
 
 - History 页面重写：从 OpenCovibe runs 切换为直接读取 CC 原生会话（`~/.claude/projects/`）

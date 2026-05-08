@@ -11,7 +11,7 @@ The core product model is:
 - `Room` is an orchestration layer built on top of one or more runs.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 8.x complete (2026-05-08). UX optimizations: sidebar preview reverse-scan fix (latest message instead of earliest), update checker GitHub URL corrected to fork repo, provider switch auto-updates model (removes stale value bug), roundtable post-creation command quick-reference banner. 4 svelte-check errors (CodeEditor false positives + pre-existing MessageKey), 22 a11y warnings, 1218 frontend tests passing, cargo check clean.
+**Current phase:** Phase 9.x (2026-05-09). Room adapter timeout fix: activity-aware dual-deadline (10min inactivity + 30min hard limit), throttled `active_at` persistence, cancel turn button, frontend long-running warning and last-activity display.
 
 ## Standard workflow
 
@@ -238,7 +238,24 @@ Key files:
 - `src/lib/components/GlobalMemoPanel.svelte`
 - `src/lib/stores/memo-store.svelte.ts`
 
-### 9. Windows-native behavior matters here
+### 9. History reads CC native sessions, not OpenCovibe runs
+
+As of Phase 9, the `/history` page reads directly from `~/.claude/projects/` via the `discover_cli_sessions` Tauri command. It no longer uses `~/.opencovibe/runs/`.
+
+Key behaviors:
+- Subagent sessions (`hasSubagents: true`) are filtered out — only user-initiated conversations are shown.
+- Sessions are cross-referenced with imported runs; already-imported sessions skip re-import and use `existingRunId`.
+- The `import_cli_session` command imports a CC session as a `RunMeta`, then `startSession(mode="resume")` resumes it.
+- The page supports text search (prompt + cwd + model) and project pill filtering.
+- When `DiscoverResult.truncated` is true, a warning banner is shown.
+
+Key files:
+- `src/routes/history/+page.svelte` — History page (direct call to `discover_cli_sessions`)
+- `src-tauri/src/commands/cli_sync.rs` — Tauri commands: `discover_cli_sessions`, `import_cli_session`
+- `src-tauri/src/storage/cli_sessions.rs` — session discovery, parallel processing via rayon
+- `src/lib/types.ts` — `CliSessionSummary`, `DiscoverResult` types
+
+### 10. Windows-native behavior matters here
 
 This repository is explicitly Windows-first. Do not assume WSL/macOS/Linux workflows.
 
@@ -255,7 +272,7 @@ Important backend support already exists for Windows-native CLI execution:
 
 When changing spawn behavior, PATH handling, or provider launch commands, preserve Windows desktop compatibility.
 
-### 10. MSVC linker resolution (cargo config fix)
+### 11. MSVC linker resolution (cargo config fix)
 
 On this machine, `C:\Program Files\Git\usr\bin\link.exe` (Git's Unix `link` tool) shadows the MSVC linker. Cargo must be told to use the real linker explicitly:
 
@@ -269,7 +286,7 @@ Without this config, `cargo build`, `cargo test`, and `npm run tauri build` will
 
 **Known issue: Rust unit tests fail with STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139).** Root cause: VS 18 BuildTools MSVC 14.50.35730 links against a newer VCRUNTIME140.dll than the one installed in System32 (14.50.35719). The Windows loader finds the old System32 DLL first and rejects the binary because a required CRT entry point is missing. Workaround: use `cargo check` for Rust code validation; it catches compile errors without running the binary. Full test runs need either a matching VC++ redistributable update or a clean VM/CI environment.
 
-### 11. Target directory cleanup
+### 12. Target directory cleanup
 
 The `src-tauri/target/` directory can accumulate 30+ GB of incremental compilation artifacts (primarily in `debug/incremental/` and `debug/deps/`). Periodically clean:
 
@@ -315,6 +332,8 @@ Key phases and their status:
 | 7.y | Room optimizations: delete cleanup, incremental turns, status labels, context menu | [done] |
 | 8 | Gemini removal, Stepper mini-map, @Name SingleTarget, Room sidebar grouping, prompt constraint | [done] |
 | 8.x | UX optimizations: sidebar preview fix, update URL, provider model auto-switch, room command hints | [done] |
+| 9 | History page rewrite: CC native sessions, subagent filtering, simplified UI | [done] |
+| 9.x | Room adapter timeout fix: activity-aware timeout, cancel turn, frontend UX | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

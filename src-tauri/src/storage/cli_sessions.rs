@@ -1294,6 +1294,7 @@ pub fn import_session(
         conversation_ref: Some(crate::models::ConversationRef::ClaudeSession(
             session_id.to_string(),
         )),
+        active_at: None,
     };
 
     let run_dir = super::run_dir(&run_id);

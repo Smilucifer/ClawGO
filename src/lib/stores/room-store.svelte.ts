@@ -31,11 +31,13 @@ export class RoomStore {
   room = $state<RoomDetail | null>(null);
   loading = $state(false);
   saving = $state(false);
+  cancelling = $state(false);
   error = $state<string | null>(null);
   activeSnapshot = $state<RoomTurnSnapshot | null>(null);
 
   private _loadSeq = 0;
   private _detailSeq = 0;
+  private _sendGeneration = 0;
 
   async loadRooms(): Promise<void> {
     const seq = ++this._loadSeq;
@@ -244,10 +246,11 @@ export class RoomStore {
     if (!trimmed) return;
     this.activeSnapshot = null;
     const pollSeq = ++this._loadSeq;
+    const gen = ++this._sendGeneration;
     this.saving = true;
     this.error = null;
 
-    const MAX_POLLS = 120; // 120 × 1500ms = 3 min max polling
+    const MAX_POLLS = 1200; // 1200 × 1500ms = 30 min (matches backend hard deadline)
     let pollCount = 0;
 
     const poll = (): Promise<void> =>
@@ -286,6 +289,30 @@ export class RoomStore {
       throw e;
     } finally {
       if (pollSeq === this._loadSeq) this.saving = false;
+    }
+  }
+
+  async cancelTurn(): Promise<void> {
+    if (!this.selectedRoomId || this.cancelling) return;
+    const genAtCancel = this._sendGeneration;
+    this.cancelling = true;
+    this.error = null;
+    try {
+      await api.cancelRoomTurn(this.selectedRoomId);
+      const current = await api.getRoom(this.selectedRoomId);
+      if (this.selectedRoomId === current.id) {
+        this.room = current;
+      }
+      await this.loadRooms();
+    } catch (e) {
+      this.error = errorMessage(e);
+      dbgWarn("rooms", "cancelTurn error", e);
+    } finally {
+      this.cancelling = false;
+      // Only reset saving if no new sendMessage started after this cancel
+      if (this._sendGeneration === genAtCancel) {
+        this.saving = false;
+      }
     }
   }
 

@@ -69,7 +69,22 @@ pub fn get_run(id: String) -> Result<TaskRun, String> {
             }
         }
     }
-    Ok(meta.to_task_run(last_ts, Some(msg_count), last_preview))
+    // Prefer meta.active_at (throttled bus event activity) over event-derived last_ts
+    // when the former is more recent. This ensures SessionActor runs (which only write
+    // bus events) correctly report last_activity_at to the frontend.
+    let effective_last_ts = match (&meta.active_at, &last_ts) {
+        (Some(active), Some(event_ts)) => {
+            if active >= event_ts {
+                Some(active.clone())
+            } else {
+                Some(event_ts.clone())
+            }
+        }
+        (Some(active), None) => Some(active.clone()),
+        (None, event_ts @ Some(_)) => event_ts.clone(),
+        (None, None) => None,
+    };
+    Ok(meta.to_task_run(effective_last_ts, Some(msg_count), last_preview))
 }
 
 #[tauri::command]

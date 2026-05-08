@@ -568,6 +568,14 @@
                     {#if !isSnapshot && runElapsed}
                       <span class="text-[10px] text-muted-foreground/70 tabular-nums">{runElapsed}</span>
                     {/if}
+                    {#if store.saving && status === "running" && participant?.run?.started_at}
+                      {@const elapsedMs = Date.now() - new Date(participant.run.started_at).getTime()}
+                      {#if elapsedMs > 300000}
+                        <span class="text-[10px] text-amber-500" title={t("room_longRunningHint")}>
+                          {t("room_longRunning")}
+                        </span>
+                      {/if}
+                    {/if}
                     <span class={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${statusClass(snapshot?.status ?? status)}`}>
                       {participantStatusLabel(snapshot?.status ?? status)}
                     </span>
@@ -576,6 +584,11 @@
               </header>
 
               <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+                {#if store.saving && status === "running" && participant?.run?.last_activity_at}
+                  <p class="mb-2 text-[10px] text-muted-foreground">
+                    {t("room_lastActivity")}: {formatDuration(Date.now() - new Date(participant.run.last_activity_at).getTime())} {t("room_ago")}
+                  </p>
+                {/if}
                 {#if snapshot}
                   <p class="whitespace-pre-wrap break-words text-sm leading-6">
                     {snapshot.content || t("room_noResponseYet")}
@@ -686,13 +699,23 @@
                 }
               }}
             ></textarea>
-            <button
-              class="w-24 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
-              disabled={store.saving || !canSendCurrentRoomMessage}
-              onclick={handleSendRoundtableMessage}
-            >
-              {t("room_send")}
-            </button>
+            {#if store.saving}
+              <button
+                class="w-24 rounded-md bg-destructive px-3 py-1.5 text-sm text-destructive-foreground disabled:opacity-50"
+                disabled={store.cancelling}
+                onclick={() => store.cancelTurn()}
+              >
+                {store.cancelling ? t("room_cancelling") : t("room_cancelTurn")}
+              </button>
+            {:else}
+              <button
+                class="w-24 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
+                disabled={!canSendCurrentRoomMessage}
+                onclick={handleSendRoundtableMessage}
+              >
+                {t("room_send")}
+              </button>
+            {/if}
           </div>
         </div>
       </div>

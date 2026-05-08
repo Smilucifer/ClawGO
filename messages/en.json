@@ -1560,6 +1560,12 @@
   "room_statusLabelWaiting": "Waiting...",
   "room_snapshotBanner": "Read-only history · Turn {turn} snapshot",
   "room_snapshotExit": "Exit snapshot",
+  "room_cancelTurn": "Cancel",
+  "room_cancelling": "Cancelling...",
+  "room_longRunning": "Long running",
+  "room_longRunningHint": "This turn has been running for a while. The agent may still be working.",
+  "room_lastActivity": "Last activity",
+  "room_ago": "ago",
 
   "appUpdate_available": "A new version ({version}) is available.",
   "appUpdate_download": "Download",

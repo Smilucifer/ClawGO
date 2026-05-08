@@ -159,6 +159,7 @@ pub fn create_run_with_connection_profile(
         no_session_persistence,
         execution_path: None,   // Caller sets after create_run
         conversation_ref: None, // Written by runtime events (session_init / thread.started)
+        active_at: None,
     };
 
     save_meta(&meta)?;

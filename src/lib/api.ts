@@ -248,6 +248,11 @@ export async function deleteRoom(id: string): Promise<void> {
   return invoke<void>("delete_room", { id });
 }
 
+export async function cancelRoomTurn(roomId: string): Promise<boolean> {
+  dbg("api", "cancelRoomTurn", roomId);
+  return invoke<boolean>("cancel_room_turn", { roomId });
+}
+
 // Prompt search & favorites
 
 export async function searchPrompts(query: string, limit?: number): Promise<PromptSearchResult[]> {

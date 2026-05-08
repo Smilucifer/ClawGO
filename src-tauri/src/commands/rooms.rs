@@ -543,6 +543,44 @@ pub async fn delete_room(
     storage::rooms::delete_room(&id)
 }
 
+#[tauri::command]
+pub async fn cancel_room_turn(
+    emitter: State<'_, Arc<BroadcastEmitter>>,
+    sessions: State<'_, ActorSessionMap>,
+    spawn_locks: State<'_, SpawnLocks>,
+    room_id: String,
+) -> Result<bool, String> {
+    log::debug!("[rooms] cancel_room_turn: room_id={}", room_id);
+    let room = storage::rooms::get_room(&room_id)
+        .ok_or_else(|| format!("Room {} not found", room_id))?;
+
+    for participant in &room.participants {
+        // Only stop participants that are actually running
+        let is_running = storage::runs::get_run(&participant.run_id)
+            .map(|r| r.status == RunStatus::Running)
+            .unwrap_or(false);
+        if !is_running {
+            continue;
+        }
+        if let Err(e) = crate::commands::session::stop_session_impl(
+            emitter.inner(),
+            sessions.inner(),
+            spawn_locks.inner(),
+            participant.run_id.clone(),
+        )
+        .await
+        {
+            log::warn!(
+                "[rooms] cancel_room_turn: failed to stop {}: {}",
+                participant.run_id,
+                e
+            );
+        }
+    }
+
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::models::{ExecutionPath, RunStatus};

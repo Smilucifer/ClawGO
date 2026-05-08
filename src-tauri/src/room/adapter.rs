@@ -7,6 +7,11 @@ use std::pin::Pin;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
+/// Default inactivity timeout for room turns (10 minutes).
+const DEFAULT_INACTIVITY_TIMEOUT: Duration = Duration::from_secs(600);
+/// Default hard deadline for room turns (30 minutes).
+const DEFAULT_HARD_DEADLINE: Duration = Duration::from_secs(1800);
+
 pub type AdapterResult<T> = Result<T, AgentAdapterError>;
 pub type AdapterFuture<'a, T> = Pin<Box<dyn Future<Output = AdapterResult<T>> + Send + 'a>>;
 
@@ -177,7 +182,8 @@ pub struct RunBackedAgentAdapter {
     kind: AgentKind,
     cmd_tx: Option<mpsc::Sender<ActorCommand>>,
     poll_interval: Duration,
-    max_polls: usize,
+    inactivity_timeout: Duration,
+    hard_deadline: Duration,
 }
 
 impl RunBackedAgentAdapter {
@@ -186,8 +192,9 @@ impl RunBackedAgentAdapter {
             run_id: run.id.clone(),
             kind: AgentKind::from_agent(&run.agent),
             cmd_tx: None,
-            poll_interval: Duration::from_millis(250),
-            max_polls: 1200,
+            poll_interval: Duration::from_secs(5),
+            inactivity_timeout: DEFAULT_INACTIVITY_TIMEOUT,
+            hard_deadline: DEFAULT_HARD_DEADLINE,
         }
     }
 
@@ -197,24 +204,38 @@ impl RunBackedAgentAdapter {
     }
 
     #[cfg(test)]
-    fn with_polling(mut self, poll_interval: Duration, max_polls: usize) -> Self {
+    fn with_polling(mut self, poll_interval: Duration, inactivity_timeout: Duration) -> Self {
         self.poll_interval = poll_interval;
-        self.max_polls = max_polls;
+        self.inactivity_timeout = inactivity_timeout;
         self
     }
 
-    fn read_outcome(&self) -> AdapterResult<TurnOutcome> {
-        let run = storage::runs::get_run(&self.run_id)
-            .ok_or_else(|| AgentAdapterError::new(format!("Run {} not found", self.run_id)))?;
-        Ok(outcome_from_run(&run))
+    #[cfg(test)]
+    fn with_deadlines(
+        mut self,
+        poll_interval: Duration,
+        inactivity_timeout: Duration,
+        hard_deadline: Duration,
+    ) -> Self {
+        self.poll_interval = poll_interval;
+        self.inactivity_timeout = inactivity_timeout;
+        self.hard_deadline = hard_deadline;
+        self
     }
+
 }
 
 impl AgentAdapter for RunBackedAgentAdapter {
     fn wait_turn_complete<'a>(&'a mut self) -> AdapterFuture<'a, TurnOutcome> {
         Box::pin(async move {
-            for _ in 0..=self.max_polls {
-                let outcome = self.read_outcome()?;
+            let started = std::time::Instant::now();
+            loop {
+                // Read RunMeta once per iteration (avoids redundant meta.json I/O)
+                let run = storage::runs::get_run(&self.run_id)
+                    .ok_or_else(|| AgentAdapterError::new(format!("Run {} not found", self.run_id)))?;
+
+                // Check for terminal state
+                let outcome = outcome_from_run(&run);
                 if matches!(
                     outcome.status,
                     TurnOutcomeStatus::Complete
@@ -223,12 +244,45 @@ impl AgentAdapter for RunBackedAgentAdapter {
                 ) {
                     return Ok(outcome);
                 }
+
+                // Check hard deadline (absolute, never resets)
+                if started.elapsed() >= self.hard_deadline {
+                    return Err(AgentAdapterError::new(format!(
+                        "Timed out waiting for run {} to complete a turn (hard limit: {}s)",
+                        self.run_id,
+                        self.hard_deadline.as_secs()
+                    )));
+                }
+
+                // Check inactivity deadline (resets on activity via active_at).
+                // Falls back to started_at when active_at is None (no bus events yet).
+                // This means a run with zero bus events is considered active for up to
+                // inactivity_timeout after creation — the hard_deadline is the only
+                // safety net for truly stuck runs that emit no events at all.
+                let ref_time = run
+                    .active_at
+                    .as_deref()
+                    .or(Some(run.started_at.as_str()));
+
+                let is_active = ref_time
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| {
+                        let elapsed = chrono::Utc::now()
+                            .signed_duration_since(dt.with_timezone(&chrono::Utc));
+                        elapsed.num_seconds() < self.inactivity_timeout.as_secs() as i64
+                    })
+                    .unwrap_or(true);
+
+                if !is_active {
+                    return Err(AgentAdapterError::new(format!(
+                        "No activity for {}min on run {}",
+                        self.inactivity_timeout.as_secs() / 60,
+                        self.run_id
+                    )));
+                }
+
                 tokio::time::sleep(self.poll_interval).await;
             }
-            Err(AgentAdapterError::new(format!(
-                "Timed out waiting for run {} to complete a turn",
-                self.run_id
-            )))
         })
     }
 
@@ -273,8 +327,9 @@ pub fn adapter_for_task_run(run: &TaskRun) -> RunBackedAgentAdapter {
         run_id: run.id.clone(),
         kind: AgentKind::from_agent(&run.agent),
         cmd_tx: None,
-        poll_interval: Duration::from_millis(250),
-        max_polls: 1200,
+        poll_interval: Duration::from_secs(5),
+        inactivity_timeout: DEFAULT_INACTIVITY_TIMEOUT,
+        hard_deadline: DEFAULT_HARD_DEADLINE,
     }
 }
 
@@ -331,7 +386,8 @@ mod tests {
             )
             .unwrap();
             let run = crate::storage::runs::get_run("run-stop").unwrap();
-            let mut adapter = adapter_for_run(&run).with_polling(Duration::from_millis(1), 0);
+            let mut adapter = adapter_for_run(&run)
+                .with_polling(Duration::from_millis(1), Duration::from_secs(600));
 
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(adapter.wait_turn_complete())
@@ -360,7 +416,8 @@ mod tests {
             )
             .unwrap();
             let run = crate::storage::runs::get_run("run-fail").unwrap();
-            let mut adapter = adapter_for_run(&run).with_polling(Duration::from_millis(1), 0);
+            let mut adapter = adapter_for_run(&run)
+                .with_polling(Duration::from_millis(1), Duration::from_secs(600));
 
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(adapter.wait_turn_complete())
@@ -413,7 +470,8 @@ mod tests {
             )
             .unwrap();
             let run = crate::storage::runs::get_run("run-1").unwrap();
-            let mut adapter = adapter_for_run(&run).with_polling(Duration::from_millis(1), 0);
+            let mut adapter = adapter_for_run(&run)
+                .with_polling(Duration::from_millis(1), Duration::from_secs(600));
 
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(adapter.wait_turn_complete())
@@ -468,5 +526,75 @@ mod tests {
                 send_task.await.unwrap().unwrap();
             });
         });
+    }
+
+    #[test]
+    fn wait_turn_complete_times_out_on_hard_deadline() {
+        let result = with_temp_data_dir(|| {
+            crate::storage::runs::create_run(
+                "run-timeout",
+                "hello",
+                "D:/work/app",
+                "claude",
+                RunStatus::Running, // non-terminal — will never become idle
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            let run = crate::storage::runs::get_run("run-timeout").unwrap();
+            // 1ms poll, 600s inactivity (won't trigger), 50ms hard deadline
+            let mut adapter = adapter_for_run(&run)
+                .with_deadlines(Duration::from_millis(1), Duration::from_secs(600), Duration::from_millis(50));
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(adapter.wait_turn_complete())
+        });
+
+        let err = result.unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("hard limit"), "expected hard limit timeout, got: {}", msg);
+        assert!(msg.contains("run-timeout"), "expected run id in message, got: {}", msg);
+    }
+
+    #[test]
+    fn wait_turn_complete_times_out_on_inactivity() {
+        let result = with_temp_data_dir(|| {
+            crate::storage::runs::create_run(
+                "run-inactive",
+                "hello",
+                "D:/work/app",
+                "claude",
+                RunStatus::Running, // non-terminal
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            // Set active_at to 2 minutes ago so inactivity check triggers quickly
+            crate::storage::runs::with_meta("run-inactive", |meta| {
+                meta.active_at = Some("2020-01-01T00:00:00Z".to_string());
+                Ok(())
+            })
+            .unwrap();
+
+            let run = crate::storage::runs::get_run("run-inactive").unwrap();
+            // 1ms poll, 1s inactivity (will trigger since active_at is 2020), 60s hard deadline
+            let mut adapter = adapter_for_run(&run)
+                .with_deadlines(Duration::from_millis(1), Duration::from_secs(1), Duration::from_secs(60));
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(adapter.wait_turn_complete())
+        });
+
+        let err = result.unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("No activity"), "expected inactivity timeout, got: {}", msg);
     }
 }

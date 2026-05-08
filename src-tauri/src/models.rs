@@ -673,6 +673,11 @@ pub struct RunMeta {
     /// Unified resume identity. None = not resumable. Written by runtime events (session_init / thread.started).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conversation_ref: Option<ConversationRef>,
+    /// Last time a bus event was written for this run (ISO 8601).
+    /// Updated (throttled to 1s) by EventWriter on each write_bus_event.
+    /// Used by the room adapter to detect inactivity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_at: Option<String>,
 }
 
 impl RunMeta {

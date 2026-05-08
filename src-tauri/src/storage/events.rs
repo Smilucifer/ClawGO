@@ -1,4 +1,5 @@
 use crate::models::{now_iso, BusEvent, ModelUsageSummary, RawRunUsage, RunEvent, RunEventType};
+use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::{BufReader, Read, Seek, SeekFrom, Write};
@@ -186,30 +187,33 @@ impl EventWriter {
         // Global lock released here — other runs proceed in parallel
 
         // Per-run lock: seq allocation + file write are atomic
-        let mut seq_guard = run_lock.lock().unwrap();
-        let current = *seq_guard;
-        *seq_guard = current + 1;
+        {
+            let mut seq_guard = run_lock.lock().unwrap();
+            let current = *seq_guard;
+            *seq_guard = current + 1;
 
-        let dir = super::run_dir(run_id);
-        super::ensure_dir(&dir).map_err(|e| format!("ensure_dir failed: {}", e))?;
+            let dir = super::run_dir(run_id);
+            super::ensure_dir(&dir).map_err(|e| format!("ensure_dir failed: {}", e))?;
 
-        let envelope = serde_json::json!({
-            "_bus": true,
-            "seq": current,
-            "ts": now_iso(),
-            "event": event,
-        });
-        let path = events_path(run_id);
-        let line =
-            serde_json::to_string(&envelope).map_err(|e| format!("serialize failed: {}", e))?;
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-            .map_err(|e| format!("open {} failed: {}", path.display(), e))?;
-        writeln!(file, "{}", line)
-            .map_err(|e| format!("write to {} failed: {}", path.display(), e))?;
+            let envelope = serde_json::json!({
+                "_bus": true,
+                "seq": current,
+                "ts": now_iso(),
+                "event": event,
+            });
+            let path = events_path(run_id);
+            let line = serde_json::to_string(&envelope)
+                .map_err(|e| format!("serialize failed: {}", e))?;
+            let mut file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .map_err(|e| format!("open {} failed: {}", path.display(), e))?;
+            writeln!(file, "{}", line)
+                .map_err(|e| format!("write to {} failed: {}", path.display(), e))?;
+        } // seq_guard dropped — per-run lock released
 
+        update_active_at_throttled(run_id);
         Ok(())
     }
 
@@ -236,32 +240,71 @@ impl EventWriter {
                 .clone()
         };
 
-        let mut seq_guard = run_lock.lock().unwrap();
-        let current = *seq_guard;
-        *seq_guard = current + 1;
+        let seq = {
+            let mut seq_guard = run_lock.lock().unwrap();
+            let current = *seq_guard;
+            *seq_guard = current + 1;
 
-        let dir = super::run_dir(run_id);
-        super::ensure_dir(&dir).map_err(|e| format!("ensure_dir failed: {}", e))?;
+            let dir = super::run_dir(run_id);
+            super::ensure_dir(&dir).map_err(|e| format!("ensure_dir failed: {}", e))?;
 
-        let envelope = serde_json::json!({
-            "_bus": true,
-            "seq": current,
-            "ts": ts,
-            "event": event,
-        });
-        let path = events_path(run_id);
-        let line =
-            serde_json::to_string(&envelope).map_err(|e| format!("serialize failed: {}", e))?;
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-            .map_err(|e| format!("open {} failed: {}", path.display(), e))?;
-        writeln!(file, "{}", line)
-            .map_err(|e| format!("write to {} failed: {}", path.display(), e))?;
+            let envelope = serde_json::json!({
+                "_bus": true,
+                "seq": current,
+                "ts": ts,
+                "event": event,
+            });
+            let path = events_path(run_id);
+            let line = serde_json::to_string(&envelope)
+                .map_err(|e| format!("serialize failed: {}", e))?;
+            let mut file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .map_err(|e| format!("open {} failed: {}", path.display(), e))?;
+            writeln!(file, "{}", line)
+                .map_err(|e| format!("write to {} failed: {}", path.display(), e))?;
+            current // seq_guard dropped — per-run lock released
+        };
 
-        Ok(current)
+        update_active_at_throttled(run_id);
+        Ok(seq)
     }
+}
+
+// ── Throttled active_at updates ──
+
+/// Throttle map for active_at updates: run_id -> last updated epoch millis.
+static ACTIVE_AT_THROTTLE: Lazy<Mutex<HashMap<String, i64>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// Minimum interval between active_at meta.json writes (milliseconds).
+const ACTIVE_AT_THROTTLE_MS: i64 = 1000;
+
+/// Update RunMeta.active_at if at least ACTIVE_AT_THROTTLE_MS have elapsed
+/// since the last update for this run_id. Uses a separate lock from EventWriter
+/// so it can be called after the per-run event lock is released.
+fn update_active_at_throttled(run_id: &str) {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    {
+        let mut throttle = ACTIVE_AT_THROTTLE.lock().unwrap();
+        if let Some(last) = throttle.get(run_id) {
+            if now_ms - *last < ACTIVE_AT_THROTTLE_MS {
+                return;
+            }
+        }
+        throttle.insert(run_id.to_string(), now_ms);
+        if throttle.len() > 200 {
+            throttle.retain(|_, v| now_ms - *v < 60_000);
+        }
+    }
+    let _ = crate::storage::runs::with_meta(run_id, |meta| {
+        meta.active_at = Some(now_iso());
+        Ok(())
+    });
 }
 
 /// Thin wrapper for backward compatibility — delegates to EventWriter.
