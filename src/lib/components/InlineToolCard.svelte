@@ -611,6 +611,7 @@
               <div class="flex flex-wrap items-center gap-2">
                 {#each askOptions as option}
                   <button
+                    type="button"
                     class="rounded-md border px-3 py-1.5 text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed {multiChecked[
                       option
                     ]
@@ -636,6 +637,7 @@
                   </button>
                 {/each}
                 <button
+                  type="button"
                   class="rounded-md border border-dashed px-3 py-1.5 text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed {otherActive[
                     askQuestion
                   ]
@@ -657,6 +659,7 @@
                   />
                 {/if}
                 <button
+                  type="button"
                   class="rounded-md bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={submitting ||
                     (multiCount() === 0 &&
@@ -677,6 +680,7 @@
               <div class="flex flex-wrap gap-2">
                 {#each askOptions as option}
                   <button
+                    type="button"
                     class="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent hover:border-ring/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={submitting}
                     onclick={() => handleAnswer(option)}
@@ -685,6 +689,7 @@
                   </button>
                 {/each}
                 <button
+                  type="button"
                   class="rounded-md border border-dashed border-border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:border-ring/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={submitting}
                   onclick={() => {
@@ -702,6 +707,7 @@
                       class="flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring"
                     />
                     <button
+                      type="button"
                       class="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       disabled={submitting || !otherText[askQuestion]?.trim()}
                       onclick={() => {
@@ -985,6 +991,7 @@
                     <div class="flex flex-wrap gap-1.5">
                       {#each pq.options as option}
                         <button
+                          type="button"
                           class="rounded-md border px-3 py-1 text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed text-left {questionAnswers[
                             pq.question
                           ] === option.label
@@ -1022,6 +1029,7 @@
                       {/each}
                       <!-- Other option -->
                       <button
+                        type="button"
                         class="rounded-md border border-dashed px-3 py-1 text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed {otherActive[
                           pq.question
                         ] && questionAnswers[pq.question] === 'Other'
@@ -1054,6 +1062,7 @@
                 {/each}
                 <div class="flex gap-2 pt-1">
                   <button
+                    type="button"
                     class="rounded-md bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={submitting || !allQuestionsAnswered}
                     onclick={submitAllQuestionAnswers}
@@ -1063,6 +1072,7 @@
                     })}
                   </button>
                   <button
+                    type="button"
                     class="rounded-md border border-border px-4 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent transition-all disabled:opacity-50"
                     disabled={submitting}
                     onclick={() => {
@@ -1081,6 +1091,7 @@
               <div class="flex flex-wrap items-center gap-2">
                 {#each askOptions as option}
                   <button
+                    type="button"
                     class="rounded-md border px-3 py-1.5 text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed {multiChecked[
                       option
                     ]
@@ -1106,6 +1117,7 @@
                   </button>
                 {/each}
                 <button
+                  type="button"
                   class="rounded-md border border-dashed px-3 py-1.5 text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed {otherActive[
                     askQuestion
                   ]
@@ -1127,6 +1139,7 @@
                   />
                 {/if}
                 <button
+                  type="button"
                   class="rounded-md bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={submitting ||
                     (multiCount() === 0 &&
@@ -1138,6 +1151,7 @@
                     : t("inline_submit")}
                 </button>
                 <button
+                  type="button"
                   class="rounded-md border border-border px-4 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-all disabled:opacity-50"
                   disabled={submitting}
                   onclick={() => {
@@ -1155,6 +1169,7 @@
               <div class="flex flex-wrap gap-2">
                 {#each askOptions as option}
                   <button
+                    type="button"
                     class="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent hover:border-ring/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={submitting}
                     onclick={() => handleAskPermissionAllow(option)}
@@ -1163,6 +1178,7 @@
                   </button>
                 {/each}
                 <button
+                  type="button"
                   class="rounded-md border border-dashed border-border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:border-ring/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={submitting}
                   onclick={() => {
@@ -1180,6 +1196,7 @@
                       class="flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring"
                     />
                     <button
+                      type="button"
                       class="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       disabled={submitting || !otherText[askQuestion]?.trim()}
                       onclick={() => handleAskPermissionOther(askQuestion)}

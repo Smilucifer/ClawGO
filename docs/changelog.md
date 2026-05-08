@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## Phase 9 (2026-05-08)
+
+- History 页面重写：从 OpenCovibe runs 切换为直接读取 CC 原生会话（`~/.claude/projects/`）
+- 过滤掉 `hasSubagents: true` 的子代理会话
+- 简化 UI：仅显示 prompt、时间、项目路径、模型 badge、继续/导入按钮
+- 支持文本搜索 + 项目 pill 过滤
+- 已导入会话跳过重复导入，直接跳转
+- 清理 ~30 条无用 i18n keys，新增 10 条 CC 历史相关 keys
+- AskUserQuestion / elicitation 交互按钮显式设为 `type="button"`，避免多问题权限卡片重复提交
+
 ## Phase 8.x (2026-05-08)
 
 - 聊天侧边栏预览修复：`summarize_events()` 改为反向扫描，显示最新消息而非最早消息
