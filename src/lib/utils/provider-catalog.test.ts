@@ -10,7 +10,8 @@ describe("Phase 7 provider catalog", () => {
       "GLM",
       "QWEN",
       "KIMI",
-      "MiMo Pro",
+      "Xiaomi MiMo",
+      "Xiaomi MiMo (按量)",
       "Packy CX2CC",
     ]);
   });
@@ -55,6 +56,15 @@ describe("Phase 7 provider catalog", () => {
       requiredConfig: ["api_key"],
       defaultPermissionMode: "bypass",
     });
+    expect(getPhase7Provider("xiaomi")).toMatchObject({
+      mode: "claude_compatible_api",
+      executionAgent: "claude",
+      platformId: "xiaomi",
+      defaultModel: "mimo-v2.5-pro",
+      defaultBaseUrl: "https://api.xiaomimimo.com/anthropic",
+      requiredConfig: ["api_key"],
+      defaultPermissionMode: "bypass",
+    });
     expect(getPhase7Provider("packy-cx2cc")).toMatchObject({
       mode: "claude_compatible_api",
       executionAgent: "claude",
@@ -87,6 +97,7 @@ describe("Phase 7 provider catalog", () => {
     expect(providerIdForRun("claude", "bailian")).toBe("qwen");
     expect(providerIdForRun("claude", "kimi")).toBe("kimi");
     expect(providerIdForRun("claude", "mimo-pro")).toBe("mimo-pro");
+    expect(providerIdForRun("claude", "xiaomi")).toBe("xiaomi");
     expect(providerIdForRun("claude", "packy-cx2cc")).toBe("packy-cx2cc");
     expect(providerIdForRun("codex")).toBe("codex");
     expect(providerIdForRun("claude")).toBe("claude");

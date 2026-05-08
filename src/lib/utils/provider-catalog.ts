@@ -8,6 +8,7 @@ export type Phase7ProviderId =
   | "qwen"
   | "kimi"
   | "mimo-pro"
+  | "xiaomi"
   | "packy-cx2cc";
 
 export interface Phase7ProviderEntry {
@@ -87,12 +88,23 @@ export const PHASE7_PROVIDERS: Phase7ProviderEntry[] = [
   },
   {
     id: "mimo-pro",
-    label: "MiMo Pro",
+    label: "Xiaomi MiMo",
     mode: "claude_compatible_api",
     executionAgent: "claude",
     platformId: "mimo-pro",
     defaultModel: "mimo-v2.5-pro",
     defaultBaseUrl: "https://token-plan-cn.xiaomimimo.com/anthropic",
+    requiredConfig: ["api_key"],
+    defaultPermissionMode: "bypass",
+  },
+  {
+    id: "xiaomi",
+    label: "Xiaomi MiMo (按量)",
+    mode: "claude_compatible_api",
+    executionAgent: "claude",
+    platformId: "xiaomi",
+    defaultModel: "mimo-v2.5-pro",
+    defaultBaseUrl: "https://api.xiaomimimo.com/anthropic",
     requiredConfig: ["api_key"],
     defaultPermissionMode: "bypass",
   },
@@ -118,6 +130,7 @@ export function providerIdForRun(agent: string, platformId?: string | null): Pha
   if (platformId === "bailian") return "qwen";
   if (platformId === "kimi") return "kimi";
   if (platformId === "mimo-pro") return "mimo-pro";
+  if (platformId === "xiaomi") return "xiaomi";
   if (platformId === "packy-cx2cc") return "packy-cx2cc";
   if (agent === "codex") return "codex";
   return "claude";

@@ -115,6 +115,26 @@
     return findCredential(platformCredentials, provider.platformId);
   }
 
+  /** Get the xiaomi (按量付费) credential — shown as second row inside mimo-pro card. */
+  function xiaomiCredential(): PlatformCredential | undefined {
+    return findCredential(platformCredentials, "xiaomi");
+  }
+
+  function updateXiaomiApiKey(value: string) {
+    const existing = xiaomiCredential();
+    const next: PlatformCredential = {
+      platform_id: "xiaomi",
+      api_key: value || undefined,
+      base_url: existing?.base_url ?? "https://api.xiaomimimo.com/anthropic",
+      auth_env_var: existing?.auth_env_var ?? "ANTHROPIC_AUTH_TOKEN",
+      name: existing?.name ?? "Xiaomi MiMo (按量)",
+      models: existing?.models ?? ["mimo-v2.5-pro"],
+      extra_env: existing?.extra_env,
+    };
+    const rest = platformCredentials.filter((c) => c.platform_id !== "xiaomi");
+    platformCredentials = [...rest, next];
+  }
+
   function providerStatusLabel(provider: Phase7ProviderEntry): string {
     if (provider.mode === "official_cli") {
       const check = providerCliCheck(provider);
@@ -1800,7 +1820,7 @@
           </div>
 
           <div class="divide-y divide-border rounded-md border border-border">
-            {#each PHASE7_PROVIDERS as provider}
+            {#each PHASE7_PROVIDERS.filter((p) => p.id !== "xiaomi") as provider}
               {@const check = providerCliCheck(provider)}
               {@const credential = providerCredential(provider)}
               <div
@@ -1872,6 +1892,20 @@
                         </svg>
                       </button>
                     </div>
+                    <!-- Xiaomi MiMo: second API key row (按量付费) -->
+                    {#if provider.id === "mimo-pro"}
+                      {@const xiaomiCred = xiaomiCredential()}
+                      <div class="flex items-center gap-2">
+                        <Input
+                          type={showApiKey ? "text" : "password"}
+                          placeholder="Xiaomi MiMo 按量 API Key"
+                          value={xiaomiCred?.api_key ?? ""}
+                          oninput={(event) =>
+                            updateXiaomiApiKey((event.currentTarget as HTMLInputElement).value)}
+                          onblur={persistApiProviderConfig}
+                        />
+                      </div>
+                    {/if}
                     <!-- Expanded panel: 3 rows x 2 cols -->
                     {#if expandedProviderPanels[provider.id]}
                       {@const [tierOpus, tierSonnet, tierHaiku] = expandModelsToTiers(credential?.models ?? [])}

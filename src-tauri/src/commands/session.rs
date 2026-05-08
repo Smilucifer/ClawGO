@@ -511,7 +511,7 @@ fn resolve_auth_env_for_platform(
 fn is_phase7_claude_compatible_api_platform(platform_id: &str) -> bool {
     matches!(
         platform_id,
-        "deepseek" | "zhipu" | "zhipu-intl" | "bailian" | "kimi" | "mimo-pro" | "packy-cx2cc"
+        "deepseek" | "zhipu" | "zhipu-intl" | "bailian" | "kimi" | "mimo-pro" | "xiaomi" | "packy-cx2cc"
     )
 }
 

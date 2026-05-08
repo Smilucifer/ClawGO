@@ -178,6 +178,13 @@ fn known_provider_defaults(pid: &str) -> Option<ProviderDefaults> {
             key_optional: false,
             auth_env_var: None,
         }),
+        "xiaomi" => Some(ProviderDefaults {
+            base_url: Some("https://api.xiaomimimo.com/anthropic"),
+            models: Some(vec!["mimo-v2.5-pro".to_string()]),
+            extra_env: None,
+            key_optional: false,
+            auth_env_var: None,
+        }),
         "packy-cx2cc" => Some(ProviderDefaults {
             base_url: Some("https://www.packyapi.com/anthropic"),
             models: None,
@@ -257,6 +264,7 @@ fn migrate_platform_credentials(settings: &mut AllSettings) -> bool {
         ("minimax-cn", "ANTHROPIC_AUTH_TOKEN"),
         ("mimo", "ANTHROPIC_AUTH_TOKEN"),
         ("mimo-pro", "ANTHROPIC_AUTH_TOKEN"),
+        ("xiaomi", "ANTHROPIC_AUTH_TOKEN"),
         ("bailian", "ANTHROPIC_AUTH_TOKEN"),
         ("kimi-coding", "ANTHROPIC_AUTH_TOKEN"),
         ("kimi", "ANTHROPIC_AUTH_TOKEN"),
