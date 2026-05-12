@@ -351,6 +351,10 @@ pub struct UserSettings {
     pub github_proxy_port: u16,
     #[serde(default = "default_windows_msvc_env_mode")]
     pub windows_msvc_env_mode: WindowsMsvcEnvMode,
+    /// Managed MCP server configs (name → raw JSON config).
+    /// Injected into every generated session JSON via `--settings`.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub mcp_servers: std::collections::HashMap<String, serde_json::Value>,
     pub updated_at: String,
 }
 
@@ -532,6 +536,7 @@ impl Default for UserSettings {
             github_proxy_enabled: false,
             github_proxy_port: 7890,
             windows_msvc_env_mode: WindowsMsvcEnvMode::Auto,
+            mcp_servers: std::collections::HashMap::new(),
             updated_at: now_iso(),
         }
     }

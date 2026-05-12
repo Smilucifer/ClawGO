@@ -227,6 +227,21 @@ pub async fn dispatch_command(
             let result = crate::commands::settings::update_agent_settings(agent, patch)?;
             serde_json::to_value(result).map_err(|e| e.to_string())
         }
+        "list_managed_mcp_servers" => {
+            let result = crate::commands::settings::list_managed_mcp_servers();
+            serde_json::to_value(result).map_err(|e| e.to_string())
+        }
+        "add_managed_mcp_server" => {
+            let name = extract_str(&params, "name")?;
+            let config_json = extract_str(&params, "config_json")?;
+            let result = crate::commands::settings::add_managed_mcp_server(name, config_json)?;
+            serde_json::to_value(result).map_err(|e| e.to_string())
+        }
+        "remove_managed_mcp_server" => {
+            let name = extract_str(&params, "name")?;
+            let result = crate::commands::settings::remove_managed_mcp_server(name)?;
+            serde_json::to_value(result).map_err(|e| e.to_string())
+        }
 
         // ── Files ──
         "read_text_file" => {

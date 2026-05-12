@@ -621,6 +621,7 @@ pub(crate) async fn start_session_impl(
     // Provider-backed Claude sessions: persist a stable JSON config file and derive
     // the env projection from it. The JSON file is the durable source of truth;
     // env vars are injected from the same materialized config into the CLI process.
+    let mcp_servers = &user_settings.mcp_servers;
     let provider_config = match effective_pid {
         Some(pid) => {
             let provider_id = crate::agent::provider_claude_config::platform_to_provider_id(pid);
@@ -638,6 +639,7 @@ pub(crate) async fn start_session_impl(
                         pid,
                         cred,
                         &run_id,
+                        mcp_servers,
                     ) {
                         Ok(materialized) => {
                             log::info!(
@@ -656,6 +658,26 @@ pub(crate) async fn start_session_impl(
             }
         }
         None => None,
+    };
+    // If no provider config was generated but managed MCP servers exist,
+    // write a minimal settings JSON so MCP servers are injected via --settings.
+    let mcp_only_config_path = if provider_config.is_none() && !mcp_servers.is_empty() {
+        match crate::agent::provider_claude_config::write_mcp_only_settings(&run_id, mcp_servers) {
+            Ok(path) => {
+                log::info!(
+                    "[session] MCP-only settings written: {} ({} servers)",
+                    path.display(),
+                    mcp_servers.len()
+                );
+                Some(path)
+            }
+            Err(e) => {
+                log::warn!("[session] failed to write MCP-only settings: {e}");
+                None
+            }
+        }
+    } else {
+        None
     };
     let resolved = resolve_auth_env_for_platform(&remote, &user_settings, effective_pid);
     let mut resolved = augment_with_shell_auth(
@@ -772,7 +794,10 @@ pub(crate) async fn start_session_impl(
         resolved.models.as_deref(),
         user_settings.windows_msvc_env_mode,
         resolved.extra_env.as_ref(),
-        provider_config.as_ref().map(|c| c.json_path.as_path()),
+        provider_config
+            .as_ref()
+            .map(|c| c.json_path.as_path())
+            .or(mcp_only_config_path.as_deref()),
     )
     .await?;
     let child = spawn_result.child;

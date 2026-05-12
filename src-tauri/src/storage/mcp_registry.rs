@@ -399,7 +399,7 @@ fn list_configured_codex() -> Vec<ConfiguredMcpServer> {
 }
 
 /// Parse a single MCP server entry from JSON config into ConfiguredMcpServer.
-fn parse_mcp_entry(name: &str, config: &serde_json::Value, scope: &str) -> ConfiguredMcpServer {
+pub(crate) fn parse_mcp_entry(name: &str, config: &serde_json::Value, scope: &str) -> ConfiguredMcpServer {
     let server_type = config
         .get("type")
         .and_then(|v| v.as_str())
@@ -1208,7 +1208,7 @@ fn to_cli_name(name: &str) -> String {
     }
 }
 
-fn validate_name(name: &str) -> Result<(), String> {
+pub(crate) fn validate_name(name: &str) -> Result<(), String> {
     if name.is_empty() {
         return Err("Server name cannot be empty".into());
     }

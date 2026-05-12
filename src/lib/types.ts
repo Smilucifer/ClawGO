@@ -318,6 +318,7 @@ export interface UserSettings {
   github_proxy_enabled?: boolean;
   github_proxy_port?: number;
   windows_msvc_env_mode?: WindowsMsvcEnvMode;
+  mcp_servers?: Record<string, McpServerConfig>;
   updated_at: string;
 }
 
@@ -363,6 +364,17 @@ export interface WindowsMsvcEnvStatus {
   host_arch?: string;
   message?: string;
   next_action?: string;
+}
+
+// ── Managed MCP server config ──
+
+export interface McpServerConfig {
+  type?: string; // "stdio" | "http" | "sse", default "stdio"
+  command?: string;
+  args?: string[];
+  url?: string;
+  env?: Record<string, string>;
+  headers?: Record<string, string>;
 }
 
 // ── Remote SSH types ──

@@ -28,6 +28,7 @@
   import { dbg, dbgWarn } from "$lib/utils/debug";
   import McpDiscoverPanel from "$lib/components/McpDiscoverPanel.svelte";
   import McpConfiguredPanel from "$lib/components/McpConfiguredPanel.svelte";
+  import McpManagedPanel from "$lib/components/McpManagedPanel.svelte";
   import HookManager from "$lib/components/HookManager.svelte";
   import AgentsPanel from "$lib/components/AgentsPanel.svelte";
   import { t } from "$lib/i18n/index.svelte";
@@ -93,7 +94,7 @@
   let registriesOpen = $state(false);
 
   // MCP section: toggle
-  let mcpSource = $state<"discover" | "configured">("discover");
+  let mcpSource = $state<"discover" | "configured" | "managed">("discover");
 
   let plugins = $state<MarketplacePlugin[]>([]);
   let installedPlugins = $state<InstalledPlugin[]>([]);
@@ -266,7 +267,7 @@
     if (urlSection === "plugins" && (urlSource === "marketplace" || urlSource === "installed")) {
       pluginsSource = urlSource;
     }
-    if (urlSection === "mcp" && (urlSource === "discover" || urlSource === "configured")) {
+    if (urlSection === "mcp" && (urlSource === "discover" || urlSource === "configured" || urlSource === "managed")) {
       mcpSource = urlSource;
     }
 
@@ -1535,6 +1536,16 @@
             syncUrl();
           }}>{t("plugin_configured")}</button
         >
+        <button
+          class="rounded-md px-3 py-1 text-xs font-medium transition-colors {mcpSource ===
+          'managed'
+            ? 'bg-primary text-primary-foreground'
+            : 'text-muted-foreground hover:text-foreground'}"
+          onclick={() => {
+            mcpSource = "managed";
+            syncUrl();
+          }}>{t("mcp_managed")}</button
+        >
       </div>
 
       <!-- Discover sub-view -->
@@ -1554,6 +1565,16 @@
           app={managedApp}
           {projectCwd}
           visible={mcpSource === "configured"}
+          bind:operationLoading
+          {showToast}
+          bind:confirmAction
+        />
+      </div>
+
+      <!-- Managed sub-view -->
+      <div class:hidden={mcpSource !== "managed"}>
+        <McpManagedPanel
+          visible={mcpSource === "managed"}
           bind:operationLoading
           {showToast}
           bind:confirmAction

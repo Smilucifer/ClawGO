@@ -181,11 +181,12 @@ pub fn write_provider_claude_config(
     platform_id: &str,
     cred: &PlatformCredential,
     run_id: &str,
+    mcp_servers: &HashMap<String, serde_json::Value>,
 ) -> Result<ProviderClaudeConfigMaterialized, String> {
     // Build env vars dynamically from the latest credential (from settings page).
     let env = provider_env_from_credential(platform_id, cred)?;
     // Merge into the fixed JSON template.
-    let json_value = provider_config_json_from_env(&env);
+    let json_value = provider_config_json_from_env(&env, mcp_servers);
     // Each session gets a unique temp JSON so stale cache is impossible.
     let path = provider_claude_config_temp_path(run_id);
 
@@ -216,6 +217,36 @@ pub fn write_provider_claude_config(
         json_path: path,
         env,
     })
+}
+
+/// Write a minimal settings JSON containing only MCP server configs.
+/// Used when there is no provider config but the user has managed MCP servers.
+pub fn write_mcp_only_settings(
+    run_id: &str,
+    mcp_servers: &HashMap<String, serde_json::Value>,
+) -> Result<PathBuf, String> {
+    // Reuse the shared JSON builder with an empty env — same structure as provider sessions.
+    let config = provider_config_json_from_env(&HashMap::new(), mcp_servers);
+
+    let path = provider_claude_config_temp_path(run_id);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("create mcp config dir {}: {e}", parent.display()))?;
+    }
+
+    let serialized =
+        serde_json::to_string_pretty(&config).map_err(|e| format!("serialize mcp config: {e}"))?;
+    fs::write(&path, serialized)
+        .map_err(|e| format!("write mcp config {}: {e}", path.display()))?;
+
+    log::info!(
+        "[provider_claude_config] wrote MCP-only settings for run {}: {} (servers={})",
+        run_id,
+        path.display(),
+        mcp_servers.len()
+    );
+
+    Ok(path)
 }
 
 pub(crate) fn provider_env_from_credential(
@@ -484,13 +515,16 @@ fn build_parameterized_env(
     Ok(env)
 }
 
-fn provider_config_json_from_env(env: &HashMap<String, String>) -> Value {
+fn provider_config_json_from_env(
+    env: &HashMap<String, String>,
+    mcp_servers: &HashMap<String, serde_json::Value>,
+) -> Value {
     let mut env_obj = Map::new();
     for (key, value) in env {
         env_obj.insert(key.clone(), Value::String(value.clone()));
     }
 
-    json!({
+    let mut config = json!({
         "env": env_obj,
         "permissions": {
             "defaultMode": "bypassPermissions"
@@ -503,7 +537,20 @@ fn provider_config_json_from_env(env: &HashMap<String, String>) -> Value {
         "skipDangerousModePermissionPrompt": true,
         "autoUpdatesChannel": "latest",
         "language": "简体中文"
-    })
+    });
+
+    if !mcp_servers.is_empty() {
+        let mcp_obj: Map<String, Value> = mcp_servers
+            .iter()
+            .map(|(name, cfg)| (name.clone(), cfg.clone()))
+            .collect();
+        config
+            .as_object_mut()
+            .unwrap()
+            .insert("mcpServers".to_string(), Value::Object(mcp_obj));
+    }
+
+    config
 }
 
 #[cfg(test)]
@@ -761,6 +808,7 @@ mod tests {
                 Some("qwen3.5-plus"),
             ),
             "test-run-001",
+            &HashMap::new(),
         )
         .unwrap();
 

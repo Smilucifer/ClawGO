@@ -1203,6 +1203,31 @@ export async function searchMcpRegistry(
   });
 }
 
+// ── Managed MCP Servers (ClawGO settings) ──
+
+export async function listManagedMcpServers(): Promise<ConfiguredMcpServer[]> {
+  dbg("api", "listManagedMcpServers");
+  return invoke<ConfiguredMcpServer[]>("list_managed_mcp_servers");
+}
+
+export async function addManagedMcpServer(
+  name: string,
+  configJson: string,
+): Promise<PluginOperationResult> {
+  dbg("api", "addManagedMcpServer", { name });
+  return invoke<PluginOperationResult>("add_managed_mcp_server", {
+    name,
+    configJson,
+  });
+}
+
+export async function removeManagedMcpServer(
+  name: string,
+): Promise<PluginOperationResult> {
+  dbg("api", "removeManagedMcpServer", { name });
+  return invoke<PluginOperationResult>("remove_managed_mcp_server", { name });
+}
+
 // ── CLI Permissions ──
 
 export interface CliPermissions {
