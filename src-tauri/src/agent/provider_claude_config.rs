@@ -23,7 +23,7 @@ fn provider_claude_config_temp_path(run_id: &str) -> PathBuf {
 use std::sync::Mutex;
 
 /// Returns true if `platform_id` is a user-created custom endpoint.
-fn is_custom_platform(platform_id: &str) -> bool {
+pub(crate) fn is_custom_platform(platform_id: &str) -> bool {
     platform_id.starts_with("custom-")
 }
 
