@@ -2,6 +2,41 @@
 
 ## Phase 10 (2026-05-13)
 
+### v2.0.2 — 群聊消息即时显示 + 独立气泡
+
+**消息即时显示:**
+- `orchestrator.rs`：spawn 前预写空 turn（`responses: []`），用户消息在下次轮询（≤1.5s）内立即出现
+- AI 回复到了就增量 pop，不需要等所有参与者完成
+
+**前端独立气泡:**
+- 移除 turn header（TURN N · mode），改为轮次间淡色分隔线
+- 用户消息：右对齐蓝色圆角气泡
+- AI 回复：左对齐独立卡片，带头像、角色标签、状态点
+- 等待状态：三点跳动动画
+- 修复 `GroupChatParticipantDetail` 属性访问类型错误（`pinfo?.role` → `pinfo?.participant.role`）
+
+### v2.0.1 — Plan 移除 + MCP 自动批准
+
+**Plan 功能移除:**
+- 删除 `PlanPanel` 组件和 `commands/plans.rs` Tauri 命令模块
+- 移除 `PlanArtifact`、`PlanTask`、`PlanStatus`、`TaskStatus` 类型定义（前后端）
+- 移除 `GroupChat.active_plan_id` 字段和 `plan.json` 存储
+- 移除 `build_bootstrap_context` 中的 plan 上下文注入
+- 清理 21 个 i18n key（en/zh-CN）
+
+**MCP 工具自动批准:**
+- `SessionActor` 新增 `auto_approve_mcp: bool` 字段
+- Group Chat 参与者创建时自动启用 MCP 工具审批跳过
+- 工具名以 `mcp__` 开头的权限提示自动发送 allow 响应，无需手动点击
+- 普通 chat 和 web server 路径不受影响
+
+**Bug Fixes (Phase 10 后续修复):**
+- 侧边栏群聊删除按钮
+- 过滤工具调用和思维链从输出中移除
+- 导航修复：始终使用 groupChatId 路由到 GroupChatLayout
+- Settings 角色页下拉框样式修复（白字白底）
+- Planner/Executor 默认 system prompt 优化
+
 ### v2.0.0 — Group Chat 重构
 
 **Room → GroupChat 重命名:**
@@ -15,13 +50,6 @@
 - 存储于 `UserSettings.ai_characters`
 - Settings → Characters CRUD 页面（创建/编辑/删除）
 - 前端 4 个 Tauri 命令：list/create/update/delete_character
-
-**Plan Mechanism (计划机制):**
-- `PlanArtifact` 模型：title、tasks（PlanTask[]）、status（draft/active/completed）、user_notes
-- 每个群聊可关联一个活跃计划，存储于 `group-chats/{id}/plan.json`
-- `PlanPanel` 组件：任务清单、状态循环、approve/complete 按钮、用户备注
-- 前端 5 个 Tauri 命令：get/create/update/approve/complete_plan
-- `update_plan` 支持 `clear_user_notes` 参数清除备注
 
 **Context Management MVP (上下文管理):**
 - `ParticipantMeta`：delivery_cursor、session_turn_count、session_seq

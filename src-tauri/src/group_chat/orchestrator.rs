@@ -173,6 +173,23 @@ pub async fn run_group_chat_turn_with_runtime(
 
     let turn_num = public_turns.len() as u64 + 1;
 
+    // Pre-write empty turn so user message appears immediately via polling.
+    let initial_turn = GroupChatTurn {
+        id: turn_id.clone(),
+        idx,
+        mode: mode.clone(),
+        user_input: user_input.clone(),
+        target_participant_ids: participant_ids.clone(),
+        responses: vec![],
+        started_at: started_at.clone(),
+        completed_at: None,
+    };
+    if is_private {
+        storage::group_chats::append_group_chat_private_turn(room_id, &initial_turn)?;
+    } else {
+        storage::group_chats::append_group_chat_public_turn(room_id, &initial_turn)?;
+    }
+
     let mut join_set = tokio::task::JoinSet::new();
     for target in &targets {
         let target = target.clone();

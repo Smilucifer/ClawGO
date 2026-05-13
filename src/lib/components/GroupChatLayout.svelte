@@ -4,10 +4,8 @@
     GroupChatDetail,
     GroupChatParticipantDetail,
     AiCharacter,
-    PlanArtifact,
     RunStatus,
   } from "$lib/types";
-  import PlanPanel from "./PlanPanel.svelte";
   import { getPhase7Provider, providerIdForRun } from "$lib/utils/provider-catalog";
   import { t } from "$lib/i18n/index.svelte";
   import { dbg, dbgWarn } from "$lib/utils/debug";
@@ -18,7 +16,6 @@
 
   // ── State ──
   let detail = $state<GroupChatDetail | null>(null);
-  let activePlan = $state<PlanArtifact | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let panelOpen = $state(true);
@@ -129,7 +126,6 @@
     error = null;
     try {
       detail = await api.getGroupChat(groupChat.room_id);
-      activePlan = await api.getPlanForGroupChat(groupChat.room_id);
     } catch (e) {
       dbgWarn("GroupChatLayout", "loadDetail failed", e);
       error = e instanceof Error ? e.message : String(e);
@@ -316,16 +312,7 @@
   async function handleSend() {
     const text = composerText.trim();
     if (!text || !detail) return;
-    // Prepend plan context if active plan exists and message is addressed to someone
-    let messageToSend = text;
-    if (activePlan && activePlan.status === "active" && text.startsWith("@")) {
-      const taskSummary = activePlan.tasks.length > 0
-        ? "\nActive plan tasks:\n" + activePlan.tasks.map((t) => `- ${t.description} [${t.status}]`).join("\n")
-        : "";
-      const notesPart = activePlan.user_notes ? `\nUser notes: ${activePlan.user_notes}` : "";
-      messageToSend = `[Plan: ${activePlan.title}]${taskSummary}${notesPart}\n\n${text}`;
-    }
-    dbg("GroupChatLayout", "send", { len: messageToSend.length });
+    dbg("GroupChatLayout", "send", { len: text.length });
 
     const gen = ++sendGeneration;
     const roomId = detail.id;
@@ -344,7 +331,7 @@
     }, 1500);
 
     try {
-      const updated = await api.sendGroupChatMessage(roomId, messageToSend);
+      const updated = await api.sendGroupChatMessage(roomId, text);
       if (gen === sendGeneration && detail?.id === roomId) detail = updated;
     } catch (e) {
       dbgWarn("GroupChatLayout", "send failed", e);
@@ -566,99 +553,94 @@
             </div>
           </div>
         {:else}
-          {#each detail.turns as turn (turn.id)}
-            {@const modeLabel = turnModeLabel(turn.mode)}
-            <div class="space-y-3">
-              <!-- Turn header -->
-              <div class="flex items-center gap-2 pb-1 border-b border-border/50">
-                <span class="text-[11px] font-semibold text-muted-foreground">
-                  TURN {turn.idx} · {modeLabel}
-                </span>
-                <span class="text-[10px] text-muted-foreground/50">
-                  {turn.responses.length} {t("groupChat_replies")}
-                </span>
-                {#if turn.completed_at}
-                  <span class="text-[10px] text-muted-foreground/50 ml-auto">
-                    {turn.completed_at.slice(11, 19)}
-                  </span>
-                {/if}
+          {#each detail.turns as turn, turnIdx (turn.id)}
+            <!-- Turn divider -->
+            {#if turnIdx > 0}
+              <div class="flex items-center gap-3 my-2">
+                <div class="flex-1 border-t border-border/20"></div>
+                <span class="text-[10px] text-muted-foreground/40 shrink-0">{turn.started_at.slice(11, 19)}</span>
+                <div class="flex-1 border-t border-border/20"></div>
               </div>
+            {/if}
 
-              <!-- User message -->
-              <div class="rounded-lg border border-blue-500/15 bg-blue-500/5 px-3 py-2">
-                <span class="text-[10px] font-semibold text-blue-400/70">{t("groupChat_yourMessage")}</span>
-                <p class="text-xs mt-0.5">{turn.user_input}</p>
+            <!-- User message bubble (right-aligned) -->
+            <div class="flex justify-end">
+              <div class="max-w-[70%]">
+                <div class="rounded-2xl rounded-br-sm border border-blue-500/15 bg-blue-500/10 px-3 py-2">
+                  <p class="text-xs">{turn.user_input}</p>
+                </div>
+                <div class="text-right mt-1">
+                  <span class="text-[10px] text-muted-foreground/40">{turn.started_at.slice(11, 19)}</span>
+                </div>
               </div>
+            </div>
 
-              <!-- Participant responses -->
-              {#each turn.responses as resp (resp.participant_id)}
-                {@const pinfo = getParticipantInfo(resp.participant_id, resp.run_id)}
-                {@const role = pinfo?.role ?? "custom"}
-                {@const roleName = roleLabel(role)}
-                {@const hasThinking = thinkingTexts.has(resp.run_id)}
-                {@const thinkingContent = thinkingTexts.get(resp.run_id) ?? ""}
-                {@const isThinkingOpen = !(thinkingCollapsed.get(resp.run_id) ?? true)}
+            <!-- AI participant responses (left-aligned, independent bubbles) -->
+            {#each turn.responses as resp (resp.participant_id)}
+              {@const pinfo = getParticipantInfo(resp.participant_id, resp.run_id)}
+              {@const role = pinfo?.participant.role ?? "custom"}
+              {@const roleName = roleLabel(role)}
+              {@const hasThinking = thinkingTexts.has(resp.run_id)}
+              {@const thinkingContent = thinkingTexts.get(resp.run_id) ?? ""}
+              {@const isThinkingOpen = !(thinkingCollapsed.get(resp.run_id) ?? true)}
 
-                <div class="rounded-lg border {roleCardBorder(role)} {roleCardBg(role)} overflow-hidden">
-                  <!-- Message header -->
-                  <div class="flex items-center gap-2 px-3 py-1.5 {roleHeaderBg(role)}">
-                    <span class="w-5 h-5 rounded-full {roleAvatarBg(role)} text-[10px] font-bold text-white flex items-center justify-center shrink-0">
-                      {pinfo?.label?.charAt(0)?.toUpperCase() ?? "?"}
-                    </span>
-                    <span class="text-xs font-medium truncate">{pinfo?.label ?? resp.participant_id}</span>
-                    <span class="text-[10px] rounded px-1 py-0.5 {roleBadgeColor(role)}">{roleName}</span>
-                    <span class="text-[10px] text-muted-foreground/50">{providerLabel(pinfo?.agent ?? "", pinfo?.run?.platform_id)}</span>
-                    {#if resp.status}
-                      <span class="ml-auto w-1.5 h-1.5 rounded-full {statusColor(resp.status as RunStatus)} shrink-0"></span>
+              <div class="flex justify-start">
+                <div class="max-w-[85%]">
+                  <div class="rounded-2xl rounded-bl-sm border {roleCardBorder(role)} {roleCardBg(role)} overflow-hidden">
+                    <!-- Message header -->
+                    <div class="flex items-center gap-2 px-3 py-1.5 {roleHeaderBg(role)}">
+                      <span class="w-5 h-5 rounded-full {roleAvatarBg(role)} text-[10px] font-bold text-white flex items-center justify-center shrink-0">
+                        {pinfo?.participant.label?.charAt(0)?.toUpperCase() ?? "?"}
+                      </span>
+                      <span class="text-xs font-medium truncate">{pinfo?.participant.label ?? resp.participant_id}</span>
+                      <span class="text-[10px] rounded px-1 py-0.5 {roleBadgeColor(role)}">{roleName}</span>
+                      <span class="text-[10px] text-muted-foreground/50">{providerLabel(pinfo?.participant.agent ?? "", pinfo?.run?.platform_id)}</span>
+                      {#if resp.status}
+                        <span class="ml-auto w-1.5 h-1.5 rounded-full {statusColor(resp.status as RunStatus)} shrink-0"></span>
+                      {/if}
+                    </div>
+
+                    <!-- Thinking toggle (if available) -->
+                    {#if hasThinking}
+                      <button
+                        class="flex items-center gap-1 px-3 py-1 text-[10px] text-blue-400/60 hover:text-blue-400 transition-colors w-full"
+                        onclick={() => {
+                          const key = resp.run_id;
+                          const m = thinkingCollapsed;
+                          m.set(key, !(m.get(key) ?? true));
+                          thinkingCollapsed = new Map(m);
+                        }}
+                      >
+                        <svg class="h-2.5 w-2.5 transition-transform {isThinkingOpen ? 'rotate-90' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+                        {t("chat_thoughtProcess")}
+                      </button>
+                      {#if isThinkingOpen}
+                        <div class="px-3 py-1.5 text-[10px] text-blue-300/70 border-t border-blue-500/10 whitespace-pre-wrap break-all">
+                          {thinkingContent}
+                        </div>
+                      {/if}
                     {/if}
-                  </div>
 
-                  <!-- Thinking toggle (if available) -->
-                  {#if hasThinking}
-                    <button
-                      class="flex items-center gap-1 px-3 py-1 text-[10px] text-blue-400/60 hover:text-blue-400 transition-colors w-full"
-                      onclick={() => {
-                        const key = resp.run_id;
-                        const m = thinkingCollapsed;
-                        m.set(key, !(m.get(key) ?? true));
-                        thinkingCollapsed = new Map(m);
-                      }}
-                    >
-                      <svg class="h-2.5 w-2.5 transition-transform {isThinkingOpen ? 'rotate-90' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
-                      {t("chat_thoughtProcess")}
-                    </button>
-                    {#if isThinkingOpen}
-                      <div class="px-3 py-1.5 text-[10px] text-blue-300/70 border-t border-blue-500/10 whitespace-pre-wrap break-all">
-                        {thinkingContent}
-                      </div>
-                    {/if}
-                  {/if}
-
-                  <!-- Message body -->
-                  <div class="px-3 py-2 text-xs">
-                    {#if resp.preview}
-                      <p>{resp.preview}</p>
-                    {:else if resp.error}
-                      <p class="text-red-400/80">{resp.error}</p>
-                    {:else}
-                      <p class="text-muted-foreground/50 italic">{t("groupChat_waitingResponse")}</p>
-                    {/if}
+                    <!-- Message body -->
+                    <div class="px-3 py-2 text-xs">
+                      {#if resp.preview}
+                        <p>{resp.preview}</p>
+                      {:else if resp.error}
+                        <p class="text-red-400/80">{resp.error}</p>
+                      {:else}
+                        <div class="flex items-center gap-1 py-1">
+                          <span class="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 animate-bounce" style="animation-delay: 0s"></span>
+                          <span class="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 animate-bounce" style="animation-delay: 0.15s"></span>
+                          <span class="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 animate-bounce" style="animation-delay: 0.3s"></span>
+                        </div>
+                      {/if}
+                    </div>
                   </div>
                 </div>
-              {/each}
-            </div>
+              </div>
+            {/each}
           {/each}
         {/if}
-      </div>
-
-      <!-- Plan panel -->
-      <div class="border-t border-border shrink-0">
-        <PlanPanel
-          plan={activePlan}
-          groupId={detail.id}
-          {participants}
-          onPlanUpdated={(p) => { activePlan = p; }}
-        />
       </div>
 
       <!-- Composer area -->
