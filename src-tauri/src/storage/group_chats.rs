@@ -189,6 +189,7 @@ pub fn attach_group_chat_run(
         agent: run.agent,
         label: label.unwrap_or_else(|| "Claude".to_string()),
         role: role.unwrap_or_else(|| "participant".to_string()),
+        character_id: String::new(),
         joined_at: now_iso(),
     };
     room.participants.push(participant);

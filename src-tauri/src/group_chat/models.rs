@@ -22,6 +22,8 @@ pub struct GroupChatParticipant {
     pub agent: String,
     pub label: String,
     pub role: String,
+    #[serde(default)]
+    pub character_id: String,
     pub joined_at: String,
 }
 

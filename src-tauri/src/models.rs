@@ -367,6 +367,8 @@ pub struct UserSettings {
     /// Whether native hooks have been migrated from legacy format.
     #[serde(default)]
     pub native_hooks_migrated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding_config: Option<EmbeddingConfig>,
     pub updated_at: String,
 }
 
@@ -553,6 +555,7 @@ impl Default for UserSettings {
             hooks: std::collections::HashMap::new(),
             enabled_plugins: std::collections::HashMap::new(),
             native_hooks_migrated: false,
+            embedding_config: None,
             updated_at: now_iso(),
         }
     }
@@ -1882,6 +1885,14 @@ pub struct AiCharacter {
     pub default_model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub personality: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub expertise: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_config: Option<MemoryConfig>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -2063,3 +2074,96 @@ pub struct RunSearchResponse {
     pub facets: RunSearchFacets,
     pub total_matching: usize,
 }
+
+// ── Character Memory System types ──
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryNode {
+    pub id: String,
+    pub character_id: String,
+    pub content: String,
+    #[serde(rename = "type")]
+    pub memory_type: String,
+    pub confidence: f64,
+    pub source: MemorySource,
+    pub tags: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemorySource {
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_chat_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryEdge {
+    pub id: String,
+    pub source_id: String,
+    pub target_id: String,
+    pub relation: String,
+    pub weight: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryGraphData {
+    pub nodes: Vec<MemoryNode>,
+    pub edges: Vec<MemoryEdge>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommunityInfo {
+    pub id: usize,
+    pub label: String,
+    pub cohesion: f64,
+    pub node_count: usize,
+    pub edge_count: usize,
+    pub node_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeGapInfo {
+    pub gap_type: String,
+    pub description: String,
+    pub suggestion: String,
+    pub affected_node_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbeddingConfig {
+    pub enabled: bool,
+    pub endpoint: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+    pub model: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestEmbeddingResult {
+    pub success: bool,
+    pub latency_ms: u64,
+    pub dimension: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VectorSearchResult {
+    pub page_id: String,
+    pub score: f64,
+    pub memory: Option<MemoryNode>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryConfig {
+    #[serde(default = "default_auto_learn")]
+    pub auto_learn: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retention_days: Option<u32>,
+}
+
+fn default_auto_learn() -> bool { true }

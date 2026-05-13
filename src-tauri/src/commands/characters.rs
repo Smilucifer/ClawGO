@@ -32,6 +32,10 @@ pub fn create_character(
         default_provider,
         default_model,
         icon,
+        avatar_path: None,
+        personality: None,
+        expertise: vec![],
+        memory_config: None,
         created_at: now.clone(),
         updated_at: now,
     };
