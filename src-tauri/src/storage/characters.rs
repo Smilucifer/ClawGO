@@ -2,13 +2,20 @@ use crate::models::{AiCharacter, MemoryGraphData, MemoryNode};
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use tokio::fs;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use std::fs;
 
 static CHAR_LOCKS: Lazy<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
+
+fn validate_character_id(id: &str) -> Result<(), String> {
+    if id.is_empty() || id.contains('/') || id.contains('\\') || id.contains("..") {
+        return Err(format!("Invalid character_id: {}", id));
+    }
+    Ok(())
+}
 
 fn char_dir(character_id: &str) -> PathBuf {
     super::data_dir().join("characters").join(character_id)
@@ -21,30 +28,26 @@ fn char_lock(character_id: &str) -> Arc<Mutex<()>> {
         .clone()
 }
 
-pub async fn ensure_char_dir(character_id: &str) -> std::io::Result<PathBuf> {
+fn ensure_char_dir(character_id: &str) -> Result<PathBuf, String> {
     let dir = char_dir(character_id);
-    fs::create_dir_all(&dir).await?;
+    super::ensure_dir(&dir).map_err(|e| format!("ensure char dir: {e}"))?;
     Ok(dir)
 }
 
-// --- Atomic JSON write (async variant) ---
+// --- Atomic JSON write (sync variant, with UUID temp name) ---
 
-async fn write_atomic_json<T: Serialize>(path: &Path, data: &T) -> Result<(), String> {
-    let tmp = path.with_extension("json.tmp");
+fn write_atomic_json<T: Serialize>(path: &Path, data: &T) -> Result<(), String> {
+    let tmp = path.with_extension(format!("json.{}.tmp", uuid::Uuid::new_v4()));
     let json = serde_json::to_string_pretty(data).map_err(|e| e.to_string())?;
-    fs::write(&tmp, &json)
-        .await
-        .map_err(|e| format!("write tmp: {e}"))?;
+    fs::write(&tmp, &json).map_err(|e| format!("write tmp: {e}"))?;
 
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)).await;
+        let _ = fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
     }
 
-    fs::rename(&tmp, path)
-        .await
-        .map_err(|e| format!("rename: {e}"))?;
+    fs::rename(&tmp, path).map_err(|e| format!("rename: {e}"))?;
     Ok(())
 }
 
@@ -54,40 +57,36 @@ fn memory_log_path(character_id: &str) -> PathBuf {
     char_dir(character_id).join("memory-log.jsonl")
 }
 
-pub async fn append_memory_log(character_id: &str, node: &MemoryNode) -> Result<(), String> {
+pub fn append_memory_log(character_id: &str, node: &MemoryNode) -> Result<(), String> {
+    validate_character_id(character_id)?;
     let lock = char_lock(character_id);
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
-    ensure_char_dir(character_id).await.map_err(|e| e.to_string())?;
+    ensure_char_dir(character_id)?;
     let path = memory_log_path(character_id);
     let mut file = fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&path)
-        .await
         .map_err(|e| format!("open log: {e}"))?;
     let line = serde_json::to_string(node).map_err(|e| e.to_string())? + "\n";
     file.write_all(line.as_bytes())
-        .await
         .map_err(|e| format!("write log: {e}"))?;
     Ok(())
 }
 
-pub async fn read_all_memory_log_entries(character_id: &str) -> Result<Vec<MemoryNode>, String> {
+pub fn read_all_memory_log_entries(character_id: &str) -> Result<Vec<MemoryNode>, String> {
+    validate_character_id(character_id)?;
+    let _lk = char_lock(character_id);
+    let _lock = _lk.lock().unwrap_or_else(|e| e.into_inner());
     let path = memory_log_path(character_id);
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let file = fs::File::open(&path)
-        .await
-        .map_err(|e| format!("open memory log: {e}"))?;
-    let reader = BufReader::new(file);
-    let mut lines = reader.lines();
+    let file = fs::File::open(&path).map_err(|e| format!("open memory log: {e}"))?;
+    let reader = std::io::BufReader::new(file);
     let mut entries = Vec::new();
-    while let Some(line) = lines
-        .next_line()
-        .await
-        .map_err(|e| format!("read line: {e}"))?
-    {
+    for line in reader.lines() {
+        let line = line.map_err(|e| format!("read line: {e}"))?;
         if line.trim().is_empty() {
             continue;
         }
@@ -98,21 +97,27 @@ pub async fn read_all_memory_log_entries(character_id: &str) -> Result<Vec<Memor
     Ok(entries)
 }
 
-pub async fn delete_memory_from_log(character_id: &str, memory_id: &str) -> Result<(), String> {
+pub fn delete_memory_from_log(character_id: &str, memory_id: &str) -> Result<(), String> {
+    validate_character_id(character_id)?;
     let lock = char_lock(character_id);
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
-    let entries = read_all_memory_log_entries(character_id).await?;
+    let entries = read_all_memory_log_entries(character_id)?;
     let filtered: Vec<_> = entries.into_iter().filter(|n| n.id != memory_id).collect();
     let path = memory_log_path(character_id);
-    let mut file = fs::File::create(&path)
-        .await
-        .map_err(|e| format!("create log: {e}"))?;
-    for node in &filtered {
-        let line = serde_json::to_string(node).map_err(|e| e.to_string())? + "\n";
-        file.write_all(line.as_bytes())
-            .await
-            .map_err(|e| format!("write log: {e}"))?;
+
+    // Atomic write: temp file + rename
+    let tmp = path.with_extension(format!("jsonl.{}.tmp", uuid::Uuid::new_v4()));
+    {
+        let mut tmp_file =
+            fs::File::create(&tmp).map_err(|e| format!("create tmp log: {e}"))?;
+        for node in &filtered {
+            let line = serde_json::to_string(node).map_err(|e| e.to_string())? + "\n";
+            tmp_file
+                .write_all(line.as_bytes())
+                .map_err(|e| format!("write log: {e}"))?;
+        }
     }
+    fs::rename(&tmp, &path).map_err(|e| format!("rename log: {e}"))?;
     Ok(())
 }
 
@@ -122,16 +127,20 @@ fn memory_graph_path(character_id: &str) -> PathBuf {
     char_dir(character_id).join("memory-graph.json")
 }
 
-pub async fn save_memory_graph(character_id: &str, graph: &MemoryGraphData) -> Result<(), String> {
+pub fn save_memory_graph(character_id: &str, graph: &MemoryGraphData) -> Result<(), String> {
+    validate_character_id(character_id)?;
     let lock = char_lock(character_id);
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
-    ensure_char_dir(character_id).await.map_err(|e| e.to_string())?;
+    ensure_char_dir(character_id)?;
     let path = memory_graph_path(character_id);
-    write_atomic_json(&path, graph).await?;
+    write_atomic_json(&path, graph)?;
     Ok(())
 }
 
-pub async fn load_memory_graph(character_id: &str) -> Result<MemoryGraphData, String> {
+pub fn load_memory_graph(character_id: &str) -> Result<MemoryGraphData, String> {
+    validate_character_id(character_id)?;
+    let _lk = char_lock(character_id);
+    let _lock = _lk.lock().unwrap_or_else(|e| e.into_inner());
     let path = memory_graph_path(character_id);
     if !path.exists() {
         return Ok(MemoryGraphData {
@@ -139,9 +148,8 @@ pub async fn load_memory_graph(character_id: &str) -> Result<MemoryGraphData, St
             edges: Vec::new(),
         });
     }
-    let content = fs::read_to_string(&path)
-        .await
-        .map_err(|e| format!("read graph: {e}"))?;
+    let content =
+        fs::read_to_string(&path).map_err(|e| format!("read graph: {e}"))?;
     let graph: MemoryGraphData =
         serde_json::from_str(&content).map_err(|e| format!("parse graph: {e}"))?;
     Ok(graph)
@@ -153,25 +161,26 @@ fn character_json_path(character_id: &str) -> PathBuf {
     char_dir(character_id).join("character.json")
 }
 
-pub async fn save_character_metadata(character: &AiCharacter) -> Result<(), String> {
+pub fn save_character_metadata(character: &AiCharacter) -> Result<(), String> {
+    validate_character_id(&character.id)?;
     let lock = char_lock(&character.id);
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
-    ensure_char_dir(&character.id)
-        .await
-        .map_err(|e| e.to_string())?;
+    ensure_char_dir(&character.id)?;
     let path = character_json_path(&character.id);
-    write_atomic_json(&path, character).await?;
+    write_atomic_json(&path, character)?;
     Ok(())
 }
 
-pub async fn load_character_metadata(character_id: &str) -> Result<Option<AiCharacter>, String> {
+pub fn load_character_metadata(character_id: &str) -> Result<Option<AiCharacter>, String> {
+    validate_character_id(character_id)?;
+    let _lk = char_lock(character_id);
+    let _lock = _lk.lock().unwrap_or_else(|e| e.into_inner());
     let path = character_json_path(character_id);
     if !path.exists() {
         return Ok(None);
     }
-    let content = fs::read_to_string(&path)
-        .await
-        .map_err(|e| format!("read metadata: {e}"))?;
+    let content =
+        fs::read_to_string(&path).map_err(|e| format!("read metadata: {e}"))?;
     let character: AiCharacter =
         serde_json::from_str(&content).map_err(|e| format!("parse metadata: {e}"))?;
     Ok(Some(character))
