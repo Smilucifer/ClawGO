@@ -58,7 +58,7 @@
     if (unlistenBus) return;
     const transport = getTransport();
     transport.listen<BusEvent>("bus-event", (ev) => {
-      const pid = participantRunIds().find((_pid, _label, runId) => runId === ev.run_id);
+      const pid = participantRunIds().find((p) => p.runId === ev.run_id);
       if (!pid) return;
       if (ev.type === "permission_prompt") {
         const p = pendingPermissions;
@@ -311,6 +311,8 @@
     }
   }
 
+  let sendGeneration = 0;
+
   async function handleSend() {
     const text = composerText.trim();
     if (!text || !detail) return;
@@ -324,13 +326,30 @@
       messageToSend = `[Plan: ${activePlan.title}]${taskSummary}${notesPart}\n\n${text}`;
     }
     dbg("GroupChatLayout", "send", { len: messageToSend.length });
+
+    const gen = ++sendGeneration;
+    const roomId = detail.id;
+
+    // Fire-and-forget: clear composer immediately for responsive UX
+    composerText = "";
+    if (textareaEl) textareaEl.style.height = "auto";
+
+    // Poll for incremental updates while turn executes in background
+    const pollTimer = setInterval(async () => {
+      if (gen !== sendGeneration) { clearInterval(pollTimer); return; }
+      try {
+        const updated = await api.getGroupChat(roomId);
+        if (gen === sendGeneration && detail?.id === roomId) detail = updated;
+      } catch { /* ignore poll errors */ }
+    }, 1500);
+
     try {
-      const updated = await api.sendGroupChatMessage(detail.id, messageToSend);
-      detail = updated;
-      composerText = "";
-      if (textareaEl) textareaEl.style.height = "auto";
+      const updated = await api.sendGroupChatMessage(roomId, messageToSend);
+      if (gen === sendGeneration && detail?.id === roomId) detail = updated;
     } catch (e) {
       dbgWarn("GroupChatLayout", "send failed", e);
+    } finally {
+      clearInterval(pollTimer);
     }
   }
 
@@ -365,6 +384,8 @@
         return "bg-yellow-500";
       case "pending":
         return "bg-orange-400";
+      case "idle":
+        return "bg-cyan-400";
       default:
         return "bg-muted-foreground/40";
     }
@@ -382,8 +403,10 @@
         return t("groupChat_statusLabelStopped");
       case "pending":
         return t("groupChat_statusLabelStarting");
-      default:
+      case "idle":
         return t("groupChat_statusLabelIdle");
+      default:
+        return "";
     }
   }
 
@@ -404,8 +427,16 @@
   }
 
   // ── Timeline helpers ──
-  function getParticipantInfo(participantId: string): GroupChatParticipantDetail | undefined {
-    return participants.find((p) => p.participant.id === participantId);
+  function getParticipantInfo(participantId: string, runId?: string): GroupChatParticipantDetail | undefined {
+    // Primary: match by participant.id
+    const byId = participants.find((p) => p.participant.id === participantId);
+    if (byId) return byId;
+    // Fallback: match by run_id (covers stale participant references)
+    if (runId) {
+      const byRun = participants.find((p) => p.participant.run_id === runId);
+      if (byRun) return byRun;
+    }
+    return undefined;
   }
 
   function turnModeLabel(mode: string): string {
@@ -561,7 +592,7 @@
 
               <!-- Participant responses -->
               {#each turn.responses as resp (resp.participant_id)}
-                {@const pinfo = getParticipantInfo(resp.participant_id)}
+                {@const pinfo = getParticipantInfo(resp.participant_id, resp.run_id)}
                 {@const role = pinfo?.role ?? "custom"}
                 {@const roleName = roleLabel(role)}
                 {@const hasThinking = thinkingTexts.has(resp.run_id)}

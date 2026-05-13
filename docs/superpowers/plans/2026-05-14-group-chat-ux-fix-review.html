@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Group Chat UX 修复方案审查</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; padding: 2rem; line-height: 1.6; }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; color: #fff; margin-bottom: 0.5rem; }
+  .subtitle { color: #888; font-size: 0.9rem; margin-bottom: 2rem; }
+  .section { margin-bottom: 2rem; }
+  .section-title { font-size: 1.1rem; color: #ccc; font-weight: 600; margin-bottom: 1rem; border-bottom: 1px solid #333; padding-bottom: 0.5rem; }
+  .issue-card { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 1.2rem; margin-bottom: 1rem; }
+  .issue-card.fixed { border-left: 3px solid #22c55e; }
+  .issue-card.deferred { border-left: 3px solid #eab308; }
+  .issue-card.not-done { border-left: 3px solid #666; }
+  .issue-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
+  .badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+  .badge-fix { background: #166534; color: #86efac; }
+  .badge-enhance { background: #713f12; color: #fde047; }
+  .badge-skip { background: #333; color: #888; }
+  .issue-title { font-size: 1rem; color: #fff; font-weight: 600; }
+  .issue-desc { color: #aaa; font-size: 0.85rem; margin-bottom: 0.8rem; }
+  .code-block { background: #111; border: 1px solid #2a2a2a; border-radius: 6px; padding: 0.8rem; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.8rem; overflow-x: auto; margin: 0.6rem 0; }
+  .code-block .comment { color: #6a9955; }
+  .code-block .old { color: #f87171; text-decoration: line-through; }
+  .code-block .new { color: #4ade80; }
+  .problem { background: #1c1917; border: 1px solid #78350f; border-radius: 6px; padding: 0.6rem 0.8rem; margin: 0.5rem 0; font-size: 0.82rem; }
+  .problem::before { content: "问题: "; color: #fbbf24; font-weight: 600; }
+  .solution { background: #0c1a0c; border: 1px solid #166534; border-radius: 6px; padding: 0.6rem 0.8rem; margin: 0.5rem 0; font-size: 0.82rem; }
+  .solution::before { content: "解决: "; color: #4ade80; font-weight: 600; }
+  .impact { display: flex; gap: 0.8rem; margin-top: 0.6rem; flex-wrap: wrap; }
+  .impact-item { font-size: 0.75rem; color: #888; background: #222; padding: 2px 8px; border-radius: 4px; }
+  .impact-item strong { color: #ccc; }
+  .arch-note { background: #1a1a2e; border: 1px solid #3b3b6d; border-radius: 6px; padding: 1rem; margin: 1rem 0; font-size: 0.82rem; }
+  .arch-note::before { content: "架构说明: "; color: #818cf8; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; margin: 0.8rem 0; font-size: 0.85rem; }
+  th, td { padding: 0.5rem 0.8rem; text-align: left; border-bottom: 1px solid #333; }
+  th { color: #aaa; font-weight: 600; }
+  td { color: #ddd; }
+  .footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #333; color: #666; font-size: 0.75rem; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Group Chat UX 修复方案</h1>
+<p class="subtitle">组件级外科手术修复 + 已有基础设施复用 | 4 路 multi-review 确认</p>
+
+<!-- ==================== 问题 1 ==================== -->
+<div class="section">
+<div class="section-title">Bug 修复</div>
+
+<div class="issue-card fixed">
+  <div class="issue-header">
+    <span class="badge badge-fix">FIX</span>
+    <span class="issue-title">步骤 1: Array.find 回调参数错位</span>
+  </div>
+  <div class="issue-desc">文件: <code>GroupChatLayout.svelte:61</code> | 改动量: 1 行</div>
+
+  <div class="problem">
+    <code>Array.find</code> 的回调签名是 <code>(element, index, array)</code>，当前代码 <code>.find((_pid, _label, runId) => runId === ev.run_id)</code> 中，第三个参数 <code>runId</code> 实际是整个数组，与字符串比较永远返回 <code>false</code>。
+  </div>
+
+  <div class="solution">
+    bus event listener 完全失效 — thinking 状态永远不显示，permission prompt 永远不弹出。这是 Group Chat 中两个核心交互功能的静默失效。
+  </div>
+
+  <div class="code-block">
+<span class="comment">// 修复前（broken）</span>
+<span class="old">const pid = participantRunIds().find((_pid, _label, runId) => runId === ev.run_id);</span>
+
+<span class="comment">// 修复后</span>
+<span class="new">const pid = participantRunIds().find((p) => p.runId === ev.run_id);</span>
+  </div>
+
+  <div class="impact">
+    <span class="impact-item"><strong>影响:</strong> thinking 折叠面板恢复显示</span>
+    <span class="impact-item"><strong>影响:</strong> permission prompt 恢复弹出</span>
+    <span class="impact-item"><strong>风险:</strong> 极低（单行修复）</span>
+  </div>
+</div>
+
+<div class="issue-card fixed">
+  <div class="issue-header">
+    <span class="badge badge-fix">FIX</span>
+    <span class="issue-title">步骤 4: 参与者名字显示为 UUID</span>
+  </div>
+  <div class="issue-desc">文件: <code>GroupChatLayout.svelte:577</code> | 改动量: ~10 行</div>
+
+  <div class="problem">
+    <code>getParticipantInfo()</code> 按 <code>participant.id</code> 查找，当返回 undefined 时 fallback 到原始 UUID（如 <code>28bae63d-f702-49ee-ba8d-8320400074a5</code>），用户看到的是无意义的 ID 而非角色名。
+  </div>
+
+  <div class="solution">
+    在 primary lookup 失败时，增加 <code>run_id</code> 二次反查（用 <code>resp.run_id</code> 匹配 <code>p.participant.run_id</code>），最终 fallback 到 "Unknown" 而非 UUID。
+  </div>
+
+  <div class="impact">
+    <span class="impact-item"><strong>影响:</strong> 参与者名字正确显示为角色名</span>
+    <span class="impact-item"><strong>风险:</strong> 低（防御性 fallback）</span>
+  </div>
+</div>
+
+<div class="issue-card fixed">
+  <div class="issue-header">
+    <span class="badge badge-fix">FIX</span>
+    <span class="issue-title">步骤 5: Idle 状态颜色混淆</span>
+  </div>
+  <div class="issue-desc">文件: <code>GroupChatLayout.svelte:356-388</code> | 改动量: ~5 行</div>
+
+  <div class="problem">
+    Idle（就绪等待输入）和 undefined（未加载）共用灰色圆点，用户无法区分参与者是"还在启动"还是"已经就绪"。
+  </div>
+
+  <div class="solution">
+    拆分 <code>statusColor</code> 的 default case：Idle 使用 <code>bg-blue-400/70</code> + label "Ready"，与 undefined 的灰色区分。
+  </div>
+
+  <div class="impact">
+    <span class="impact-item"><strong>影响:</strong> 三种状态（Starting/Ready/Running）视觉可区分</span>
+    <span class="impact-item"><strong>风险:</strong> 极低（纯 CSS）</span>
+  </div>
+</div>
+</div>
+
+<!-- ==================== 问题 2 ==================== -->
+<div class="section">
+<div class="section-title">体验优化</div>
+
+<div class="issue-card fixed">
+  <div class="issue-header">
+    <span class="badge badge-enhance">ENHANCE</span>
+    <span class="issue-title">步骤 2: 消息发送后 UI 冻结</span>
+  </div>
+  <div class="issue-desc">文件: <code>GroupChatLayout.svelte:314-335</code> | 改动量: ~15 行</div>
+
+  <div class="problem">
+    <code>handleSend()</code> 用 <code>await api.sendGroupChatMessage()</code> 阻塞等待整个 turn 完成（可能 30s+），用户在这期间看到空屏幕，体验极差。
+  </div>
+
+  <div class="solution">
+    改为 fire-and-forget + 组件内局部 polling：先启动 <code>setInterval</code> 每 1.5s 调用 <code>api.getGroupChat()</code> 刷新 <code>detail</code>，同时 <code>await sendPromise</code>。polling 在 await 之前启动，确保 turn 执行期间能看到增量 JSONL 快照。
+  </div>
+
+  <div class="arch-note">
+    方案设计时曾考虑复用 <code>groupChatStore.sendMessage()</code>，但 4 路 review 一致确认不可行：组件完全不引用 store，两者维护独立的状态副本。改为组件内 self-contained polling 是最小改动路径。
+  </div>
+
+  <div class="code-block">
+<span class="comment">// 修复后 handleSend 核心逻辑</span>
+<span class="new">const sendPromise = api.sendGroupChatMessage(roomId, messageToSend);</span>
+<span class="new">composerText = "";</span>
+
+<span class="comment">// Polling 必须在 await 之前启动</span>
+<span class="new">const pollTimer = setInterval(async () => {</span>
+<span class="new">  try {</span>
+<span class="new">    const updated = await api.getGroupChat(roomId);</span>
+<span class="new">    if (detail?.id === roomId) detail = updated;</span>
+<span class="new">  } catch { /* ignore */ }</span>
+<span class="new">}, 1500);</span>
+
+<span class="new">try {</span>
+<span class="new">  const updated = await sendPromise;</span>
+<span class="new">  if (detail?.id === roomId) detail = updated;</span>
+<span class="new">} finally {</span>
+<span class="new">  clearInterval(pollTimer);</span>
+<span class="new">}</span>
+  </div>
+
+  <div class="impact">
+    <span class="impact-item"><strong>影响:</strong> 发送后 UI 不再冻结</span>
+    <span class="impact-item"><strong>影响:</strong> participant 状态随 polling 实时更新</span>
+    <span class="impact-item"><strong>风险:</strong> 低（自包含，不引入新依赖）</span>
+  </div>
+</div>
+</div>
+
+<!-- ==================== 问题 3 ==================== -->
+<div class="section">
+<div class="section-title">后续增强（暂缓）</div>
+
+<div class="issue-card deferred">
+  <div class="issue-header">
+    <span class="badge badge-skip">DEFER</span>
+    <span class="issue-title">步骤 3: MessageDelta 实时文本流</span>
+  </div>
+  <div class="issue-desc">文件: <code>GroupChatLayout.svelte:57-88</code> | 改动量: ~25 行（被低估）</div>
+
+  <div class="problem">
+    bus event 中的 <code>message_delta</code> 包含参与者正在生成的文本片段，但组件只从 <code>resp.preview</code>（turn 完成后的最终快照）渲染，无法看到实时流式文本。
+  </div>
+
+  <div class="solution">
+    新增 <code>messageTexts: Map&lt;runId, string&gt;</code> 状态累积 delta text，在 timeline 模板中优先显示流式文本，在 <code>message_complete</code> 时用完成事件替换。但步骤 2 的 polling 已覆盖增量更新，此步骤是锦上添花。
+  </div>
+
+  <div class="impact">
+    <span class="impact-item"><strong>状态:</strong> 4/4 provider 建议暂缓</span>
+    <span class="impact-item"><strong>原因:</strong> polling 已覆盖，边际收益有限</span>
+    <span class="impact-item"><strong>前提:</strong> 需先确认 pipe_exec 路径是否 emit MessageDelta</span>
+  </div>
+</div>
+</div>
+
+<!-- ==================== 范围说明 ==================== -->
+<div class="section">
+<div class="section-title">不做（4 路 review 一致否决）</div>
+
+<div class="issue-card not-done">
+  <div class="issue-header">
+    <span class="badge badge-skip">SKIP</span>
+    <span class="issue-title">Clowder-ai 架构迁移</span>
+  </div>
+  <div class="issue-desc">Socket.IO / Zustand / BubbleReducer / Optimistic Rendering / 序列号 gap detection</div>
+
+  <div class="problem">
+    提案将 ClawGO Group Chat 的问题归因于"通信层不够强大"，建议迁移到 Clowder-ai 的 Socket.IO + Zustand + BubbleReducer 架构。
+  </div>
+
+  <div class="solution">
+    4/4 provider 一致否决：ClawGO 的 BusEvent（20+ 变体）、BroadcastEmitter（双通道 + seq）、orchestrator（incremental JSONL）已经构成完整基础设施。问题不是基础设施不存在，而是组件层绕过了它。Socket.IO 在 Tauri 本地桌面应用中是过度工程化。
+  </div>
+</div>
+</div>
+
+<!-- ==================== 总结 ==================== -->
+<div class="section">
+<div class="section-title">总结</div>
+
+<table>
+  <tr>
+    <th>步骤</th>
+    <th>改动</th>
+    <th>行数</th>
+    <th>状态</th>
+    <th>解决的问题</th>
+  </tr>
+  <tr>
+    <td>1</td>
+    <td>修复 Array.find bug</td>
+    <td>1</td>
+    <td style="color:#4ade80">立即做</td>
+    <td>thinking + permission prompt 永远不显示</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td>UUID fallback 反查</td>
+    <td>10</td>
+    <td style="color:#4ade80">立即做</td>
+    <td>参与者名字显示为 UUID</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td>Idle 状态颜色</td>
+    <td>5</td>
+    <td style="color:#4ade80">立即做</td>
+    <td>Idle 灰色与"不可用"混淆</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td>组件内局部 polling</td>
+    <td>15</td>
+    <td style="color:#4ade80">立即做</td>
+    <td>发送消息后 UI 冻结 30s+</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td>MessageDelta streaming</td>
+    <td>25</td>
+    <td style="color:#eab308">暂缓</td>
+    <td>无法看到参与者实时流式文本</td>
+  </tr>
+</table>
+
+<p style="color:#888; font-size:0.82rem; margin-top:1rem;">
+  总改动量：~31 行（不含暂缓的步骤 3）<br>
+  4 路 multi-review 确认：所有步骤方案可行，步骤 2 已修正为组件内 polling（非 store 依赖）
+</p>
+</div>
+
+<div class="footer">
+  生成时间: 2026-05-14 | 审查方式: 4 路 multi-review (Claude, DeepSeek, Xiaomi Plan, Packy CX2CC)
+</div>
+
+</div>
+</body>
+</html>
