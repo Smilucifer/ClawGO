@@ -299,11 +299,14 @@ pub fn graph_expand(
 }
 
 /// Truncate a string to at most `max_len` characters for display.
+///
+/// Uses `char_indices` to find a safe UTF-8 boundary, avoiding panics
+/// on multi-byte characters (Chinese, emoji, etc.).
 fn truncate(s: &str, max_len: usize) -> &str {
-    if s.len() <= max_len {
-        s
+    if let Some((idx, _)) = s.char_indices().nth(max_len) {
+        &s[..idx]
     } else {
-        &s[..max_len]
+        s
     }
 }
 
@@ -426,14 +429,15 @@ mod tests {
             make_node("n1", "Connected", "concept", vec![]),
             make_node("n2", "Isolated", "concept", vec![]),
         ];
-        let edges = vec![make_edge("e1", "n1", "n1", 0.0)]; // self-loop doesn't help n2
+        let edges = vec![make_edge("e1", "n1", "n1", 0.0)]; // self-loop counts as degree 2 (source + target)
         let communities = detect_communities(&nodes, &edges);
         let gaps = detect_knowledge_gaps(&nodes, &edges, &communities);
         let isolated: Vec<&KnowledgeGapInfo> = gaps
             .iter()
             .filter(|g| g.gap_type == "isolated_node")
             .collect();
-        assert_eq!(isolated.len(), 2);
+        // n1 has degree 2 (self-loop counted twice), n2 has degree 0 → only n2 is isolated
+        assert_eq!(isolated.len(), 1);
     }
 
     #[test]
