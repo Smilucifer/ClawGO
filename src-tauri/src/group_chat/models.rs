@@ -9,6 +9,7 @@ pub struct GroupChat {
     pub cwd: Option<String>,
     pub memo: String,
     pub participants: Vec<GroupChatParticipant>,
+    pub active_plan_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -81,6 +82,43 @@ pub struct GroupChatDetail {
     pub memo: String,
     pub participants: Vec<GroupChatParticipantDetail>,
     pub turns: Vec<GroupChatTurn>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanStatus {
+    Draft,
+    Active,
+    Completed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskStatus {
+    Todo,
+    InProgress,
+    Done,
+    Blocked,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanTask {
+    pub id: String,
+    pub description: String,
+    pub assignee_id: Option<String>,
+    pub status: TaskStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanArtifact {
+    pub id: String,
+    pub group_chat_id: String,
+    pub title: String,
+    pub tasks: Vec<PlanTask>,
+    pub status: PlanStatus,
+    pub user_notes: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

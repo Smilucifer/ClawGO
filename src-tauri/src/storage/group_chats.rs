@@ -81,6 +81,7 @@ pub fn create_group_chat(name: String, cwd: Option<String>) -> Result<GroupChat,
         cwd: cwd.filter(|s| !s.trim().is_empty()),
         memo: String::new(),
         participants: vec![],
+        active_plan_id: None,
         created_at: now.clone(),
         updated_at: now,
     };
