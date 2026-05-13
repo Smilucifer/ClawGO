@@ -2109,7 +2109,7 @@ pub struct MemoryEdge {
     pub weight: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MemoryGraphData {
     pub nodes: Vec<MemoryNode>,
     pub edges: Vec<MemoryEdge>,

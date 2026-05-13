@@ -10,6 +10,7 @@ use crate::group_chat::adapter::{
     adapter_for_run, can_use_group_chat_actor_run, AgentAdapter, AgentCapabilities, TurnOutcomeStatus,
 };
 use crate::group_chat::context::{check_handoff, record_participant_turn, HandoffDecision};
+use crate::group_chat::memory_injection::{search_memories_for_injection, format_memory_injection};
 use crate::group_chat::models::{
     GroupChatParticipant, GroupChatResponseRef, GroupChatTurn, GroupChatTurnMode,
 };
@@ -96,6 +97,7 @@ async fn execute_turn_inner(
     is_private: bool,
 ) -> Result<GroupChatTurn, String> {
     let mut join_set = tokio::task::JoinSet::new();
+    let user_msg = user_input.to_string();
     for target in targets {
         let target = target.clone();
         let participant = target.participant.clone();
@@ -110,11 +112,21 @@ async fn execute_turn_inner(
         };
         let pipe_runtime = pipe_runtime.clone();
 
-        join_set.spawn(async move {
-            let run_lock = run_orchestration_lock(&participant.run_id);
-            let _run_guard = run_lock.lock().await;
-            execute_group_chat_target(target, &participant, &run, &target_prompt, pipe_runtime)
+        join_set.spawn({
+            let user_msg = user_msg.clone();
+            async move {
+                let run_lock = run_orchestration_lock(&participant.run_id);
+                let _run_guard = run_lock.lock().await;
+                execute_group_chat_target(
+                    target,
+                    &participant,
+                    &run,
+                    &target_prompt,
+                    &user_msg,
+                    pipe_runtime,
+                )
                 .await
+            }
         });
     }
 
@@ -390,7 +402,15 @@ pub async fn run_group_chat_turn_with_runtime(
                     };
 
                     let response =
-                        execute_group_chat_target(target, &participant, &run, &auto_prompt, pipe_runtime.clone()).await;
+                        execute_group_chat_target(
+                            target,
+                            &participant,
+                            &run,
+                            &auto_prompt,
+                            &user_input,
+                            pipe_runtime.clone(),
+                        )
+                        .await;
 
                     let auto_turn = GroupChatTurn {
                         id: auto_turn_id,
@@ -447,11 +467,12 @@ async fn execute_group_chat_target(
     participant: &GroupChatParticipant,
     run: &RunMeta,
     target_prompt: &str,
+    user_message: &str,
     pipe_runtime: Option<GroupChatPipeRuntime>,
 ) -> GroupChatResponseRef {
     match target.runtime {
         GroupChatTargetRuntime::Actor { cmd_tx } => {
-            execute_actor_turn(participant, run, target_prompt, cmd_tx).await
+            execute_actor_turn(participant, run, target_prompt, user_message, cmd_tx).await
         }
         GroupChatTargetRuntime::Pipe => match pipe_runtime {
             Some(runtime) => {
@@ -459,6 +480,7 @@ async fn execute_group_chat_target(
                     participant,
                     run,
                     target_prompt,
+                    user_message,
                     runtime.app,
                     runtime.process_map,
                 )
@@ -477,18 +499,46 @@ async fn execute_actor_turn(
     participant: &GroupChatParticipant,
     run: &RunMeta,
     target_prompt: &str,
+    user_message: &str,
     cmd_tx: mpsc::Sender<ActorCommand>,
 ) -> GroupChatResponseRef {
     let event_seq_start = storage::events::next_seq(&participant.run_id);
     let mut adapter = adapter_for_run(run).with_command_sender(cmd_tx);
 
-    // Resolve and prepend role system prompt for the Actor path
+    // Resolve role system prompt for the Actor path
     let user_settings = storage::settings::get_user_settings();
-    let full_prompt = match resolve_participant_system_prompt(participant, &user_settings.ai_characters) {
-        Some(role_prompt) if !role_prompt.is_empty() => {
-            format!("{}\n\n---\n\n{}", role_prompt, target_prompt)
+    let mut system_prompt =
+        match resolve_participant_system_prompt(participant, &user_settings.ai_characters) {
+            Some(role_prompt) if !role_prompt.is_empty() => role_prompt,
+            _ => String::new(),
+        };
+
+    // Inject character memory after the role prompt
+    if !participant.character_id.is_empty() && participant.character_id != "__orphan__" {
+        let (memories, _tier) = search_memories_for_injection(
+            &participant.character_id,
+            user_message,
+            5,
+            0.6,
+            1,
+        )
+        .await;
+        if !memories.is_empty() {
+            let memory_prompt = format_memory_injection(&memories, 2000, 300);
+            if !memory_prompt.is_empty() {
+                if !system_prompt.is_empty() {
+                    system_prompt = format!("{}\n\n{}", system_prompt, memory_prompt);
+                } else {
+                    system_prompt = memory_prompt;
+                }
+            }
         }
-        _ => target_prompt.to_string(),
+    }
+
+    let full_prompt = if !system_prompt.is_empty() {
+        format!("{}\n\n---\n\n{}", system_prompt, target_prompt)
+    } else {
+        target_prompt.to_string()
     };
 
     // Transition to Running so wait_turn_complete does not mistake a
@@ -530,6 +580,7 @@ async fn execute_pipe_turn(
     participant: &GroupChatParticipant,
     run: &RunMeta,
     target_prompt: &str,
+    user_message: &str,
     app: AppHandle,
     process_map: ProcessMap,
 ) -> GroupChatResponseRef {
@@ -563,11 +614,38 @@ async fn execute_pipe_turn(
     // GroupChat sessions run in plan/read-only mode.
     adapter_settings.permission_mode = Some("plan".to_string());
 
-    // Inject role-based system prompt from the participant's linked character.
-    if let Some(role_prompt) =
-        resolve_participant_system_prompt(participant, &user_settings.ai_characters)
-    {
-        adapter_settings.append_system_prompt = Some(role_prompt);
+    // Resolve role-based system prompt from the participant's linked character
+    // and inject character memory.
+    let mut pipe_system_prompt = resolve_participant_system_prompt(
+        participant,
+        &user_settings.ai_characters,
+    )
+    .unwrap_or_default();
+
+    if !participant.character_id.is_empty() && participant.character_id != "__orphan__" {
+        let (memories, _tier) = search_memories_for_injection(
+            &participant.character_id,
+            user_message,
+            5,
+            0.6,
+            1,
+        )
+        .await;
+        if !memories.is_empty() {
+            let memory_prompt = format_memory_injection(&memories, 2000, 300);
+            if !memory_prompt.is_empty() {
+                if !pipe_system_prompt.is_empty() {
+                    pipe_system_prompt =
+                        format!("{}\n\n{}", pipe_system_prompt, memory_prompt);
+                } else {
+                    pipe_system_prompt = memory_prompt;
+                }
+            }
+        }
+    }
+
+    if !pipe_system_prompt.is_empty() {
+        adapter_settings.append_system_prompt = Some(pipe_system_prompt);
     }
 
     let profile = match storage::settings::find_connection_profile(
@@ -2068,7 +2146,14 @@ mod tests {
                     let send_task = tokio::spawn({
                         let participant = participant.clone();
                         async move {
-                            execute_actor_turn(&participant, &run, "check status", cmd_tx).await
+                            execute_actor_turn(
+                                &participant,
+                                &run,
+                                "check status",
+                                "check status",
+                                cmd_tx,
+                            )
+                            .await
                         }
                     });
                     let prompt = receive_text(&mut rx).await;
