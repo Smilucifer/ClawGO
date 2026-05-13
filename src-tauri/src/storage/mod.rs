@@ -1,5 +1,6 @@
 pub mod artifacts;
 pub mod changelog;
+pub mod characters;
 pub mod claude_usage;
 pub mod cli_config;
 pub mod cli_sessions;
