@@ -87,6 +87,7 @@ pub fn create_group_chat(name: String, cwd: Option<String>) -> Result<GroupChat,
         active_plan_id: None,
         created_at: now.clone(),
         updated_at: now,
+        auto_chain: false,
     };
     save_group_chat(&room)?;
     Ok(room)

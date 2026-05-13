@@ -18,11 +18,12 @@ use crate::{
     storage,
 };
 use once_cell::sync::Lazy;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
 use tokio::sync::{mpsc, Mutex as AsyncMutex};
+use tokio_util::sync::CancellationToken;
 
 static GROUP_CHAT_ORCHESTRATION_LOCKS: Lazy<Mutex<HashMap<String, Arc<AsyncMutex<()>>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
@@ -31,6 +32,7 @@ static RUN_ORCHESTRATION_LOCKS: Lazy<Mutex<HashMap<String, Arc<AsyncMutex<()>>>>
 const MAX_DEBATE_OPINION_CHARS: usize = 5_000;
 const MAX_DEBATE_OPINION_KEEP: usize = 2_000;
 const MAX_SUMMARY_PER_VIEW_CHARS: usize = 3_000;
+const MAX_AUTO_CHAIN_HOPS: usize = 3;
 
 #[derive(Clone)]
 struct GroupChatTarget {
@@ -71,7 +73,7 @@ pub async fn run_group_chat_turn(
     message: &str,
     sessions: &ActorSessionMap,
 ) -> Result<GroupChatTurn, String> {
-    run_group_chat_turn_with_runtime(room_id, message, sessions, None).await
+    run_group_chat_turn_with_runtime(room_id, message, sessions, None, None).await
 }
 
 pub async fn run_group_chat_turn_with_runtime(
@@ -79,6 +81,7 @@ pub async fn run_group_chat_turn_with_runtime(
     message: &str,
     sessions: &ActorSessionMap,
     pipe_runtime: Option<GroupChatPipeRuntime>,
+    cancel_token: Option<CancellationToken>,
 ) -> Result<GroupChatTurn, String> {
     let room_lock = group_chat_orchestration_lock(room_id);
     let _room_guard = room_lock.lock().await;
@@ -276,6 +279,97 @@ pub async fn run_group_chat_turn_with_runtime(
                 }
                 HandoffDecision::Continue => {}
             }
+        }
+    }
+
+    // ── Auto-chain: after SingleTarget, scan response for @mentions ──
+    if room.auto_chain && matches!(turn.mode, GroupChatTurnMode::SingleTarget) {
+        let mut chained_ids: HashSet<String> =
+            turn.target_participant_ids.iter().cloned().collect();
+        let mut current_turn = turn.clone();
+        let mut hop = 0usize;
+
+        while hop < MAX_AUTO_CHAIN_HOPS {
+            if let Some(ref ct) = cancel_token {
+                if ct.is_cancelled() {
+                    log::info!("[group-chat] auto-chain cancelled at hop {hop}");
+                    break;
+                }
+            }
+
+            let Some(mention) = extract_first_mention(
+                &current_turn,
+                &room.participants,
+                &chained_ids,
+            ) else {
+                break;
+            };
+
+            let participant = match find_participant_unique(&room.participants, &mention) {
+                Ok(p) => p.clone(),
+                Err(e) => {
+                    log::debug!("[group-chat] auto-chain: {e}");
+                    break;
+                }
+            };
+
+            let target = match active_target_for_participant(participant.clone(), sessions).await {
+                Ok(t) => t,
+                Err(e) => {
+                    log::debug!("[group-chat] auto-chain: no active target for {}: {e}", participant.label);
+                    break;
+                }
+            };
+
+            hop += 1;
+            chained_ids.insert(participant.id.clone());
+
+            let auto_prompt = build_singletarget_prompt(
+                public_turns_after.len() as u64 + hop as u64,
+                &participant.label,
+                current_turn
+                    .responses
+                    .first()
+                    .and_then(|r| r.preview.as_deref())
+                    .unwrap_or("(empty)"),
+            );
+
+            let auto_started = now_iso();
+            let auto_turn_id = uuid::Uuid::new_v4().to_string();
+            let auto_idx = public_turns_after.len() as u64 + hop as u64;
+
+            let run_lock = run_orchestration_lock(&participant.run_id);
+            let _run_guard = run_lock.lock().await;
+            let run = match storage::runs::get_run(&participant.run_id) {
+                Some(r) => r,
+                None => break,
+            };
+
+            let response =
+                execute_group_chat_target(target, &participant, &run, &auto_prompt, pipe_runtime.clone()).await;
+
+            let auto_turn = GroupChatTurn {
+                id: auto_turn_id,
+                idx: auto_idx,
+                mode: GroupChatTurnMode::SingleTarget,
+                user_input: format!("[auto-chain hop {hop}]"),
+                target_participant_ids: vec![participant.id.clone()],
+                responses: vec![response],
+                started_at: auto_started,
+                completed_at: Some(now_iso()),
+            };
+            if let Err(e) = storage::group_chats::append_group_chat_public_turn(room_id, &auto_turn) {
+                log::warn!("[group-chat] auto-chain: failed to persist turn: {e}");
+                break;
+            }
+
+            log::info!(
+                "[group-chat] auto-chain hop {hop}: @{} → {}",
+                mention,
+                participant.label,
+            );
+
+            current_turn = auto_turn;
         }
     }
 
@@ -934,6 +1028,33 @@ fn find_participant_unique<'a>(
             "Ambiguous participant name '{target}' — please use a unique label"
         )),
     }
+}
+
+/// Scan a turn's response previews for `@Label` mentions of participants
+/// that haven't already been chained to. Returns the first valid mention.
+fn extract_first_mention(
+    turn: &GroupChatTurn,
+    participants: &[GroupChatParticipant],
+    exclude_ids: &HashSet<String>,
+) -> Option<String> {
+    for response in &turn.responses {
+        let text = response.preview.as_deref()?;
+        for word in text.split_whitespace() {
+            let candidate = word.trim_start_matches('@');
+            if candidate == word || candidate.is_empty() {
+                continue;
+            }
+            let normalized = candidate.to_ascii_lowercase();
+            let matched = participants.iter().find(|p| {
+                p.label.to_ascii_lowercase() == normalized
+                    && !exclude_ids.contains(&p.id)
+            });
+            if let Some(participant) = matched {
+                return Some(participant.label.clone());
+            }
+        }
+    }
+    None
 }
 
 fn outcome_status_label(status: TurnOutcomeStatus) -> &'static str {

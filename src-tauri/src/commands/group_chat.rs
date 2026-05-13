@@ -463,6 +463,7 @@ pub async fn send_group_chat_message(
         &message,
         sessions.inner(),
         pipe_runtime,
+        None,
     )
     .await?;
     group_chat_detail(&room_id)

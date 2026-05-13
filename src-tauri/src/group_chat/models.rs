@@ -12,6 +12,8 @@ pub struct GroupChat {
     pub active_plan_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub auto_chain: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
