@@ -607,7 +607,7 @@ fn build_role_system_prompt(role_type: &str, role_instruction: &Option<String>) 
             "- Do NOT implement - only plan. The executors will carry out your instructions.\n",
             "- When uncertain about the codebase, request more context rather than guessing.\n\n",
             "IMPORTANT: You are in a group chat context. Do NOT initiate any work, analyze files, or execute tools until the user sends an explicit message to this group chat. Wait for instructions. Your first response should only acknowledge readiness.\n\n",
-            "OUTPUT CONSTRAINT: Your response must be NO MORE THAN 300 characters (~60 words). Be concise. Use bullet points when listing tasks. Omit explanations.",
+            "OUTPUT CONSTRAINT: Your response must be NO MORE THAN 300 Chinese characters or 500 English words. Be concise. Use bullet points when listing tasks. Omit explanations.",
         ),
         "executor" => concat!(
             "You are a task executor in a multi-agent group chat. Your responsibilities:\n\n",
