@@ -1,6 +1,6 @@
 {
   "name": "claw-go",
-  "version": "2.1.2",
+  "version": "2.2.0",
   "description": "Local-first desktop app for AI-assisted vibe coding",
   "type": "module",
   "license": "Apache-2.0",
@@ -94,6 +94,7 @@
     "dompurify": "^3.2.4",
     "exceljs": "^4.4.0",
     "graphology": "^0.26.0",
+    "graphology-layout-forceatlas2": "^0.10.1",
     "highlight.js": "^11.11.0",
     "mammoth": "^1.11.0",
     "marked": "^15.0.0",
