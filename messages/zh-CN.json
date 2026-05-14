@@ -1599,6 +1599,10 @@
   "groupChat_snapshotExit": "退出快照",
   "groupChat_cancelTurn": "取消",
   "groupChat_cancelling": "取消中...",
+  "groupChat_removeParticipant": "移除",
+  "groupChat_removeParticipantConfirm": "从群聊中移除 {label}？",
+  "groupChat_thinking": "思考中...",
+
   "groupChat_longRunning": "运行较久",
   "groupChat_longRunningHint": "此轮运行时间较长，代理可能仍在工作中。",
   "groupChat_lastActivity": "最近活动",

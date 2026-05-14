@@ -623,10 +623,15 @@ pub(crate) async fn start_session_impl(
     // Provider-backed Claude sessions: persist a stable JSON config file and derive
     // the env projection from it. The JSON file is the durable source of truth;
     // env vars are injected from the same materialized config into the CLI process.
+    // Group chat non-executor participants: disable all plugins and hooks
+    // to prevent skill-driven behavior (superpowers, TDD, code-review, etc.).
+    let disable_plugins = is_group_chat && permission_mode_override.is_some();
+    let empty_hooks: std::collections::HashMap<String, serde_json::Value> = std::collections::HashMap::new();
+    let empty_plugins: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
     let managed = crate::agent::provider_claude_config::ManagedConfig {
         mcp_servers: &user_settings.mcp_servers,
-        hooks: &user_settings.hooks,
-        enabled_plugins: &user_settings.enabled_plugins,
+        hooks: if disable_plugins { &empty_hooks } else { &user_settings.hooks },
+        enabled_plugins: if disable_plugins { &empty_plugins } else { &user_settings.enabled_plugins },
     };
     let provider_config = match effective_pid {
         Some(pid) => {
@@ -646,6 +651,7 @@ pub(crate) async fn start_session_impl(
                         cred,
                         &run_id,
                         &managed,
+                        disable_plugins,
                     ) {
                         Ok(materialized) => {
                             log::info!(
@@ -667,10 +673,12 @@ pub(crate) async fn start_session_impl(
     };
     // If no provider config was generated but managed configs (hooks, plugins) exist,
     // write a minimal settings JSON so managed configs are injected via --settings.
+    // When disable_plugins is true, force write to clear native plugins even if managed is empty.
     let has_managed_configs = !managed.hooks.is_empty()
-        || !managed.enabled_plugins.is_empty();
+        || !managed.enabled_plugins.is_empty()
+        || disable_plugins;
     let managed_settings_path = if provider_config.is_none() && has_managed_configs {
-        match crate::agent::provider_claude_config::write_managed_settings(&run_id, &managed) {
+        match crate::agent::provider_claude_config::write_managed_settings(&run_id, &managed, disable_plugins) {
             Ok(path) => {
                 log::info!(
                     "[session] managed settings written: {} (hooks={}, plugins={})",

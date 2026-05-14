@@ -213,11 +213,12 @@ pub fn write_provider_claude_config(
     cred: &PlatformCredential,
     run_id: &str,
     managed: &ManagedConfig,
+    disable_plugins: bool,
 ) -> Result<ProviderClaudeConfigMaterialized, String> {
     // Build env vars dynamically from the latest credential (from settings page).
     let env = provider_env_from_credential(platform_id, cred)?;
     // Merge into the fixed JSON template.
-    let json_value = provider_config_json_from_env(&env, managed);
+    let json_value = provider_config_json_from_env(&env, managed, disable_plugins);
     // Each session gets a unique temp JSON so stale cache is impossible.
     let path = provider_claude_config_temp_path(run_id);
 
@@ -294,9 +295,10 @@ pub fn write_mcp_config(
 pub fn write_managed_settings(
     run_id: &str,
     managed: &ManagedConfig,
+    disable_plugins: bool,
 ) -> Result<PathBuf, String> {
     // Reuse the shared JSON builder with an empty env — same structure as provider sessions.
-    let config = provider_config_json_from_env(&HashMap::new(), managed);
+    let config = provider_config_json_from_env(&HashMap::new(), managed, disable_plugins);
 
     let path = provider_claude_config_temp_path(run_id);
     if let Some(parent) = path.parent() {
@@ -590,6 +592,7 @@ fn build_parameterized_env(
 fn provider_config_json_from_env(
     env: &HashMap<String, String>,
     managed: &ManagedConfig,
+    disable_plugins: bool,
 ) -> Value {
     // Merge order: native base → strip secrets → overlay env → force
     // permissions → fixed fields → hooks + plugins overlay. MCP servers
@@ -647,40 +650,48 @@ fn provider_config_json_from_env(
         Value::String("简体中文".to_string()),
     );
 
-    // hooks: managed overwrites native per-event (not concat).
-    if !managed.hooks.is_empty() {
-        let existing = obj
-            .get("hooks")
-            .and_then(|v| v.as_object())
-            .cloned()
-            .unwrap_or_default();
-        let mut merged = existing;
-        for (event, groups) in managed.hooks {
-            merged.insert(event.clone(), groups.clone());
+    if disable_plugins {
+        // Group chat non-executor participants: strip all hooks and plugins
+        // to prevent skill-driven behavior (superpowers, TDD, code-review, etc.).
+        // MCP servers are unaffected — they use a separate --mcp-config path.
+        obj.remove("hooks");
+        obj.insert("enabledPlugins".to_string(), json!({}));
+    } else {
+        // hooks: managed overwrites native per-event (not concat).
+        if !managed.hooks.is_empty() {
+            let existing = obj
+                .get("hooks")
+                .and_then(|v| v.as_object())
+                .cloned()
+                .unwrap_or_default();
+            let mut merged = existing;
+            for (event, groups) in managed.hooks {
+                merged.insert(event.clone(), groups.clone());
+            }
+            obj.insert("hooks".to_string(), Value::Object(merged));
         }
-        obj.insert("hooks".to_string(), Value::Object(merged));
-    }
 
-    // enabledPlugins: managed overlay (overwrite same-name keys).
-    if !managed.enabled_plugins.is_empty() {
-        let existing = obj
-            .get("enabledPlugins")
-            .and_then(|v| v.as_object())
-            .cloned()
-            .unwrap_or_default();
-        let mut merged = existing;
-        for (name, enabled) in managed.enabled_plugins {
-            merged.insert(name.clone(), Value::Bool(*enabled));
+        // enabledPlugins: managed overlay (overwrite same-name keys).
+        if !managed.enabled_plugins.is_empty() {
+            let existing = obj
+                .get("enabledPlugins")
+                .and_then(|v| v.as_object())
+                .cloned()
+                .unwrap_or_default();
+            let mut merged = existing;
+            for (name, enabled) in managed.enabled_plugins {
+                merged.insert(name.clone(), Value::Bool(*enabled));
+            }
+            obj.insert("enabledPlugins".to_string(), Value::Object(merged));
         }
-        obj.insert("enabledPlugins".to_string(), Value::Object(merged));
-    }
 
-    // Force superpowers plugin (AFTER managed overlay — cannot be disabled).
-    let plugins = obj
-        .entry("enabledPlugins".to_string())
-        .or_insert_with(|| Value::Object(Map::new()));
-    if let Some(plugins_obj) = plugins.as_object_mut() {
-        plugins_obj.insert("superpowers@claude-plugins-official".to_string(), Value::Bool(true));
+        // Force superpowers plugin (AFTER managed overlay — cannot be disabled).
+        let plugins = obj
+            .entry("enabledPlugins".to_string())
+            .or_insert_with(|| Value::Object(Map::new()));
+        if let Some(plugins_obj) = plugins.as_object_mut() {
+            plugins_obj.insert("superpowers@claude-plugins-official".to_string(), Value::Bool(true));
+        }
     }
 
     config
@@ -962,6 +973,7 @@ mod tests {
             ),
             "test-run-001",
             &empty_managed(),
+            false,
         )
         .unwrap();
 
@@ -1357,7 +1369,7 @@ mod tests {
     #[test]
     fn provider_config_preserves_native_hooks() {
         let env = HashMap::from([("ANTHROPIC_MODEL".to_string(), "test-model".to_string())]);
-        let config = provider_config_json_from_env(&env, &empty_managed());
+        let config = provider_config_json_from_env(&env, &empty_managed(), false);
         // Native ~/.claude/settings.json has hooks — they must survive.
         // If no native file exists (CI), hooks simply won't be present; that's fine.
         // The key assertion: Claw GO's own fields are always present.
@@ -1369,7 +1381,7 @@ mod tests {
     #[test]
     fn provider_config_strips_api_key_from_native_base() {
         let env = HashMap::from([("ANTHROPIC_MODEL".to_string(), "test-model".to_string())]);
-        let config = provider_config_json_from_env(&env, &empty_managed());
+        let config = provider_config_json_from_env(&env, &empty_managed(), false);
         assert!(
             config.get("apiKey").is_none(),
             "apiKey must not leak into provider session config"
@@ -1389,7 +1401,7 @@ mod tests {
             "my-server".to_string(),
             serde_json::json!({"command": "node", "args": ["server.js"]}),
         )]);
-        let config = provider_config_json_from_env(&env, &managed_with_mcp(&managed_mcp));
+        let config = provider_config_json_from_env(&env, &managed_with_mcp(&managed_mcp), false);
         // Native mcpServers may still exist (from ~/.claude/settings.json),
         // but managed MCP servers must NOT be present.
         if let Some(mcp) = config.get("mcpServers").and_then(|v| v.as_object()) {
@@ -1439,7 +1451,7 @@ mod tests {
             "ANTHROPIC_BASE_URL".to_string(),
             "https://provider.example.com".to_string(),
         )]);
-        let config = provider_config_json_from_env(&env, &empty_managed());
+        let config = provider_config_json_from_env(&env, &empty_managed(), false);
         let env_obj = config.get("env").and_then(|v| v.as_object()).unwrap();
         assert_eq!(
             env_obj.get("ANTHROPIC_BASE_URL").and_then(|v| v.as_str()),
@@ -1452,7 +1464,7 @@ mod tests {
         // On this machine, native settings.json has MX_APIKEY in env.
         // After the merge, native-only env vars should survive.
         let env = HashMap::from([("ANTHROPIC_MODEL".to_string(), "test".to_string())]);
-        let config = provider_config_json_from_env(&env, &empty_managed());
+        let config = provider_config_json_from_env(&env, &empty_managed(), false);
         let env_obj = config.get("env").and_then(|v| v.as_object()).unwrap();
         // Claw GO's env must be present
         assert_eq!(
@@ -1466,7 +1478,7 @@ mod tests {
     #[test]
     fn provider_config_always_enables_superpowers_plugin() {
         let env = HashMap::new();
-        let config = provider_config_json_from_env(&env, &empty_managed());
+        let config = provider_config_json_from_env(&env, &empty_managed(), false);
         let plugins = config
             .get("enabledPlugins")
             .and_then(|v| v.as_object())
@@ -1525,5 +1537,32 @@ mod tests {
         assert_eq!(env.get("ANTHROPIC_MODEL").map(String::as_str), Some("custom-model-v1"));
         assert_eq!(env.get("ANTHROPIC_DEFAULT_SONNET_MODEL").map(String::as_str), Some("custom-model-v1"));
         assert!(env.contains_key("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"));
+    }
+
+    #[test]
+    fn disable_plugins_strips_all_hooks_and_plugins() {
+        let env = HashMap::new();
+        let config = provider_config_json_from_env(&env, &empty_managed(), true);
+
+        // enabledPlugins must be an empty object — no native, no managed, no superpowers.
+        let plugins = config
+            .get("enabledPlugins")
+            .and_then(|v| v.as_object())
+            .expect("enabledPlugins must exist");
+        assert!(
+            plugins.is_empty(),
+            "enabledPlugins must be empty when disable_plugins=true, got: {plugins:?}"
+        );
+
+        // hooks must not be present at all.
+        assert!(
+            config.get("hooks").is_none(),
+            "hooks must not exist when disable_plugins=true"
+        );
+
+        // Core fields must still be present.
+        assert!(config.get("permissions").is_some());
+        assert!(config.get("env").is_some());
+        assert!(config.get("language").is_some());
     }
 }

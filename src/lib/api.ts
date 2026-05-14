@@ -259,6 +259,11 @@ export async function cancelGroupChatTurn(roomId: string): Promise<boolean> {
   return invoke<boolean>("cancel_group_chat_turn", { roomId });
 }
 
+export async function removeGroupChatParticipant(roomId: string, runId: string): Promise<GroupChatDetail> {
+  dbg("api", "removeGroupChatParticipant", { roomId, runId });
+  return invoke<GroupChatDetail>("remove_group_chat_participant", { roomId, runId });
+}
+
 // AI Characters
 
 export async function listCharacters(): Promise<AiCharacter[]> {

@@ -550,6 +550,33 @@ pub async fn cancel_group_chat_turn(
     Ok(true)
 }
 
+#[tauri::command]
+pub async fn remove_group_chat_participant(
+    emitter: State<'_, Arc<BroadcastEmitter>>,
+    sessions: State<'_, ActorSessionMap>,
+    spawn_locks: State<'_, SpawnLocks>,
+    room_id: String,
+    run_id: String,
+) -> Result<GroupChatDetail, String> {
+    log::debug!(
+        "[group-chat] remove_group_chat_participant: room_id={}, run_id={}",
+        room_id,
+        run_id
+    );
+
+    // Stop the session if it's running
+    let _ = crate::commands::session::stop_session_impl(
+        emitter.inner(),
+        sessions.inner(),
+        spawn_locks.inner(),
+        run_id.clone(),
+    )
+    .await;
+
+    storage::group_chats::detach_group_chat_run(&room_id, &run_id)?;
+    group_chat_detail(&room_id)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::models::{ExecutionPath, RunStatus};

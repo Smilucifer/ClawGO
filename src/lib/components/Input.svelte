@@ -4,6 +4,7 @@
     placeholder = "",
     type = "text",
     disabled = false,
+    label = "",
     class: className = "",
     oninput,
     onblur,
@@ -13,6 +14,7 @@
     placeholder?: string;
     type?: string;
     disabled?: boolean;
+    label?: string;
     class?: string;
     oninput?: (e: Event) => void;
     onblur?: (e: FocusEvent) => void;
@@ -20,6 +22,9 @@
   } = $props();
 </script>
 
+{#if label}
+  <label class="text-sm font-medium leading-none mb-1.5 block">{label}</label>
+{/if}
 <input
   {type}
   {placeholder}

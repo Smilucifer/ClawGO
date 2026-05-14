@@ -359,7 +359,7 @@ describe("SessionStore reducer", () => {
       ) as Extract<TimelineEntry, { kind: "tool" }>;
 
       expect(toolEntry).toBeDefined();
-      expect(toolEntry.tool.input).toEqual(events[0].input);
+      expect(toolEntry.tool.input).toEqual((events[0] as Extract<BusEvent, { type: "tool_start" }>).input);
       const questions = (toolEntry.tool.input.questions ?? []) as Array<{
         options?: Array<{ label: string }>;
       }>;

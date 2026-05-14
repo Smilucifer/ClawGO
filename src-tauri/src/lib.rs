@@ -174,6 +174,7 @@ pub fn run() {
             commands::group_chat::list_group_chat_run_index,
             commands::group_chat::get_group_chat_turn_snapshot,
             commands::group_chat::cancel_group_chat_turn,
+            commands::group_chat::remove_group_chat_participant,
             commands::characters::list_characters,
             commands::characters::create_character,
             commands::characters::update_character,

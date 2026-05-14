@@ -12,6 +12,7 @@
   import MarkdownContent from "./MarkdownContent.svelte";
   import { getTransport } from "$lib/transport";
   import type { BusEvent } from "$lib/types";
+  import { type PastedBlock, handleRichPaste, composeRichMessageText } from "$lib/utils/rich-input";
 
   let { groupChat }: { groupChat: api.GroupChatRunIndexEntry | null } = $props();
 
@@ -30,6 +31,8 @@
 
   // ── Composer ──
   let composerText = $state("");
+  let participantModels = $state<Map<string, string>>(new Map());
+  let pastedBlocks = $state<PastedBlock[]>([]);
   let mentionOpen = $state(false);
   let mentionQuery = $state("");
   let mentionIndex = $state(0);
@@ -51,6 +54,7 @@
   let thinkingTexts = $state<Map<string, string>>(new Map()); // keyed by run_id, accumulated thinking
   let thinkingCollapsed = $state<Map<string, boolean>>(new Map()); // keyed by run_id
   let collapsedResponses = $state<Map<string, boolean>>(new Map()); // keyed by turn.id + participant_id
+  let removingParticipant = $state<string | null>(null); // run_id being removed
   let unlistenBus: (() => void) | undefined;
 
   function startBusListener() {
@@ -79,6 +83,19 @@
         if (ev.type === "message_complete" && thinkingTexts.has(ev.run_id)) {
           thinkingTexts.delete(ev.run_id);
           thinkingTexts = new Map(thinkingTexts);
+        }
+      } else if (ev.type === "session_init" && ev.model && detail) {
+        // Update participant's model to match actual runtime model
+        const updated = { ...detail };
+        const participant = updated.participants.find(
+          (p) => p.run?.id === ev.run_id,
+        );
+        if (participant?.run) {
+          participant.run.model = ev.model;
+          detail = updated;
+        } else {
+          participantModels.set(ev.run_id, ev.model);
+          participantModels = new Map(participantModels);
         }
       }
     }).then((unlisten) => {
@@ -304,29 +321,34 @@
       }
     }
     // Enter without shift → send
-    if (e.key === "Enter" && !e.shiftKey && !mentionOpen && composerText.trim()) {
+    if (e.key === "Enter" && !e.shiftKey && !mentionOpen && (composerText.trim() || pastedBlocks.length > 0)) {
       e.preventDefault();
       handleSend();
     }
   }
 
   let sendGeneration = 0;
+  let sendCompleted = 0;
 
   async function handleSend() {
-    const text = composerText.trim();
+    const text = composeRichMessageText(composerText, pastedBlocks);
     if (!text || !detail) return;
-    dbg("GroupChatLayout", "send", { len: text.length });
+    if (sendCompleted !== sendGeneration && sendGeneration > 0) return;
+    dbg("GroupChatLayout", "send", { len: text.length, pasteBlocks: pastedBlocks.length });
 
     const gen = ++sendGeneration;
+    sendCompleted = 0;
     const roomId = detail.id;
 
     // Fire-and-forget: clear composer immediately for responsive UX
     composerText = "";
+    pastedBlocks = [];
     if (textareaEl) textareaEl.style.height = "auto";
 
     // Poll for incremental updates while turn executes in background
     const pollTimer = setInterval(async () => {
       if (gen !== sendGeneration) { clearInterval(pollTimer); return; }
+      if (sendCompleted === gen) return;
       try {
         const updated = await api.getGroupChat(roomId);
         if (gen === sendGeneration && detail?.id === roomId) detail = updated;
@@ -335,12 +357,41 @@
 
     try {
       const updated = await api.sendGroupChatMessage(roomId, text);
-      if (gen === sendGeneration && detail?.id === roomId) detail = updated;
+      if (gen === sendGeneration && detail?.id === roomId) {
+        detail = updated;
+      }
     } catch (e) {
       dbgWarn("GroupChatLayout", "send failed", e);
     } finally {
       clearInterval(pollTimer);
+      sendCompleted = gen;
     }
+  }
+
+  async function removeParticipant(runId: string, label: string) {
+    if (!detail || removingParticipant) return;
+    const msg = t("groupChat_removeParticipantConfirm", { label });
+    if (!confirm(msg)) return;
+    removingParticipant = runId;
+    try {
+      detail = await api.removeGroupChatParticipant(detail.id, runId);
+    } catch (e) {
+      dbgWarn("GroupChatLayout", "removeParticipant failed", e);
+    } finally {
+      removingParticipant = null;
+    }
+  }
+
+  function handlePaste(e: ClipboardEvent) {
+    const result = handleRichPaste(e, pastedBlocks.length);
+    if (result.preventDefault) e.preventDefault();
+    if (result.pastedBlocks.length > 0) {
+      pastedBlocks = [...pastedBlocks, ...result.pastedBlocks];
+    }
+  }
+
+  function removePastedBlock(id: string) {
+    pastedBlocks = pastedBlocks.filter((b) => b.id !== id);
   }
 
   function insertSummaryCommand() {
@@ -656,6 +707,32 @@
                 </div>
               </div>
             {/each}
+            <!-- Thinking indicator for targeted participants with no response yet (last turn only) -->
+            {#if turnIdx === detail.turns.length - 1}
+            {#each turn.target_participant_ids.filter((tid) => !turn.responses.some((r) => r.participant_id === tid)) as tid (tid)}
+              {@const pinfo = getParticipantInfo(tid, tid)}
+              <div class="flex justify-start">
+                <div class="max-w-[85%]">
+                  <div class="rounded-2xl rounded-bl-sm border border-border/30 bg-muted/20 overflow-hidden">
+                    <div class="flex items-center gap-2 px-3 py-1.5 bg-muted/10">
+                      <span class="w-5 h-5 rounded-full bg-muted-foreground/20 text-[10px] font-bold text-muted-foreground flex items-center justify-center shrink-0">
+                        {pinfo?.participant.label?.charAt(0)?.toUpperCase() ?? "?"}
+                      </span>
+                      <span class="text-xs font-medium truncate">{pinfo?.participant.label ?? tid}</span>
+                    </div>
+                    <div class="px-3 py-2 text-xs">
+                      <div class="flex items-center gap-1.5 py-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 animate-bounce" style="animation-delay: 0s"></span>
+                        <span class="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 animate-bounce" style="animation-delay: 0.15s"></span>
+                        <span class="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 animate-bounce" style="animation-delay: 0.3s"></span>
+                        <span class="text-[10px] text-muted-foreground/50 ml-1">{t("groupChat_thinking")}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            {/each}
+            {/if}
           {/each}
         {/if}
       </div>
@@ -688,12 +765,31 @@
           </button>
         </div>
 
+        <!-- Paste block chips -->
+        {#if pastedBlocks.length > 0}
+          <div class="flex flex-wrap gap-1.5 mb-2">
+            {#each pastedBlocks as block (block.id)}
+              <div class="flex items-center gap-1 rounded-md border border-border/50 bg-muted/50 px-2 py-1 text-[11px]">
+                <svg class="h-3 w-3 text-muted-foreground/60 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M16 13H8" /><path d="M16 17H8" /><path d="M10 9H8" />
+                </svg>
+                <span class="truncate max-w-[120px]">{block.preview}</span>
+                <span class="text-muted-foreground/40">{block.lineCount}L</span>
+                <button class="text-muted-foreground/40 hover:text-foreground ml-0.5" onclick={() => removePastedBlock(block.id)} title="Remove">
+                  <svg class="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                </button>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
         <!-- Textarea -->
         <textarea
           bind:this={textareaEl}
           bind:value={composerText}
           onkeydown={handleComposerKeydown}
           oninput={() => { autoResize(); handleComposerInput(); }}
+          onpaste={handlePaste}
           placeholder={t("groupChat_roundtablePlaceholder")}
           rows={1}
           class="w-full resize-none bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none border border-border rounded-lg"
@@ -720,11 +816,11 @@
         <!-- Send button -->
         <div class="flex justify-end mt-2">
           <button
-            class="flex h-7 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors {composerText.trim()
+            class="flex h-7 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors {(composerText.trim() || pastedBlocks.length > 0) && (sendCompleted === sendGeneration || sendGeneration === 0)
               ? 'bg-primary text-primary-foreground hover:bg-primary/90'
               : 'text-muted-foreground/40'}"
             onclick={handleSend}
-            disabled={!composerText.trim()}
+            disabled={(!composerText.trim() && pastedBlocks.length === 0) || (sendCompleted !== sendGeneration && sendGeneration > 0)}
           >
             <span>{t("groupChat_send")}</span>
             <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -766,11 +862,21 @@
               <span class="text-[10px] rounded px-1 py-0.5 shrink-0 {roleBadgeColor(p.participant.role)}">
                 {p.participant.role}
               </span>
+              <button
+                class="ml-auto shrink-0 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-50"
+                title={t("groupChat_removeParticipant")}
+                disabled={removingParticipant === p.participant.run_id}
+                onclick={() => removeParticipant(p.participant.run_id, p.participant.label)}
+              >
+                <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                </svg>
+              </button>
             </div>
             <div class="flex items-center gap-1.5 mt-1 ml-4">
               <span class="text-[10px] text-muted-foreground/60 truncate">{provider}</span>
-              {#if p.run?.model}
-                <span class="text-[10px] text-muted-foreground/40 truncate">/ {p.run.model}</span>
+              {#if p.run?.model || participantModels.get(p.participant.run_id)}
+                <span class="text-[10px] text-muted-foreground/40 truncate">/ {p.run?.model ?? participantModels.get(p.participant.run_id)}</span>
               {/if}
             </div>
           </div>

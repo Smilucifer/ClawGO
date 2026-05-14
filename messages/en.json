@@ -1599,6 +1599,10 @@
   "groupChat_snapshotExit": "Exit snapshot",
   "groupChat_cancelTurn": "Cancel",
   "groupChat_cancelling": "Cancelling...",
+  "groupChat_removeParticipant": "Remove",
+  "groupChat_removeParticipantConfirm": "Remove {label} from this group chat?",
+  "groupChat_thinking": "Thinking...",
+
   "groupChat_longRunning": "Long running",
   "groupChat_longRunningHint": "This turn has been running for a while. The agent may still be working.",
   "groupChat_lastActivity": "Last activity",

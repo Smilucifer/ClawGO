@@ -213,6 +213,21 @@ fn normalize_participant_role(_room: &GroupChat, role: Option<String>) -> String
     requested.unwrap_or_else(|| "participant".to_string())
 }
 
+pub fn detach_group_chat_run(room_id: &str, run_id: &str) -> Result<GroupChat, String> {
+    validate_group_chat_id(room_id)?;
+    let group_chat_lock = group_chat_lock(room_id);
+    let _guard = group_chat_lock.lock().unwrap_or_else(|e| e.into_inner());
+    let mut room = get_group_chat(room_id).ok_or_else(|| format!("GroupChat {} not found", room_id))?;
+    let before = room.participants.len();
+    room.participants.retain(|p| p.run_id != run_id);
+    if room.participants.len() == before {
+        return Err(format!("Run {} not found in group chat {}", run_id, room_id));
+    }
+    room.updated_at = now_iso();
+    save_group_chat(&room)?;
+    Ok(room)
+}
+
 pub fn update_group_chat_memo(room_id: &str, memo: String) -> Result<GroupChat, String> {
     validate_group_chat_id(room_id)?;
     let group_chat_lock = group_chat_lock(room_id);
@@ -270,6 +285,8 @@ fn touch_group_chat_updated_at(room_id: &str) -> Result<(), String> {
 
 fn list_turns_jsonl(room_id: &str, path: PathBuf) -> Result<Vec<GroupChatTurn>, String> {
     validate_group_chat_id(room_id)?;
+    let group_chat_lock = group_chat_lock(room_id);
+    let _guard = group_chat_lock.lock().unwrap_or_else(|e| e.into_inner());
     if !path.exists() {
         return Ok(vec![]);
     }

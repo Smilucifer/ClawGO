@@ -891,41 +891,35 @@ async fn execute_pipe_turn(
     }
 }
 
-/// Build a system prompt for a participant based on their role type and optional custom instruction.
-fn build_role_system_prompt(role_type: &str, role_instruction: &Option<String>) -> String {
-    let base = match role_type {
-        "planner" => concat!(
-            "You are a strategic planner in a multi-agent group chat. Your responsibilities:\n\n",
-            "1. TASK DECOMPOSITION: Break complex user requests into concrete, ordered sub-tasks.\n",
-            "2. CONTEXT ANALYSIS: Read relevant project files and search the web to understand the codebase before planning.\n",
-            "3. COORDINATION: Assign tasks to appropriate participants. Use @mentions to route subtasks.\n",
-            "4. PLAN OUTPUT: Produce a numbered checklist with clear success criteria for each item.\n\n",
-            "CONSTRAINTS:\n",
-            "- You can READ files, search code, and search the web, but you CANNOT modify the filesystem, run commands, or execute tools that change state.\n",
-            "- Do NOT implement - only plan. The executors will carry out your instructions.\n",
-            "- When uncertain about the codebase, request more context rather than guessing.\n\n",
-            "IMPORTANT: You are in a group chat context. Do NOT initiate any work, analyze files, or execute tools until the user sends an explicit message to this group chat. Wait for instructions. Your first response should only acknowledge readiness.\n\n",
-            "OUTPUT CONSTRAINT: Your response must be NO MORE THAN 300 Chinese characters or 500 English words. Be concise. Use bullet points when listing tasks. Omit explanations.",
-        ),
-        "executor" => concat!(
-            "You are a task executor in a multi-agent group chat. Your responsibilities:\n\n",
-            "1. FOLLOW THE PLAN: Execute only the tasks assigned to you. Do not deviate from the plan.\n",
-            "2. REPORT PROGRESS: Clearly state which task you completed and what the result was.\n",
-            "3. ASK FOR CLARIFICATION: If a task is ambiguous, ask the planner for clarification before executing.\n",
-            "4. SIGNAL COMPLETION: End your response with a brief summary of what was accomplished.\n\n",
-            "CONSTRAINTS:\n",
-            "- Stay within the scope of your assigned task. Do not expand or reinterpret the plan.\n",
-            "- If you encounter an obstacle, report it rather than working around it silently.\n",
-            "- Coordinate with other executors - reference their outputs when relevant.\n\n",
-            "IMPORTANT: You are in a group chat context. Do NOT initiate any work until the planner assigns you a task. Wait for instructions.",
-        ),
-        _ => "",
-    };
-    let custom = role_instruction.as_deref().unwrap_or("");
-    if custom.is_empty() {
-        base.to_string()
+/// Build a system prompt for a participant from its custom role_instruction and personality.
+/// role_instruction defines *what* the character does; personality defines *how* it behaves.
+/// Falls back to a minimal role-type hint when role_instruction is empty.
+fn build_role_system_prompt(
+    role_type: &str,
+    role_instruction: &Option<String>,
+    personality: &Option<String>,
+) -> String {
+    let custom = role_instruction.as_deref().unwrap_or("").trim();
+    let persona = personality.as_deref().unwrap_or("").trim();
+
+    let base = if !custom.is_empty() {
+        custom.to_string()
     } else {
-        format!("{}\n\n{}", base, custom)
+        match role_type {
+            "planner" => "You are a planner. You can read files and search the web, but do not modify the filesystem or execute tools that change state. Analyze the task, create a concise numbered plan, and assign subtasks to executors via @mentions. Wait for the user's message before acting.".to_string(),
+            "executor" => "You are an executor. Follow the plan assigned to you, report progress, and signal completion. Wait for the user's message before acting.".to_string(),
+            _ => String::new(),
+        }
+    };
+
+    if base.is_empty() {
+        return String::new();
+    }
+
+    if !persona.is_empty() {
+        format!("{base}\n\n[Communication Style & Personality]\n{persona}")
+    } else {
+        base
     }
 }
 
@@ -942,7 +936,7 @@ fn resolve_participant_system_prompt(
     let character = ai_characters
         .iter()
         .find(|c| c.id == participant.character_id)?;
-    let prompt = build_role_system_prompt(&character.role_type, &character.role_instruction);
+    let prompt = build_role_system_prompt(&character.role_type, &character.role_instruction, &character.personality);
     if prompt.is_empty() {
         None
     } else {

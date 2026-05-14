@@ -118,7 +118,7 @@
   let embeddingSaveError = $state<string | null>(null);
   let embeddingTestResult = $state<{
     success: boolean;
-    latencyMs: number;
+    latency_ms: number;
     dimension: number;
     error?: string;
   } | null>(null);
@@ -171,7 +171,7 @@
     try {
       embeddingTestResult = await api.testEmbeddingConnection();
     } catch (e: any) {
-      embeddingTestResult = { success: false, latencyMs: 0, dimension: 0, error: e?.toString?.() ?? "Unknown error" };
+      embeddingTestResult = { success: false, latency_ms: 0, dimension: 0, error: e?.toString?.() ?? "Unknown error" };
     } finally {
       embeddingLoading = false;
     }
@@ -3669,7 +3669,7 @@
             {#if embeddingTestResult}
               <div class="p-3 rounded text-xs {embeddingTestResult.success ? 'bg-green-950/30 text-green-300' : 'bg-red-950/30 text-red-300'}">
                 {#if embeddingTestResult.success}
-                  <p>{t("settings_embedding_test_success")}{embeddingTestResult.latencyMs}ms · {t("settings_embedding_dimension")}{embeddingTestResult.dimension}</p>
+                  <p>{t("settings_embedding_test_success")}{embeddingTestResult.latency_ms}ms · {t("settings_embedding_dimension")}{embeddingTestResult.dimension}</p>
                 {:else}
                   <p>{t("settings_embedding_test_fail")}{embeddingTestResult.error || t("settings_embedding_unknown_error")}</p>
                 {/if}
