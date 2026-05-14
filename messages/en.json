@@ -8,6 +8,7 @@
   "settings_tab_remote": "Remote",
   "settings_tab_debug": "Debug",
   "settings_tab_characters": "Characters",
+  "settings_tab_embedding": "Character Memory",
 
   "settings_general_connection": "Connection",
   "settings_general_saved": "Saved",
@@ -1694,5 +1695,22 @@
   "settings_characters_executor": "Executor",
   "settings_characters_custom": "Custom",
   "settings_characters_delete_confirm": "Delete this character",
-  "settings_characters_manage": "Manage Characters"
+  "settings_characters_manage": "Manage Characters",
+  "settings_embedding_title": "Character Memory · Embedding Config",
+  "settings_embedding_description": "Configure the embedding model API for the character memory system. Used for semantic search and memory retrieval. Uses OpenAI-compatible interface.",
+  "settings_embedding_save_error": "Save failed: ",
+  "settings_embedding_enable": "Enable Character Memory (Embedding)",
+  "settings_embedding_presets": "Quick Presets",
+  "settings_embedding_api_endpoint": "API Endpoint",
+  "settings_embedding_api_key_label": "API Key (optional, reuses Provider API Key if empty)",
+  "settings_embedding_show": "Show",
+  "settings_embedding_hide": "Hide",
+  "settings_embedding_model_label": "Model Name",
+  "settings_embedding_test": "Test Connection",
+  "settings_embedding_testing": "Testing...",
+  "settings_embedding_test_success": "Connection OK · ",
+  "settings_embedding_dimension": "Dimension: ",
+  "settings_embedding_test_fail": "Connection failed: ",
+  "settings_embedding_unknown_error": "Unknown error",
+  "settings_embedding_disabled_notice": "Character memory is paused. Enable to restore semantic search. Stored memory data will not be lost."
 }

@@ -1,23 +1,27 @@
 use crate::models::{EmbeddingConfig, TestEmbeddingResult};
 use crate::storage::settings;
+use once_cell::sync::Lazy;
 use serde_json::Value;
 use std::time::Instant;
 use tauri::command;
+
+static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::new()
+});
 
 fn build_embedding_request(
     config: &EmbeddingConfig,
     input: &str,
     timeout_secs: u64,
 ) -> Result<reqwest::RequestBuilder, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(timeout_secs))
-        .build()
-        .map_err(|e| e.to_string())?;
     let body = serde_json::json!({
         "input": input,
         "model": config.model,
     });
-    let mut req = client.post(&config.endpoint).json(&body);
+    let mut req = HTTP_CLIENT
+        .post(&config.endpoint)
+        .timeout(std::time::Duration::from_secs(timeout_secs))
+        .json(&body);
     if let Some(ref key) = config.api_key {
         req = req.header("Authorization", format!("Bearer {}", key));
     }

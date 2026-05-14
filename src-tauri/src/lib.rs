@@ -186,6 +186,7 @@ pub fn run() {
             commands::characters::get_memory_graph,
             commands::characters::get_memory_communities,
             commands::characters::get_knowledge_gaps,
+            commands::characters::search_character_memories,
             commands::avatar::upload_character_avatar,
             commands::memos::list_memos,
             commands::memos::add_memo,
@@ -328,6 +329,7 @@ pub fn run() {
             commands::vectorstore::vector_search,
             commands::vectorstore::vector_delete,
             commands::vectorstore::reset_vector_store,
+            commands::vectorstore::rebuild_vector_index,
         ])
         .setup(move |app| {
             // Set up broadcast emitter (requires AppHandle, so must be in setup)
@@ -434,7 +436,9 @@ pub fn run() {
         _ => {}
     }
 
-    // Spawn background lifecycle maintenance (log compaction, etc.)
+    // Spawn background lifecycle maintenance (log compaction, retention, etc.).
+    // Order matters: compaction runs first and clears LanceDB + writes .rebuild_pending;
+    // retention then sees the marker and skips its own LanceDB clear to avoid redundant I/O.
     std::thread::spawn(|| {
         let chars_dir = crate::storage::data_dir().join("characters");
         if let Ok(entries) = std::fs::read_dir(&chars_dir) {
@@ -445,6 +449,20 @@ pub fn run() {
                         Ok(true) => log::info!("Compacted memory log for character {}", name),
                         Err(e) => log::warn!("Compaction failed for {}: {}", name, e),
                         _ => {}
+                    }
+                    // Apply retention policy if configured
+                    if let Ok(Some(meta)) = crate::storage::characters::load_character_metadata(name) {
+                        if let Some(mc) = &meta.memory_config {
+                            if let Some(days) = mc.retention_days {
+                                if days > 0 {
+                                    match crate::group_chat::data_lifecycle::apply_retention_policy(name, days) {
+                                        Ok(removed) if removed > 0 => log::info!("Retention removed {} entries for {}", removed, name),
+                                        Err(e) => log::warn!("Retention failed for {}: {}", name, e),
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

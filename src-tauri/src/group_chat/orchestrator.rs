@@ -439,20 +439,35 @@ pub async fn run_group_chat_turn_with_runtime(
             }
 
             // ── Auto-extraction: fire-and-forget memory extraction ──
+            // Only spawn for characters with auto_learn enabled.
+            // Pass real turn response texts so the extraction prompt has context.
             let gc_id = room_id.to_string();
-            let participants_snapshot: Vec<String> =
-                room.participants.iter().map(|p| p.character_id.clone()).collect();
+            let turn_texts: Vec<String> = turn
+                .responses
+                .iter()
+                .filter_map(|r| r.preview.clone())
+                .collect();
+            let user_settings = storage::settings::get_user_settings();
+            let participants_snapshot: Vec<(String, bool)> = room
+                .participants
+                .iter()
+                .map(|p| {
+                    let auto_learn = is_auto_learn(&p.character_id, &user_settings.ai_characters);
+                    (p.character_id.clone(), auto_learn)
+                })
+                .collect();
             tokio::spawn(async move {
-                for cid in &participants_snapshot {
-                    if cid.is_empty() || cid == "__orphan__" {
+                for (cid, auto_learn) in &participants_snapshot {
+                    if !auto_learn || cid.is_empty() || cid == "__orphan__" {
                         continue;
                     }
                     if !can_extract(&gc_id, cid) {
                         continue;
                     }
-                    let turns: Vec<String> = Vec::new();
-                    auto_extract_memories(cid, &turns).await;
-                    record_extraction(&gc_id, cid);
+                    let memories = auto_extract_memories(cid, &turn_texts).await;
+                    if !memories.is_empty() {
+                        record_extraction(&gc_id, cid);
+                    }
                 }
             });
 
@@ -514,19 +529,38 @@ async fn execute_group_chat_target(
     }
 }
 
+fn is_auto_learn(character_id: &str, characters: &[crate::models::AiCharacter]) -> bool {
+    if character_id.is_empty() || character_id == "__orphan__" {
+        return false;
+    }
+    match characters.iter().find(|c| c.id == character_id) {
+        Some(c) => c.memory_config.as_ref()
+            .map(|mc| mc.auto_learn)
+            .unwrap_or(true), // default on when memory_config is absent
+        None => false, // character not found — don't auto-learn
+    }
+}
+
 /// Inject character memories into the system prompt for a group chat participant.
-/// Skipped when character_id is empty or `__orphan__`.
+/// Skipped when character_id is empty, `__orphan__`, or auto_learn is disabled.
 async fn inject_memories(
     character_id: &str,
     user_message: &str,
     system_prompt: &mut String,
+    auto_learn: bool,
 ) {
-    if character_id.is_empty() || character_id == "__orphan__" {
+    if !auto_learn || character_id.is_empty() || character_id == "__orphan__" {
         return;
     }
-    let (memories, _tier) = search_memories_for_injection(
+    let (memories, tier) = search_memories_for_injection(
         character_id, user_message, 5, 0.5, 1,
     ).await;
+    if tier != crate::group_chat::memory_injection::DegradationTier::Full {
+        log::info!(
+            "inject_memories: degraded ({:?}) for character {}",
+            tier, character_id
+        );
+    }
     if !memories.is_empty() {
         let memory_prompt = format_memory_injection(&memories, 2000, 300);
         if !memory_prompt.is_empty() {
@@ -554,8 +588,9 @@ async fn execute_actor_turn(
             _ => String::new(),
         };
 
-    // Inject character memory after the role prompt
-    inject_memories(&participant.character_id, user_message, &mut system_prompt).await;
+    // Inject character memory after the role prompt (respects auto_learn config)
+    let auto_learn = is_auto_learn(&participant.character_id, &user_settings.ai_characters);
+    inject_memories(&participant.character_id, user_message, &mut system_prompt, auto_learn).await;
 
     let full_prompt = if !system_prompt.is_empty() {
         format!("{}\n\n---\n\n{}", system_prompt, target_prompt)
@@ -644,8 +679,9 @@ async fn execute_pipe_turn(
     )
     .unwrap_or_default();
 
-    // Inject character memory after the role prompt
-    inject_memories(&participant.character_id, user_message, &mut pipe_system_prompt).await;
+    // Inject character memory after the role prompt (respects auto_learn config)
+    let auto_learn = is_auto_learn(&participant.character_id, &user_settings.ai_characters);
+    inject_memories(&participant.character_id, user_message, &mut pipe_system_prompt, auto_learn).await;
 
     if !pipe_system_prompt.is_empty() {
         adapter_settings.append_system_prompt = Some(pipe_system_prompt);

@@ -10,8 +10,12 @@ use std::fs;
 static CHAR_LOCKS: Lazy<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-fn validate_character_id(id: &str) -> Result<(), String> {
+pub(crate) fn validate_character_id(id: &str) -> Result<(), String> {
     if id.is_empty() || id.contains('/') || id.contains('\\') || id.contains("..") {
+        return Err(format!("Invalid character_id: {}", id));
+    }
+    // Reject Windows-unsafe filename characters
+    if id.contains(|c: char| matches!(c, ':' | '*' | '?' | '"' | '<' | '>' | '|')) {
         return Err(format!("Invalid character_id: {}", id));
     }
     Ok(())
@@ -89,15 +93,157 @@ fn read_log_entries_unlocked(character_id: &str) -> Result<Vec<MemoryNode>, Stri
         }
         if let Ok(node) = serde_json::from_str::<MemoryNode>(&line) {
             entries.push(node);
+        } else {
+            log::warn!("[characters] skipping unparseable memory log line in {}", character_id);
         }
     }
     Ok(entries)
 }
 
+/// Compact the memory log under char_lock to prevent write-loss races.
+/// Deduplicates entries (keep latest version of each ID), writes compacted log atomically.
+/// Also clears the LanceDB vector index while the lock is held so concurrent upserts
+/// cannot land in the index between compaction and cleanup.
+/// Returns true if compaction was performed, false if below threshold.
+///
+/// Triggered when log exceeds 10,000 lines OR more than 30 days since last compaction.
+
+/// Clear the LanceDB vector index for a character and write the rebuild marker.
+/// If `skip_if_marker_exists` is true, no-op when `.rebuild_pending` already exists
+/// (used by retention to avoid redundant clears after compaction already cleared).
+/// Returns true if the index was cleared.
+fn clear_lancedb_index(character_id: &str, skip_if_marker_exists: bool) -> bool {
+    if skip_if_marker_exists {
+        let marker = char_dir(character_id).join(".rebuild_pending");
+        if marker.exists() {
+            return false;
+        }
+    }
+    let lancedb_dir = char_dir(character_id).join("lancedb");
+    if !lancedb_dir.exists() {
+        return false;
+    }
+    match std::fs::remove_dir_all(&lancedb_dir) {
+        Ok(()) => {
+            let marker = char_dir(character_id).join(".rebuild_pending");
+            let _ = std::fs::write(&marker, b"1");
+            true
+        }
+        Err(e) => {
+            log::warn!("clear_lancedb_index: failed for {}: {e}", character_id);
+            false
+        }
+    }
+}
+
+pub fn compact_memory_log_locked(character_id: &str) -> Result<bool, String> {
+    validate_character_id(character_id)?;
+    let lock = char_lock(character_id);
+    let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+
+    let entries = read_log_entries_unlocked(character_id)?;
+
+    // Check time-based trigger: compact if > 30 days since last compaction
+    let compaction_marker = char_dir(character_id).join(".last_compaction");
+    let time_triggered = if let Ok(meta) = std::fs::metadata(&compaction_marker) {
+        if let Ok(modified) = meta.modified() {
+            modified.elapsed().map(|d| d.as_secs() > 30 * 24 * 3600).unwrap_or(false)
+        } else {
+            false
+        }
+    } else {
+        // No marker yet — eligible for time-based trigger once the log has
+        // at least 1,000 entries (first-ever compaction for this character).
+        entries.len() > 1_000
+    };
+
+    if entries.len() < 10_000 && !time_triggered {
+        return Ok(false);
+    }
+
+    let mut latest: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (i, entry) in entries.iter().enumerate() {
+        latest.insert(entry.id.clone(), i);
+    }
+    let mut compacted: Vec<_> = latest.into_values().map(|i| entries[i].clone()).collect();
+    compacted.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+
+    let path = memory_log_path(character_id);
+    let tmp_path = path.with_extension(format!("jsonl.{}.tmp", uuid::Uuid::new_v4()));
+    {
+        let mut file = fs::File::create(&tmp_path)
+            .map_err(|e| format!("compact: create tmp: {e}"))?;
+        for node in &compacted {
+            let line = serde_json::to_string(node).map_err(|e| format!("compact: serialize: {e}"))? + "\n";
+            file.write_all(line.as_bytes()).map_err(|e| format!("compact: write: {e}"))?;
+        }
+        file.flush().map_err(|e| format!("compact: flush: {e}"))?;
+    }
+    fs::rename(&tmp_path, &path).map_err(|e| format!("compact: rename: {e}"))?;
+
+    // Clear LanceDB vector index inside the lock so concurrent upserts can't
+    // land stale vectors in the index after compaction removed the source entries.
+    if clear_lancedb_index(character_id, false) {
+        log::info!(
+            "compact: vector index cleared for {}. Run rebuild_vector_index to restore.",
+            character_id
+        );
+    }
+
+    // Record compaction timestamp
+    let _ = std::fs::write(&compaction_marker, b"1");
+
+    Ok(true)
+}
+
+/// Apply retention policy under char_lock: atomically removes entries older
+/// than retention_days, preventing write-loss races during the read-write cycle.
+/// Returns count of removed entries.
+pub fn apply_retention_policy_locked(character_id: &str, retention_days: u32) -> Result<usize, String> {
+    validate_character_id(character_id)?;
+    let lock = char_lock(character_id);
+    let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+
+    let entries = read_log_entries_unlocked(character_id)?;
+    let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days as i64);
+
+    let (keep, removed): (Vec<_>, Vec<_>) = entries
+        .into_iter()
+        .partition(|e| {
+            chrono::DateTime::parse_from_rfc3339(&e.created_at)
+                .map(|dt| dt.with_timezone(&chrono::Utc) >= cutoff)
+                .unwrap_or(true) // keep unparseable entries (defensive)
+        });
+
+    let path = memory_log_path(character_id);
+    let tmp_path = path.with_extension(format!("jsonl.{}.tmp", uuid::Uuid::new_v4()));
+    {
+        let mut file = fs::File::create(&tmp_path)
+            .map_err(|e| format!("retention: create tmp: {e}"))?;
+        for node in &keep {
+            let line = serde_json::to_string(node)
+                .map_err(|e| format!("retention: serialize: {e}"))? + "\n";
+            file.write_all(line.as_bytes())
+                .map_err(|e| format!("retention: write: {e}"))?;
+        }
+        file.flush().map_err(|e| format!("retention: flush: {e}"))?;
+    }
+    fs::rename(&tmp_path, &path)
+        .map_err(|e| format!("retention: rename: {e}"))?;
+
+    // Clear LanceDB vector index so stale vectors for removed entries are purged.
+    // Skip if compaction already cleared it (check .rebuild_pending marker).
+    if !removed.is_empty() {
+        clear_lancedb_index(character_id, true);
+    }
+
+    Ok(removed.len())
+}
+
 pub fn read_all_memory_log_entries(character_id: &str) -> Result<Vec<MemoryNode>, String> {
     validate_character_id(character_id)?;
     let _lk = char_lock(character_id);
-    let _lock = _lk.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = _lk.lock().unwrap_or_else(|e| e.into_inner());
     read_log_entries_unlocked(character_id)
 }
 
@@ -167,7 +313,6 @@ pub fn update_memory_in_log(
     let tmp_path = path.with_extension(format!("jsonl.{}.tmp", uuid::Uuid::new_v4()));
     let mut file =
         std::fs::File::create(&tmp_path).map_err(|e| format!("update_memory_log: create tmp: {e}"))?;
-    use std::io::Write;
     for node in &entries {
         let line = serde_json::to_string(node)
             .map_err(|e| format!("update_memory_log: serialize: {e}"))?

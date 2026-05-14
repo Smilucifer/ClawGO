@@ -64,7 +64,7 @@
     formPersonality = "";
     formExpertise = [];
     expertiseInput = "";
-    formAutoLearn = false;
+    formAutoLearn = true;
     formRetentionDays = undefined;
     editingAvatar = null;
     editingId = null;
@@ -86,7 +86,7 @@
     formPersonality = char.personality ?? "";
     formExpertise = char.expertise ? [...char.expertise] : [];
     expertiseInput = "";
-    formAutoLearn = char.memory_config?.auto_learn ?? false;
+    formAutoLearn = char.memory_config?.auto_learn ?? true;
     formRetentionDays = char.memory_config?.retention_days ?? undefined;
     editingAvatar = char.avatar_path ?? null;
     showForm = true;

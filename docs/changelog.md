@@ -1,5 +1,21 @@
 # Changelog / 更新日志
 
+## Phase 10 (2026-05-14)
+
+### v2.0.3 — Character Memory System: Simplify Review 修复
+
+**三路并行审查 (Simplify):**
+- 42 findings total: 14 Code Reuse + 15 Code Quality + 13 Efficiency
+- 7 fixes applied, 10 deferred, 17 skipped (non-issues or too-large scope)
+- Deferred items tracked in: `docs/superpowers/plans/[todo] 2026-05-14-character-memory-simplify-review-deferred.md`
+
+**修复内容:**
+- `+page.svelte`: 移除死状态 `embeddingConfigLoaded`, Embedding 配置 `onblur` 添加 500ms 去抖
+- `avatar.rs`: 移除 TOCTOU `exists()` 检查 + 冗余扩展名检查，仅保留幻数验证
+- `characters.rs`: 移除 3 处函数内部冗余 `use std::io::Write`；提取 `clear_lancedb_index()` 消除 compact/retention 间重复逻辑
+- `memory_injection.rs`: 提取 `cjk_token_weight()` 辅助函数，消除 `approx_tokens` 和 `format_memory_injection` 间 CJK 代码点范围重复
+- `vectorstore.rs`: 提取 `memory_schema()` 辅助函数，消除 `vector_upsert` 和 `vector_batch_upsert` 间 Schema 构建重复
+
 ## Phase 10 (2026-05-13)
 
 ### v2.0.2 — 群聊消息即时显示 + 独立气泡

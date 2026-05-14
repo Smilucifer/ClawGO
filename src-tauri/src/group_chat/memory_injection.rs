@@ -4,6 +4,7 @@ use crate::group_chat::memory_graph::graph_expand;
 use crate::models::MemoryNode;
 use crate::storage::characters;
 use once_cell::sync::Lazy;
+use std::collections::HashSet;
 use std::sync::Mutex;
 use std::time::Instant;
 
@@ -26,6 +27,55 @@ fn set_embedding_healthy(healthy: bool) {
     if let Ok(mut guard) = EMBEDDING_HEALTH.lock() {
         *guard = Some((healthy, Instant::now()));
     }
+}
+
+// Prevent duplicate lazy rebuild spawns
+static REBUILD_IN_FLIGHT: Lazy<Mutex<HashSet<String>>> =
+    Lazy::new(|| Mutex::new(HashSet::new()));
+
+/// Drop guard that removes a character_id from REBUILD_IN_FLIGHT on drop,
+/// ensuring cleanup even if the spawned task panics.
+struct InFlightGuard {
+    character_id: String,
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        REBUILD_IN_FLIGHT
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.character_id);
+    }
+}
+
+fn try_trigger_rebuild(character_id: &str) {
+    let marker_path = characters::char_dir(character_id).join(".rebuild_pending");
+    if !marker_path.exists() {
+        return;
+    }
+    let mut inflight = REBUILD_IN_FLIGHT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if inflight.contains(character_id) {
+        return;
+    }
+    inflight.insert(character_id.to_string());
+    drop(inflight);
+
+    let cid = character_id.to_string();
+    tokio::spawn(async move {
+        let _guard = InFlightGuard { character_id: cid.clone() };
+        // Remove marker only once the task is running, not before spawn
+        let marker = characters::char_dir(&cid).join(".rebuild_pending");
+        let _ = std::fs::remove_file(&marker);
+        match vectorstore::rebuild_vector_index(cid.clone()).await {
+            Ok(n) => log::info!("lazy rebuild: {n} entries for {cid}"),
+            Err(e) => {
+                log::warn!("lazy rebuild failed for {cid}: {e}");
+                let _ = std::fs::write(&marker, b"1");
+            }
+        }
+    });
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -78,6 +128,12 @@ pub async fn search_memories_for_injection(
             return degraded_keyword_search(&entries, query, top_k);
         }
     };
+
+    // Trigger lazy rebuild if vector index is empty but memory log has entries
+    if vector_results.is_empty() && !entries.is_empty() {
+        try_trigger_rebuild(character_id);
+        return degraded_keyword_search(&entries, query, top_k);
+    }
 
     // Graph expansion from vector results
     let graph = characters::load_memory_graph(character_id).unwrap_or_default();
@@ -150,6 +206,24 @@ fn keyword_match_score(text: &str, query: &str) -> f64 {
     if query_terms.is_empty() { 0.0 } else { matches as f64 / query_terms.len() as f64 }
 }
 
+/// Estimate token count for a string, counting CJK characters as ~1 token
+/// and ASCII/Latin characters as ~0.25 tokens (4 chars per token).
+fn approx_tokens(s: &str) -> usize {
+    let mut tokens: f64 = 0.0;
+    for ch in s.chars() {
+        tokens += cjk_token_weight(ch);
+    }
+    tokens.ceil() as usize
+}
+
+fn cjk_token_weight(ch: char) -> f64 {
+    if matches!(ch as u32, 0x3400..=0x9FFF | 0xF900..=0xFAFF | 0x20000..=0x2FFFF | 0x30000..=0x3FFFF) {
+        1.0
+    } else {
+        0.25
+    }
+}
+
 /// Format memories for system prompt injection, respecting token budget.
 pub fn format_memory_injection(
     memories: &[MemoryNode],
@@ -160,13 +234,21 @@ pub fn format_memory_injection(
         return String::new();
     }
 
-    let mut lines = vec!["[Character Memory — 相关记忆]".to_string()];
+    let mut lines = vec!["[Character Memory]".to_string()];
     let mut token_count = 0;
-    let chars_per_token_approx = 4;
 
     for (i, mem) in memories.iter().enumerate() {
+        // Truncate content to per-memory token budget using CJK-aware counting
+        let mut content_tokens: f64 = 0.0;
         let truncated: String = mem.content.chars()
-            .take(max_tokens_per_memory * chars_per_token_approx)
+            .take_while(|ch| {
+                let t = cjk_token_weight(*ch);
+                if (content_tokens + t).ceil() as usize > max_tokens_per_memory {
+                    return false;
+                }
+                content_tokens += t;
+                true
+            })
             .collect();
         let tag = match mem.memory_type.as_str() {
             "fact" => "Fact",
@@ -183,7 +265,7 @@ pub fn format_memory_injection(
             (mem.confidence * 100.0) as u32,
             truncated
         );
-        let line_tokens = line.len() / chars_per_token_approx;
+        let line_tokens = approx_tokens(&line);
         if token_count + line_tokens > max_tokens {
             break;
         }

@@ -8,6 +8,7 @@
   "settings_tab_remote": "远程",
   "settings_tab_debug": "调试",
   "settings_tab_characters": "角色库",
+  "settings_tab_embedding": "角色记忆",
 
   "settings_general_connection": "连接",
   "settings_general_saved": "已保存",
@@ -1694,5 +1695,22 @@
   "settings_characters_executor": "执行者",
   "settings_characters_custom": "自定义",
   "settings_characters_delete_confirm": "确定删除此角色",
-  "settings_characters_manage": "管理角色库"
+  "settings_characters_manage": "管理角色库",
+  "settings_embedding_title": "角色记忆 · Embedding 配置",
+  "settings_embedding_description": "为角色记忆系统配置嵌入模型 API，用于语义搜索和记忆检索。使用 OpenAI 兼容接口。",
+  "settings_embedding_save_error": "保存失败: ",
+  "settings_embedding_enable": "启用角色记忆 (Embedding)",
+  "settings_embedding_presets": "快速预设",
+  "settings_embedding_api_endpoint": "API Endpoint",
+  "settings_embedding_api_key_label": "API Key (可选，为空时复用 Provider API Key)",
+  "settings_embedding_show": "显示",
+  "settings_embedding_hide": "隐藏",
+  "settings_embedding_model_label": "模型名称",
+  "settings_embedding_test": "测试连接",
+  "settings_embedding_testing": "测试中...",
+  "settings_embedding_test_success": "连接成功 · ",
+  "settings_embedding_dimension": "维度: ",
+  "settings_embedding_test_fail": "连接失败: ",
+  "settings_embedding_unknown_error": "未知错误",
+  "settings_embedding_disabled_notice": "角色记忆已暂停。启用后可恢复语义搜索。已存储的记忆数据不会丢失。"
 }

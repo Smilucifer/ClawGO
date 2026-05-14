@@ -54,6 +54,7 @@ import type {
   CommunityInfo,
   EmbeddingConfig,
   KnowledgeGapInfo,
+  MemoryConfig,
   MemoryGraphData,
   MemoryNode,
   TestEmbeddingResult,
@@ -294,7 +295,7 @@ export async function updateCharacter(
     avatarPath?: string | null;
     personality?: string | null;
     expertise?: string[];
-    memoryConfig?: import("./types").MemoryConfig | null;
+    memoryConfig?: MemoryConfig | null;
   },
 ): Promise<AiCharacter> {
   dbg("api", "updateCharacter", { id, ...updates });
@@ -1652,4 +1653,20 @@ export async function vectorSearch(characterId: string, queryVector: number[], t
 export async function resetVectorStore(characterId: string): Promise<number> {
   dbg("api", "resetVectorStore", { characterId });
   return invoke<number>("reset_vector_store", { characterId });
+}
+
+export async function rebuildVectorIndex(characterId: string): Promise<number> {
+  dbg("api", "rebuildVectorIndex", { characterId });
+  return invoke<number>("rebuild_vector_index", { characterId });
+}
+
+export async function searchCharacterMemories(
+  characterId: string,
+  query: string,
+  topK?: number,
+  threshold?: number,
+  graphHops?: number,
+): Promise<MemoryNode[]> {
+  dbg("api", "searchCharacterMemories", { characterId, query });
+  return invoke<MemoryNode[]>("search_character_memories", { characterId, query, topK, threshold, graphHops });
 }

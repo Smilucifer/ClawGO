@@ -1,4 +1,5 @@
 use crate::group_chat::memory_graph::{compute_relevance_edges, detect_communities, detect_knowledge_gaps};
+use crate::group_chat::memory_injection::search_memories_for_injection;
 use crate::models::{AiCharacter, AllSettings, CommunityInfo, KnowledgeGapInfo, MemoryGraphData, MemoryNode, MemorySource};
 use crate::storage;
 
@@ -208,9 +209,9 @@ pub async fn update_character_memory(
         &character_id,
         &memory_id,
         content.clone(),
-        memory_type,
+        memory_type.clone(),
         confidence,
-        tags,
+        tags.clone(),
     )?;
 
     // Update vector if content changed
@@ -220,11 +221,25 @@ pub async fn update_character_memory(
                 .await;
         if let Ok(embedding_vec) = crate::commands::embedding::fetch_embedding(c).await {
             let _ = crate::commands::vectorstore::vector_upsert(
-                character_id,
-                memory_id,
+                character_id.clone(),
+                memory_id.clone(),
                 embedding_vec,
             )
             .await;
+        }
+    }
+
+    // Recompute graph edges for the updated node (content/tags/type may have changed)
+    if content.is_some() || memory_type.is_some() || tags.is_some() {
+        let entries = storage::characters::read_all_memory_log_entries(&character_id)?;
+        let mut graph = storage::characters::load_memory_graph(&character_id)?;
+        // Remove old edges from this node
+        graph.edges.retain(|e| e.source_id != memory_id && e.target_id != memory_id);
+        // Recompute new edges
+        let new_edges = crate::group_chat::memory_graph::compute_relevance_edges(&updated, &entries, &graph.edges);
+        graph.edges.extend(new_edges);
+        if let Err(e) = storage::characters::save_memory_graph(&character_id, &graph) {
+            log::warn!("[characters] save_memory_graph after update failed for {}: {}", character_id, e);
         }
     }
 
@@ -237,7 +252,16 @@ pub async fn delete_character_memory(
     memory_id: String,
 ) -> Result<(), String> {
     storage::characters::delete_memory_from_log(&character_id, &memory_id)?;
-    let _ = crate::commands::vectorstore::vector_delete(character_id, memory_id).await;
+    let _ = crate::commands::vectorstore::vector_delete(character_id.clone(), memory_id.clone()).await;
+
+    // Update knowledge graph: remove node and its edges
+    let mut graph = storage::characters::load_memory_graph(&character_id)?;
+    graph.nodes.retain(|n| n.id != memory_id);
+    graph.edges.retain(|e| e.source_id != memory_id && e.target_id != memory_id);
+    if let Err(e) = storage::characters::save_memory_graph(&character_id, &graph) {
+        log::warn!("[characters] save_memory_graph after delete failed for {}: {}", character_id, e);
+    }
+
     Ok(())
 }
 
@@ -263,6 +287,25 @@ pub async fn get_knowledge_gaps(
     let graph = storage::characters::load_memory_graph(&character_id)?;
     let communities = detect_communities(&graph.nodes, &graph.edges);
     Ok(detect_knowledge_gaps(&graph.nodes, &graph.edges, &communities))
+}
+
+#[tauri::command]
+pub async fn search_character_memories(
+    character_id: String,
+    query: String,
+    top_k: Option<usize>,
+    threshold: Option<f64>,
+    graph_hops: Option<usize>,
+) -> Result<Vec<MemoryNode>, String> {
+    storage::characters::validate_character_id(&character_id)?;
+    let (results, _tier) = search_memories_for_injection(
+        &character_id,
+        &query,
+        top_k.unwrap_or(5),
+        threshold.unwrap_or(0.5),
+        graph_hops.unwrap_or(1),
+    ).await;
+    Ok(results)
 }
 
 fn load_all() -> Result<AllSettings, String> {
