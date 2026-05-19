@@ -6,6 +6,7 @@ use tauri::AppHandle;
 
 pub mod claude;
 pub mod codex;
+pub mod codex_state;
 
 /// Inputs an Executor needs to spawn one turn.
 /// Command-line and resume thread_id are baked into `args` by the caller
