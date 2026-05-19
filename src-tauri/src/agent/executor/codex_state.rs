@@ -38,6 +38,7 @@ impl CodexProtocolState {
             "thread.started" => self.handle_thread_started(raw),
             "turn.started" => self.handle_turn_started(),
             "item.started" => self.handle_item_started(raw),
+            "item.completed" => self.handle_item_completed(raw),
             _ => Vec::new(),
         }
     }
@@ -102,6 +103,41 @@ impl CodexProtocolState {
             input: serde_json::json!({ "command": command }),
             parent_tool_use_id: None,
         }]
+    }
+
+    fn handle_item_completed(&mut self, raw: &Value) -> Vec<BusEvent> {
+        let Some(item) = raw.get("item") else {
+            return Vec::new();
+        };
+        let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        let Some(item_id) = item.get("id").and_then(|v| v.as_str()) else {
+            return Vec::new();
+        };
+        match item_type {
+            "command_execution" => {
+                let exit_code = item.get("exit_code").and_then(|v| v.as_i64()).unwrap_or(-1);
+                let aggregated_output = item
+                    .get("aggregated_output")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let status = if exit_code == 0 { "success" } else { "error" };
+                self.pending_tools.remove(item_id);
+                vec![BusEvent::ToolEnd {
+                    run_id: self.run_id.clone(),
+                    tool_use_id: item_id.to_string(),
+                    tool_name: "bash".to_string(),
+                    output: serde_json::json!({
+                        "aggregated_output": aggregated_output,
+                        "exit_code": exit_code,
+                    }),
+                    status: status.to_string(),
+                    duration_ms: None,
+                    parent_tool_use_id: None,
+                    tool_use_result: None,
+                }]
+            }
+            _ => Vec::new(),
+        }
     }
 }
 
@@ -178,5 +214,47 @@ mod tests {
         let mut s = state();
         let raw = json!({"type":"item.started","item":{"id":"item_0","type":"agent_message"}});
         assert!(s.map_event(&raw).is_empty());
+    }
+
+    #[test]
+    fn item_completed_command_execution_success_emits_tool_end() {
+        let mut s = state();
+        let raw = json!({
+            "type":"item.completed",
+            "item":{
+                "id":"item_1",
+                "type":"command_execution",
+                "command":"ls",
+                "aggregated_output":"file.txt\n",
+                "exit_code":0,
+                "status":"completed"
+            }
+        });
+        let events = s.map_event(&raw);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            BusEvent::ToolEnd { tool_use_id, tool_name, status, output, .. } => {
+                assert_eq!(tool_use_id, "item_1");
+                assert_eq!(tool_name, "bash");
+                assert_eq!(status, "success");
+                assert_eq!(output.get("aggregated_output").and_then(|v| v.as_str()), Some("file.txt\n"));
+                assert_eq!(output.get("exit_code").and_then(|v| v.as_i64()), Some(0));
+            }
+            other => panic!("expected ToolEnd, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn item_completed_command_execution_nonzero_emits_error_status() {
+        let mut s = state();
+        let raw = json!({
+            "type":"item.completed",
+            "item":{"id":"item_2","type":"command_execution","aggregated_output":"err","exit_code":2,"status":"completed"}
+        });
+        let events = s.map_event(&raw);
+        match &events[0] {
+            BusEvent::ToolEnd { status, .. } => assert_eq!(status, "error"),
+            other => panic!("expected ToolEnd, got {:?}", other),
+        }
     }
 }
