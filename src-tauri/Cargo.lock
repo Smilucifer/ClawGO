@@ -8,6 +8,7 @@ version = "2.3.0"
 dependencies = [
  "arrow-array",
  "arrow-schema",
+ "async-trait",
  "axum",
  "base64 0.22.1",
  "chrono",

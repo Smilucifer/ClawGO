@@ -1,6 +1,10 @@
 // src-tauri/src/agent/executor/claude.rs
+//
+// ClaudeExecutor 仅服务于 stream.rs::run_agent 派发的 pipe-exec Claude 路径;
+// SessionActor-backed 会话由 commands/session.rs 独立启动,不经过 Executor trait。
+
 use super::{Executor, ExecutorRequest};
-use crate::agent::stream::ProcessMap;
+use crate::agent::stream::{run_claude_pipe_or_session, ProcessMap};
 use tauri::AppHandle;
 
 pub struct ClaudeExecutor;
@@ -9,10 +13,21 @@ pub struct ClaudeExecutor;
 impl Executor for ClaudeExecutor {
     async fn run(
         &self,
-        _app: AppHandle,
-        _process_map: ProcessMap,
-        _req: ExecutorRequest,
+        app: AppHandle,
+        process_map: ProcessMap,
+        req: ExecutorRequest,
     ) -> Result<(), String> {
-        Err("ClaudeExecutor not yet wired".to_string())
+        run_claude_pipe_or_session(
+            app,
+            process_map,
+            req.run_id,
+            req.process_command,
+            req.args,
+            req.cwd,
+            req.agent,
+            req.spawn_env_plan,
+            req.display_command,
+        )
+        .await
     }
 }
