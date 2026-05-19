@@ -37,6 +37,7 @@ impl CodexProtocolState {
         match type_str {
             "thread.started" => self.handle_thread_started(raw),
             "turn.started" => self.handle_turn_started(),
+            "item.started" => self.handle_item_started(raw),
             _ => Vec::new(),
         }
     }
@@ -78,6 +79,28 @@ impl CodexProtocolState {
             state: "running".to_string(),
             exit_code: None,
             error: None,
+        }]
+    }
+
+    fn handle_item_started(&mut self, raw: &Value) -> Vec<BusEvent> {
+        let Some(item) = raw.get("item") else {
+            return Vec::new();
+        };
+        let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        if item_type != "command_execution" {
+            return Vec::new();
+        }
+        let Some(item_id) = item.get("id").and_then(|v| v.as_str()) else {
+            return Vec::new();
+        };
+        let command = item.get("command").and_then(|v| v.as_str()).unwrap_or("");
+        self.pending_tools.insert(item_id.to_string(), ());
+        vec![BusEvent::ToolStart {
+            run_id: self.run_id.clone(),
+            tool_use_id: item_id.to_string(),
+            tool_name: "bash".to_string(),
+            input: serde_json::json!({ "command": command }),
+            parent_tool_use_id: None,
         }]
     }
 }
@@ -122,5 +145,38 @@ mod tests {
             BusEvent::RunState { state, .. } => assert_eq!(state, "running"),
             other => panic!("expected RunState, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn item_started_command_execution_emits_tool_start() {
+        let mut s = state();
+        let raw = json!({
+            "type":"item.started",
+            "item":{
+                "id":"item_1",
+                "type":"command_execution",
+                "command":"cargo build",
+                "aggregated_output":"",
+                "exit_code":null,
+                "status":"in_progress"
+            }
+        });
+        let events = s.map_event(&raw);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            BusEvent::ToolStart { tool_use_id, tool_name, input, .. } => {
+                assert_eq!(tool_use_id, "item_1");
+                assert_eq!(tool_name, "bash");
+                assert_eq!(input.get("command").and_then(|v| v.as_str()), Some("cargo build"));
+            }
+            other => panic!("expected ToolStart, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn item_started_agent_message_is_ignored() {
+        let mut s = state();
+        let raw = json!({"type":"item.started","item":{"id":"item_0","type":"agent_message"}});
+        assert!(s.map_event(&raw).is_empty());
     }
 }
