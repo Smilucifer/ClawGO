@@ -136,6 +136,32 @@ impl CodexProtocolState {
                     tool_use_result: None,
                 }]
             }
+            "agent_message" => {
+                let text = item
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if text.is_empty() {
+                    return Vec::new();
+                }
+                vec![
+                    BusEvent::MessageDelta {
+                        run_id: self.run_id.clone(),
+                        text: text.clone(),
+                        parent_tool_use_id: None,
+                    },
+                    BusEvent::MessageComplete {
+                        run_id: self.run_id.clone(),
+                        message_id: item_id.to_string(),
+                        text,
+                        parent_tool_use_id: None,
+                        model: None,
+                        stop_reason: None,
+                        message_usage: None,
+                    },
+                ]
+            }
             _ => Vec::new(),
         }
     }
@@ -255,6 +281,28 @@ mod tests {
         match &events[0] {
             BusEvent::ToolEnd { status, .. } => assert_eq!(status, "error"),
             other => panic!("expected ToolEnd, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn item_completed_agent_message_emits_delta_and_complete() {
+        let mut s = state();
+        let raw = json!({
+            "type":"item.completed",
+            "item":{"id":"item_3","type":"agent_message","text":"Hello world"}
+        });
+        let events = s.map_event(&raw);
+        assert_eq!(events.len(), 2);
+        match &events[0] {
+            BusEvent::MessageDelta { text, .. } => assert_eq!(text, "Hello world"),
+            other => panic!("expected MessageDelta, got {:?}", other),
+        }
+        match &events[1] {
+            BusEvent::MessageComplete { message_id, text, .. } => {
+                assert_eq!(message_id, "item_3");
+                assert_eq!(text, "Hello world");
+            }
+            other => panic!("expected MessageComplete, got {:?}", other),
         }
     }
 }
