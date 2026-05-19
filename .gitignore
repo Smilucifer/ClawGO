@@ -61,3 +61,7 @@ forget_ptr
 
 # Local review notes
 review/
+*.diff
+
+# Superpowers brainstorm artifacts
+.superpowers/

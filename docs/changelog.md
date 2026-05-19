@@ -1,5 +1,32 @@
 # Changelog / 更新日志
 
+## Phase 10+ (2026-05-15)
+
+### v2.3.0 — Memory Extraction chat_api_key 分离 + 群聊体验修复
+
+**Memory Extraction 改进:**
+- `EmbeddingConfig` 新增独立 `chat_api_key` 字段，支持跨 provider 场景（如 DashScope embedding + DeepSeek chat）
+- 说话人标注：提取上下文格式改为 `[角色名]: 内容`，LLM 只提取目标角色的记忆
+- LLM 置信度：prompt 要求返回 0-100 confidence 字段，替代硬编码 70
+- Embedding 复用：去重检查和向量写入共用同一次 embedding 计算，减少 API 调用
+- 文件诊断日志：`log_to_file()` 写入 `logs/memory-extraction.log`，便于排查提取问题
+- 中文 prompt：提取指令改为中文，要求输出与对话同语言
+
+**群聊体验修复:**
+- 侧边栏点击参与者 session 正确进入私聊视图（移除 `run_ids.includes(runId)` 过度匹配）
+- 群聊时间线加载后自动滚动到底部
+- `participantRunIds` 改为 `$derived` 避免逐事件数组分配
+- 移除 orchestrator 中 `is_empty/is_orphan` 冗余守卫
+- 提取 `debounce_key` 辅助函数，恢复 `max_tokens=2000`
+
+**设置 UI:**
+- Embedding 设置面板新增 chat_api_key 和 chat_model 独立配置项
+- 连接测试支持 chat endpoint 独立验证
+
+**代码质量（4 路审查）:**
+- Code Reuse / Quality / Efficiency 三路并行审查
+- 修复 BufWriter flush-per-call、LLM 响应无截断日志、WHAT 注释等问题
+
 ## Phase 10 (2026-05-14)
 
 ### v2.2.0 — 群聊体验优化 + Character Memory System 补全

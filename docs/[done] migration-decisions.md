@@ -1,7 +1,7 @@
 # Hub Capability Migration Decisions
 
 **Date:** 2026-04-30
-**Status:** Active
+**Status:** Done
 **Purpose:** Track how each meaningful Claude Session Hub capability maps into the Claw GO remaster.
 
 ## Progress Snapshot

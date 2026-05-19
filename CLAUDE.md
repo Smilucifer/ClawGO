@@ -351,6 +351,7 @@ Key phases and their status:
 | 10+ | Character Memory System: LanceDB, petgraph, LLM auto-extraction, hybrid search, sigma.js viz, review queue, injection config UI | [done] |
 | 10+ (v2.2.0) | 群聊体验优化: Markdown 渲染, 长文折叠, Executor 过滤, 上下文共享, P0 bug 修复, 3 轮多路审查 | [done] |
 | 10+ (v2.3.0) | Memory extraction chat_api_key 分离: EmbeddingConfig 独立 chat 凭据, 设置 UI, 4 路审查, 安全修复 | [done] |
+| 10+ (v2.3.0) | 记忆提取准确性: 说话人标注, LLM 置信度, 群聊侧边栏私聊修复, 时间线自动滚底 | [done] |
 
 Detailed plans and review responses are in `docs/`.
 
