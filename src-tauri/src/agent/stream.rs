@@ -137,7 +137,6 @@ pub async fn run_agent(
     executor.run(app, process_map, req).await
 }
 
-
 #[allow(clippy::too_many_arguments)]
 pub async fn run_claude_pipe_or_session(
     app: AppHandle,

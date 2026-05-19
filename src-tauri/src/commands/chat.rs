@@ -120,9 +120,7 @@ pub async fn send_chat_message(
     let mut attachment_paths: Vec<(String, String, String, u64)> = vec![]; // (path, name, type, size)
 
     if !attachments.is_empty() {
-        let upload_dir = std::env::temp_dir()
-            .join("claw-go-uploads")
-            .join(&run_id);
+        let upload_dir = std::env::temp_dir().join("claw-go-uploads").join(&run_id);
         fs::create_dir_all(&upload_dir).map_err(|e| e.to_string())?;
 
         for att in attachments.iter().take(8) {

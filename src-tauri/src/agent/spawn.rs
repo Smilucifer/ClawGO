@@ -59,10 +59,10 @@ fn append_extra_args_without_controlled_flags(
             continue;
         }
         let trimmed = arg.trim();
-        if singleton_flags.iter().any(|flag| trimmed == *flag) {
+        if singleton_flags.contains(&trimmed) {
             continue;
         }
-        if value_flags.iter().any(|flag| trimmed == *flag) {
+        if value_flags.contains(&trimmed) {
             skip_next = true;
             continue;
         }

@@ -292,10 +292,18 @@ mod tests {
         let events = s.map_event(&raw);
         assert_eq!(events.len(), 1);
         match &events[0] {
-            BusEvent::ToolStart { tool_use_id, tool_name, input, .. } => {
+            BusEvent::ToolStart {
+                tool_use_id,
+                tool_name,
+                input,
+                ..
+            } => {
                 assert_eq!(tool_use_id, "item_1");
                 assert_eq!(tool_name, "bash");
-                assert_eq!(input.get("command").and_then(|v| v.as_str()), Some("cargo build"));
+                assert_eq!(
+                    input.get("command").and_then(|v| v.as_str()),
+                    Some("cargo build")
+                );
             }
             other => panic!("expected ToolStart, got {:?}", other),
         }
@@ -325,11 +333,20 @@ mod tests {
         let events = s.map_event(&raw);
         assert_eq!(events.len(), 1);
         match &events[0] {
-            BusEvent::ToolEnd { tool_use_id, tool_name, status, output, .. } => {
+            BusEvent::ToolEnd {
+                tool_use_id,
+                tool_name,
+                status,
+                output,
+                ..
+            } => {
                 assert_eq!(tool_use_id, "item_1");
                 assert_eq!(tool_name, "bash");
                 assert_eq!(status, "success");
-                assert_eq!(output.get("aggregated_output").and_then(|v| v.as_str()), Some("file.txt\n"));
+                assert_eq!(
+                    output.get("aggregated_output").and_then(|v| v.as_str()),
+                    Some("file.txt\n")
+                );
                 assert_eq!(output.get("exit_code").and_then(|v| v.as_i64()), Some(0));
             }
             other => panic!("expected ToolEnd, got {:?}", other),
@@ -364,7 +381,9 @@ mod tests {
             other => panic!("expected MessageDelta, got {:?}", other),
         }
         match &events[1] {
-            BusEvent::MessageComplete { message_id, text, .. } => {
+            BusEvent::MessageComplete {
+                message_id, text, ..
+            } => {
                 assert_eq!(message_id, "item_3");
                 assert_eq!(text, "Hello world");
             }
@@ -385,7 +404,12 @@ mod tests {
         let events = s.map_event(&raw);
         assert_eq!(events.len(), 2);
         match &events[0] {
-            BusEvent::UsageUpdate { input_tokens, output_tokens, cache_read_tokens, .. } => {
+            BusEvent::UsageUpdate {
+                input_tokens,
+                output_tokens,
+                cache_read_tokens,
+                ..
+            } => {
                 assert_eq!(*input_tokens, 100);
                 assert_eq!(*output_tokens, 20);
                 assert_eq!(*cache_read_tokens, Some(50));
@@ -440,6 +464,8 @@ mod tests {
     #[test]
     fn unknown_event_type_returns_empty() {
         let mut s = state();
-        assert!(s.map_event(&json!({"type":"some.unknown.thing"})).is_empty());
+        assert!(s
+            .map_event(&json!({"type":"some.unknown.thing"}))
+            .is_empty());
     }
 }
