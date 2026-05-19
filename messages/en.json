@@ -445,6 +445,7 @@
   "chat_processingCommand": "Processing {command}...",
   "chat_usingTool": "Using",
   "chat_restartingApproved": "Restarting with tool approved...",
+  "chat_resumeUnavailableNoThread": "No Codex thread available to resume.",
   "chat_startingSession": "Starting session...",
   "chat_newMessages": "New messages",
   "chat_typeToStartSession": "Type a message below to start the session",
@@ -816,6 +817,7 @@
   "error_title": "Something went wrong",
   "error_defaultMessage": "An unexpected error occurred",
   "error_backToChat": "Back to Chat",
+  "errors_codexCliNotInstalled": "Codex CLI not found. Please install codex and ensure it is in your PATH.",
 
   "hook_reviewTitle": "Hook Review: {type}",
   "hook_tool": "Tool: {name}",

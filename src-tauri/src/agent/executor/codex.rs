@@ -67,8 +67,7 @@ impl Executor for CodexExecutor {
             .spawn()
             .map_err(|e| {
                 if e.kind() == std::io::ErrorKind::NotFound {
-                    "Codex CLI not found. Please install codex and ensure it is in your PATH."
-                        .to_string()
+                    "errors_codexCliNotInstalled".to_string()
                 } else {
                     e.to_string()
                 }
