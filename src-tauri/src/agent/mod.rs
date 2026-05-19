@@ -1,13 +1,9 @@
 pub mod adapter;
 pub mod claude_protocol;
 pub mod claude_stream;
-pub mod codex_parser;
 pub mod control;
 pub mod executor;
-pub mod native_pty;
-pub mod native_transcript;
 pub mod notify;
-pub mod pipe_parser;
 pub mod provider_claude_config;
 pub mod session_actor;
 pub mod spawn;
