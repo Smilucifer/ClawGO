@@ -37,6 +37,8 @@ impl CodexProtocolState {
         match type_str {
             "thread.started" => self.handle_thread_started(raw),
             "turn.started" => self.handle_turn_started(),
+            "turn.completed" => self.handle_turn_completed(raw),
+            "turn.failed" => self.handle_turn_failed(raw),
             "item.started" => self.handle_item_started(raw),
             "item.completed" => self.handle_item_completed(raw),
             _ => Vec::new(),
@@ -80,6 +82,70 @@ impl CodexProtocolState {
             state: "running".to_string(),
             exit_code: None,
             error: None,
+        }]
+    }
+
+    fn handle_turn_completed(&mut self, raw: &Value) -> Vec<BusEvent> {
+        let usage = raw.get("usage");
+        let input_tokens = usage
+            .and_then(|u| u.get("input_tokens"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let output_tokens = usage
+            .and_then(|u| u.get("output_tokens"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let cache_read = usage
+            .and_then(|u| u.get("cached_input_tokens"))
+            .and_then(|v| v.as_u64());
+
+        self.pending_tools.clear();
+        self.turn_active = false;
+        self.seen_turn_completed_count += 1;
+
+        vec![
+            BusEvent::UsageUpdate {
+                run_id: self.run_id.clone(),
+                input_tokens,
+                output_tokens,
+                cache_read_tokens: cache_read,
+                cache_write_tokens: None,
+                total_cost_usd: 0.0,
+                turn_index: None,
+                model_usage: None,
+                duration_api_ms: None,
+                duration_ms: None,
+                num_turns: None,
+                stop_reason: None,
+                service_tier: None,
+                speed: None,
+                web_fetch_requests: None,
+                cache_creation_5m: None,
+                cache_creation_1h: None,
+            },
+            BusEvent::RunState {
+                run_id: self.run_id.clone(),
+                state: "idle".to_string(),
+                exit_code: None,
+                error: None,
+            },
+        ]
+    }
+
+    fn handle_turn_failed(&mut self, raw: &Value) -> Vec<BusEvent> {
+        let error = raw
+            .get("error")
+            .and_then(|e| e.get("message"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("Codex turn failed")
+            .to_string();
+        self.pending_tools.clear();
+        self.turn_active = false;
+        vec![BusEvent::RunState {
+            run_id: self.run_id.clone(),
+            state: "failed".to_string(),
+            exit_code: None,
+            error: Some(error),
         }]
     }
 
@@ -304,5 +370,76 @@ mod tests {
             }
             other => panic!("expected MessageComplete, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn turn_completed_emits_usage_and_idle_and_clears_pending() {
+        let mut s = state();
+        let _ = s.map_event(&json!({"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"x"}}));
+        assert_eq!(s.pending_tools.len(), 1);
+
+        let raw = json!({
+            "type":"turn.completed",
+            "usage":{"input_tokens":100,"cached_input_tokens":50,"output_tokens":20,"reasoning_output_tokens":10}
+        });
+        let events = s.map_event(&raw);
+        assert_eq!(events.len(), 2);
+        match &events[0] {
+            BusEvent::UsageUpdate { input_tokens, output_tokens, cache_read_tokens, .. } => {
+                assert_eq!(*input_tokens, 100);
+                assert_eq!(*output_tokens, 20);
+                assert_eq!(*cache_read_tokens, Some(50));
+            }
+            other => panic!("expected UsageUpdate, got {:?}", other),
+        }
+        match &events[1] {
+            BusEvent::RunState { state, .. } => assert_eq!(state, "idle"),
+            other => panic!("expected RunState idle, got {:?}", other),
+        }
+        assert!(s.pending_tools.is_empty());
+        assert!(!s.turn_active);
+        assert!(s.has_seen_turn_completed());
+    }
+
+    #[test]
+    fn turn_failed_emits_failed_state_and_clears_pending() {
+        let mut s = state();
+        let _ = s.map_event(&json!({"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"x"}}));
+        assert_eq!(s.pending_tools.len(), 1);
+
+        let events = s.map_event(&json!({"type":"turn.failed","error":{"message":"oops"}}));
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            BusEvent::RunState { state, error, .. } => {
+                assert_eq!(state, "failed");
+                assert!(error.as_deref().unwrap_or("").contains("oops"));
+            }
+            other => panic!("expected RunState failed, got {:?}", other),
+        }
+        assert!(s.pending_tools.is_empty());
+        assert!(!s.turn_active);
+    }
+
+    #[test]
+    fn cross_turn_item_id_reuse_after_failure_does_not_panic() {
+        let mut s = state();
+        let _ = s.map_event(&json!({"type":"turn.started"}));
+        let _ = s.map_event(&json!({"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"x"}}));
+        let _ = s.map_event(&json!({"type":"turn.failed","error":{"message":"e"}}));
+        let _ = s.map_event(&json!({"type":"turn.started"}));
+        let events = s.map_event(&json!({"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"y"}}));
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            BusEvent::ToolStart { input, .. } => {
+                assert_eq!(input.get("command").and_then(|v| v.as_str()), Some("y"));
+            }
+            other => panic!("expected ToolStart, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn unknown_event_type_returns_empty() {
+        let mut s = state();
+        assert!(s.map_event(&json!({"type":"some.unknown.thing"})).is_empty());
     }
 }
