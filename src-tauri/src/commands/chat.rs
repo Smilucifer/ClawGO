@@ -238,8 +238,21 @@ pub async fn send_chat_message(
 
     // Build command
     let (command, args) = if resume_latest.unwrap_or(false) {
-        // TODO(Task 13): read thread_id from run.conversation_ref (CodexThread).
-        build_agent_resume_command(&run.agent, &full_prompt, &adapter_settings, "")?
+        let thread_id = match run.conversation_ref.as_ref() {
+            Some(crate::models::ConversationRef::CodexThread(tid)) => tid.clone(),
+            Some(other) => {
+                return Err(format!(
+                    "resume requested but conversation_ref is not a Codex thread: {:?}",
+                    other
+                ));
+            }
+            None => {
+                return Err(
+                    "resume requested but no Codex thread is recorded for this run".to_string(),
+                );
+            }
+        };
+        build_agent_resume_command(&run.agent, &full_prompt, &adapter_settings, &thread_id)?
     } else {
         build_agent_command(
             &run.agent,
