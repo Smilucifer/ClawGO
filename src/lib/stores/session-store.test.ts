@@ -3348,7 +3348,7 @@ describe("SessionStore reducer", () => {
       ).toBe(true);
     });
 
-    it("returns false for codex thread (resume UI not implemented)", () => {
+    it("allows resume for Codex pipe_exec runs with conversation_ref", () => {
       expect(
         canResumeRun(
           {
@@ -3356,6 +3356,15 @@ describe("SessionStore reducer", () => {
             execution_path: "pipe_exec",
             status: "completed",
           },
+          "completed",
+        ),
+      ).toBe(true);
+    });
+
+    it("rejects resume for pipe_exec runs without conversation_ref", () => {
+      expect(
+        canResumeRun(
+          { execution_path: "pipe_exec", status: "completed" },
           "completed",
         ),
       ).toBe(false);

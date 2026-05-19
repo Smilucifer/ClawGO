@@ -202,9 +202,11 @@ export function canResumeStructurally(
 ): boolean {
   const hasRef = run?.conversation_ref != null || !!run?.session_id;
   if (!hasRef) return false;
-  // Resume UI currently only implemented for session_actor
   const path = run?.execution_path ?? (run?.session_id ? "session_actor" : null);
-  if (path !== "session_actor") return false;
+  const isSessionActor = path === "session_actor";
+  const isCodexThread =
+    path === "pipe_exec" && run?.conversation_ref?.kind === "codex_thread";
+  if (!isSessionActor && !isCodexThread) return false;
   if (ACTIVE_PHASES.includes(phase)) return false;
   return TERMINAL_PHASES.includes(phase);
 }
