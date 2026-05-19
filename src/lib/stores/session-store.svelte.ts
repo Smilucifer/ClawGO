@@ -1874,8 +1874,8 @@ export class SessionStore {
       } else {
         this._setPhase("running");
         this._pushOptimisticUser(text, attachments);
-        const resumeLatest = this._pendingNativeResumeLatest;
-        this._pendingNativeResumeLatest = false;
+        const resumeLatest = this._pendingResumeLatest;
+        this._pendingResumeLatest = false;
         await api.sendChatMessage(
           this.run.id,
           text,
@@ -1961,7 +1961,7 @@ export class SessionStore {
   // ── Resume ──
 
   private _resumeGuard = new OpGuard();
-  private _pendingNativeResumeLatest = false;
+  private _pendingResumeLatest = false;
 
   /** Whether a resume/continue/fork operation is currently in progress. */
   get resumeInFlight(): boolean {
@@ -2007,9 +2007,14 @@ export class SessionStore {
           throw new Error("Session is still running");
         }
       }
-      // Fork validates session_id internally; resume/continue need it here.
-      if (mode !== "continue" && mode !== "fork" && !run.session_id) {
-        throw new Error("No session_id available for resume");
+      // Fork validates session_id internally; resume/continue need a resume reference.
+      if (mode !== "continue" && mode !== "fork") {
+        const hasResumeRef =
+          !!run.session_id ||
+          (run.execution_path === "pipe_exec" && !!run.conversation_ref);
+        if (!hasResumeRef) {
+          throw new Error("No session_id or conversation_ref available for resume");
+        }
       }
 
       // Invalidate any concurrent loadRun
@@ -2094,7 +2099,7 @@ export class SessionStore {
       if (mode === "fork") {
         targetRunId = await this._handleFork(runId);
       } else if (!isStream) {
-        this._pendingNativeResumeLatest = run.agent === "codex";
+        this._pendingResumeLatest = run.agent === "codex";
         this._setPhase("idle");
       } else {
         const sessionId = run.session_id;
