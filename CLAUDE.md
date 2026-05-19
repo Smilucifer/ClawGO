@@ -160,12 +160,12 @@ If a frontend API call seems to "just update UI", verify whether it actually map
 
 A run can execute through:
 - `SessionActor` / stream-session path (Claude Code sessions and Claude-compatible providers).
-- `PipeExec` path (used for print/pipe workflows).
-- **Native PTY path** (Phase 7): Codex uses PTY-backed native CLI execution with transcript-based completion detection instead of process-exit semantics.
+- `PipeExec` path (used for print/pipe workflows; also drives the Codex JSONL adapter).
 
 Relevant code lives in `src-tauri/src/agent/`:
-- `native_pty.rs`: PTY spawn and terminal-state classification (Completed/Stopped/Failed).
-- `native_transcript.rs`: transcript file watching, baseline tracking for resume, and Codex completion extraction.
+- `executor/mod.rs`: `Executor` trait + `for_agent()` dispatch (claude → `ClaudeExecutor`, codex → `CodexExecutor`).
+- `executor/codex.rs`: `codex exec --json` JSONL adapter — spawns a short-lived child per turn, parses the stream, persists `thread_id` to `RunMeta.conversation_ref`.
+- `executor/codex_state.rs`: protocol state machine mapping Codex JSONL events to `BusEvent`s.
 
 When fixing bugs around chat, resume, room participation, or provider support, always confirm which execution path is in play.
 
@@ -362,6 +362,6 @@ Detailed plans and review responses are in `docs/`.
 - SvelteKit uses `adapter-static` with `fallback: "index.html"`.
 - Frontend test environment is `node`, configured in `vitest.config.ts`.
 - Provider-native launch config templates are in `src-tauri/src/commands/session.rs` (builder boundary).
-- The PTY-based native adapter (`native_pty.rs` + `native_transcript.rs`) is the canonical execution path for Codex. Do not reintroduce `codex exec` or pipe-based execution for native CLI providers.
+- Codex uses the `codex exec --json` JSONL adapter under `agent/executor/codex.rs`. Each turn is a short-lived process; multi-turn continuity is provided by Codex's native `thread_id` (stored in `RunMeta.conversation_ref` as `CodexThread`). Stop is implemented by killing the child via `commands/runs.rs::stop_run`; the JSONL stream truncates cleanly at the last completed event. The Windows `.cmd` shim resolution (`resolve_windows_npm_shim` in `stream.rs`) continues to apply — `CodexExecutor` reuses it via the dispatcher. Do not reintroduce PTY-based execution or `--last`-based resume.
 - Group chat participant meta (delivery cursor, session turn count, session seq) is stored at `group-chats/{id}/participants/{participant_id}.meta.json`.
 - Plan artifacts are stored at `group-chats/{id}/plan.json` with atomic writes (tmp+rename).
