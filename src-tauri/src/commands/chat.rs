@@ -238,7 +238,8 @@ pub async fn send_chat_message(
 
     // Build command
     let (command, args) = if resume_latest.unwrap_or(false) {
-        build_agent_resume_command(&run.agent, &full_prompt, &adapter_settings)?
+        // TODO(Task 13): read thread_id from run.conversation_ref (CodexThread).
+        build_agent_resume_command(&run.agent, &full_prompt, &adapter_settings, "")?
     } else {
         build_agent_command(
             &run.agent,

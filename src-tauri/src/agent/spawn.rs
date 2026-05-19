@@ -11,11 +11,12 @@ fn native_command(default_command: &str, settings: &AdapterSettings) -> String {
 
 fn build_codex_base_args(settings: &AdapterSettings) -> Vec<String> {
     let plan_mode = settings.permission_mode.as_deref() == Some("plan");
-    let mut args: Vec<String> = vec![];
+    let mut args: Vec<String> = vec!["exec".to_string()];
+    args.push("--json".to_string());
+    args.push("--skip-git-repo-check".to_string());
     if !plan_mode {
         args.push("--dangerously-bypass-approvals-and-sandbox".to_string());
     }
-    args.push("--no-alt-screen".to_string());
     if let Some(ref m) = settings.model {
         if !m.is_empty() {
             args.push("--model".to_string());
@@ -33,6 +34,9 @@ fn build_codex_base_args(settings: &AdapterSettings) -> Vec<String> {
         &mut args,
         &settings.extra_args,
         &[
+            "exec",
+            "--json",
+            "--skip-git-repo-check",
             "--dangerously-bypass-approvals-and-sandbox",
             "--no-alt-screen",
             "--yolo",
@@ -119,12 +123,14 @@ pub fn build_agent_resume_command(
     agent: &str,
     prompt: &str,
     settings: &AdapterSettings,
+    thread_id: &str,
 ) -> Result<(String, Vec<String>), String> {
     match agent {
         "codex" => {
             let mut args = build_codex_base_args(settings);
-            args.push("resume".to_string());
-            args.push("--last".to_string());
+            let exec_pos = args.iter().position(|a| a == "exec").unwrap_or(0);
+            args.insert(exec_pos + 1, "resume".to_string());
+            args.insert(exec_pos + 2, thread_id.to_string());
             if !prompt.is_empty() {
                 args.push(prompt.to_string());
             }
@@ -174,9 +180,11 @@ mod tests {
             build_agent_command("codex", "Fix it", &s, true).expect("codex command");
 
         assert_eq!(command, "codex");
-        assert!(!args.contains(&"exec".to_string()));
+        assert!(args.contains(&"exec".to_string()));
+        assert!(args.contains(&"--json".to_string()));
+        assert!(args.contains(&"--skip-git-repo-check".to_string()));
         assert!(args.contains(&"--dangerously-bypass-approvals-and-sandbox".to_string()));
-        assert!(!args.contains(&"--json".to_string()));
+        assert!(!args.contains(&"--no-alt-screen".to_string()));
         assert!(args.windows(2).any(|w| w == ["--add-dir", "D:/shared"]));
         assert!(args.windows(2).any(|w| w == ["--model", "gpt-5.5"]));
         assert_eq!(args.last().map(String::as_str), Some("Fix it"));
@@ -189,6 +197,8 @@ mod tests {
             "--dangerously-bypass-approvals-and-sandbox".to_string(),
             "--no-alt-screen".to_string(),
             "--yolo".to_string(),
+            "--json".to_string(),
+            "--skip-git-repo-check".to_string(),
             "--search".to_string(),
         ];
 
@@ -201,13 +211,15 @@ mod tests {
                 .count(),
             1
         );
+        assert!(!args.contains(&"--no-alt-screen".to_string()));
+        assert!(!args.contains(&"--yolo".to_string()));
+        assert_eq!(args.iter().filter(|a| a.as_str() == "--json").count(), 1);
         assert_eq!(
             args.iter()
-                .filter(|arg| arg.as_str() == "--no-alt-screen")
+                .filter(|a| a.as_str() == "--skip-git-repo-check")
                 .count(),
             1
         );
-        assert!(!args.contains(&"--yolo".to_string()));
         assert!(args.contains(&"--search".to_string()));
     }
 
@@ -223,14 +235,21 @@ mod tests {
     }
 
     #[test]
-    fn builds_codex_resume_latest_without_exec() {
-        let (command, args) = build_agent_resume_command("codex", "Continue work", &settings(None))
-            .expect("codex resume command");
+    fn builds_codex_resume_with_thread_id() {
+        let (command, args) = build_agent_resume_command(
+            "codex",
+            "Continue work",
+            &settings(None),
+            "019e4113-8979-7000-aaaa-bbbbbbbbbbbb",
+        )
+        .expect("codex resume command");
 
         assert_eq!(command, "codex");
-        assert!(!args.contains(&"exec".to_string()));
-        assert!(args.contains(&"--dangerously-bypass-approvals-and-sandbox".to_string()));
-        assert!(args.windows(2).any(|w| w == ["resume", "--last"]));
+        assert!(args.contains(&"exec".to_string()));
+        assert!(args.contains(&"resume".to_string()));
+        assert!(args.contains(&"--json".to_string()));
+        assert!(args.contains(&"019e4113-8979-7000-aaaa-bbbbbbbbbbbb".to_string()));
+        assert!(!args.contains(&"--last".to_string()));
         assert_eq!(args.last().map(String::as_str), Some("Continue work"));
     }
 
@@ -243,7 +262,7 @@ mod tests {
             build_agent_command("codex", "Analyze this", &s, true).expect("codex command");
 
         assert!(!args.contains(&"--dangerously-bypass-approvals-and-sandbox".to_string()));
-        assert!(args.contains(&"--no-alt-screen".to_string()));
+        assert!(args.contains(&"--json".to_string()));
         assert!(args.windows(2).any(|w| w == ["--model", "gpt-5.5"]));
     }
 }
