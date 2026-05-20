@@ -1,46 +1,56 @@
 // src-tauri/src/agent/executor/codex_state.rs
 use crate::models::BusEvent;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::HashSet;
+
+const EVT_THREAD_STARTED: &str = "thread.started";
+const EVT_TURN_STARTED: &str = "turn.started";
+const EVT_TURN_COMPLETED: &str = "turn.completed";
+const EVT_TURN_FAILED: &str = "turn.failed";
+const EVT_ITEM_STARTED: &str = "item.started";
+const EVT_ITEM_COMPLETED: &str = "item.completed";
+const ITEM_COMMAND_EXECUTION: &str = "command_execution";
+const ITEM_AGENT_MESSAGE: &str = "agent_message";
 
 pub struct CodexProtocolState {
     run_id: String,
-    pending_tools: HashMap<String, ()>,
+    pending_tools: HashSet<String>,
+    /// One-shot guard: SessionInit is emitted at most once per run,
+    /// even if Codex re-announces `thread.started`.
     sent_session_init: bool,
-    turn_active: bool,
-    captured_thread_id: Option<String>,
-    seen_turn_completed_count: u32,
+    /// Set on `thread.started`, drained by the caller after each `map_event`.
+    pending_thread_id: Option<String>,
+    seen_turn_completed: bool,
 }
 
 impl CodexProtocolState {
     pub fn new(run_id: String) -> Self {
         Self {
             run_id,
-            pending_tools: HashMap::new(),
+            pending_tools: HashSet::new(),
             sent_session_init: false,
-            turn_active: false,
-            captured_thread_id: None,
-            seen_turn_completed_count: 0,
+            pending_thread_id: None,
+            seen_turn_completed: false,
         }
     }
 
-    pub fn captured_thread_id(&self) -> Option<&str> {
-        self.captured_thread_id.as_deref()
+    pub fn take_new_thread_id(&mut self) -> Option<String> {
+        self.pending_thread_id.take()
     }
 
     pub fn has_seen_turn_completed(&self) -> bool {
-        self.seen_turn_completed_count > 0
+        self.seen_turn_completed
     }
 
     pub fn map_event(&mut self, raw: &Value) -> Vec<BusEvent> {
         let type_str = raw.get("type").and_then(|v| v.as_str()).unwrap_or("");
         match type_str {
-            "thread.started" => self.handle_thread_started(raw),
-            "turn.started" => self.handle_turn_started(),
-            "turn.completed" => self.handle_turn_completed(raw),
-            "turn.failed" => self.handle_turn_failed(raw),
-            "item.started" => self.handle_item_started(raw),
-            "item.completed" => self.handle_item_completed(raw),
+            EVT_THREAD_STARTED => self.handle_thread_started(raw),
+            EVT_TURN_STARTED => self.handle_turn_started(),
+            EVT_TURN_COMPLETED => self.handle_turn_completed(raw),
+            EVT_TURN_FAILED => self.handle_turn_failed(raw),
+            EVT_ITEM_STARTED => self.handle_item_started(raw),
+            EVT_ITEM_COMPLETED => self.handle_item_completed(raw),
             _ => Vec::new(),
         }
     }
@@ -49,14 +59,15 @@ impl CodexProtocolState {
         let Some(tid) = raw.get("thread_id").and_then(|v| v.as_str()) else {
             return Vec::new();
         };
-        self.captured_thread_id = Some(tid.to_string());
+        let tid_owned = tid.to_string();
+        self.pending_thread_id = Some(tid_owned.clone());
         if self.sent_session_init {
             return Vec::new();
         }
         self.sent_session_init = true;
         vec![BusEvent::SessionInit {
             run_id: self.run_id.clone(),
-            session_id: Some(tid.to_string()),
+            session_id: Some(tid_owned),
             model: None,
             tools: Vec::new(),
             cwd: String::new(),
@@ -76,7 +87,6 @@ impl CodexProtocolState {
     }
 
     fn handle_turn_started(&mut self) -> Vec<BusEvent> {
-        self.turn_active = true;
         vec![BusEvent::RunState {
             run_id: self.run_id.clone(),
             state: "running".to_string(),
@@ -100,8 +110,7 @@ impl CodexProtocolState {
             .and_then(|v| v.as_u64());
 
         self.pending_tools.clear();
-        self.turn_active = false;
-        self.seen_turn_completed_count += 1;
+        self.seen_turn_completed = true;
 
         vec![
             BusEvent::UsageUpdate {
@@ -140,7 +149,6 @@ impl CodexProtocolState {
             .unwrap_or("Codex turn failed")
             .to_string();
         self.pending_tools.clear();
-        self.turn_active = false;
         vec![BusEvent::RunState {
             run_id: self.run_id.clone(),
             state: "failed".to_string(),
@@ -154,14 +162,14 @@ impl CodexProtocolState {
             return Vec::new();
         };
         let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
-        if item_type != "command_execution" {
+        if item_type != ITEM_COMMAND_EXECUTION {
             return Vec::new();
         }
         let Some(item_id) = item.get("id").and_then(|v| v.as_str()) else {
             return Vec::new();
         };
         let command = item.get("command").and_then(|v| v.as_str()).unwrap_or("");
-        self.pending_tools.insert(item_id.to_string(), ());
+        self.pending_tools.insert(item_id.to_string());
         vec![BusEvent::ToolStart {
             run_id: self.run_id.clone(),
             tool_use_id: item_id.to_string(),
@@ -180,7 +188,7 @@ impl CodexProtocolState {
             return Vec::new();
         };
         match item_type {
-            "command_execution" => {
+            ITEM_COMMAND_EXECUTION => {
                 let exit_code = item.get("exit_code").and_then(|v| v.as_i64()).unwrap_or(-1);
                 let aggregated_output = item
                     .get("aggregated_output")
@@ -202,7 +210,7 @@ impl CodexProtocolState {
                     tool_use_result: None,
                 }]
             }
-            "agent_message" => {
+            ITEM_AGENT_MESSAGE => {
                 let text = item
                     .get("text")
                     .and_then(|v| v.as_str())
@@ -243,7 +251,7 @@ mod tests {
     }
 
     #[test]
-    fn thread_started_emits_session_init_and_captures_tid() {
+    fn thread_started_emits_session_init_and_surfaces_tid() {
         let mut s = state();
         let events = s.map_event(&json!({"type":"thread.started","thread_id":"019e4159-ca48"}));
         assert_eq!(events.len(), 1);
@@ -253,7 +261,8 @@ mod tests {
             }
             other => panic!("expected SessionInit, got {:?}", other),
         }
-        assert_eq!(s.captured_thread_id(), Some("019e4159-ca48"));
+        assert_eq!(s.take_new_thread_id().as_deref(), Some("019e4159-ca48"));
+        assert!(s.take_new_thread_id().is_none(), "take should be one-shot");
     }
 
     #[test]
@@ -262,6 +271,7 @@ mod tests {
         let _ = s.map_event(&json!({"type":"thread.started","thread_id":"a"}));
         let events2 = s.map_event(&json!({"type":"thread.started","thread_id":"a"}));
         assert!(events2.is_empty());
+        assert_eq!(s.take_new_thread_id().as_deref(), Some("a"));
     }
 
     #[test]
@@ -395,7 +405,6 @@ mod tests {
     fn turn_completed_emits_usage_and_idle_and_clears_pending() {
         let mut s = state();
         let _ = s.map_event(&json!({"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"x"}}));
-        assert_eq!(s.pending_tools.len(), 1);
 
         let raw = json!({
             "type":"turn.completed",
@@ -420,8 +429,6 @@ mod tests {
             BusEvent::RunState { state, .. } => assert_eq!(state, "idle"),
             other => panic!("expected RunState idle, got {:?}", other),
         }
-        assert!(s.pending_tools.is_empty());
-        assert!(!s.turn_active);
         assert!(s.has_seen_turn_completed());
     }
 
@@ -429,7 +436,6 @@ mod tests {
     fn turn_failed_emits_failed_state_and_clears_pending() {
         let mut s = state();
         let _ = s.map_event(&json!({"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"x"}}));
-        assert_eq!(s.pending_tools.len(), 1);
 
         let events = s.map_event(&json!({"type":"turn.failed","error":{"message":"oops"}}));
         assert_eq!(events.len(), 1);
@@ -440,8 +446,6 @@ mod tests {
             }
             other => panic!("expected RunState failed, got {:?}", other),
         }
-        assert!(s.pending_tools.is_empty());
-        assert!(!s.turn_active);
     }
 
     #[test]

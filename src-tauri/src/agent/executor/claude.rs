@@ -1,8 +1,4 @@
 // src-tauri/src/agent/executor/claude.rs
-//
-// ClaudeExecutor 仅服务于 stream.rs::run_agent 派发的 pipe-exec Claude 路径;
-// SessionActor-backed 会话由 commands/session.rs 独立启动,不经过 Executor trait。
-
 use super::{Executor, ExecutorRequest};
 use crate::agent::stream::{run_claude_pipe_or_session, ProcessMap};
 use tauri::AppHandle;

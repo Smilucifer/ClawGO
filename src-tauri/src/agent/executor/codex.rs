@@ -1,16 +1,12 @@
 // src-tauri/src/agent/executor/codex.rs
 use super::codex_state::CodexProtocolState;
 use super::{Executor, ExecutorRequest};
-use crate::agent::adapter;
 use crate::agent::stream::ProcessMap;
 use crate::models::{BusEvent, ChatDone, ConversationRef, RunEventType, RunStatus};
-use crate::process_ext::HideConsole;
 use crate::storage;
 use serde_json::Value;
-use std::process::Stdio;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
 
 pub struct CodexExecutor;
 
@@ -41,37 +37,16 @@ impl Executor for CodexExecutor {
             }),
         );
 
-        let mut cmd = Command::new(&process_command);
-        cmd.args(&args)
-            .current_dir(&cwd)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        if let Some(path) = &spawn_env_plan.path_override {
-            cmd.env("PATH", path);
-        }
-        for key in adapter::auth_env_removals_for_extra_env(&spawn_env_plan.msvc_env) {
-            cmd.env_remove(key);
-        }
-        for (key, value) in &spawn_env_plan.msvc_env {
-            cmd.env(key, value);
-        }
-
-        let mut child = cmd
-            .env("CLAW_GO_TASK_ID", &run_id)
-            .env("CLAW_GO_RUN_ID", &run_id)
-            .env_remove("CLAUDECODE")
-            .hide_console()
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    "errors_codexCliNotInstalled".to_string()
-                } else {
-                    e.to_string()
-                }
-            })?;
+        let mut child =
+            super::build_child_command(&process_command, &args, &cwd, &run_id, &spawn_env_plan)
+                .spawn()
+                .map_err(|e| {
+                    if e.kind() == std::io::ErrorKind::NotFound {
+                        "errors_codexCliNotInstalled".to_string()
+                    } else {
+                        e.to_string()
+                    }
+                })?;
 
         let stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take().unwrap();
@@ -81,37 +56,21 @@ impl Executor for CodexExecutor {
             map.insert(run_id.clone(), child);
         }
 
-        let app_err = app.clone();
-        let run_id_err = run_id.clone();
-        let stderr_handle = tokio::spawn(async move {
-            let reader = BufReader::new(stderr);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                let _ = storage::events::append_event(
-                    &run_id_err,
-                    RunEventType::Stderr,
-                    serde_json::json!({"text": line, "source": "ui_chat"}),
-                );
-                let _ = app_err.emit(
-                    "run-event",
-                    serde_json::json!({"run_id": run_id_err, "type": "stderr", "text": line}),
-                );
-            }
-        });
+        let stderr_handle = super::spawn_stderr_reader(app.clone(), run_id.clone(), stderr);
 
         let mut state = CodexProtocolState::new(run_id.clone());
         let reader = BufReader::new(stdout);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
             let _ = storage::events::append_event(
                 &run_id,
                 RunEventType::Stdout,
                 serde_json::json!({"text": line, "source": "ui_chat"}),
             );
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
             let value: Value = match serde_json::from_str(trimmed) {
                 Ok(v) => v,
                 Err(_) => {
@@ -123,33 +82,27 @@ impl Executor for CodexExecutor {
                 }
             };
 
-            if value.get("type").and_then(|v| v.as_str()) == Some("thread.started") {
-                if let Some(tid) = value.get("thread_id").and_then(|v| v.as_str()) {
-                    let tid_str = tid.to_string();
-                    let rid = run_id.clone();
-                    if let Err(e) = storage::runs::with_meta(&rid, |meta| {
-                        meta.conversation_ref = Some(ConversationRef::CodexThread(tid_str));
-                        Ok(())
-                    }) {
-                        log::warn!("[codex] failed to persist conversation_ref: {}", e);
-                    }
-                }
-            }
-
             for ev in state.map_event(&value) {
                 emit_bus_event(&app, &run_id, ev);
+            }
+
+            if let Some(tid) = state.take_new_thread_id() {
+                let rid = run_id.clone();
+                if let Err(e) = storage::runs::with_meta(&rid, |meta| {
+                    meta.conversation_ref = Some(ConversationRef::CodexThread(tid));
+                    Ok(())
+                }) {
+                    log::warn!("[codex] failed to persist conversation_ref: {}", e);
+                }
             }
         }
 
         let _ = stderr_handle.await;
 
-        let was_killed_by_stop = {
-            let map = process_map.lock().await;
-            !map.contains_key(&run_id)
-        };
-        let removed = {
+        let (was_killed_by_stop, removed) = {
             let mut map = process_map.lock().await;
-            map.remove(&run_id)
+            let killed = !map.contains_key(&run_id);
+            (killed, map.remove(&run_id))
         };
         let exit_code = if let Some(mut child) = removed {
             child.wait().await.ok().and_then(|s| s.code()).unwrap_or(1)

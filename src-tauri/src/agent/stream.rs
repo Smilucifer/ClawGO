@@ -1,16 +1,13 @@
-use crate::agent::adapter;
 use crate::agent::windows_msvc_env::SpawnEnvPlan;
 use crate::models::{ChatDelta, ChatDone, RunEventType};
-use crate::process_ext::HideConsole;
 use crate::storage;
 use std::collections::HashMap;
 #[cfg(windows)]
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
-use tokio::process::{Child, Command};
+use tokio::io::{AsyncReadExt, BufReader};
+use tokio::process::Child;
 use tokio::sync::Mutex;
 
 pub type ProcessMap = Arc<Mutex<HashMap<String, Child>>>;
@@ -168,42 +165,26 @@ pub async fn run_claude_pipe_or_session(
         }),
     );
 
-    let mut cmd = Command::new(&process_command);
-    cmd.args(&args)
-        .current_dir(&cwd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    if let Some(path) = &spawn_env_plan.path_override {
-        cmd.env("PATH", path);
-    }
-    for key in adapter::auth_env_removals_for_extra_env(&spawn_env_plan.msvc_env) {
-        cmd.env_remove(key);
-    }
-    for (key, value) in &spawn_env_plan.msvc_env {
-        cmd.env(key, value);
-    }
-
-    let mut child = cmd
-        .env("CLAW_GO_TASK_ID", &run_id)
-        .env("CLAW_GO_RUN_ID", &run_id)
-        .env_remove("CLAUDECODE") // Allow running inside a Claude Code session
-        .hide_console()
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| {
-            let msg = if e.kind() == std::io::ErrorKind::NotFound {
-                format!(
-                    "Command \"{}\" not found. Is {} CLI installed and in your PATH?",
-                    process_command, agent
-                )
-            } else {
-                e.to_string()
-            };
-            log::error!("[stream] spawn failed: {}", msg);
-            msg
-        })?;
+    let mut child = crate::agent::executor::build_child_command(
+        &process_command,
+        &args,
+        &cwd,
+        &run_id,
+        &spawn_env_plan,
+    )
+    .spawn()
+    .map_err(|e| {
+        let msg = if e.kind() == std::io::ErrorKind::NotFound {
+            format!(
+                "Command \"{}\" not found. Is {} CLI installed and in your PATH?",
+                process_command, agent
+            )
+        } else {
+            e.to_string()
+        };
+        log::error!("[stream] spawn failed: {}", msg);
+        msg
+    })?;
 
     let pid = child.id().unwrap_or(0);
     log::debug!("[stream] spawned process: run_id={}, pid={}", run_id, pid);
@@ -256,38 +237,14 @@ pub async fn run_claude_pipe_or_session(
     });
 
     // Stderr reader
-    let app_err = app.clone();
-    let stderr_handle = tokio::spawn(async move {
-        let mut stderr_text = String::new();
-        let reader = BufReader::new(stderr);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            stderr_text.push_str(&line);
-            stderr_text.push('\n');
-            if let Err(e) = storage::events::append_event(
-                &run_id_err,
-                RunEventType::Stderr,
-                serde_json::json!({ "text": line, "source": "ui_chat" }),
-            ) {
-                log::warn!("[stream] stderr append failed: {}", e);
-            }
-            let _ = app_err.emit(
-                "run-event",
-                serde_json::json!({
-                    "run_id": run_id_err,
-                    "type": "stderr",
-                    "text": line
-                }),
-            );
-        }
-        stderr_text
-    });
+    let stderr_handle =
+        crate::agent::executor::spawn_stderr_reader(app.clone(), run_id_err, stderr);
 
     let (assistant_text, exit_code) = {
         // Wait for stdout/stderr to close (= process exited or pipes broken).
         // This completes without holding the ProcessMap lock.
         let assistant_text = stdout_handle.await.unwrap_or_default();
-        let _stderr_text = stderr_handle.await.unwrap_or_default();
+        let _ = stderr_handle.await;
 
         // Short lock: remove child from map, then wait() outside the lock.
         // If stop_process already removed+killed the child, we get None → exit_code -1.
