@@ -29,7 +29,9 @@ use tokio::sync::{mpsc, Mutex as AsyncMutex};
 use tokio_util::sync::CancellationToken;
 
 /// Number of recent public turns to include as context for each participant.
-const CONTEXT_TURN_WINDOW: usize = 3;
+/// Reduced from 3 to 1 to minimize context bloat — participants only need the
+/// most recent turn for continuity; full history is available via timeline replay.
+const CONTEXT_TURN_WINDOW: usize = 1;
 /// Approximate byte budget for the context block (~2000 tokens worth of CJK text).
 const CONTEXT_TOKEN_CAP: usize = 8000;
 /// Maximum characters per single turn preview in the context block.

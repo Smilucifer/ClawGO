@@ -402,6 +402,16 @@ fn stability_env_vars() -> HashMap<String, String> {
     ])
 }
 
+/// Returns the AUTO_COMPACT_WINDOW value appropriate for the given platform.
+/// 1M models get 900K; smaller-context models get ~90% of their window.
+fn compact_window_for_platform(platform_id: &str) -> &'static str {
+    match platform_id {
+        "kimi" => "230000",                       // 256K context
+        "zhipu" | "zhipu-intl" => "180000",       // 200K context
+        _ => "900000",                            // 1M context (deepseek, bailian, mimo-*, packy, custom)
+    }
+}
+
 /// Whitelist of extra_env keys that users can override via the settings UI.
 /// Prevents accidental overwriting of stability or internal env vars.
 const ALLOWED_EXTRA_ENV_KEYS: &[&str] = &[
@@ -498,6 +508,11 @@ fn build_deepseek_env(cred: &PlatformCredential) -> Result<HashMap<String, Strin
         ),
     ]);
     env.extend(stability_env_vars());
+    // DeepSeek supports 1M context — override the 400K default
+    env.insert(
+        "CLAUDE_CODE_AUTO_COMPACT_WINDOW".to_string(),
+        compact_window_for_platform("deepseek").to_string(),
+    );
     merge_extra_env(&mut env, &cred.extra_env);
     Ok(env)
 }
@@ -585,6 +600,11 @@ fn build_parameterized_env(
         ),
     ]);
     env.extend(stability_env_vars());
+    // Override compact window per platform (Kimi 230K, GLM 180K, others 900K)
+    env.insert(
+        "CLAUDE_CODE_AUTO_COMPACT_WINDOW".to_string(),
+        compact_window_for_platform(platform_id).to_string(),
+    );
     merge_extra_env(&mut env, &cred.extra_env);
     Ok(env)
 }

@@ -36,6 +36,7 @@
     onRewind,
     contextUtilization,
     contextWarningLevel,
+    contextStrategyMessage,
     contextWindow,
     cwd = "",
     lastCompactedAt = 0,
@@ -87,6 +88,7 @@
     onRewind?: () => void;
     contextUtilization?: number;
     contextWarningLevel?: string;
+    contextStrategyMessage?: string | null;
     cwd?: string;
     contextWindow?: number;
     lastCompactedAt?: number;
@@ -492,18 +494,18 @@
         {@const pct = Math.round(contextUtilization * 100)}
         {@const barColor =
           contextWarningLevel === "critical"
-            ? "bg-orange-500"
-            : contextWarningLevel === "high"
+            ? "bg-red-500"
+            : contextWarningLevel === "high" || contextWarningLevel === "moderate"
               ? "bg-orange-500"
-              : contextWarningLevel === "moderate"
-                ? "bg-amber-500"
+              : contextWarningLevel === "advisory"
+                ? "bg-amber-400"
                 : "bg-emerald-500"}
         {@const textColor =
           contextWarningLevel === "critical"
-            ? "text-orange-500"
-            : contextWarningLevel === "high"
+            ? "text-red-500"
+            : contextWarningLevel === "high" || contextWarningLevel === "moderate"
               ? "text-orange-500"
-              : contextWarningLevel === "moderate"
+              : contextWarningLevel === "advisory"
                 ? "text-amber-500"
                 : "text-foreground/60"}
         <span class="text-foreground/30">&middot;</span>
@@ -528,6 +530,14 @@
                 full: String(compactCount),
                 micro: String(microcompactCount),
               })}>{t("statusbar_compacted")}</span
+            >
+          {/if}
+          {#if contextStrategyMessage}
+            <span
+              class="text-[10px] font-medium {contextWarningLevel === 'critical'
+                ? 'text-red-500'
+                : 'text-amber-500'}"
+              >{t(contextStrategyMessage)}</span
             >
           {/if}
         </span>

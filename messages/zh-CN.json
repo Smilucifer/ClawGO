@@ -339,6 +339,8 @@
   "statusbar_contextTitle": "最新轮次的上下文使用量（{pct}%，共 {tokens} 个 token）。接近限制时 CLI 会自动压缩上下文。",
   "statusbar_ctx": "上下文 {pct}%",
   "statusbar_compacted": "已压缩",
+  "context.strategy.suggest_summary": "建议摘要",
+  "context.strategy.cleanup_prompt": "请整理上下文",
   "statusbar_rewindTitle": "回退：撤销本会话中的文件更改",
   "statusbar_rewind": "回退",
   "statusbar_forkTitle": "分叉：基于摘要上下文创建新会话",

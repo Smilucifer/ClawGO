@@ -31,6 +31,7 @@ import {
   assertTransition,
 } from "./types";
 import { getEventMiddleware } from "./event-middleware";
+import { getContextWindowForModel, getContextWindowForPlatform } from "$lib/utils/provider-catalog";
 import { updateInstalledVersion, getCliCommands } from "./cli-info.svelte";
 import * as snapshotCache from "$lib/utils/snapshot-cache";
 import { getTransport } from "$lib/transport";
@@ -579,13 +580,21 @@ export class SessionStore {
   }
 
   get contextWindow(): number {
-    if (!this.usage.modelUsage) return 0;
-    const entries = Object.values(this.usage.modelUsage);
-    let max = 0;
-    for (const e of entries) {
-      if (e.context_window && e.context_window > max) max = e.context_window;
+    // CLI-reported context window
+    let cliMax = 0;
+    if (this.usage.modelUsage) {
+      for (const e of Object.values(this.usage.modelUsage)) {
+        if (e.context_window && e.context_window > cliMax) cliMax = e.context_window;
+      }
     }
-    return max;
+    // Static fallback from model name or platformId
+    const staticWindow = this.model
+      ? getContextWindowForModel(this.model)
+      : this.platformId
+        ? getContextWindowForPlatform(this.platformId)
+        : 0;
+    // Take max — prevents CLI under-reporting from hiding the real capacity
+    return Math.max(cliMax, staticWindow);
   }
 
   get contextUtilization(): number {
@@ -600,12 +609,21 @@ export class SessionStore {
     return Math.min(used / cw, 1);
   }
 
-  get contextWarningLevel(): "none" | "moderate" | "high" | "critical" {
+  get contextWarningLevel(): "none" | "advisory" | "moderate" | "high" | "critical" {
     const u = this.contextUtilization;
     if (u >= 0.9) return "critical";
     if (u >= 0.75) return "high";
     if (u >= 0.5) return "moderate";
+    // Advisory only for 1M+ models — 25% of 1M ≈ 250K tokens, worth nudging
+    if (u >= 0.25 && this.contextWindow >= 800_000) return "advisory";
     return "none";
+  }
+
+  get contextStrategyMessage(): string | null {
+    const level = this.contextWarningLevel;
+    if (level === "critical") return "context.strategy.cleanup_prompt";
+    if (level !== "none") return "context.strategy.suggest_summary";
+    return null;
   }
 
   /** Background tasks that are still running/started (not completed/failed). */

@@ -19,6 +19,7 @@ export interface Phase7ProviderEntry {
   platformId?: string;
   defaultModel?: string;
   defaultBaseUrl?: string;
+  contextWindow?: number;
   requiredConfig: Array<"api_key" | "base_url" | "model">;
   defaultPermissionMode: "bypass" | "dangerously_bypass" | "yolo";
 }
@@ -30,6 +31,7 @@ export const PHASE7_PROVIDERS: Phase7ProviderEntry[] = [
     mode: "official_cli",
     executionAgent: "claude",
     defaultModel: "claude-opus-4-7[1m]",
+    contextWindow: 1_000_000,
     requiredConfig: [],
     defaultPermissionMode: "bypass",
   },
@@ -39,6 +41,7 @@ export const PHASE7_PROVIDERS: Phase7ProviderEntry[] = [
     mode: "official_cli",
     executionAgent: "codex",
     defaultModel: "gpt-5.5",
+    contextWindow: 1_000_000,
     requiredConfig: [],
     defaultPermissionMode: "dangerously_bypass",
   },
@@ -50,6 +53,7 @@ export const PHASE7_PROVIDERS: Phase7ProviderEntry[] = [
     platformId: "deepseek",
     defaultModel: "deepseek-v4-pro",
     defaultBaseUrl: "https://api.deepseek.com/anthropic",
+    contextWindow: 1_000_000,
     requiredConfig: ["api_key"],
     defaultPermissionMode: "bypass",
   },
@@ -61,6 +65,7 @@ export const PHASE7_PROVIDERS: Phase7ProviderEntry[] = [
     platformId: "zhipu",
     defaultModel: "glm-5",
     defaultBaseUrl: "https://open.bigmodel.cn/api/anthropic",
+    contextWindow: 200_000,
     requiredConfig: ["api_key", "base_url", "model"],
     defaultPermissionMode: "bypass",
   },
@@ -72,6 +77,7 @@ export const PHASE7_PROVIDERS: Phase7ProviderEntry[] = [
     platformId: "bailian",
     defaultModel: "qwen3.5-plus",
     defaultBaseUrl: "https://coding.dashscope.aliyuncs.com/apps/anthropic",
+    contextWindow: 1_000_000,
     requiredConfig: ["api_key", "base_url", "model"],
     defaultPermissionMode: "bypass",
   },
@@ -83,6 +89,7 @@ export const PHASE7_PROVIDERS: Phase7ProviderEntry[] = [
     platformId: "kimi",
     defaultModel: "kimi-k2.5",
     defaultBaseUrl: "https://api.moonshot.cn/anthropic",
+    contextWindow: 256_000,
     requiredConfig: ["api_key", "base_url", "model"],
     defaultPermissionMode: "bypass",
   },
@@ -94,6 +101,7 @@ export const PHASE7_PROVIDERS: Phase7ProviderEntry[] = [
     platformId: "mimo-plan",
     defaultModel: "mimo-v2.5-pro",
     defaultBaseUrl: "https://token-plan-cn.xiaomimimo.com/anthropic",
+    contextWindow: 1_000_000,
     requiredConfig: ["api_key"],
     defaultPermissionMode: "bypass",
   },
@@ -105,6 +113,7 @@ export const PHASE7_PROVIDERS: Phase7ProviderEntry[] = [
     platformId: "mimo-api",
     defaultModel: "mimo-v2.5-pro",
     defaultBaseUrl: "https://api.xiaomimimo.com/anthropic",
+    contextWindow: 1_000_000,
     requiredConfig: ["api_key"],
     defaultPermissionMode: "bypass",
   },
@@ -115,6 +124,7 @@ export const PHASE7_PROVIDERS: Phase7ProviderEntry[] = [
     executionAgent: "claude",
     platformId: "packy-cx2cc",
     defaultBaseUrl: "https://www.packyapi.com/anthropic",
+    contextWindow: 1_000_000,
     requiredConfig: ["api_key"],
     defaultPermissionMode: "bypass",
   },
@@ -134,4 +144,34 @@ export function providerIdForRun(agent: string, platformId?: string | null): Pha
   if (platformId === "packy-cx2cc") return "packy-cx2cc";
   if (agent === "codex") return "codex";
   return "claude";
+}
+
+/** Static model → context window mapping (tokens). */
+export const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+  "claude-opus-4-7": 1_000_000,
+  "claude-sonnet-4-6": 1_000_000,
+  "claude-haiku-4-5": 200_000,
+  "deepseek-v4-pro": 1_000_000,
+  "deepseek-v4-flash": 1_000_000,
+  "qwen3.5-plus": 1_000_000,
+  "qwen3.6-plus": 1_000_000,
+  "qwen3.7-max": 1_000_000,
+  "qwen-long": 10_000_000,
+  "mimo-v2.5-pro": 1_000_000,
+  "kimi-k2.5": 256_000,
+  "glm-5": 200_000,
+  "glm-4.7": 200_000,
+};
+
+/** Look up context window by model name. Returns 200_000 as conservative fallback. */
+export function getContextWindowForModel(modelName: string): number {
+  // Strip tier suffix like "[1m]" from model names
+  const base = modelName.replace(/\[.*\]$/, "");
+  return MODEL_CONTEXT_WINDOWS[base] ?? 200_000;
+}
+
+/** Look up context window by platformId via the provider catalog. */
+export function getContextWindowForPlatform(platformId: string): number {
+  const provider = PHASE7_PROVIDERS.find((p) => p.platformId === platformId);
+  return provider?.contextWindow ?? 200_000;
 }

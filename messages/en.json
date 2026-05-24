@@ -339,6 +339,8 @@
   "statusbar_contextTitle": "Context usage for the latest turn ({pct}% of {tokens} tokens). The CLI automatically compacts context when approaching the limit.",
   "statusbar_ctx": "ctx {pct}%",
   "statusbar_compacted": "compacted",
+  "context.strategy.suggest_summary": "summarize",
+  "context.strategy.cleanup_prompt": "clean up",
   "statusbar_rewindTitle": "Rewind: undo file changes from this session",
   "statusbar_rewind": "Rewind",
   "statusbar_forkTitle": "Fork: new session from summarized context",

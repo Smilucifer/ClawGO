@@ -3967,6 +3967,7 @@
       onRewind={store.sessionAlive && !store.isRunning ? handleRewind : undefined}
       contextUtilization={store.contextUtilization}
       contextWarningLevel={store.contextWarningLevel}
+      contextStrategyMessage={store.contextStrategyMessage}
       contextWindow={store.contextWindow}
       lastCompactedAt={store.lastCompactedAt}
       compactCount={store.compactCount}
