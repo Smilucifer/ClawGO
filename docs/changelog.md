@@ -1,5 +1,26 @@
 # Changelog / 更新日志
 
+## Phase 10+ (2026-05-24)
+
+### v2.4.0 — 1M 上下文窗口支持 + 群聊上下文精简
+
+**1M 上下文窗口:**
+- 后端 per-provider `CLAUDE_CODE_AUTO_COMPACT_WINDOW` 覆盖：DeepSeek/QWEN/MiMo/Packy/Custom → 900K，Kimi → 230K，GLM → 180K
+- 前端 `MODEL_CONTEXT_WINDOWS` 静态映射表 + `getContextWindowForModel()` 查询函数
+- `contextWindow` getter 改为 `Math.max(CLI报告值, 静态映射值)` fallback 策略
+- 新增 `advisory` 上下文警告级别：仅 1M+ 模型在 25% 使用率时触发
+- `contextStrategyMessage` getter 映射警告级别到 i18n 提示文案
+- `SessionStatusBar` 新增 advisory（黄色）和 critical（红色）标签
+
+**群聊上下文精简:**
+- `CONTEXT_TURN_WINDOW` 从 3 轮减至 1 轮，减少上下文膨胀
+
+**代码质量（3 路审查）:**
+- Claude / DeepSeek / Xiaomi Plan 并行审查
+- 修复 DRY 违反（`build_deepseek_env` 改用 `compact_window_for_platform`）
+- 简化 `contextStrategyMessage` 冗余分支
+- 补充 `CONTEXT_TURN_WINDOW` 变更注释
+
 ## Phase 10+ (2026-05-15)
 
 ### v2.3.0 — Memory Extraction chat_api_key 分离 + 群聊体验修复
