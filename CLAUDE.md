@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v2.4.0, 2026-05-24). 1M context window support across all providers; per-provider AUTO_COMPACT_WINDOW, frontend context progress bar with static model fallback, advisory soft strategy for 1M+ models, group chat context injection reduced to 1 round. See `docs/superpowers/plans/[done] 2026-05-14-character-memory-system.md`.
+**Current phase:** Phase 10+ (v2.5.0, 2026-05-25). 1M context window support across all providers; per-provider AUTO_COMPACT_WINDOW, frontend context progress bar with static model fallback, advisory soft strategy for 1M+ models, group chat context injection reduced to 1 round. See `docs/superpowers/plans/[done] 2026-05-14-character-memory-system.md`.
 
 ## Standard workflow
 
@@ -353,6 +353,7 @@ Key phases and their status:
 | 10+ (v2.3.0) | Memory extraction chat_api_key 分离: EmbeddingConfig 独立 chat 凭据, 设置 UI, 4 路审查, 安全修复 | [done] |
 | 10+ (v2.3.0) | 记忆提取准确性: 说话人标注, LLM 置信度, 群聊侧边栏私聊修复, 时间线自动滚底 | [done] |
 | 10+ (v2.4.0) | 1M 上下文窗口: per-provider AUTO_COMPACT_WINDOW, 前端进度条静态映射 + fallback, advisory 软策略, CONTEXT_TURN_WINDOW 3→1, 3 路审查修复 | [done] |
+| 10+ (v2.5.0) | Doctor 诊断面板, FilesPanel 树视图重写, 7 项审查修复 | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

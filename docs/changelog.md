@@ -1,5 +1,30 @@
 # Changelog / 更新日志
 
+## Phase 10+ (2026-05-25)
+
+### v2.5.0 — Doctor 诊断面板 + 文件面板树视图重写
+
+**Doctor 诊断面板:**
+- 新增右侧滑出诊断面板（DoctorPanel），从命令面板 "Check Agent CLI" 触发
+- 折叠式分节展示：CLI 安装、认证、项目配置、MCP 服务、外部服务、系统状态
+- 每项显示 pass/fail/warn 状态图标，支持一键复制完整报告
+- DoctorStore 基于 Svelte 5 runes 管理 loading/error/report 状态
+
+**FilesPanel 树视图重写:**
+- 扁平列表改为可折叠目录树，显示子目录/文件计数
+- 新增操作类型过滤栏（write/edit/read/persisted），带计数徽章
+- 新增文件预览面板，通过 readTextFile 读取内容并 split-pane 展示
+- 文件类型图标颜色编码（TS=蓝, JS=黄, RS=橙, Svelte=玫红 等）
+
+**代码质量（7 项审查发现）:**
+- FilesPanel previewFile 竞态条件：添加 stale-request 守卫
+- DoctorStore catch 块丢失已成功的 rawReport：分离错误处理
+- DoctorStore 双重 runDiagnostics IPC：buildDoctorReport 复用 rawReport
+- 前端/后端自定义 provider 上下文窗口不一致（200K vs 900K）
+- zhipu-intl 缺失于前端 provider 目录
+- CommandPalette 遗留 check_agent_cli 死代码清理
+- DoctorPanel 关闭时取消进行中的诊断请求
+
 ## Phase 10+ (2026-05-24)
 
 ### v2.4.0 — 1M 上下文窗口支持 + 群聊上下文精简
