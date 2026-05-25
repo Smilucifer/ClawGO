@@ -25,6 +25,7 @@
   import Modal from "$lib/components/Modal.svelte";
   import CliSessionBrowser from "$lib/components/CliSessionBrowser.svelte";
   import GlobalMemoPanel from "$lib/components/GlobalMemoPanel.svelte";
+  import DoctorPanel from "$lib/components/DoctorPanel.svelte";
   import UpdateBanner from "$lib/components/UpdateBanner.svelte";
   import type {
     TaskRun,
@@ -90,6 +91,7 @@
   let showAbout = $state(false);
   let showCliBrowser = $state(false);
   let showMemoPanel = $state(false);
+  let showDoctorPanel = $state(false);
   let permissionsModalOpen = $state(false);
 
   // Team store (shared via context with /teams page)
@@ -888,6 +890,11 @@
     }
     window.addEventListener("clawgo:toggle-memo", onToggleMemo);
 
+    function onToggleDoctor() {
+      showDoctorPanel = !showDoctorPanel;
+    }
+    window.addEventListener("clawgo:toggle-doctor", onToggleDoctor);
+
     // ── External link interceptor ──
     // Prevent webview from navigating away to external URLs.
     // Opens them in the system browser instead.
@@ -972,6 +979,7 @@
       window.removeEventListener("clawgo:memory-file-saved", onMemoryFileSaved);
       window.removeEventListener("clawgo:open-permissions", onOpenPermissions);
       window.removeEventListener("clawgo:toggle-memo", onToggleMemo);
+      window.removeEventListener("clawgo:toggle-doctor", onToggleDoctor);
       document.removeEventListener("click", handleExternalLink, true);
       window.removeEventListener("clawgo:explorer-file-selected", onExplorerFileSelected);
     };
@@ -2681,6 +2689,11 @@
 <GlobalMemoPanel
   open={showMemoPanel}
   onclose={() => (showMemoPanel = false)}
+/>
+
+<DoctorPanel
+  open={showDoctorPanel}
+  onclose={() => (showDoctorPanel = false)}
 />
 
 <Modal bind:open={removeProjectConfirmOpen} title={t("sidebar_removeProjectConfirm")}>

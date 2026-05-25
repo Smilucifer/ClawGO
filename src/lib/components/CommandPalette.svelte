@@ -106,6 +106,8 @@
           window.dispatchEvent(new CustomEvent("clawgo:open-permissions"));
         } else if (cmd.payload === "memo") {
           window.dispatchEvent(new CustomEvent("clawgo:toggle-memo"));
+        } else if (cmd.payload === "doctor-panel") {
+          window.dispatchEvent(new CustomEvent("clawgo:toggle-doctor"));
         }
         break;
 

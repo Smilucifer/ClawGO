@@ -245,8 +245,8 @@ export const commands: CommandDef[] = [
     description: "Check if agent CLIs are installed and working",
     category: "diagnostics",
     agent: "both",
-    action: "ipc_command",
-    payload: "check_agent_cli",
+    action: "open_modal",
+    payload: "doctor-panel",
   },
   {
     id: "version",

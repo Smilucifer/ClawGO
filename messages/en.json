@@ -997,6 +997,9 @@
   "bgTask_empty": "No background tasks",
   "filesPanel_noFiles": "No file operations yet",
   "filesPanel_notLocatable": "Cannot locate the corresponding tool call",
+  "filesPanel_clearFilter": "Clear",
+  "filesPanel_loading": "Loading...",
+  "filesPanel_cannotPreview": "Cannot preview this file",
 
   "infoPanel_noInfo": "Session info will appear after the session starts.",
   "infoPanel_session": "Session",
@@ -1382,6 +1385,10 @@
   "doctor_systemNoLocks": "No stale lock files",
   "doctor_systemLocks": "{count} lock file(s) found",
   "doctor_failed": "Doctor failed",
+  "doctor_panelTitle": "Diagnostics",
+  "doctor_running": "Running diagnostics...",
+  "doctor_empty": "No diagnostics data",
+  "doctor_run": "Run Diagnostics",
 
   "sidebar_hooks": "Hooks",
 
