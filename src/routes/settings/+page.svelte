@@ -370,7 +370,7 @@
     const modelOptions: string[] | null =
       preset?.models && preset.models.length > 0 ? preset.models : null;
 
-    const showBaseUrl = provider.id !== "deepseek" && provider.id !== "mimo-plan" && provider.id !== "packy-cx2cc";
+    const showBaseUrl = provider.id !== "deepseek" && provider.id !== "mimo-plan";
 
     return {
       showApiKey: true,
@@ -2307,8 +2307,6 @@
                       <div class="truncate">{providerStatusLabel(provider)}</div>
                       {#if provider.id === "deepseek"}
                         <div class="mt-1">需显式填写完整模型配置后才可启动。</div>
-                      {:else if provider.id === "packy-cx2cc"}
-                        <div class="mt-1">需显式填写完整模型配置后才可启动，不再使用默认模型兜底。</div>
                       {/if}
                     </div>
                     {#if provider.platformId && providerValidation(provider.platformId)}

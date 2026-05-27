@@ -12,7 +12,6 @@ describe("Phase 7 provider catalog", () => {
       "KIMI",
       "Xiaomi (Plan)",
       "Xiaomi (API)",
-      "Packy CX2CC",
     ]);
   });
 
@@ -65,14 +64,6 @@ describe("Phase 7 provider catalog", () => {
       requiredConfig: ["api_key"],
       defaultPermissionMode: "bypass",
     });
-    expect(getPhase7Provider("packy-cx2cc")).toMatchObject({
-      mode: "claude_compatible_api",
-      executionAgent: "claude",
-      platformId: "packy-cx2cc",
-      defaultBaseUrl: "https://www.packyapi.com/anthropic",
-      requiredConfig: ["api_key"],
-      defaultPermissionMode: "bypass",
-    });
   });
 
   it("assigns required settings fields for fixed and parameterized API providers", () => {
@@ -98,7 +89,6 @@ describe("Phase 7 provider catalog", () => {
     expect(providerIdForRun("claude", "kimi")).toBe("kimi");
     expect(providerIdForRun("claude", "mimo-plan")).toBe("mimo-plan");
     expect(providerIdForRun("claude", "mimo-api")).toBe("mimo-api");
-    expect(providerIdForRun("claude", "packy-cx2cc")).toBe("packy-cx2cc");
     expect(providerIdForRun("codex")).toBe("codex");
     expect(providerIdForRun("claude")).toBe("claude");
   });
