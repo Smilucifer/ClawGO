@@ -2,8 +2,6 @@
   import type { FileEntry } from "$lib/types";
   import { splitPath } from "$lib/utils/format";
   import { t } from "$lib/i18n/index.svelte";
-  import { readTextFile } from "$lib/api";
-
   let {
     fileEntries = [],
     onScrollToTool,
@@ -24,10 +22,6 @@
   }
 
   let expandedDirs = $state(new Set<string>());
-  let previewPath = $state<string | null>(null);
-  let previewContent = $state<string | null>(null);
-  let previewLoading = $state(false);
-
   function buildTree(entries: FileEntry[]): TreeNode[] {
     const root: TreeNode[] = [];
     const dirMap = new Map<string, TreeNode>();
@@ -187,29 +181,11 @@
   }
 
   // ── Preview ────────────────────────────────────────────────────
-  async function previewFile(entry: FileEntry) {
-    if (previewPath === entry.path) {
-      // Toggle off
-      previewPath = null;
-      previewContent = null;
-      return;
-    }
-    previewPath = entry.path;
-    previewLoading = true;
-    previewContent = null;
-    try {
-      const content = await readTextFile(entry.path, cwd);
-      previewContent = content;
-    } catch {
-      previewContent = t("filesPanel_cannotPreview");
-    } finally {
-      previewLoading = false;
-    }
-  }
-
-  function closePreview() {
-    previewPath = null;
-    previewContent = null;
+  function previewFile(entry: FileEntry) {
+    window.dispatchEvent(new CustomEvent("clawgo:preview-file", {
+      detail: { filepath: entry.path },
+    }));
+    onScrollToTool?.(entry.toolUseId!);
   }
 
   // ── Filter by action ───────────────────────────────────────────
@@ -225,8 +201,6 @@
 
   function setFilter(action: FileEntry["action"] | null) {
     activeFilter = activeFilter === action ? null : action;
-    previewPath = null;
-    previewContent = null;
   }
 
   // Count by action
@@ -268,7 +242,7 @@
   {/if}
 
   <!-- Tree / empty state -->
-  <div class="flex-1 overflow-y-auto py-1" class:hidden={previewPath !== null}>
+  <div class="flex-1 overflow-y-auto py-1">
     {#if fileEntries.length === 0}
       <div class="flex items-center justify-center h-32 text-xs text-muted-foreground/50">
         {t("filesPanel_noFiles")}
@@ -280,41 +254,6 @@
     {/if}
   </div>
 
-  <!-- Preview pane -->
-  {#if previewPath !== null}
-    <div class="flex-1 flex flex-col overflow-hidden border-t">
-      <div class="flex items-center justify-between px-2 py-1 bg-muted/30 shrink-0">
-        <span class="text-[11px] font-mono text-muted-foreground truncate min-w-0">
-          {previewPath}
-        </span>
-        <button
-          class="shrink-0 rounded p-0.5 hover:bg-accent transition-colors"
-          onclick={closePreview}
-        >
-          <svg
-            class="h-3.5 w-3.5 text-muted-foreground"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <path d="M18 6 6 18" />
-            <path d="m6 6 12 12" />
-          </svg>
-        </button>
-      </div>
-      <div class="flex-1 overflow-auto p-2">
-        {#if previewLoading}
-          <div class="flex items-center justify-center h-full text-xs text-muted-foreground">
-            {t("filesPanel_loading")}
-          </div>
-        {:else if previewContent !== null}
-          <pre
-            class="text-[11px] font-mono leading-relaxed whitespace-pre-wrap break-words text-foreground">{previewContent}</pre>
-        {/if}
-      </div>
-    </div>
-  {/if}
 </div>
 
 <!-- Tree node render fragment -->
@@ -369,10 +308,7 @@
       <button
         class="w-full text-left px-1.5 py-0.5 hover:bg-accent/50 rounded-sm transition-colors group flex items-center gap-1.5"
         style="padding-left: {depth * 12 + 16}px"
-        onclick={() => {
-          previewFile(entry);
-          onScrollToTool?.(entry.toolUseId!);
-        }}
+        onclick={() => previewFile(entry)}
         title={entry.path}
       >
         <span
