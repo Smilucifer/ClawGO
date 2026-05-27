@@ -179,13 +179,6 @@ fn known_provider_defaults(pid: &str) -> Option<ProviderDefaults> {
             key_optional: false,
             auth_env_var: None,
         }),
-        "packy-cx2cc" => Some(ProviderDefaults {
-            base_url: Some("https://www.packyapi.com"),
-            models: None,
-            extra_env: None,
-            key_optional: false,
-            auth_env_var: None,
-        }),
         "openrouter" => Some(ProviderDefaults {
             base_url: Some("https://openrouter.ai/api"),
             models: None,
@@ -270,7 +263,6 @@ fn migrate_platform_credentials(settings: &mut AllSettings) -> bool {
         ("bailian", "ANTHROPIC_AUTH_TOKEN"),
         ("kimi-coding", "ANTHROPIC_AUTH_TOKEN"),
         ("kimi", "ANTHROPIC_AUTH_TOKEN"),
-        ("packy-cx2cc", "ANTHROPIC_AUTH_TOKEN"),
         ("aihubmix", "ANTHROPIC_AUTH_TOKEN"),
     ];
     let mut changed = false;
@@ -685,15 +677,6 @@ fn apply_balance_helper(user: &mut UserSettings, patch: &serde_json::Value) -> R
         return Ok(());
     }
     let mut next = user.balance_helper.clone();
-    if let Some(session) = v.get("packy_session") {
-        next.packy_session = session.as_str().map(str::trim).filter(|s| !s.is_empty()).map(|s| s.to_string());
-    }
-    if let Some(itoken) = v.get("packy_tdc_itoken") {
-        next.packy_tdc_itoken = itoken.as_str().map(str::trim).filter(|s| !s.is_empty()).map(|s| s.to_string());
-    }
-    if let Some(user_id) = v.get("packy_user_id") {
-        next.packy_user_id = user_id.as_str().map(str::trim).filter(|s| !s.is_empty()).map(|s| s.to_string());
-    }
     if let Some(token) = v.get("mimo_service_token") {
         next.mimo_service_token = token.as_str().map(str::trim).filter(|s| !s.is_empty()).map(|s| s.to_string());
     }
@@ -916,12 +899,6 @@ mod tests {
     }
 
     #[test]
-    fn packy_defaults_to_root_base_url() {
-        let defaults = known_provider_defaults("packy-cx2cc").unwrap();
-        assert_eq!(defaults.base_url, Some("https://www.packyapi.com"));
-    }
-
-    #[test]
     fn user_settings_defaults_windows_msvc_env_mode_to_auto() {
         let json = settings_json_with_user_patch(serde_json::json!({}));
         let settings: AllSettings = serde_json::from_str(&json).unwrap();
@@ -937,9 +914,6 @@ mod tests {
         let json = settings_json_with_user_patch(serde_json::json!({}));
         let settings: AllSettings = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(settings.user.balance_helper.packy_session, None);
-        assert_eq!(settings.user.balance_helper.packy_tdc_itoken, None);
-        assert_eq!(settings.user.balance_helper.packy_user_id, None);
         assert_eq!(settings.user.balance_helper.auto_refresh_secs, 120);
         assert!(settings.user.balance_helper.cache.is_empty());
     }
@@ -966,9 +940,6 @@ mod tests {
 
         let updated = update_user_settings(serde_json::json!({
             "balance_helper": {
-                "packy_session": "session-secret",
-                "packy_tdc_itoken": "595383047:1776349439",
-                "packy_user_id": "98264",
                 "auto_refresh_secs": 180
             }
         }))
@@ -983,18 +954,6 @@ mod tests {
         assert_eq!(
             updated.platform_credentials[0].platform_id.as_str(),
             "deepseek"
-        );
-        assert_eq!(
-            updated.balance_helper.packy_session.as_deref(),
-            Some("session-secret")
-        );
-        assert_eq!(
-            updated.balance_helper.packy_tdc_itoken.as_deref(),
-            Some("595383047:1776349439")
-        );
-        assert_eq!(
-            updated.balance_helper.packy_user_id.as_deref(),
-            Some("98264")
         );
         assert_eq!(updated.balance_helper.auto_refresh_secs, 180);
     }

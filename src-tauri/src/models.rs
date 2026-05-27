@@ -482,12 +482,6 @@ pub struct BalanceCacheEntry {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BalanceHelperSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub packy_session: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub packy_tdc_itoken: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub packy_user_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mimo_service_token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mimo_user_id: Option<String>,
@@ -504,9 +498,6 @@ pub struct BalanceHelperSettings {
 impl Default for BalanceHelperSettings {
     fn default() -> Self {
         Self {
-            packy_session: None,
-            packy_tdc_itoken: None,
-            packy_user_id: None,
             mimo_service_token: None,
             mimo_user_id: None,
             mimo_slh: None,

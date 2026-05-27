@@ -58,7 +58,6 @@ pub fn platform_to_provider_id(platform_id: &str) -> Option<&'static str> {
         "kimi" => Some("kimi"),
         "mimo-plan" => Some("mimo-plan"),
         "mimo-api" => Some("mimo-api"),
-        "packy-cx2cc" => Some("packy-cx2cc"),
         id if is_custom_platform(id) => Some(leak_custom_id(id)),
         _ => None,
     }
@@ -118,7 +117,7 @@ fn required_model_issue(platform_id: &str, cred: &PlatformCredential) -> Option<
 
 fn required_model_env_keys(platform_id: &str) -> &'static [&'static str] {
     match platform_id {
-        "deepseek" | "mimo-plan" | "mimo-api" | "packy-cx2cc" => &[
+        "deepseek" | "mimo-plan" | "mimo-api" => &[
             "ANTHROPIC_MODEL",
             "ANTHROPIC_DEFAULT_OPUS_MODEL",
             "ANTHROPIC_DEFAULT_SONNET_MODEL",
@@ -328,7 +327,7 @@ pub(crate) fn provider_env_from_credential(
 ) -> Result<HashMap<String, String>, String> {
     match platform_id {
         "deepseek" => build_deepseek_env(cred),
-        "zhipu" | "zhipu-intl" | "bailian" | "kimi" | "mimo-plan" | "mimo-api" | "packy-cx2cc" => {
+        "zhipu" | "zhipu-intl" | "bailian" | "kimi" | "mimo-plan" | "mimo-api" => {
             build_parameterized_env(platform_id, cred)
         }
         id if is_custom_platform(id) => build_parameterized_env(platform_id, cred),
@@ -375,7 +374,6 @@ fn default_base_url(platform_id: &str) -> Option<&'static str> {
         "kimi" => Some("https://api.moonshot.cn/anthropic"),
         "mimo-plan" => Some("https://token-plan-cn.xiaomimimo.com/anthropic"),
         "mimo-api" => Some("https://api.xiaomimimo.com/anthropic"),
-        "packy-cx2cc" => Some("https://www.packyapi.com"),
         _ => None,
     }
 }
@@ -408,7 +406,7 @@ fn compact_window_for_platform(platform_id: &str) -> &'static str {
     match platform_id {
         "kimi" => "230000",                       // 256K context
         "zhipu" | "zhipu-intl" => "180000",       // 200K context
-        _ => "900000",                            // 1M context (deepseek, bailian, mimo-*, packy, custom)
+        _ => "900000",                            // 1M context (deepseek, bailian, mimo-*, custom)
     }
 }
 
@@ -539,14 +537,11 @@ fn build_parameterized_env(
         .clone()
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| format!("{platform_id} API key is not configured"))?;
-    let base_url = if platform_id == "packy-cx2cc" {
-        default_base_url(platform_id).unwrap_or("").to_string()
-    } else {
-        cred.base_url
-            .clone()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| default_base_url(platform_id).unwrap_or("").to_string())
-    };
+    let base_url = cred
+        .base_url
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| default_base_url(platform_id).unwrap_or("").to_string());
     if base_url.is_empty() {
         return Err(format!("{platform_id} base URL is not configured"));
     }
@@ -768,7 +763,6 @@ mod tests {
         assert_eq!(platform_to_provider_id("kimi"), Some("kimi"));
         assert_eq!(platform_to_provider_id("mimo-plan"), Some("mimo-plan"));
         assert_eq!(platform_to_provider_id("mimo-api"), Some("mimo-api"));
-        assert_eq!(platform_to_provider_id("packy-cx2cc"), Some("packy-cx2cc"));
         assert_eq!(platform_to_provider_id("mimo"), None);
         assert_eq!(platform_to_provider_id("mimo-pro"), None);
         assert_eq!(platform_to_provider_id("xiaomi"), None);
@@ -803,20 +797,6 @@ mod tests {
         assert_eq!(sonnet, "s");
         assert_eq!(haiku, "h");
         assert_eq!(subagent, "o");
-    }
-
-    #[test]
-    fn packy_uses_root_base_url_by_default() {
-        let env = build_parameterized_env(
-            "packy-cx2cc",
-            &cred("packy-cx2cc", "sk-packy", None, Some("claude-opus-4-7")),
-        )
-        .unwrap();
-
-        assert_eq!(
-            env.get("ANTHROPIC_BASE_URL").map(String::as_str),
-            Some("https://www.packyapi.com")
-        );
     }
 
     #[test]
@@ -1234,156 +1214,6 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(fields.contains(&"ANTHROPIC_MODEL"));
         assert!(fields.contains(&"CLAUDE_CODE_SUBAGENT_MODEL"));
-    }
-
-    #[test]
-    fn build_parameterized_env_packy_ignores_persisted_base_url() {
-        let c = PlatformCredential {
-            platform_id: "packy-cx2cc".to_string(),
-            api_key: Some("sk-packy".to_string()),
-            base_url: Some("https://www.packyapi.com/anthropic".to_string()),
-            auth_env_var: Some("ANTHROPIC_AUTH_TOKEN".to_string()),
-            name: Some("packy-cx2cc".to_string()),
-            models: None,
-            extra_env: Some(HashMap::from([
-                ("ANTHROPIC_MODEL".to_string(), "gpt-5.4-xhigh".to_string()),
-                (
-                    "ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(),
-                    "gpt-5.4-xhigh".to_string(),
-                ),
-                (
-                    "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
-                    "gpt-5.4-xhigh".to_string(),
-                ),
-                (
-                    "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
-                    "gpt-5.4-high".to_string(),
-                ),
-                (
-                    "CLAUDE_CODE_SUBAGENT_MODEL".to_string(),
-                    "gpt-5.4-high".to_string(),
-                ),
-            ])),
-        };
-        let env = build_parameterized_env("packy-cx2cc", &c).unwrap();
-        assert_eq!(
-            env.get("ANTHROPIC_BASE_URL").map(String::as_str),
-            Some("https://www.packyapi.com")
-        );
-    }
-
-    #[test]
-    fn build_parameterized_env_packy_requires_full_explicit_model_env() {
-        let c = PlatformCredential {
-            platform_id: "packy-cx2cc".to_string(),
-            api_key: Some("sk-packy".to_string()),
-            base_url: Some("https://www.packyapi.com/anthropic".to_string()),
-            auth_env_var: Some("ANTHROPIC_AUTH_TOKEN".to_string()),
-            name: Some("packy-cx2cc".to_string()),
-            models: None,
-            extra_env: Some(HashMap::from([
-                ("ANTHROPIC_MODEL".to_string(), "gpt-5.4-xhigh".to_string()),
-                (
-                    "ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(),
-                    "gpt-5.4-xhigh".to_string(),
-                ),
-                (
-                    "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
-                    "gpt-5.4-xhigh".to_string(),
-                ),
-                (
-                    "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
-                    "gpt-5.4-high".to_string(),
-                ),
-            ])),
-        };
-        let err = build_parameterized_env("packy-cx2cc", &c).unwrap_err();
-        assert!(err.contains("CLAUDE_CODE_SUBAGENT_MODEL"));
-    }
-
-    #[test]
-    fn build_parameterized_env_packy_uses_full_explicit_model_env() {
-        let c = PlatformCredential {
-            platform_id: "packy-cx2cc".to_string(),
-            api_key: Some("sk-packy".to_string()),
-            base_url: Some("https://www.packyapi.com/anthropic".to_string()),
-            auth_env_var: Some("ANTHROPIC_AUTH_TOKEN".to_string()),
-            name: Some("packy-cx2cc".to_string()),
-            models: None,
-            extra_env: Some(HashMap::from([
-                ("ANTHROPIC_MODEL".to_string(), "gpt-5.4-xhigh".to_string()),
-                (
-                    "ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(),
-                    "gpt-5.4-xhigh".to_string(),
-                ),
-                (
-                    "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
-                    "gpt-5.4-xhigh".to_string(),
-                ),
-                (
-                    "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
-                    "gpt-5.4-high".to_string(),
-                ),
-                (
-                    "CLAUDE_CODE_SUBAGENT_MODEL".to_string(),
-                    "gpt-5.4-high".to_string(),
-                ),
-            ])),
-        };
-        let env = build_parameterized_env("packy-cx2cc", &c).unwrap();
-        assert_eq!(
-            env.get("ANTHROPIC_MODEL").map(String::as_str),
-            Some("gpt-5.4-xhigh")
-        );
-        assert_eq!(
-            env.get("ANTHROPIC_DEFAULT_OPUS_MODEL").map(String::as_str),
-            Some("gpt-5.4-xhigh")
-        );
-        assert_eq!(
-            env.get("ANTHROPIC_DEFAULT_SONNET_MODEL").map(String::as_str),
-            Some("gpt-5.4-xhigh")
-        );
-        assert_eq!(
-            env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL").map(String::as_str),
-            Some("gpt-5.4-high")
-        );
-        assert_eq!(
-            env.get("CLAUDE_CODE_SUBAGENT_MODEL").map(String::as_str),
-            Some("gpt-5.4-high")
-        );
-    }
-
-    #[test]
-    fn build_parameterized_env_model_fallback_to_extra_env() {
-        let c = PlatformCredential {
-            platform_id: "packy-cx2cc".to_string(),
-            api_key: Some("sk-packy".to_string()),
-            base_url: Some("https://www.packyapi.com/anthropic".to_string()),
-            auth_env_var: Some("ANTHROPIC_AUTH_TOKEN".to_string()),
-            name: Some("packy-cx2cc".to_string()),
-            models: None,
-            extra_env: Some(HashMap::from([(
-                "ANTHROPIC_MODEL".to_string(),
-                "claude-sonnet-4-20250514".to_string(),
-            )])),
-        };
-        let err = build_parameterized_env("packy-cx2cc", &c).unwrap_err();
-        assert!(err.contains("ANTHROPIC_DEFAULT_OPUS_MODEL"));
-    }
-
-    #[test]
-    fn build_parameterized_env_no_model_fails() {
-        let c = PlatformCredential {
-            platform_id: "packy-cx2cc".to_string(),
-            api_key: Some("sk-packy".to_string()),
-            base_url: Some("https://www.packyapi.com/anthropic".to_string()),
-            auth_env_var: Some("ANTHROPIC_AUTH_TOKEN".to_string()),
-            name: Some("packy-cx2cc".to_string()),
-            models: None,
-            extra_env: None,
-        };
-        let err = build_parameterized_env("packy-cx2cc", &c).unwrap_err();
-        assert!(err.contains("ANTHROPIC_MODEL"));
     }
 
     #[test]

@@ -518,7 +518,6 @@ fn is_phase7_claude_compatible_api_platform(platform_id: &str) -> bool {
             | "kimi"
             | "mimo-plan"
             | "mimo-api"
-            | "packy-cx2cc"
     ) || crate::agent::provider_claude_config::is_custom_platform(platform_id)
 }
 

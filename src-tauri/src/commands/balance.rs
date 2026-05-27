@@ -5,10 +5,7 @@ use serde_json::Value;
 use std::time::Duration;
 
 const DEEPSEEK_BALANCE_BASE_URL: &str = "https://api.deepseek.com";
-const PACKY_API_BASE_URL: &str = "https://www.packyapi.com";
 const MIMO_API_BASE_URL: &str = "https://platform.xiaomimimo.com";
-const PACKY_QUOTA_PER_UNIT: f64 = 500_000.0;
-const PACKY_DISPLAY_CURRENCY: &str = "USD";
 
 fn balance_cache_entry(source: &str, result: Result<String, String>) -> BalanceCacheEntry {
     balance_cache_entry_with_tokens(source, result.map(|bt| (bt, None, None, None)))
@@ -141,123 +138,6 @@ async fn query_deepseek_balance(
         .await
         .map_err(|_| "DeepSeek balance response was not valid JSON".to_string())?;
     format_deepseek_balance(&body)
-}
-
-fn format_packy_balance(body: &Value) -> Result<String, String> {
-    let data = body
-        .get("data")
-        .ok_or_else(|| "Packy user response did not include data".to_string())?;
-
-    let quota = data
-        .get("quota")
-        .and_then(Value::as_i64)
-        .or_else(|| data.get("quota").and_then(Value::as_u64).map(|v| v as i64))
-        .ok_or_else(|| "Packy user response did not include quota".to_string())?;
-
-    let amount = quota as f64 / PACKY_QUOTA_PER_UNIT;
-    Ok(format!("{} {:.2}", PACKY_DISPLAY_CURRENCY, amount))
-}
-
-fn build_packy_headers(
-    session: &str,
-    tdc_itoken: &str,
-    user_id: &str,
-) -> Result<HeaderMap, String> {
-    let trimmed_session = session.trim();
-    let trimmed_itoken = tdc_itoken.trim();
-    let trimmed_user_id = user_id.trim();
-
-    if trimmed_session.is_empty() {
-        return Err("Packy session is not configured".to_string());
-    }
-    if trimmed_itoken.is_empty() {
-        return Err("Packy TDC_itoken is not configured".to_string());
-    }
-    if trimmed_user_id.is_empty() {
-        return Err("Packy user id is not configured".to_string());
-    }
-
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        COOKIE,
-        HeaderValue::from_str(&format!(
-            "session={}; TDC_itoken={}",
-            trimmed_session, trimmed_itoken
-        ))
-        .map_err(|_| "Packy credentials contain invalid header characters".to_string())?,
-    );
-    headers.insert(
-        "New-API-User",
-        HeaderValue::from_str(trimmed_user_id)
-            .map_err(|_| "Packy user id contains invalid header characters".to_string())?,
-    );
-    headers.insert(
-        USER_AGENT,
-        HeaderValue::from_static(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
-        ),
-    );
-    headers.insert(
-        "Accept",
-        HeaderValue::from_static("application/json, text/plain, */*"),
-    );
-    headers.insert(
-        "Referer",
-        HeaderValue::from_static("https://www.packyapi.com/console"),
-    );
-    headers.insert(
-        "Origin",
-        HeaderValue::from_static("https://www.packyapi.com"),
-    );
-    Ok(headers)
-}
-
-async fn query_packy_balance(
-    client: &reqwest::Client,
-    session: &str,
-    tdc_itoken: &str,
-    user_id: &str,
-) -> Result<String, String> {
-    let headers = build_packy_headers(session, tdc_itoken, user_id)?;
-    let response = client
-        .get(format!("{}/api/user/self", PACKY_API_BASE_URL))
-        .headers(headers)
-        .send()
-        .await
-        .map_err(|e| {
-            if e.is_timeout() {
-                "Packy balance request timed out".to_string()
-            } else {
-                format!("Packy balance request failed: {e}")
-            }
-        })?;
-
-    let status = response.status();
-    let body = response
-        .json::<Value>()
-        .await
-        .map_err(|_| "Packy balance response was not valid JSON".to_string())?;
-
-    if !status.is_success() {
-        return Err(match status.as_u16() {
-            401 | 403 => body
-                .get("message")
-                .and_then(Value::as_str)
-                .map(|s| format!("Packy authentication failed: {s}"))
-                .unwrap_or_else(|| "Packy authentication failed".to_string()),
-            code => format!("Packy balance request failed with HTTP {code}"),
-        });
-    }
-
-    if body.get("success").and_then(Value::as_bool) == Some(false) {
-        return Err(body
-            .get("message")
-            .and_then(Value::as_str)
-            .map(|s| format!("Packy balance request failed: {s}"))
-            .unwrap_or_else(|| "Packy balance request failed".to_string()));
-    }
-
-    format_packy_balance(&body)
 }
 
 fn build_mimo_headers(
@@ -464,7 +344,7 @@ async fn refresh_balance_status_inner(
     source: Option<String>,
 ) -> Result<BalanceHelperSettings, String> {
     let requested = source.unwrap_or_else(|| "all".to_string());
-    if !matches!(requested.as_str(), "all" | "deepseek" | "packy" | "mimo") {
+    if !matches!(requested.as_str(), "all" | "deepseek" | "mimo") {
         return Err(format!("Unknown balance source: {requested}"));
     }
 
@@ -487,19 +367,6 @@ async fn refresh_balance_status_inner(
             "deepseek".to_string(),
             balance_cache_entry("deepseek", result),
         );
-    }
-
-    if requested == "all" || requested == "packy" {
-        let result = query_packy_balance(
-            &client,
-            helper.packy_session.as_deref().unwrap_or(""),
-            helper.packy_tdc_itoken.as_deref().unwrap_or(""),
-            helper.packy_user_id.as_deref().unwrap_or(""),
-        )
-        .await;
-        helper
-            .cache
-            .insert("packy".to_string(), balance_cache_entry("packy", result));
     }
 
     if requested == "all" || requested == "mimo" {
@@ -556,30 +423,6 @@ mod tests {
             format_deepseek_balance(&body).unwrap(),
             "CNY 110.00, USD 2.50"
         );
-    }
-
-    #[test]
-    fn formats_packy_balance_from_quota() {
-        let body = serde_json::json!({
-            "success": true,
-            "data": {
-                "quota": 87_304_703
-            }
-        });
-
-        assert_eq!(format_packy_balance(&body).unwrap(), "USD 174.61");
-    }
-
-    #[test]
-    fn rejects_packy_headers_when_required_values_missing() {
-        let err = build_packy_headers("", "595383047:1776349439", "98264").unwrap_err();
-        assert_eq!(err, "Packy session is not configured");
-
-        let err = build_packy_headers("session", "", "98264").unwrap_err();
-        assert_eq!(err, "Packy TDC_itoken is not configured");
-
-        let err = build_packy_headers("session", "595383047:1776349439", "").unwrap_err();
-        assert_eq!(err, "Packy user id is not configured");
     }
 
     #[test]
