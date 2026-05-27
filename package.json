@@ -95,11 +95,13 @@
     "exceljs": "^4.4.0",
     "graphology": "^0.26.0",
     "graphology-layout-forceatlas2": "^0.10.1",
-    "highlight.js": "^11.11.0",
-    "mammoth": "^1.11.0",
-    "marked": "^15.0.0",
+    "highlight.js": "^11.11.1",
+    "mammoth": "^1.12.0",
+    "marked": "^15.0.12",
+    "monaco-editor": "^0.55.1",
     "sigma": "^3.0.3",
-    "turndown": "^7.2.2"
+    "turndown": "^7.2.2",
+    "xlsx": "^0.18.5"
   },
   "browserslist": [
     "safari >= 16.1",
