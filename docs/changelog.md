@@ -30,7 +30,7 @@
 ### v2.4.0 — 1M 上下文窗口支持 + 群聊上下文精简
 
 **1M 上下文窗口:**
-- 后端 per-provider `CLAUDE_CODE_AUTO_COMPACT_WINDOW` 覆盖：DeepSeek/QWEN/MiMo/Packy/Custom → 900K，Kimi → 230K，GLM → 180K
+- 后端 per-provider `CLAUDE_CODE_AUTO_COMPACT_WINDOW` 覆盖：DeepSeek/QWEN/MiMo/Custom → 900K，Kimi → 230K，GLM → 180K
 - 前端 `MODEL_CONTEXT_WINDOWS` 静态映射表 + `getContextWindowForModel()` 查询函数
 - `contextWindow` getter 改为 `Math.max(CLI报告值, 静态映射值)` fallback 策略
 - 新增 `advisory` 上下文警告级别：仅 1M+ 模型在 25% 使用率时触发
@@ -236,14 +236,14 @@
 ### v1.1.7 — 第三方 session provider 显式配置校验与 Xiaomi 共用模型配置
 
 - 第三方 session provider 新增统一显式配置校验结果结构：`ProviderIssue`、`ProviderValidationResult`、`ValidatePlatformCredentialsResponse`
-- 后端在 `src-tauri/src/agent/provider_claude_config.rs` 中新增统一校验入口 `validate_provider_credential` / `validate_platform_credentials`，覆盖 DeepSeek、GLM、QWEN、KIMI、Xiaomi（`mimo-plan` / `mimo-api`）、Packy
+- 后端在 `src-tauri/src/agent/provider_claude_config.rs` 中新增统一校验入口 `validate_provider_credential` / `validate_platform_credentials`，覆盖 DeepSeek、GLM、QWEN、KIMI、Xiaomi（`mimo-plan` / `mimo-api`）
 - `build_deepseek_env` / `build_parameterized_env` 在生成临时 session JSON 前先执行统一校验；配置不完整时直接阻止 provider config 生成
 - 新增 settings IPC：`validate_platform_credentials`，并在 `src-tauri/src/lib.rs` 注册
 - Settings → Connection 页新增“应用并校验配置”按钮：保存当前 `platform_credentials` 后立即调用后端统一校验，并在 provider 卡片内联展示字段级问题列表
-- DeepSeek / Packy 卡片补充提示语义：明确要求显式填写完整模型配置；Packy 不再使用默认模型兜底
+- DeepSeek 卡片补充提示语义：明确要求显式填写完整模型配置
 - Xiaomi 双 provider 卡片收口：`mimo-plan` 与 `mimo-api` 共享 6 个模型配置输入（`ANTHROPIC_MODEL`、三档 tier、`CLAUDE_CODE_SUBAGENT_MODEL`、`CLAUDE_CODE_EFFORT_LEVEL`），输入变更双写到两份 `extra_env`；`api_key` 与 `base_url` 仍分别保存在各自 credential 中
 - Xiaomi / provider 校验成功文案从“配置完整，可启动”收窄为“配置校验通过”，避免对运行态做过度承诺
-- Rust 测试代码补充：新增 `kimi` / `deepseek` / `mimo-api` / `packy` 的显式校验覆盖；本机仍受既有 `0xc0000139` 环境问题影响，验证以 `cargo check` 为主
+- Rust 测试代码补充：新增 `kimi` / `deepseek` / `mimo-api` 的显式校验覆盖；本机仍受既有 `0xc0000139` 环境问题影响，验证以 `cargo check` 为主
 - Xiaomi 共用模型配置一致性修复：Settings 页共用模型面板改为共享视图（优先 `mimo-plan.extra_env`，缺失时回退 `mimo-api.extra_env`），后端 `migrate_platform_credentials` 新增共享字段补齐逻辑，自动修复历史上 `mimo-plan` / `mimo-api` 模型字段分叉导致的 `mimo-api` 校验缺项问题
 
 ### v1.1.6 — 旧 ID 彻底清理
@@ -256,7 +256,6 @@
 
 ### v1.1.5 — Provider 预设清理与白名单机制
 
-- 新增 Packy CX2CC API provider（base URL: https://www.packyapi.com），模型从设置页读取
 - 移除 5 个无后端支持的 provider 预设：kimi-coding、doubao、minimax、minimax-cn、mimo（前端 platform-presets.ts + 后端 onboarding.rs/settings.rs 同步清理）
 - `PlatformCredential.extra_env` 白名单机制：`ALLOWED_EXTRA_ENV_KEYS` 限制用户可覆盖的环境变量（模型 tier + effort level），防止误覆盖稳定性变量
 - `merge_extra_env` 合并函数：stability_env_vars → extra_env 覆盖顺序，空值过滤，6 个单元测试覆盖

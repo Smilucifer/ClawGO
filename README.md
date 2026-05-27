@@ -131,13 +131,13 @@ Supported:
 - **Embedding config**: OpenAI-compatible endpoint, optional `chat_endpoint` and `chat_model` for auto-extraction.
 - **Data lifecycle**: Log compaction (10K entry threshold), retention policy, startup maintenance.
 
-当前主力 provider：Claude、Codex、DeepSeek、GLM、QWEN、KIMI、Xiaomi Plan、Xiaomi API、Packy CX2CC。Codex 通过 PTY 原生 CLI 执行，默认带 `--dangerously-bypass-approvals-and-sandbox`；DeepSeek、GLM、QWEN、KIMI、Xiaomi、Packy CX2CC 作为一等 provider 显示，执行层复用 Claude Code compatible session，并通过 `platform_id` 注入对应 API 配置。你还可以在设置页添加任意数量的 **Custom Provider**——填写 Name、Base URL、API Key 和 Model 即可，使用与内置 API provider 相同的启动路径。
+当前主力 provider：Claude、Codex、DeepSeek、GLM、QWEN、KIMI、Xiaomi Plan、Xiaomi API。Codex 通过 PTY 原生 CLI 执行，默认带 `--dangerously-bypass-approvals-and-sandbox`；DeepSeek、GLM、QWEN、KIMI、Xiaomi 作为一等 provider 显示，执行层复用 Claude Code compatible session，并通过 `platform_id` 注入对应 API 配置。你还可以在设置页添加任意数量的 **Custom Provider**——填写 Name、Base URL、API Key 和 Model 即可，使用与内置 API provider 相同的启动路径。
 
-The current primary providers are: Claude, Codex, DeepSeek, GLM, QWEN, KIMI, Xiaomi Plan, Xiaomi API, and Packy CX2CC. Codex uses PTY-based native CLI execution and defaults to `--dangerously-bypass-approvals-and-sandbox`. DeepSeek, GLM, QWEN, KIMI, Xiaomi, and Packy CX2CC are first-class providers in the UI, but execute through Claude Code compatible sessions with provider configuration injected by `platform_id`. You can also add any number of **Custom Providers** from the settings page — just fill in Name, Base URL, API Key, and Model.
+The current primary providers are: Claude, Codex, DeepSeek, GLM, QWEN, KIMI, Xiaomi Plan, and Xiaomi API. Codex uses PTY-based native CLI execution and defaults to `--dangerously-bypass-approvals-and-sandbox`. DeepSeek, GLM, QWEN, KIMI, and Xiaomi are first-class providers in the UI, but execute through Claude Code compatible sessions with provider configuration injected by `platform_id`. You can also add any number of **Custom Providers** from the settings page — just fill in Name, Base URL, API Key, and Model.
 
-设置页提供每个 provider 独立的模型和认证配置。Claude、Codex 使用官方 CLI 认证；DeepSeek、GLM、QWEN、KIMI、Xiaomi、Packy CX2CC 及 Custom Provider 支持 API key / base URL / model 动态配置，每次启动从最新设置生成 per-session 临时配置。临时配置会自动合并你本地 `~/.claude/settings.json` 中的 hooks、插件和 MCP 服务器，确保自定义配置不会丢失。Codex 使用 PTY 原生 CLI 执行路径，通过 transcript 文件监听完成判定而非进程退出语义。
+设置页提供每个 provider 独立的模型和认证配置。Claude、Codex 使用官方 CLI 认证；DeepSeek、GLM、QWEN、KIMI、Xiaomi 及 Custom Provider 支持 API key / base URL / model 动态配置，每次启动从最新设置生成 per-session 临时配置。临时配置会自动合并你本地 `~/.claude/settings.json` 中的 hooks、插件和 MCP 服务器，确保自定义配置不会丢失。Codex 使用 PTY 原生 CLI 执行路径，通过 transcript 文件监听完成判定而非进程退出语义。
 
-The settings page provides independent model and auth configuration per provider. Claude and Codex use official CLI authentication. DeepSeek, GLM, QWEN, KIMI, Xiaomi, Packy CX2CC, and Custom Providers support dynamic API key / base URL / model configuration, generating a per-session temp config from the latest settings on each launch. The temp config automatically merges your local `~/.claude/settings.json` hooks, plugins, and MCP servers, so your custom configuration is never lost. Codex uses a PTY-based native CLI execution path with transcript-based completion detection rather than process-exit semantics.
+The settings page provides independent model and auth configuration per provider. Claude and Codex use official CLI authentication. DeepSeek, GLM, QWEN, KIMI, Xiaomi, and Custom Providers support dynamic API key / base URL / model configuration, generating a per-session temp config from the latest settings on each launch. The temp config automatically merges your local `~/.claude/settings.json` hooks, plugins, and MCP servers, so your custom configuration is never lost. Codex uses a PTY-based native CLI execution path with transcript-based completion detection rather than process-exit semantics.
 
 Claude-compatible API profiles can still be represented under `user.cc_agent_profiles` in `~/.claw-go/settings.json` for backward compatibility. API providers should keep provider identity separate from the Claude execution agent:
 
@@ -191,9 +191,9 @@ Claude-compatible API profiles can still be represented under `user.cc_agent_pro
 }
 ```
 
-`agent` 可为 `claude` 或 `codex`，省略时默认 `claude`。API provider（DeepSeek/GLM/QWEN/KIMI/Xiaomi/Packy CX2CC）通过 `agent: "claude"` 加 `platform_id` 表达。`model` 只应在用户明确选择模型或 API provider 需要模型时作为 per-run snapshot；不要把官方 CLI provider 的展示默认值强塞进启动参数。
+`agent` 可为 `claude` 或 `codex`，省略时默认 `claude`。API provider（DeepSeek/GLM/QWEN/KIMI/Xiaomi）通过 `agent: "claude"` 加 `platform_id` 表达。`model` 只应在用户明确选择模型或 API provider 需要模型时作为 per-run snapshot；不要把官方 CLI provider 的展示默认值强塞进启动参数。
 
-`agent` can be `claude` or `codex`; omitted values default to `claude`. API providers (DeepSeek/GLM/QWEN/KIMI/Xiaomi/Packy CX2CC) are represented as `agent: "claude"` plus `platform_id`. `model` should become a per-run snapshot only when explicitly selected by the user or required by an API provider; do not inject display defaults into official CLI launches.
+`agent` can be `claude` or `codex`; omitted values default to `claude`. API providers (DeepSeek/GLM/QWEN/KIMI/Xiaomi) are represented as `agent: "claude"` plus `platform_id`. `model` should become a per-run snapshot only when explicitly selected by the user or required by an API provider; do not inject display defaults into official CLI launches.
 
 ### MCP Server Management
 

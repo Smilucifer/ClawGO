@@ -151,7 +151,7 @@ Important command groups:
 - `commands/group_chat.rs`: group chat CRUD, participant creation, run attachment, `list_group_chat_run_index` (sidebar grouping), and `get_group_chat_turn_snapshot` (stepper replay).
 - `commands/characters.rs`: AiCharacter CRUD (list/create/update/delete_character).
 - `commands/plans.rs`: PlanArtifact CRUD (get/create/update/approve/complete_plan).
-- `commands/balance.rs`: DeepSeek, Packy, and MiMo balance/usage queries (Phase 7 balance helper with cookie-based auth for MiMo).
+- `commands/balance.rs`: DeepSeek and MiMo balance/usage queries (Phase 7 balance helper with cookie-based auth for MiMo).
 - `commands/runs.rs`, `commands/history.rs`, `commands/memos.rs`, `commands/settings.rs`: persistence-backed app features.
 
 If a frontend API call seems to "just update UI", verify whether it actually maps to a persisted Tauri command first.
@@ -175,7 +175,7 @@ This codebase intentionally separates what the UI presents as a provider from wh
 
 Current providers (Phase 9.z):
 - **Official CLI providers** (subscription): Claude, Codex — use their native CLI with bypass/yolo permissions.
-- **Claude-compatible API providers**: DeepSeek, GLM, QWEN, KIMI, MiMo Pro, Packy CX2CC — displayed as first-class providers but execute through Claude Code sessions with `platform_id`-based configuration injection.
+- **Claude-compatible API providers**: DeepSeek, GLM, QWEN, KIMI, MiMo Pro — displayed as first-class providers but execute through Claude Code sessions with `platform_id`-based configuration injection.
 - **Custom providers**: User-created `custom-{timestamp}` endpoints configured via Settings → Connection. Use the same `build_parameterized_env` path as parameterized providers. Require explicit base_url and model.
 
 Key files:
@@ -191,7 +191,6 @@ Provider-native launch config generation (Phase 9.z):
 - Managed MCP servers (`UserSettings.mcp_servers`) are additively merged into the temp JSON alongside native MCP servers.
 - User-configurable env vars are stored in `PlatformCredential.extra_env` and merged via a whitelist (`ALLOWED_EXTRA_ENV_KEYS` in `provider_claude_config.rs`). Only model tier overrides and effort level are allowed; stability vars cannot be overwritten.
 - Chat page model dropdown shows tier-labeled models (Opus/Sonnet/Haiku) via `expandModelsToTiers`, with extra_env overrides applied. Model hot-switching via `set_model` control protocol works for both Anthropic and third-party providers.
-- Packy CX2CC uses fixed-URL template (API key only; base URL https://www.packyapi.com from preset).
 
 Do not collapse provider selection, model display, and actual CLI spawn logic into a single assumption.
 
