@@ -1000,6 +1000,8 @@
   "filesPanel_clearFilter": "Clear",
   "filesPanel_loading": "Loading...",
   "filesPanel_cannotPreview": "Cannot preview this file",
+  "filesPanel_save": "Save",
+  "filesPanel_noContent": "No content to display",
 
   "infoPanel_noInfo": "Session info will appear after the session starts.",
   "infoPanel_session": "Session",

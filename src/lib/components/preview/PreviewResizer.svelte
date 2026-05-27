@@ -14,6 +14,7 @@
   let dragging = $state(false);
   let startX = 0;
   let startWidth = 0;
+  let containerEl: HTMLElement | undefined;
 
   function onPointerDown(e: PointerEvent) {
     e.preventDefault();
@@ -21,12 +22,13 @@
     startX = e.clientX;
     startWidth = width;
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    containerEl = (e.target as HTMLElement).parentElement ?? undefined;
   }
 
   function onPointerMove(e: PointerEvent) {
     if (!dragging) return;
-    const dx = startX - e.clientX;
-    const containerWidth = window.innerWidth;
+    const dx = e.clientX - startX;
+    const containerWidth = containerEl?.clientWidth ?? window.innerWidth;
     const maxPreview = containerWidth - minChatWidth;
     const newWidth = Math.min(maxPreview, Math.max(minPreviewWidth, startWidth + dx));
     onResize(newWidth);
@@ -37,8 +39,9 @@
   }
 
   function onDoubleClick() {
-    const half = Math.floor(window.innerWidth / 2);
-    onResize(Math.max(minPreviewWidth, Math.min(half, window.innerWidth - minChatWidth)));
+    const containerWidth = containerEl?.clientWidth ?? window.innerWidth;
+    const half = Math.floor(containerWidth / 2);
+    onResize(Math.max(minPreviewWidth, Math.min(half, containerWidth - minChatWidth)));
   }
 </script>
 

@@ -97,6 +97,9 @@
   import { getPhase7Provider, providerIdForRun } from "$lib/utils/provider-catalog";
   import { uuid } from "$lib/utils/uuid";
   import RewindModal from "$lib/components/RewindModal.svelte";
+  import { createPreviewStore } from "$lib/stores/preview-store.svelte";
+  import PreviewPanel from "$lib/components/preview/PreviewPanel.svelte";
+  import PreviewResizer from "$lib/components/preview/PreviewResizer.svelte";
   import type { ElementSelection } from "$lib/types";
   import { isElementSelection } from "$lib/types";
 
@@ -154,11 +157,65 @@
     codex: null,
   });
 
-  // ── Preview state ──
+  // ── Preview state (Tauri preview window) ──
   let previewInstanceId = $state("");
   let previewOpen = $derived(previewInstanceId !== "");
   let previewUrlBarOpen = $state(false);
   let previewUrlInput = $state(localStorage.getItem("clawgo:preview-url") ?? "http://localhost:");
+
+  // ── File preview panel ──
+  const previewStore = createPreviewStore();
+  let previewWidth = $state(
+    typeof window !== "undefined"
+      ? parseInt(localStorage.getItem("clawgo:preview-width") || "600")
+      : 600,
+  );
+  let _previewSavedSidebar = false;
+
+  function handlePreviewFile(e: Event) {
+    const detail = (e as CustomEvent).detail as { filepath: string };
+    if (!detail?.filepath) return;
+    // Preview not available in group chat mode
+    if (currentGroupChat) return;
+    const wasOpen = previewStore.state.isOpen;
+    const hadUnsaved = previewStore.open(detail.filepath, store.effectiveCwd);
+    if (hadUnsaved) {
+      dbg("preview", "switched file with unsaved changes", { from: previewStore.state.filepath });
+    }
+    // Auto-hide sidebar when opening; restore when toggling closed
+    if (!wasOpen && previewStore.state.isOpen) {
+      _previewSavedSidebar = !sidebarCollapsed;
+      sidebarCollapsed = true;
+    } else if (wasOpen && !previewStore.state.isOpen) {
+      if (_previewSavedSidebar) {
+        sidebarCollapsed = false;
+        _previewSavedSidebar = false;
+      }
+    }
+  }
+
+  function handleClosePreview() {
+    const wasOpen = previewStore.state.isOpen;
+    previewStore.close();
+    // Restore sidebar only if preview was actually open
+    if (wasOpen && _previewSavedSidebar) {
+      sidebarCollapsed = false;
+      _previewSavedSidebar = false;
+    }
+  }
+
+  function handlePreviewResize(width: number) {
+    previewWidth = width;
+    localStorage.setItem("clawgo:preview-width", String(width));
+  }
+
+  function handlePreviewContentChange(value: string) {
+    previewStore.updateContent(value);
+  }
+
+  async function handlePreviewSave() {
+    await previewStore.save(store.effectiveCwd);
+  }
 
   // ── Model contamination helpers ──
 
@@ -1652,6 +1709,10 @@
       },
     );
 
+    // File preview panel event listeners
+    window.addEventListener("clawgo:preview-file", handlePreviewFile as (e: Event) => void);
+    window.addEventListener("clawgo:close-preview", handleClosePreview);
+
     return () => {
       window.removeEventListener("clawgo:statusbar-toggle", onStatusBarToggle);
       keybindingStore.unregisterCallback("chat:interrupt");
@@ -1672,6 +1733,8 @@
       dragDropUnlisten.then((fn) => fn());
       previewSelectionUnlisten.then((fn) => fn());
       previewClosedUnlisten.then((fn) => fn());
+      window.removeEventListener("clawgo:preview-file", handlePreviewFile as (e: Event) => void);
+      window.removeEventListener("clawgo:close-preview", handleClosePreview);
       // Clean up verbose retry timer
       if (verboseRetryTimer) clearTimeout(verboseRetryTimer);
       // Clean up progressive rendering timer
@@ -3929,6 +3992,8 @@
     </div>
   {/if}
 
+  <!-- Horizontal flex: main + sidebar + preview -->
+  <div class="flex flex-1 min-w-0">
   <!-- Main content area -->
   <div class="flex flex-1 flex-col min-w-0 relative">
     <!-- Status bar -->
@@ -4966,6 +5031,21 @@
       backgroundTasks={store.taskNotifications}
       activeBackgroundTasks={store.activeBackgroundTasks}
     />
+  {/if}
+  </div>
+
+  <!-- File Preview Panel -->
+  {#if previewStore.state.filepath}
+    <PreviewResizer width={previewWidth} onResize={handlePreviewResize} />
+    <div style="width: {previewWidth}px" class="shrink-0">
+      <PreviewPanel
+        state={previewStore.state}
+        cwd={store.effectiveCwd}
+        onClose={handleClosePreview}
+        onContentChange={handlePreviewContentChange}
+        onSave={handlePreviewSave}
+      />
+    </div>
   {/if}
 
   <RewindModal

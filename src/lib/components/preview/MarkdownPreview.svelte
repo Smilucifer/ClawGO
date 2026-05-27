@@ -1,5 +1,9 @@
+<script lang="ts" module>
+  let _markedOptionsReady = false;
+</script>
+
 <script lang="ts">
-  import { onMount } from "svelte";
+  import DOMPurify from "dompurify";
 
   let {
     content = "",
@@ -20,17 +24,26 @@
       ]);
       const { marked } = markedMod;
       const hljs = hljsMod.default;
-      marked.setOptions({
-        // @ts-expect-error marked highlight callback
-        highlight: (code: string, lang: string) => {
-          if (lang && hljs.getLanguage(lang)) {
-            return hljs.highlight(code, { language: lang }).value;
-          }
-          return hljs.highlightAuto(code).value;
-        },
-      });
+      if (!_markedOptionsReady) {
+        marked.setOptions({
+          // @ts-expect-error marked highlight callback
+          highlight: (code: string, lang: string) => {
+            if (lang && hljs.getLanguage(lang)) {
+              return hljs.highlight(code, { language: lang }).value;
+            }
+            return hljs.highlightAuto(code).value;
+          },
+        });
+        _markedOptionsReady = true;
+      }
       const parsed = marked.parse(content);
-      renderedHtml = typeof parsed === "string" ? parsed : "";
+      if (typeof parsed === "string") {
+        renderedHtml = DOMPurify.sanitize(parsed, {
+          ADD_ATTR: ["class", "target", "data-code-copy"],
+        });
+      } else {
+        renderedHtml = "";
+      }
     } catch {
       renderedHtml = `<pre>${escapeHtml(content)}</pre>`;
     } finally {
@@ -43,10 +56,9 @@
   }
 
   $effect(() => {
+    void content;
     if (!sourceMode) render();
   });
-
-  onMount(() => render());
 </script>
 
 <div class="flex flex-col h-full">

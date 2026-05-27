@@ -71,11 +71,16 @@ export function createPreviewStore() {
     fileType: "other",
   });
 
-  function open(filepath: string, cwd: string) {
-    if (_state.isOpen && _state.filepath === filepath) {
+  let _lastCwd = "";
+
+  /** Opens a file for preview. Returns true if the previous file had unsaved changes that were discarded. */
+  function open(filepath: string, cwd: string): boolean {
+    if (_state.isOpen && _state.filepath === filepath && _lastCwd === cwd) {
       close();
-      return;
+      return false;
     }
+    const hadUnsaved = _state.dirty;
+    _lastCwd = cwd;
     const ft = detectFileType(filepath);
     const lang = detectLanguage(filepath);
     _state = {
@@ -89,9 +94,18 @@ export function createPreviewStore() {
       fileType: ft,
     };
     loadContent(filepath, cwd);
+    return hadUnsaved;
   }
 
+  const TEXT_TYPES = new Set<PreviewFileType>(["code", "markdown", "html", "other"]);
+
   async function loadContent(filepath: string, cwd: string) {
+    // Binary file types are loaded by their sub-components directly
+    if (!TEXT_TYPES.has(_state.fileType)) {
+      if (_state.filepath !== filepath) return;
+      _state = { ..._state, content: null, loading: false, error: null };
+      return;
+    }
     try {
       const content = await readTextFile(filepath, cwd);
       if (_state.filepath !== filepath) return;
@@ -121,10 +135,12 @@ export function createPreviewStore() {
 
   async function save(cwd: string): Promise<boolean> {
     if (!_state.filepath || _state.content === null) return false;
+    const snapshot = _state.content;
     try {
-      await writeTextFile(_state.filepath, _state.content, cwd);
-      _state = { ..._state, dirty: false, error: null };
-      window.dispatchEvent(new CustomEvent("clawgo:preview-saved", { detail: { filepath: _state.filepath } }));
+      await writeTextFile(_state.filepath, snapshot, cwd);
+      if (_state.content === snapshot) {
+        _state = { ..._state, dirty: false, error: null };
+      }
       return true;
     } catch (e) {
       _state = { ..._state, error: String(e) };

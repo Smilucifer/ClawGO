@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## Phase 10+ (2026-05-27)
+
+### v2.6.0 — Preview Panel Code Review (6 bug fixes)
+
+**Bug fixes:**
+- PreviewPanel: 全局键盘快捷键（Escape/Ctrl+S）限定为面板内生效，避免拦截其他输入框
+- MonacoEditor: `$effect` 中 `language`/`theme` 在 bail 检查前读取，确保响应式依赖被追踪
+- OfficePreview: DOMPurify `ADD_ATTR` 添加 `style`，保留 mammoth/xlsx 内联样式
+- file-path-linkifier: 正则添加 `(?<!\/)` 负向后行断言，排除 URL 路径段误匹配
+- preview-store: `open()` 返回 `boolean` 告知调用方前一文件是否有未保存更改
+- api.ts: `readFileAsBase64` / `readFileAsBuffer` 大小守卫从 `1.4` 修正为 `4/3`
+
 ## Phase 10+ (2026-05-25)
 
 ### v2.5.0 — Doctor 诊断面板 + 文件面板树视图重写

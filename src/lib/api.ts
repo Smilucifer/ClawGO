@@ -483,7 +483,7 @@ export async function validatePlatformCredentials(
 }
 
 export async function refreshBalanceStatus(
-  source?: "all" | "deepseek" | "packy" | "mimo",
+  source?: "all" | "deepseek" | "mimo",
 ): Promise<BalanceHelperSettings> {
   dbg("api", "refreshBalanceStatus", { source });
   return invoke<BalanceHelperSettings>("refresh_balance_status", { source: source ?? null });
@@ -568,6 +568,28 @@ export async function readTextFile(path: string, cwd?: string): Promise<string> 
 export async function writeTextFile(path: string, content: string, cwd?: string): Promise<void> {
   dbg("api", "writeTextFile", path, { cwd });
   return invoke("write_text_file", { path, content, cwd: cwd ?? null });
+}
+
+const MAX_READ_FILE_BYTES = 50 * 1024 * 1024; // 50MB guard
+
+/** Returns just the base64-encoded content (without mime prefix). */
+export async function readFileAsBase64(path: string, cwd?: string): Promise<string> {
+  const [base64] = await readFileBase64(path, cwd);
+  if (base64.length > MAX_READ_FILE_BYTES * 4 / 3) {
+    throw new Error(`File too large (exceeds ${MAX_READ_FILE_BYTES / 1024 / 1024}MB limit)`);
+  }
+  return base64;
+}
+
+/** Reads a file and returns its contents as an ArrayBuffer. */
+export async function readFileAsBuffer(path: string, cwd?: string): Promise<ArrayBuffer> {
+  const [base64] = await readFileBase64(path, cwd);
+  if (base64.length > MAX_READ_FILE_BYTES * 4 / 3) {
+    throw new Error(`File too large (exceeds ${MAX_READ_FILE_BYTES / 1024 / 1024}MB limit)`);
+  }
+  const binary = atob(base64);
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  return bytes.buffer;
 }
 
 // Task output

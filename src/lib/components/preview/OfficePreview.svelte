@@ -21,16 +21,23 @@
       const buffer = await readFileAsBuffer(filepath, cwd);
 
       if (fileType === "word") {
-        const mammoth = await import("mammoth");
+        const mammothModule = await import("mammoth");
+        const mammoth = mammothModule.default ?? mammothModule;
         const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
         htmlContent = result.value;
       } else {
-        const XLSX = await import("xlsx");
+        const XLSXModule = await import("xlsx");
+        const XLSX = XLSXModule.default ?? XLSXModule;
         const workbook = XLSX.read(buffer, { type: "array" });
         const firstSheet = workbook.SheetNames[0];
         const sheet = workbook.Sheets[firstSheet];
         htmlContent = XLSX.utils.sheet_to_html(sheet);
       }
+
+      const DOMPurify = (await import("dompurify")).default;
+      htmlContent = DOMPurify.sanitize(htmlContent, {
+        ADD_ATTR: ["class", "target", "style"],
+      });
     } catch (e) {
       error = String(e);
     } finally {

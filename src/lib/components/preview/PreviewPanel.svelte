@@ -22,7 +22,10 @@
     onSave?: () => void;
   } = $props();
 
+  let panelEl: HTMLDivElement | undefined;
+
   function handleKeydown(e: KeyboardEvent) {
+    if (!panelEl?.contains(e.target as Node)) return;
     if (e.key === "Escape") onClose();
     if ((e.ctrlKey || e.metaKey) && e.key === "s") {
       e.preventDefault();
@@ -33,7 +36,7 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="flex flex-col h-full border-l border-border bg-background">
+<div bind:this={panelEl} class="flex flex-col h-full border-l border-border bg-background">
   <!-- Header -->
   <div class="flex items-center justify-between px-3 py-1.5 border-b shrink-0 bg-muted/20">
     <span class="text-[11px] font-mono text-muted-foreground truncate min-w-0" title={state.filepath ?? ""}>
@@ -69,24 +72,24 @@
       <div class="flex items-center justify-center h-full text-xs text-red-500 p-4 text-center">
         {state.error}
       </div>
-    {:else if state.content !== null}
-      {#if state.fileType === "code" || state.fileType === "other"}
-        <MonacoEditor content={state.content} language={state.language} onChange={onContentChange} />
-      {:else if state.fileType === "markdown"}
-        <MarkdownPreview content={state.content} />
-      {:else if state.fileType === "html"}
-        <HtmlPreview content={state.content} />
-      {:else if state.fileType === "image"}
+    {:else if state.fileType === "image"}
         <ImagePreview filepath={state.filepath!} {cwd} />
       {:else if state.fileType === "pdf"}
         <PdfPreview filepath={state.filepath!} {cwd} />
       {:else if state.fileType === "word" || state.fileType === "excel"}
         <OfficePreview filepath={state.filepath!} fileType={state.fileType === "word" ? "word" : "excel"} {cwd} />
+      {:else if state.content !== null}
+        {#if state.fileType === "code" || state.fileType === "other"}
+          <MonacoEditor content={state.content} language={state.language} onChange={onContentChange} />
+        {:else if state.fileType === "markdown"}
+          <MarkdownPreview content={state.content} />
+        {:else if state.fileType === "html"}
+          <HtmlPreview content={state.content} />
+        {/if}
+      {:else}
+        <div class="flex items-center justify-center h-full text-xs text-muted-foreground">
+          {t("filesPanel_noContent")}
+        </div>
       {/if}
-    {:else}
-      <div class="flex items-center justify-center h-full text-xs text-muted-foreground">
-        {t("filesPanel_noContent")}
-      </div>
-    {/if}
   </div>
 </div>

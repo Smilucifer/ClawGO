@@ -36,10 +36,6 @@
   let balanceHelper = $state<BalanceHelperSettings | null>(null);
   let balanceRefreshing = $state(false);
   let balanceRefreshError = $state<string | null>(null);
-  let packySessionInput = $state("");
-  let packyTdcItokenInput = $state("");
-  let packyUserIdInput = $state("");
-  let showPackyCredentials = $state(false);
   let mimoServiceTokenInput = $state("");
   let mimoUserIdInput = $state("");
   let mimoSlhInput = $state("");
@@ -93,7 +89,7 @@
     return n.toLocaleString();
   }
 
-  async function refreshBalanceStatus(source: "all" | "deepseek" | "packy" | "mimo" = "all") {
+  async function refreshBalanceStatus(source: "all" | "deepseek" | "mimo" = "all") {
     if (balanceRefreshing) return;
     balanceRefreshing = true;
     balanceRefreshError = null;
@@ -104,54 +100,6 @@
       dbgWarn("usage", "refreshBalanceStatus error", e);
     } finally {
       balanceRefreshing = false;
-    }
-  }
-
-  async function savePackyCredentials() {
-    balanceSaving = true;
-    try {
-      const next = {
-        ...(balanceHelper ?? { auto_refresh_secs: 120, cache: {} }),
-        packy_session: packySessionInput.trim() || null,
-        packy_tdc_itoken: packyTdcItokenInput.trim() || null,
-        packy_user_id: packyUserIdInput.trim() || null,
-      };
-      const settings = await api.updateUserSettings({
-        balance_helper: next,
-      } as Partial<UserSettings>);
-      balanceHelper = settings.balance_helper ?? null;
-      packySessionInput = balanceHelper?.packy_session ?? "";
-      packyTdcItokenInput = balanceHelper?.packy_tdc_itoken ?? "";
-      packyUserIdInput = balanceHelper?.packy_user_id ?? "";
-      void refreshBalanceStatus("packy");
-    } catch (e) {
-      dbgWarn("usage", "savePackyCredentials error", e);
-    } finally {
-      balanceSaving = false;
-    }
-  }
-
-  async function clearPackyCredentials() {
-    balanceSaving = true;
-    try {
-      const next = {
-        ...(balanceHelper ?? { auto_refresh_secs: 120, cache: {} }),
-        packy_session: null,
-        packy_tdc_itoken: null,
-        packy_user_id: null,
-      };
-      const settings = await api.updateUserSettings({
-        balance_helper: next,
-      } as Partial<UserSettings>);
-      balanceHelper = settings.balance_helper ?? null;
-      packySessionInput = "";
-      packyTdcItokenInput = "";
-      packyUserIdInput = "";
-      balanceRefreshError = null;
-    } catch (e) {
-      dbgWarn("usage", "clearPackyCredentials error", e);
-    } finally {
-      balanceSaving = false;
     }
   }
 
@@ -409,9 +357,6 @@
       try {
         const settings = await api.getUserSettings();
         balanceHelper = settings.balance_helper ?? null;
-        packySessionInput = balanceHelper?.packy_session ?? "";
-        packyTdcItokenInput = balanceHelper?.packy_tdc_itoken ?? "";
-        packyUserIdInput = balanceHelper?.packy_user_id ?? "";
         mimoServiceTokenInput = balanceHelper?.mimo_service_token ?? "";
         mimoUserIdInput = balanceHelper?.mimo_user_id ?? "";
         mimoSlhInput = balanceHelper?.mimo_slh ?? "";
@@ -565,7 +510,6 @@
         {/if}
 
         {@const deepseek = balanceStatusText("deepseek")}
-        {@const packy = balanceStatusText("packy")}
         {@const mimo = balanceStatusText("mimo")}
         <div class="grid gap-4 md:grid-cols-2">
           <!-- DeepSeek panel -->
@@ -610,108 +554,6 @@
                 {/if}
               </div>
             </div>
-          </div>
-
-          <!-- Packy panel -->
-          <div
-            class="rounded-xl bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent border border-emerald-500/20 p-5 space-y-3"
-          >
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2.5">
-                <div
-                  class="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/15"
-                >
-                  <svg
-                    class="h-5 w-5 text-emerald-400"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
-                    <path d="M12 6v6l4 2" />
-                  </svg>
-                </div>
-                <div>
-                  <div class="text-sm font-semibold">Packy</div>
-                  <div
-                    class="flex items-center gap-1.5 text-xs text-muted-foreground"
-                  >
-                    <span
-                      class="inline-block h-1.5 w-1.5 rounded-full {packy.dotClass}"
-                    ></span>
-                    {packy.label}
-                  </div>
-                </div>
-              </div>
-              <div class="text-right">
-                <div class="text-lg font-bold tabular-nums">{packy.balance}</div>
-                {#if packy.sub}
-                  <div class="text-[10px] text-muted-foreground">{packy.sub}</div>
-                {/if}
-              </div>
-            </div>
-
-            <!-- Packy credential inputs (collapsible) -->
-            <button
-              class="w-full text-left text-xs text-muted-foreground hover:text-foreground transition-colors"
-              onclick={() => (showPackyCredentials = !showPackyCredentials)}
-            >
-              <span class="flex items-center gap-1">
-                <svg
-                  class="h-3 w-3 transition-transform {showPackyCredentials ? 'rotate-90' : ''}"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path d="m9 18 6-6-6-6" />
-                </svg>
-                {t("settings_balance_packySession")}
-              </span>
-            </button>
-            {#if showPackyCredentials}
-              <div class="space-y-2">
-                <Input
-                  type="password"
-                  placeholder={t("settings_balance_packySession")}
-                  value={packySessionInput}
-                  oninput={(e) =>
-                    (packySessionInput = (e.currentTarget as HTMLInputElement).value)}
-                />
-                <Input
-                  type="text"
-                  placeholder={t("settings_balance_packyTdcItoken")}
-                  value={packyTdcItokenInput}
-                  oninput={(e) =>
-                    (packyTdcItokenInput = (e.currentTarget as HTMLInputElement).value)}
-                />
-                <Input
-                  type="text"
-                  placeholder={t("settings_balance_packyUserId")}
-                  value={packyUserIdInput}
-                  oninput={(e) =>
-                    (packyUserIdInput = (e.currentTarget as HTMLInputElement).value)}
-                />
-                <div class="flex justify-end gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={balanceSaving}
-                    onclick={clearPackyCredentials}
-                  >
-                    {t("settings_balance_clear")}
-                  </Button>
-                  <Button size="sm" disabled={balanceSaving} onclick={savePackyCredentials}>
-                    {balanceSaving
-                      ? t("settings_balance_saving")
-                      : t("settings_balance_save")}
-                  </Button>
-                </div>
-              </div>
-            {/if}
           </div>
 
           <!-- Xiaomi panel (spans 2 columns) -->

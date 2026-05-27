@@ -1000,6 +1000,8 @@
   "filesPanel_clearFilter": "清除",
   "filesPanel_loading": "加载中...",
   "filesPanel_cannotPreview": "无法预览此文件",
+  "filesPanel_save": "保存",
+  "filesPanel_noContent": "暂无内容",
 
   "infoPanel_noInfo": "会话启动后将显示会话信息。",
   "infoPanel_session": "会话",

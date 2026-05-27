@@ -3,6 +3,7 @@
   import { fmtTime, fmtDateTime } from "$lib/i18n/format";
   import MarkdownContent from "./MarkdownContent.svelte";
   import FileAttachment from "./FileAttachment.svelte";
+  import FilePathLinks from "./FilePathLinks.svelte";
   import { IMAGE_TYPES } from "$lib/utils/file-types";
   import type { ChatMessage, Attachment } from "$lib/types";
 
@@ -195,7 +196,7 @@
               ? "mask-image: linear-gradient(to bottom, black 70%, transparent);"
               : ""}
           >
-            {message.content}
+            <FilePathLinks text={message.content} />
           </p>
           <button
             class="mt-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -206,7 +207,7 @@
               : t("common_collapse")}
           </button>
         {:else}
-          <p class="whitespace-pre-wrap">{message.content}</p>
+          <p class="whitespace-pre-wrap"><FilePathLinks text={message.content} /></p>
         {/if}
       {:else}
         {#if thinkingText}
