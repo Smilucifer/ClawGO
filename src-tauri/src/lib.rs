@@ -194,6 +194,8 @@ pub fn run() {
             commands::memos::update_memo,
             commands::memos::delete_memo,
             commands::memos::clear_memos,
+            commands::memos::list_memories,
+            commands::memos::save_memory,
             commands::chat::send_chat_message,
             commands::events::get_run_events,
             commands::artifacts::get_run_artifacts,

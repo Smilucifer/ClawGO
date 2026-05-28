@@ -1,4 +1,5 @@
 use crate::storage::memos::{self, MemoItem, MemoScope};
+use crate::storage::memory_store;
 
 fn clean_text(text: String) -> Result<String, String> {
     let trimmed = text.trim().to_string();
@@ -32,6 +33,48 @@ pub fn delete_memo(scope: MemoScope, id: String) -> Result<(), String> {
 #[tauri::command]
 pub fn clear_memos(scope: MemoScope) -> Result<(), String> {
     memos::clear_memos(scope)
+}
+
+// --- Scope-aware memory commands for /memory-mgmt page ---
+
+#[tauri::command]
+pub fn list_memories(
+    status_filter: Option<String>,
+    memory_type_filter: Option<String>,
+    scope_filter: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+) -> Result<Vec<crate::models::MemoryNode>, String> {
+    memory_store::list_memories(
+        status_filter.as_deref(),
+        memory_type_filter.as_deref(),
+        scope_filter.as_deref(),
+        limit.unwrap_or(100),
+        offset.unwrap_or(0),
+    )
+}
+
+#[tauri::command]
+pub fn save_memory(
+    content: String,
+    memory_type: String,
+    source_run_id: Option<String>,
+    confidence: Option<f64>,
+    scope: Option<String>,
+    project_id: Option<String>,
+) -> Result<String, String> {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return Err("Memory content cannot be empty".to_string());
+    }
+    memory_store::save_memory(
+        trimmed,
+        &memory_type,
+        source_run_id.as_deref(),
+        confidence,
+        scope.as_deref(),
+        project_id.as_deref(),
+    )
 }
 
 #[cfg(test)]
