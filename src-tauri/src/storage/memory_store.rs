@@ -1,6 +1,6 @@
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Mutex;
 
 use crate::models::{MemoryNode, MemorySource};
@@ -10,7 +10,7 @@ use crate::models::{MemoryNode, MemorySource};
 static DB: Mutex<Option<Connection>> = Mutex::new(None);
 
 /// Initialize or open the memory database. Idempotent.
-pub fn init_db(data_dir: &PathBuf) -> Result<(), String> {
+pub fn init_db(data_dir: &Path) -> Result<(), String> {
     let db_path = data_dir.join("memory.db");
     let conn = Connection::open(&db_path).map_err(|e| format!("open memory.db: {}", e))?;
 
@@ -554,7 +554,7 @@ fn row_to_memory(row: &rusqlite::Row) -> rusqlite::Result<MemoryNode> {
 
 // ── Migration support ──
 
-pub fn import_from_jsonl(path: &PathBuf) -> Result<usize, String> {
+pub fn import_from_jsonl(path: &Path) -> Result<usize, String> {
     use std::io::{BufRead, BufReader};
 
     let file = std::fs::File::open(path).map_err(|e| format!("open jsonl: {}", e))?;

@@ -13,6 +13,7 @@ pub fn get_holdings() -> Result<Vec<Holding>, String> {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn add_holding(
     symbol: String,
     currency: String,
@@ -44,6 +45,7 @@ pub fn add_holding(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn update_holding(
     symbol: String,
     currency: String,
@@ -82,6 +84,7 @@ pub fn delete_holding(symbol: String, currency: String, kind: String) -> Result<
 // ── Trades ──────────────────────────────────────────────────────────────────
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn record_trade(
     id: Option<String>,
     symbol: String,
@@ -135,6 +138,7 @@ pub fn get_verdicts(symbol: Option<String>, limit: Option<i64>) -> Result<Vec<Ve
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn save_verdict(
     id: Option<String>,
     symbol: String,

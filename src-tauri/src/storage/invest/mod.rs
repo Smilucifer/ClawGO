@@ -4,12 +4,12 @@ pub mod scheduler;
 pub mod verdicts;
 
 use rusqlite::Connection;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Mutex;
 
 static DB: Mutex<Option<Connection>> = Mutex::new(None);
 
-pub fn init_db(data_dir: &PathBuf) -> Result<(), String> {
+pub fn init_db(data_dir: &Path) -> Result<(), String> {
     let invest_dir = data_dir.join("invest");
     crate::storage::ensure_dir(&invest_dir).map_err(|e| format!("create invest dir: {}", e))?;
     let db_path = invest_dir.join("invest.db");
