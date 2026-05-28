@@ -142,6 +142,40 @@ pub fn insert_memory(node: &MemoryNode) -> Result<(), String> {
     })
 }
 
+/// Convenience function: build a `MemoryNode` from individual fields and insert it.
+/// Returns the new memory's ID on success.
+pub fn save_memory(
+    content: &str,
+    memory_type: &str,
+    source_run_id: Option<&str>,
+    confidence: Option<f64>,
+    scope: Option<&str>,
+    project_id: Option<&str>,
+) -> Result<String, String> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+    let node = MemoryNode {
+        id: id.clone(),
+        character_id: String::new(),
+        content: content.to_string(),
+        memory_type: memory_type.to_string(),
+        confidence: confidence.unwrap_or(0.8),
+        source: crate::models::MemorySource {
+            kind: "extraction".to_string(),
+            run_id: source_run_id.map(|s| s.to_string()),
+            group_chat_id: None,
+        },
+        tags: Vec::new(),
+        status: "approved".to_string(),
+        scope: scope.unwrap_or("global").to_string(),
+        project_id: project_id.map(|s| s.to_string()),
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    insert_memory(&node)?;
+    Ok(id)
+}
+
 pub fn get_memory(id: &str) -> Result<Option<MemoryNode>, String> {
     with_conn(|conn| {
         conn.query_row(
@@ -159,6 +193,7 @@ pub fn get_memory(id: &str) -> Result<Option<MemoryNode>, String> {
 pub fn list_memories(
     status_filter: Option<&str>,
     memory_type_filter: Option<&str>,
+    scope_filter: Option<&str>,
     limit: usize,
     offset: usize,
 ) -> Result<Vec<MemoryNode>, String> {
@@ -179,6 +214,11 @@ pub fn list_memories(
         if let Some(t) = memory_type_filter {
             sql.push_str(&format!(" AND memory_type = ?{}", param_idx));
             param_values.push(Box::new(t.to_string()));
+            param_idx += 1;
+        }
+        if let Some(sc) = scope_filter {
+            sql.push_str(&format!(" AND scope = ?{}", param_idx));
+            param_values.push(Box::new(sc.to_string()));
             param_idx += 1;
         }
 
@@ -585,7 +625,7 @@ mod tests {
         assert_eq!(fetched.content, "用户是资深 Go 开发者");
         assert_eq!(fetched.tags, vec!["go", "developer"]);
 
-        let all = list_memories(None, None, 10, 0).unwrap();
+        let all = list_memories(None, None, None, 10, 0).unwrap();
         assert_eq!(all.len(), 1);
 
         delete_memory("m1").unwrap();

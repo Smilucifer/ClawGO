@@ -131,7 +131,7 @@ pub fn delete_character(id: String) -> Result<(), String> {
 pub async fn list_character_memories(
     _character_id: String,
 ) -> Result<Vec<MemoryNode>, String> {
-    storage::memory_store::list_memories(None, None, 500, 0)
+    storage::memory_store::list_memories(None, None, None, 500, 0)
 }
 
 #[tauri::command]
@@ -255,7 +255,7 @@ pub async fn search_character_memories(
 pub async fn list_pending_memories(
     _character_id: String,
 ) -> Result<Vec<MemoryNode>, String> {
-    storage::memory_store::list_memories(Some("pending"), None, 100, 0)
+    storage::memory_store::list_memories(Some("pending"), None, None, 100, 0)
 }
 
 #[tauri::command]

@@ -43,7 +43,7 @@ fn mark_dream_time(data_dir: &Path) {
 
 /// List archived (low-confidence) memories for review.
 pub fn list_archived_memories(limit: usize, offset: usize) -> Result<Vec<MemoryNode>, String> {
-    memory_store::list_memories(Some("archived"), None, limit, offset)
+    memory_store::list_memories(Some("archived"), None, None, limit, offset)
 }
 
 /// Restore an archived memory to approved status.
@@ -62,7 +62,7 @@ pub fn restore_archived_memory(id: &str) -> Result<MemoryNode, String> {
 
 /// Export all approved memories to a JSON snapshot file.
 pub fn snapshot_memories(data_dir: &Path) -> Result<PathBuf, String> {
-    let memories = memory_store::list_memories(Some("approved"), None, 10000, 0)
+    let memories = memory_store::list_memories(Some("approved"), None, None, 10000, 0)
         .map_err(|e| format!("Failed to list memories: {}", e))?;
     let snapshot = DreamSnapshot {
         timestamp: SystemTime::now()
@@ -94,7 +94,7 @@ pub fn rollback_to_snapshot(snapshot_path: &Path, data_dir: &Path) -> Result<usi
         serde_json::from_str(&json).map_err(|e| format!("Failed to parse snapshot: {}", e))?;
 
     // Clear existing memories
-    let existing = memory_store::list_memories(None, None, 10000, 0)
+    let existing = memory_store::list_memories(None, None, None, 10000, 0)
         .map_err(|e| format!("Failed to list memories: {}", e))?;
     for mem in &existing {
         let _ = memory_store::delete_memory(&mem.id);
@@ -167,7 +167,7 @@ pub enum DreamCycleResult {
 /// Find memories with similar content and merge them.
 /// Uses simple text similarity (Jaccard on character n-grams).
 fn merge_duplicates() -> Result<usize, String> {
-    let memories = memory_store::list_memories(Some("approved"), None, 10000, 0)
+    let memories = memory_store::list_memories(Some("approved"), None, None, 10000, 0)
         .map_err(|e| format!("Failed to list memories: {}", e))?;
 
     let mut merged_count = 0;
@@ -238,7 +238,7 @@ fn merge_duplicates() -> Result<usize, String> {
 /// Decay confidence of all approved memories slightly.
 /// Memories below MIN_CONFIDENCE are marked as archived.
 fn decay_confidence() -> Result<usize, String> {
-    let memories = memory_store::list_memories(Some("approved"), None, 10000, 0)
+    let memories = memory_store::list_memories(Some("approved"), None, None, 10000, 0)
         .map_err(|e| format!("Failed to list memories: {}", e))?;
 
     let mut decayed = 0;
