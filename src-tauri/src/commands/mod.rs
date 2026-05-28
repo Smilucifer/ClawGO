@@ -16,6 +16,7 @@ pub mod files;
 pub mod fs;
 pub mod git;
 pub mod history;
+pub mod invest;
 pub mod mcp;
 pub mod memos;
 pub mod onboarding;
