@@ -30,7 +30,7 @@
   }
 
   $effect(() => {
-    scopeFilter;
+    void scopeFilter;
     loadMemories();
   });
 

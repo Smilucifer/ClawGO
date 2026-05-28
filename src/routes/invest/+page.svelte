@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { t } from "$lib/i18n";
+  import { t } from "$lib/i18n/index.svelte";
 
   type InvestTab = "dashboard" | "committee" | "strategy" | "trades" | "events" | "scheduler";
   let activeTab: InvestTab = $state("dashboard");
