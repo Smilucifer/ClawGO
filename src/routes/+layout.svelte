@@ -27,6 +27,7 @@
   import GlobalMemoPanel from "$lib/components/GlobalMemoPanel.svelte";
   import UserMemoryPanel from "$lib/components/UserMemoryPanel.svelte";
   import DoctorPanel from "$lib/components/DoctorPanel.svelte";
+  import MoreMenu from "$lib/components/MoreMenu.svelte";
   import UpdateBanner from "$lib/components/UpdateBanner.svelte";
   import type {
     TaskRun,
@@ -2650,7 +2651,7 @@
         </div>
 
         <button
-          class="ml-auto rounded-md p-1.5 hover:bg-accent transition-all duration-150"
+          class="rounded-md p-1.5 hover:bg-accent transition-all duration-150"
           onclick={() => (showMemoPanel = !showMemoPanel)}
           title={t("memo_panelTitle")}
         >
@@ -2667,6 +2668,8 @@
             /><path d="M8 13h8" /><path d="M8 17h5" /></svg
           >
         </button>
+
+        <MoreMenu />
 
         <button
           class="rounded-md p-1.5 hover:bg-accent transition-all duration-150"
