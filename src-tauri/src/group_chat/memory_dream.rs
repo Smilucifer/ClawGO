@@ -212,6 +212,8 @@ fn merge_duplicates() -> Result<usize, String> {
                     created_at: keep.created_at.clone(),
                     updated_at: now,
                     status: keep.status.clone(),
+                    scope: keep.scope.clone(),
+                    project_id: keep.project_id.clone(),
                 };
                 let _ = memory_store::update_memory(&updated_node);
 
@@ -256,6 +258,8 @@ fn decay_confidence() -> Result<usize, String> {
                 created_at: mem.created_at.clone(),
                 updated_at: now,
                 status: "archived".to_string(),
+                scope: mem.scope.clone(),
+                project_id: mem.project_id.clone(),
             };
             let _ = memory_store::update_memory(&updated_node);
             log::debug!(
@@ -276,6 +280,8 @@ fn decay_confidence() -> Result<usize, String> {
                 created_at: mem.created_at.clone(),
                 updated_at: now,
                 status: mem.status.clone(),
+                scope: mem.scope.clone(),
+                project_id: mem.project_id.clone(),
             };
             let _ = memory_store::update_memory(&updated_node);
         }

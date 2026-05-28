@@ -194,6 +194,8 @@ pub async fn create_character_memory(
         created_at: now.clone(),
         updated_at: now,
         status: "approved".to_string(),
+        scope: "global".to_string(),
+        project_id: None,
     };
     storage::memory_store::insert_memory(&node)?;
     Ok(node)

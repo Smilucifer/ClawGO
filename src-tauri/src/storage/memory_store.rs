@@ -32,12 +32,16 @@ pub fn init_db(data_dir: &PathBuf) -> Result<(), String> {
             source_group_chat_id TEXT,
             tags        TEXT NOT NULL DEFAULT '[]',
             status      TEXT NOT NULL DEFAULT 'approved',
+            scope       TEXT NOT NULL DEFAULT 'global',
+            project_id  TEXT,
             created_at  TEXT NOT NULL,
             updated_at  TEXT NOT NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_memories_status ON memories(status);
         CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(memory_type);
+        CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(scope);
+        CREATE INDEX IF NOT EXISTS idx_memories_project_id ON memories(project_id) WHERE project_id IS NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at);
 
         CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
@@ -66,6 +70,24 @@ pub fn init_db(data_dir: &PathBuf) -> Result<(), String> {
         END;",
     )
     .map_err(|e| format!("create tables: {}", e))?;
+
+    // Migration: add scope and project_id if missing (for existing databases)
+    let has_scope: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('memories') WHERE name='scope'")
+        .map_err(|e| format!("prepare migration check: {}", e))?
+        .query_row([], |row| row.get::<_, i32>(0))
+        .map_err(|e| format!("migration check query: {}", e))?
+        > 0;
+
+    if !has_scope {
+        conn.execute_batch(
+            "ALTER TABLE memories ADD COLUMN scope TEXT NOT NULL DEFAULT 'global';
+             ALTER TABLE memories ADD COLUMN project_id TEXT;
+             CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(scope);
+             CREATE INDEX IF NOT EXISTS idx_memories_project_id ON memories(project_id) WHERE project_id IS NOT NULL;"
+        ).map_err(|e| format!("migrate memories: {}", e))?;
+        log::info!("Migrated memories table: added scope + project_id columns");
+    }
 
     let mut guard = DB.lock().map_err(|e| format!("lock db: {}", e))?;
     *guard = Some(conn);
@@ -96,8 +118,9 @@ pub fn insert_memory(node: &MemoryNode) -> Result<(), String> {
     with_conn_mut(|conn| {
         conn.execute(
             "INSERT INTO memories (id, content, memory_type, confidence, source_kind,
-                source_run_id, source_group_chat_id, tags, status, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                source_run_id, source_group_chat_id, tags, status, scope, project_id,
+                created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 node.id,
                 node.content,
@@ -108,6 +131,8 @@ pub fn insert_memory(node: &MemoryNode) -> Result<(), String> {
                 node.source.group_chat_id,
                 serde_json::to_string(&node.tags).unwrap_or_default(),
                 node.status,
+                node.scope,
+                node.project_id,
                 node.created_at,
                 node.updated_at,
             ],
@@ -121,7 +146,7 @@ pub fn get_memory(id: &str) -> Result<Option<MemoryNode>, String> {
     with_conn(|conn| {
         conn.query_row(
             "SELECT id, content, memory_type, confidence, source_kind, source_run_id,
-                source_group_chat_id, tags, status, created_at, updated_at
+                source_group_chat_id, tags, status, scope, project_id, created_at, updated_at
              FROM memories WHERE id = ?1",
             params![id],
             row_to_memory,
@@ -140,7 +165,7 @@ pub fn list_memories(
     with_conn(|conn| {
         let mut sql = String::from(
             "SELECT id, content, memory_type, confidence, source_kind, source_run_id,
-                source_group_chat_id, tags, status, created_at, updated_at
+                source_group_chat_id, tags, status, scope, project_id, created_at, updated_at
              FROM memories WHERE 1=1",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -187,7 +212,7 @@ pub fn update_memory(node: &MemoryNode) -> Result<(), String> {
             .execute(
                 "UPDATE memories SET content = ?2, memory_type = ?3, confidence = ?4,
                     source_kind = ?5, source_run_id = ?6, source_group_chat_id = ?7,
-                    tags = ?8, status = ?9, updated_at = ?10
+                    tags = ?8, status = ?9, scope = ?10, project_id = ?11, updated_at = ?12
                  WHERE id = ?1",
                 params![
                     node.id,
@@ -199,6 +224,8 @@ pub fn update_memory(node: &MemoryNode) -> Result<(), String> {
                     node.source.group_chat_id,
                     serde_json::to_string(&node.tags).unwrap_or_default(),
                     node.status,
+                    node.scope,
+                    node.project_id,
                     Utc::now().to_rfc3339(),
                 ],
             )
@@ -253,7 +280,7 @@ pub fn search_fts(query: &str, top_k: usize, status: &str) -> Result<Vec<MemoryN
             .prepare(
                 "SELECT m.id, m.content, m.memory_type, m.confidence, m.source_kind,
                     m.source_run_id, m.source_group_chat_id, m.tags, m.status,
-                    m.created_at, m.updated_at
+                    m.scope, m.project_id, m.created_at, m.updated_at
                  FROM memories_fts f
                  JOIN memories m ON m.rowid = f.rowid
                  WHERE memories_fts MATCH ?1 AND m.status = ?2
@@ -291,7 +318,7 @@ pub fn search_by_tags(tags: &[String], top_k: usize) -> Result<Vec<MemoryNode>, 
         let sql = format!(
             "SELECT m.id, m.content, m.memory_type, m.confidence, m.source_kind,
                 m.source_run_id, m.source_group_chat_id, m.tags, m.status,
-                m.created_at, m.updated_at
+                m.scope, m.project_id, m.created_at, m.updated_at
              FROM memories m
              WHERE m.status = 'approved' AND ({})
              ORDER BY m.created_at DESC
@@ -352,7 +379,7 @@ pub fn search_hybrid(
                 if let Ok(mut stmt) = conn.prepare(
                     "SELECT m.id, m.content, m.memory_type, m.confidence, m.source_kind,
                         m.source_run_id, m.source_group_chat_id, m.tags, m.status,
-                        m.created_at, m.updated_at
+                        m.scope, m.project_id, m.created_at, m.updated_at
                      FROM memories_fts f
                      JOIN memories m ON m.rowid = f.rowid
                      WHERE memories_fts MATCH ?1 AND m.status = 'approved'
@@ -380,7 +407,7 @@ pub fn search_hybrid(
             let sql = format!(
                 "SELECT m.id, m.content, m.memory_type, m.confidence, m.source_kind,
                     m.source_run_id, m.source_group_chat_id, m.tags, m.status,
-                    m.created_at, m.updated_at
+                    m.scope, m.project_id, m.created_at, m.updated_at
                  FROM memories m
                  WHERE m.status = 'approved' AND ({})
                  ORDER BY m.created_at DESC LIMIT ?{}",
@@ -478,8 +505,10 @@ fn row_to_memory(row: &rusqlite::Row) -> rusqlite::Result<MemoryNode> {
         },
         tags,
         status: row.get(8)?,
-        created_at: row.get(9)?,
-        updated_at: row.get(10)?,
+        scope: row.get(9)?,
+        project_id: row.get(10)?,
+        created_at: row.get(11)?,
+        updated_at: row.get(12)?,
     })
 }
 
@@ -536,6 +565,8 @@ mod tests {
             },
             tags: tags.into_iter().map(String::from).collect(),
             status: "approved".to_string(),
+            scope: "global".to_string(),
+            project_id: None,
             created_at: Utc::now().to_rfc3339(),
             updated_at: Utc::now().to_rfc3339(),
         }

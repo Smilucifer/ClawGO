@@ -174,6 +174,8 @@ mod tests {
             created_at: String::new(),
             updated_at: String::new(),
             status: "approved".into(),
+            scope: "global".into(),
+            project_id: None,
         };
         let result = format_memory_injection(&[m], 500, 200);
         assert!(result.contains("[User Memory]"));

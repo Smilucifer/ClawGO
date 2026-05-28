@@ -323,6 +323,8 @@ pub async fn auto_extract_memories(turns: &[String]) -> Vec<MemoryNode> {
             created_at: now.clone(),
             updated_at: now.clone(),
             status: "pending".to_string(),
+            scope: "global".to_string(),
+            project_id: None,
         };
 
         // Store in SQLite

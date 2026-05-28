@@ -2079,10 +2079,14 @@ pub struct MemoryNode {
     pub confidence: f64,
     pub source: MemorySource,
     pub tags: Vec<String>,
-    pub created_at: String,
-    pub updated_at: String,
     #[serde(default = "default_memory_status")]
     pub status: String,
+    #[serde(default = "default_memory_scope")]
+    pub scope: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2102,6 +2106,10 @@ pub struct MemoryExtractionConfig {
 
 fn default_memory_status() -> String {
     "approved".to_string()
+}
+
+fn default_memory_scope() -> String {
+    "global".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
