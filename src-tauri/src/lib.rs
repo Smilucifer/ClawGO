@@ -444,7 +444,7 @@ pub fn run() {
 
     // Start background dream cycle task (memory consolidation).
     let dream_data_dir = data_dir.clone();
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         // Initial delay to let the app finish startup
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
         loop {
