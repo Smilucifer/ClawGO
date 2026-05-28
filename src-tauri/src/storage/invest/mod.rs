@@ -1,0 +1,173 @@
+pub mod events;
+pub mod portfolio;
+pub mod scheduler;
+pub mod verdicts;
+
+use rusqlite::Connection;
+use std::path::PathBuf;
+use std::sync::Mutex;
+
+static DB: Mutex<Option<Connection>> = Mutex::new(None);
+
+pub fn init_db(data_dir: &PathBuf) -> Result<(), String> {
+    let invest_dir = data_dir.join("invest");
+    crate::storage::ensure_dir(&invest_dir).map_err(|e| format!("create invest dir: {}", e))?;
+    let db_path = invest_dir.join("invest.db");
+
+    let conn = Connection::open(&db_path)
+        .map_err(|e| format!("open invest.db: {}", e))?;
+
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")
+        .map_err(|e| format!("set pragmas: {}", e))?;
+
+    conn.execute_batch(CREATE_TABLES_SQL)
+        .map_err(|e| format!("create tables: {}", e))?;
+
+    let mut guard = DB.lock().map_err(|e| format!("lock db: {}", e))?;
+    *guard = Some(conn);
+    log::info!("invest.db initialized at {:?}", db_path);
+    Ok(())
+}
+
+pub fn with_conn<F, R>(f: F) -> Result<R, String>
+where
+    F: FnOnce(&Connection) -> Result<R, String>,
+{
+    let guard = DB.lock().map_err(|e| format!("lock invest db: {}", e))?;
+    let conn = guard.as_ref().ok_or_else(|| "invest.db not initialized".to_string())?;
+    f(conn)
+}
+
+pub fn with_conn_mut<F, R>(f: F) -> Result<R, String>
+where
+    F: FnOnce(&mut Connection) -> Result<R, String>,
+{
+    let mut guard = DB.lock().map_err(|e| format!("lock invest db: {}", e))?;
+    let conn = guard.as_mut().ok_or_else(|| "invest.db not initialized".to_string())?;
+    f(conn)
+}
+
+const CREATE_TABLES_SQL: &str = "
+CREATE TABLE IF NOT EXISTS holdings (
+    symbol TEXT NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'CNY',
+    kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
+    name TEXT,
+    notional REAL NOT NULL DEFAULT 0,
+    avg_cost REAL,
+    shares REAL,
+    entry_date TEXT,
+    linked_verdict_id TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (symbol, currency, kind)
+);
+
+CREATE TABLE IF NOT EXISTS trades (
+    id TEXT PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'CNY',
+    kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
+    action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_watch_to_hold', 'convert_hold_to_watch', 'cost_edit')),
+    shares REAL,
+    price REAL,
+    amount REAL,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS cash (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    available REAL NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS verdicts (
+    id TEXT PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    verdict TEXT NOT NULL,
+    confidence REAL,
+    macro_signal TEXT,
+    macro_strength REAL,
+    reasoning TEXT,
+    model TEXT,
+    provider TEXT,
+    tokens_used INTEGER,
+    latency_ms INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS pnl_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapshot_date TEXT NOT NULL,
+    total_value REAL NOT NULL,
+    cash REAL NOT NULL,
+    holdings_value REAL NOT NULL,
+    daily_pnl REAL,
+    daily_pnl_pct REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS events (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT,
+    symbols TEXT,
+    severity TEXT DEFAULT 'info',
+    triggered INTEGER DEFAULT 0,
+    trigger_verdict_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS event_sources (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    config TEXT,
+    enabled INTEGER DEFAULT 1,
+    last_poll_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS domain_insights (
+    id TEXT PRIMARY KEY,
+    insight_type TEXT NOT NULL,
+    symbol TEXT,
+    content TEXT NOT NULL,
+    confidence REAL,
+    source_verdict_ids TEXT,
+    status TEXT DEFAULT 'active' CHECK (status IN ('active', 'archived', 'deleted')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS scheduler_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_name TEXT NOT NULL,
+    status TEXT NOT NULL,
+    message TEXT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    duration_ms INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS trade_calendar (
+    cal_date TEXT PRIMARY KEY,
+    is_open INTEGER NOT NULL,
+    pretrade_date TEXT,
+    exchange TEXT DEFAULT 'SSE'
+);
+
+CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
+CREATE INDEX IF NOT EXISTS idx_trades_created ON trades(created_at);
+CREATE INDEX IF NOT EXISTS idx_verdicts_symbol ON verdicts(symbol);
+CREATE INDEX IF NOT EXISTS idx_verdicts_created ON verdicts(created_at);
+CREATE INDEX IF NOT EXISTS idx_events_source ON events(source);
+CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
+CREATE INDEX IF NOT EXISTS idx_pnl_snapshots_date ON pnl_snapshots(snapshot_date);
+CREATE INDEX IF NOT EXISTS idx_scheduler_logs_task ON scheduler_logs(task_name);
+CREATE INDEX IF NOT EXISTS idx_trade_calendar_date ON trade_calendar(cal_date);
+";

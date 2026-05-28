@@ -437,6 +437,11 @@ pub fn run() {
         log::warn!("Failed to init memory DB: {}", e);
     }
 
+    // Initialize invest database (holdings, trades, verdicts, events, scheduler).
+    if let Err(e) = crate::storage::invest::init_db(&data_dir) {
+        log::warn!("Failed to init invest DB: {}", e);
+    }
+
     // Run memory migration from per-character JSONL to SQLite (idempotent).
     match crate::group_chat::memory_migration::migrate_jsonl_to_sqlite(&data_dir) {
         Ok(n) if n > 0 => log::info!("Migrated {} memories from JSONL to SQLite", n),

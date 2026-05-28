@@ -7,6 +7,7 @@ pub mod cli_sessions;
 pub mod community_skills;
 pub mod events;
 pub mod favorites;
+pub mod invest;
 pub mod managed_apps;
 pub mod mcp_registry;
 pub mod memos;
