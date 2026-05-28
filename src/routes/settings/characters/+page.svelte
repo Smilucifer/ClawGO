@@ -33,11 +33,9 @@
   let formRetentionDays = $state<number | undefined>(undefined);
   let formMaxRetrievalCount = $state<number>(5);
   let formRelevanceThreshold = $state<number>(0.5);
-  let formGraphHops = $state<number>(1);
   let editingAvatar = $state<string | null>(null);
   let pendingAvatarPath = $state<string | null>(null);
   let memoryPanelCharId = $state<string | null>(null);
-  let embeddingReady = $state(false);
 
   // Toast
   let toastMessage = $state<string | null>(null);
@@ -68,13 +66,6 @@
     } finally {
       loading = false;
     }
-    // Check embedding config for auto-learn readiness
-    try {
-      const cfg = await api.getEmbeddingConfig();
-      embeddingReady = !!cfg?.enabled && !!cfg?.api_key;
-    } catch {
-      embeddingReady = false;
-    }
   });
 
   onDestroy(() => {
@@ -96,7 +87,6 @@
     formRetentionDays = undefined;
     formMaxRetrievalCount = 5;
     formRelevanceThreshold = 0.5;
-    formGraphHops = 1;
     editingAvatar = null;
     pendingAvatarPath = null;
     editingId = null;
@@ -122,7 +112,6 @@
     formRetentionDays = char.memory_config?.retention_days ?? undefined;
     formMaxRetrievalCount = char.memory_config?.max_retrieval_count ?? 5;
     formRelevanceThreshold = char.memory_config?.relevance_threshold ?? 0.5;
-    formGraphHops = char.memory_config?.graph_hops ?? 1;
     editingAvatar = char.avatar_path ?? null;
     showForm = true;
   }
@@ -183,7 +172,6 @@
                 retention_days: formRetentionDays ?? undefined,
                 max_retrieval_count: formMaxRetrievalCount,
                 relevance_threshold: formRelevanceThreshold,
-                graph_hops: formGraphHops,
               }
             : null,
         });
@@ -568,12 +556,6 @@
       <!-- Memory config -->
       <div class="space-y-1.5">
         <label class="text-[10px] uppercase text-[#666] block mb-1">Memory Config</label>
-        {#if !embeddingReady}
-          <div class="flex items-center gap-2 rounded-md bg-amber-500/10 border border-amber-500/20 px-3 py-2">
-            <svg class="h-4 w-4 shrink-0 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            <span class="text-[11px] text-amber-300">自动学习需要先在 设置 → Embedding 中配置并启用 Embedding 服务</span>
-          </div>
-        {/if}
         <div class="flex items-center gap-2">
           <input type="checkbox" class="w-3 h-3" bind:checked={formAutoLearn} />
           <span class="text-xs">Auto-learn from conversations</span>
@@ -612,16 +594,6 @@
               class="w-20 h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
             <span class="text-[11px] text-muted-foreground">(0-1)</span>
-          </div>
-          <div class="flex items-center gap-2 mt-1">
-            <span class="text-[11px] text-muted-foreground">Graph hops:</span>
-            <input
-              type="number"
-              min="0"
-              max="5"
-              bind:value={formGraphHops}
-              class="w-20 h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
           </div>
         {/if}
       </div>

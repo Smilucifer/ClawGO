@@ -11,8 +11,6 @@ use crate::group_chat::adapter::{
 };
 use crate::group_chat::context::{check_handoff, record_participant_turn, HandoffDecision};
 use crate::group_chat::memory_extraction::{auto_extract_memories, can_extract, log_to_file, record_extraction};
-use crate::group_chat::memory_graph::compute_relevance_edges;
-use crate::group_chat::memory_injection::{search_memories_for_injection, format_memory_injection};
 use crate::group_chat::models::{
     GroupChatParticipant, GroupChatResponseRef, GroupChatTurn, GroupChatTurnMode,
 };
@@ -512,8 +510,7 @@ pub async fn run_group_chat_turn_with_runtime(
             }
 
             // ── Auto-extraction: fire-and-forget memory extraction ──
-            // Only spawn for characters with auto_learn enabled.
-            // Pass real turn response texts with speaker labels so extraction can attribute correctly.
+            // Single extraction per group chat turn (user-centric, not per-character).
             let gc_id = room_id.to_string();
             let turn_texts: Vec<String> = turn
                 .responses
@@ -527,65 +524,15 @@ pub async fn run_group_chat_turn_with_runtime(
                     Some(format!("[{}]: {}", speaker, text))
                 })
                 .collect();
-            let user_settings = storage::settings::get_user_settings();
-            let participants_snapshot: Vec<(String, String, bool)> = room
-                .participants
-                .iter()
-                .map(|p| {
-                    let auto_learn = is_auto_learn(&p.character_id, &user_settings.ai_characters);
-                    (p.character_id.clone(), p.label.clone(), auto_learn)
-                })
-                .collect();
             tokio::spawn(async move {
-                for (cid, cname, auto_learn) in &participants_snapshot {
-                    if !auto_learn {
-                        continue;
-                    }
-                    if !can_extract(&gc_id, cid) {
-                        continue;
-                    }
-                    let memory_pairs = auto_extract_memories(cid, cname, &turn_texts).await;
-                    log_to_file(&format!("[memory-extraction] RETURN cid={} gc={} count={}", cid, gc_id, memory_pairs.len()));
-                    if memory_pairs.is_empty() {
-                        continue;
-                    }
-                    record_extraction(&gc_id, cid);
-
-                    let count = memory_pairs.len();
-
-                    // 1. Batch append to authoritative log (single lock acquisition)
-                    log_to_file(&format!("[memory-extraction] PERSIST_STEP cid={} step=append_memory_log count={}", cid, count));
-                    let memories: Vec<_> = memory_pairs.iter().map(|(m, _)| m.clone()).collect();
-                    if let Err(e) = storage::characters::append_memory_log_batch(cid, &memories) {
-                        log_to_file(&format!("[memory-extraction] PERSIST_FAIL cid={} step=append_memory_log err={}", cid, e));
-                        continue;
-                    }
-                    log_to_file(&format!("[memory-extraction] PERSIST_OK cid={} step=append_memory_log", cid));
-
-                    // 2. Batch update knowledge graph (single read + single save)
-                    let existing = storage::characters::read_all_memory_log_entries(cid).unwrap_or_default();
-                    let mut graph = storage::characters::load_memory_graph(cid).unwrap_or_default();
-                    for memory in &memories {
-                        graph.nodes.push(memory.clone());
-                        let new_edges = compute_relevance_edges(memory, &existing, &graph.edges);
-                        graph.edges.extend(new_edges);
-                    }
-                    if let Err(e) = storage::characters::save_memory_graph(cid, &graph) {
-                        log_to_file(&format!("[memory-extraction] PERSIST_FAIL cid={} step=save_memory_graph err={}", cid, e));
-                    } else {
-                        log_to_file(&format!("[memory-extraction] PERSIST_OK cid={} step=save_memory_graph nodes={}", cid, graph.nodes.len()));
-                    }
-
-                    // 3. LanceDB upsert — consume memory_pairs, reuse cached embeddings
-                    let cid_owned = cid.clone();
-                    for (memory, embedding_vec) in memory_pairs {
-                        let _ = crate::commands::vectorstore::vector_upsert(
-                            cid_owned.clone(),
-                            memory.id,
-                            embedding_vec,
-                        ).await;
-                    }
-                    log_to_file(&format!("[memory-extraction] PERSIST_DONE cid={} count={}", cid, count));
+                if !can_extract(&gc_id) {
+                    return;
+                }
+                let memories = auto_extract_memories(&turn_texts).await;
+                log_to_file(&format!("[memory-extraction] RETURN gc={} count={}", gc_id, memories.len()));
+                if !memories.is_empty() {
+                    record_extraction(&gc_id);
+                    log_to_file(&format!("[memory-extraction] PERSIST_DONE gc={} count={}", gc_id, memories.len()));
                 }
             });
 
@@ -647,58 +594,20 @@ async fn execute_group_chat_target(
     }
 }
 
-fn is_auto_learn(character_id: &str, characters: &[crate::models::AiCharacter]) -> bool {
-    if character_id.is_empty() || character_id == "__orphan__" {
-        return false;
-    }
-    match characters.iter().find(|c| c.id == character_id) {
-        Some(c) => c.memory_config.as_ref()
-            .map(|mc| mc.auto_learn)
-            .unwrap_or(true), // default on when memory_config is absent
-        None => false, // character not found — don't auto-learn
-    }
-}
-
-/// Inject character memories into the system prompt for a group chat participant.
-/// Skipped when character_id is empty, `__orphan__`, or auto_learn is disabled.
-async fn inject_memories(
-    character_id: &str,
+/// Inject user memories into the system prompt.
+/// Delegates to the shared inject_memories_into_prompt in memory_injection module.
+fn inject_memories(
     user_message: &str,
     system_prompt: &mut String,
-    auto_learn: bool,
+    memory_config: Option<&crate::models::MemoryConfig>,
 ) {
-    if !auto_learn || character_id.is_empty() || character_id == "__orphan__" {
-        return;
-    }
-    // Read injection config from character's MemoryConfig (with defaults)
-    let user_settings = storage::settings::get_user_settings();
-    let (top_k, threshold, graph_hops) = user_settings
-        .ai_characters
-        .iter()
-        .find(|c| c.id == character_id)
-        .and_then(|c| c.memory_config.as_ref())
-        .map(|mc| (
-            mc.max_retrieval_count.max(1).min(20),
-            mc.relevance_threshold.max(0.0).min(1.0),
-            mc.graph_hops.max(0).min(5),
-        ))
-        .unwrap_or((5, 0.5, 1));
-    let (memories, tier) = search_memories_for_injection(
-        character_id, user_message, top_k, threshold, graph_hops,
-    ).await;
-    if tier != crate::group_chat::memory_injection::DegradationTier::Full {
-        log::info!(
-            "inject_memories: degraded ({:?}) for character {}",
-            tier, character_id
-        );
-    }
-    if !memories.is_empty() {
-        let memory_prompt = format_memory_injection(&memories, 2000, 300);
-        if !memory_prompt.is_empty() {
-            system_prompt.push_str("\n\n");
-            system_prompt.push_str(&memory_prompt);
-        }
-    }
+    crate::group_chat::memory_injection::inject_memories_into_prompt(
+        user_message,
+        system_prompt,
+        memory_config,
+        2000,
+        300,
+    );
 }
 
 async fn execute_actor_turn(
@@ -719,9 +628,13 @@ async fn execute_actor_turn(
             _ => String::new(),
         };
 
-    // Inject character memory after the role prompt (respects auto_learn config)
-    let auto_learn = is_auto_learn(&participant.character_id, &user_settings.ai_characters);
-    inject_memories(&participant.character_id, user_message, &mut system_prompt, auto_learn).await;
+    // Inject user memory after the role prompt (respecting auto_learn gating)
+    let memory_config = user_settings
+        .ai_characters
+        .iter()
+        .find(|c| c.id == participant.character_id)
+        .and_then(|c| c.memory_config.as_ref());
+    inject_memories(user_message, &mut system_prompt, memory_config);
 
     let full_prompt = if !system_prompt.is_empty() {
         format!("{}\n\n---\n\n{}", system_prompt, target_prompt)
@@ -810,9 +723,13 @@ async fn execute_pipe_turn(
     )
     .unwrap_or_default();
 
-    // Inject character memory after the role prompt (respects auto_learn config)
-    let auto_learn = is_auto_learn(&participant.character_id, &user_settings.ai_characters);
-    inject_memories(&participant.character_id, user_message, &mut pipe_system_prompt, auto_learn).await;
+    // Inject user memory after the role prompt (respecting auto_learn gating)
+    let memory_config = user_settings
+        .ai_characters
+        .iter()
+        .find(|c| c.id == participant.character_id)
+        .and_then(|c| c.memory_config.as_ref());
+    inject_memories(user_message, &mut pipe_system_prompt, memory_config);
 
     if !pipe_system_prompt.is_empty() {
         adapter_settings.append_system_prompt = Some(pipe_system_prompt);

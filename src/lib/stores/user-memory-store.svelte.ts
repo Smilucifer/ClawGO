@@ -1,19 +1,17 @@
 import * as api from "$lib/api";
 import type { MemoryNode } from "$lib/types";
 
-export class CharacterMemoryStore {
-  characterId = $state<string | null>(null);
+export class UserMemoryStore {
   memories = $state<MemoryNode[]>([]);
   loading = $state(false);
   activeTab = $state<"memories" | "review">("memories");
   searchQuery = $state("");
   sortBy = $state<"newest" | "confidence">("newest");
 
-  async load(characterId: string) {
-    this.characterId = characterId;
+  async load() {
     this.loading = true;
     try {
-      this.memories = await api.listCharacterMemories(characterId);
+      this.memories = await api.listCharacterMemories("");
     } catch {
       this.memories = [];
     }
@@ -40,14 +38,12 @@ export class CharacterMemoryStore {
   }
 
   async addMemory(content: string, type: string, confidence: number, tags: string[]) {
-    if (!this.characterId) return;
-    const node = await api.createCharacterMemory(this.characterId, content, type, confidence, tags);
+    const node = await api.createCharacterMemory("", content, type, confidence, tags);
     this.memories = [node, ...this.memories];
   }
 
   async deleteMemory(memoryId: string) {
-    if (!this.characterId) return;
-    await api.deleteCharacterMemory(this.characterId, memoryId);
+    await api.deleteCharacterMemory("", memoryId);
     this.memories = this.memories.filter((m) => m.id !== memoryId);
   }
 
@@ -55,8 +51,7 @@ export class CharacterMemoryStore {
     memoryId: string,
     updates: { content?: string; memoryType?: string; confidence?: number; tags?: string[] },
   ) {
-    if (!this.characterId) return;
-    const updated = await api.updateCharacterMemory(this.characterId, memoryId, updates);
+    const updated = await api.updateCharacterMemory("", memoryId, updates);
     const idx = this.memories.findIndex((m) => m.id === memoryId);
     if (idx >= 0) {
       this.memories = [
@@ -68,4 +63,4 @@ export class CharacterMemoryStore {
   }
 }
 
-export const characterMemoryStore = new CharacterMemoryStore();
+export const userMemoryStore = new UserMemoryStore();

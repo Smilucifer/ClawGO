@@ -1702,59 +1702,11 @@ export interface MemoryNode {
   status: MemoryStatus;
 }
 
-export interface MemoryEdge {
-  id: string;
-  source_id: string;
-  target_id: string;
-  relation: "supports" | "contradicts" | "extends" | "related" | "causes";
-  weight: number;
-}
-
-export interface MemoryGraphData {
-  nodes: MemoryNode[];
-  edges: MemoryEdge[];
-}
-
-export interface CommunityInfo {
-  id: number;
-  label: string;
-  cohesion: number;
-  node_count: number;
-  edge_count: number;
-  node_ids: string[];
-}
-
-export interface KnowledgeGapInfo {
-  gap_type: "isolated_node" | "sparse_community" | "bridge_node";
-  description: string;
-  suggestion: string;
-  affected_node_ids: string[];
-}
-
-export interface EmbeddingConfig {
+export interface MemoryExtractionConfig {
   enabled: boolean;
-  endpoint: string;
-  api_key?: string;
-  model: string;
-  /** Explicit chat completions endpoint for memory extraction. Falls back to derivation from endpoint. */
   chat_endpoint?: string;
-  /** Model name for chat completions. Falls back to embedding model. */
   chat_model?: string;
-  /** Separate API key for chat completions (memory extraction). Falls back to embedding api_key. */
   chat_api_key?: string;
-}
-
-export interface TestEmbeddingResult {
-  success: boolean;
-  latency_ms: number;
-  dimension: number;
-  error?: string;
-}
-
-export interface VectorSearchResult {
-  page_id: string;
-  score: number;
-  memory?: MemoryNode;
 }
 
 export interface MemoryConfig {
@@ -1762,7 +1714,6 @@ export interface MemoryConfig {
   retention_days?: number;
   max_retrieval_count?: number;
   relevance_threshold?: number;
-  graph_hops?: number;
 }
 
 export type MemoryStatus = "pending" | "approved" | "rejected";

@@ -1,5 +1,55 @@
 # Changelog / 更新日志
 
+## Phase 10+ (2026-05-28)
+
+### v3.0.0 — 记忆系统重构: 用户中心 + SQLite FTS5
+
+**架构变更（Breaking）:**
+- 存储层从 per-character LanceDB + JSONL 迁移至用户中心 SQLite FTS5
+- 移除 LanceDB、petgraph、Embedding API 全部依赖
+- `MemoryNode.character_id` 字段废弃（保留空字符串兼容）
+- `EmbeddingConfig` 保留为 `embedding_config`（仅用 chat 字段做 LLM 提取）
+
+**记忆提取:**
+- LLM chat completions 提取对话中的用户信息（fact/preference/skill/feedback）
+- FTS5 全文去重（`find_duplicates` Jaccard 0.8 阈值）
+- 每日提取上限 20→50，5 分钟 debounce
+- `get_extraction_config()` 简化为直接读 `embedding_config`
+
+**记忆检索与注入:**
+- SQLite FTS5 BM25 全文检索 + 标签匹配混合搜索
+- `search_hybrid` 合并为单次 `with_conn` 调用（消除 TOCTOU 竞态）
+- FTS5 查询净化（`sanitize_fts_query` 防止操作符注入）
+- `inject_memories_into_prompt` 统一注入函数（群聊 + 私聊共用）
+- 接入 `MemoryConfig.max_retrieval_count` 和 `relevance_threshold`
+- `count_memories` SQL 注入修复（参数化查询）
+
+**Dream 循环:**
+- `memory_dream.rs`: 快照、合并、置信度衰减
+- `text_similarity` 从字节级 trigram Jaccard 改为词级 Jaccard（CJK 兼容）
+- `list_archived_memories` + `restore_archived_memory` 归档/恢复函数
+
+**前端:**
+- `UserMemoryPanel` + `user-memory-store`（替代 CharacterMemoryPanel）
+- `memory-panel-helpers.ts` 提取共享工具（typeLabels/typeColors/sourceLabels/confidenceColor/formatDate）
+- typeLabels 修正: "rule"→"feedback" 匹配后端 memory_type
+
+**代码审查（15 项修复）:**
+1. `list_memories` 参数顺序修正
+2. `get_extraction_config` 简化
+3. `count_memories` 参数化查询
+4. FTS5 查询净化
+5-6. memory_type/status 白名单校验
+7. `inject_memories` auto_learn 门控
+8. 接入 max_retrieval_count/relevance_threshold
+9. 归档记忆列表/恢复函数
+10. 日提取上限提升
+11. 词级 Jaccard 相似度
+12. feedback 标签修正
+13. 共享 inject_memories_into_prompt
+14. 前端去重 + 类型标签修正
+15. search_hybrid TOCTOU 修复
+
 ## Phase 10+ (2026-05-27)
 
 ### v2.6.0 — Preview Panel Code Review (6 bug fixes)

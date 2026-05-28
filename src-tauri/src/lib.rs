@@ -184,9 +184,6 @@ pub fn run() {
             commands::characters::create_character_memory,
             commands::characters::update_character_memory,
             commands::characters::delete_character_memory,
-            commands::characters::get_memory_graph,
-            commands::characters::get_memory_communities,
-            commands::characters::get_knowledge_gaps,
             commands::characters::search_character_memories,
             commands::characters::list_pending_memories,
             commands::characters::approve_memory,
@@ -200,9 +197,6 @@ pub fn run() {
             commands::chat::send_chat_message,
             commands::events::get_run_events,
             commands::artifacts::get_run_artifacts,
-            commands::embedding::get_embedding_config,
-            commands::embedding::update_embedding_config,
-            commands::embedding::test_embedding_connection,
             commands::balance::refresh_balance_status,
             commands::settings::get_user_settings,
             commands::settings::update_user_settings,
@@ -329,11 +323,6 @@ pub fn run() {
             commands::web_server::get_local_ip,
             commands::preview::open_preview_window,
             commands::preview::close_preview_window,
-            commands::vectorstore::vector_upsert,
-            commands::vectorstore::vector_search,
-            commands::vectorstore::vector_delete,
-            commands::vectorstore::reset_vector_store,
-            commands::vectorstore::rebuild_vector_index,
         ])
         .setup(move |app| {
             // Set up broadcast emitter (requires AppHandle, so must be in setup)
@@ -440,36 +429,57 @@ pub fn run() {
         _ => {}
     }
 
-    // Spawn background lifecycle maintenance (log compaction, retention, etc.).
-    // Order matters: compaction runs first and clears LanceDB + writes .rebuild_pending;
-    // retention then sees the marker and skips its own LanceDB clear to avoid redundant I/O.
-    std::thread::spawn(|| {
-        let chars_dir = crate::storage::data_dir().join("characters");
-        if let Ok(entries) = std::fs::read_dir(&chars_dir) {
-            for entry in entries.flatten() {
-                if let Some(name) = entry.file_name().to_str() {
-                    let r = crate::group_chat::data_lifecycle::compact_memory_log_if_needed(name);
-                    match r {
-                        Ok(true) => log::info!("Compacted memory log for character {}", name),
-                        Err(e) => log::warn!("Compaction failed for {}: {}", name, e),
-                        _ => {}
-                    }
-                    // Apply retention policy if configured
-                    if let Ok(Some(meta)) = crate::storage::characters::load_character_metadata(name) {
-                        if let Some(mc) = &meta.memory_config {
-                            if let Some(days) = mc.retention_days {
-                                if days > 0 {
-                                    match crate::group_chat::data_lifecycle::apply_retention_policy(name, days) {
-                                        Ok(removed) if removed > 0 => log::info!("Retention removed {} entries for {}", removed, name),
-                                        Err(e) => log::warn!("Retention failed for {}: {}", name, e),
-                                        _ => {}
-                                    }
-                                }
-                            }
-                        }
-                    }
+    // Initialize the user-centric memory database (SQLite + FTS5).
+    let data_dir = crate::storage::data_dir();
+    if let Err(e) = crate::storage::memory_store::init_db(&data_dir) {
+        log::warn!("Failed to init memory DB: {}", e);
+    }
+
+    // Run memory migration from per-character JSONL to SQLite (idempotent).
+    match crate::group_chat::memory_migration::migrate_jsonl_to_sqlite(&data_dir) {
+        Ok(n) if n > 0 => log::info!("Migrated {} memories from JSONL to SQLite", n),
+        Err(e) => log::warn!("Memory migration failed: {}", e),
+        _ => {}
+    }
+
+    // Start background dream cycle task (memory consolidation).
+    let dream_data_dir = data_dir.clone();
+    tokio::spawn(async move {
+        // Initial delay to let the app finish startup
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        loop {
+            let data_dir = dream_data_dir.clone();
+            match tokio::task::spawn_blocking(move || {
+                crate::group_chat::memory_dream::run_dream_cycle(&data_dir)
+            })
+            .await
+            {
+                Ok(Ok(crate::group_chat::memory_dream::DreamCycleResult::Completed {
+                    merged,
+                    decayed,
+                    ..
+                })) => {
+                    log::info!(
+                        "[dream] cycle completed: merged={}, decayed={}",
+                        merged,
+                        decayed
+                    );
+                }
+                Ok(Ok(crate::group_chat::memory_dream::DreamCycleResult::Skipped)) => {
+                    log::debug!("[dream] cycle skipped (too soon)");
+                }
+                Ok(Err(e)) => {
+                    log::warn!("[dream] cycle failed: {}", e);
+                }
+                Err(e) => {
+                    log::warn!("[dream] task panicked: {}", e);
                 }
             }
+            // Sleep for the dream interval before next check
+            tokio::time::sleep(std::time::Duration::from_secs(
+                crate::group_chat::memory_dream::DREAM_INTERVAL_SECS,
+            ))
+            .await;
         }
     });
 

@@ -1,25 +1,19 @@
 <script lang="ts">
   import type { MemoryNode } from "$lib/types";
-  import { characterMemoryStore } from "$lib/stores/character-memory-store.svelte";
+  import { userMemoryStore } from "$lib/stores/user-memory-store.svelte";
   import * as api from "$lib/api";
   import MemoryAddModal from "./MemoryAddModal.svelte";
   import { typeLabels, typeColors, sourceLabels, confidenceColor, formatDate } from "$lib/utils/memory-panel-helpers";
 
   let {
-    characterId,
-    characterLabel = "Character",
-    characterIcon = "",
     open = false,
     onclose,
   }: {
-    characterId: string;
-    characterLabel?: string;
-    characterIcon?: string;
     open?: boolean;
     onclose: () => void;
   } = $props();
 
-  const store = characterMemoryStore;
+  const store = userMemoryStore;
   let showAddModal = $state(false);
   let deletingId = $state<string | null>(null);
   let clearing = $state(false);
@@ -31,7 +25,7 @@
 
   $effect(() => {
     if (open) {
-      store.load(characterId);
+      store.load();
       loadPending();
       function onKey(e: KeyboardEvent) {
         if (e.key === "Escape") onclose();
@@ -53,7 +47,7 @@
   }
 
   async function handleClear() {
-    if (!confirm("确认清空此角色的所有记忆？")) return;
+    if (!confirm("确认清空所有用户记忆？")) return;
     clearing = true;
     try {
       await Promise.all(store.memories.map((m) => store.deleteMemory(m.id)));
@@ -67,7 +61,7 @@
   async function loadPending() {
     pendingLoading = true;
     try {
-      pendingMemories = await api.listPendingMemories(characterId);
+      pendingMemories = await api.listPendingMemories("");
     } catch {
       pendingMemories = [];
     } finally {
@@ -78,9 +72,9 @@
   async function handleApprove(memoryId: string) {
     reviewingId = memoryId;
     try {
-      await api.approveMemory(characterId, memoryId);
+      await api.approveMemory("", memoryId);
       pendingMemories = pendingMemories.filter((m) => m.id !== memoryId);
-      store.load(characterId);
+      store.load();
     } catch {
       // fail silent
     } finally {
@@ -91,7 +85,7 @@
   async function handleReject(memoryId: string) {
     reviewingId = memoryId;
     try {
-      await api.rejectMemory(characterId, memoryId);
+      await api.rejectMemory("", memoryId);
       pendingMemories = pendingMemories.filter((m) => m.id !== memoryId);
     } catch {
       // fail silent
@@ -117,13 +111,11 @@
     >
       <!-- Top Bar -->
       <div class="flex h-14 shrink-0 items-center gap-3 border-b border-[#1e1e2e] px-4">
-        <div
-          class="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary"
-        >
-          {characterIcon || characterLabel.charAt(0).toUpperCase()}
+        <div class="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+          U
         </div>
 
-        <span class="text-sm font-semibold text-foreground">{characterLabel}</span>
+        <span class="text-sm font-semibold text-foreground">用户记忆</span>
         <span class="text-xs text-muted-foreground">{store.memories.length} 条记忆</span>
 
         <div class="flex-1"></div>

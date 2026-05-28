@@ -1,6 +1,6 @@
 [package]
 name = "ClawGO"
-version = "2.5.0"
+version = "3.0.0"
 edition = "2021"
 description = "Local-first desktop app for AI-assisted vibe coding"
 license = "Apache-2.0"
@@ -49,10 +49,7 @@ urlencoding = "2"
 rayon = "1"
 toml_edit = "0.25"
 portable-pty = "0.9"
-lancedb = "0.27"
-arrow-array = "57"
-arrow-schema = "57"
-petgraph = "0.7"
+rusqlite = { version = "0.31", features = ["bundled", "backup"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

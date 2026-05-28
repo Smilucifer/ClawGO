@@ -791,6 +791,25 @@ pub(crate) async fn start_session_impl(
         }
     }
 
+    // 3.5. Inject user memories into private chat sessions (not group chats)
+    // Uses the shared inject_memories_into_prompt (same logic as group chat orchestrator).
+    if !is_group_chat && !meta.prompt.is_empty() {
+        let mut prompt_buf = String::new();
+        crate::group_chat::memory_injection::inject_memories_into_prompt(
+            &meta.prompt,
+            &mut prompt_buf,
+            None, // private chat has no per-character memory_config
+            500,
+            100,
+        );
+        if !prompt_buf.is_empty() {
+            let existing = adapter_settings.append_system_prompt.take().unwrap_or_default();
+            adapter_settings.append_system_prompt =
+                Some(format!("{}{}", existing, prompt_buf).trim().to_string());
+            log::debug!("[session] injected memories into private chat session");
+        }
+    }
+
     // 4. Emit RunState(spawning) — UserMessage now handled by actor
     let spawning_event = BusEvent::RunState {
         run_id: run_id.clone(),

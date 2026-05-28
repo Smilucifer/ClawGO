@@ -39,7 +39,7 @@
   import { getTransport } from "$lib/transport";
 
   // ── Tab state ──
-  type SettingsTab = "general" | "connection" | "cli-config" | "shortcuts" | "remote" | "debug" | "characters" | "embedding";
+  type SettingsTab = "general" | "connection" | "cli-config" | "shortcuts" | "remote" | "debug" | "characters" | "memory";
   const VALID_TABS: SettingsTab[] = [
     "general",
     "connection",
@@ -48,7 +48,7 @@
     "remote",
     "debug",
     "characters",
-    "embedding",
+    "memory",
   ];
   const urlTab = $page.url.searchParams.get("tab");
   const initialTab: SettingsTab = VALID_TABS.includes(urlTab as SettingsTab)
@@ -64,7 +64,7 @@
     remote: () => t("settings_tab_remote"),
     debug: () => t("settings_tab_debug"),
     characters: () => t("settings_tab_characters"),
-    embedding: () => t("settings_tab_embedding"),
+    memory: () => "Memory Extraction",
   };
 
   const tabs: { id: SettingsTab; icon: string }[] = [
@@ -90,7 +90,7 @@
     },
     { id: "debug", icon: "m18 16 4-4-4-4 M6 8l-4 4 4 4 M14.5 4l-5 16" },
     { id: "characters", icon: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M22 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75" },
-    { id: "embedding", icon: "M12 2a7 7 0 0 0-7 7c0 4.42 6.26 11.34 7 11.34s7-6.92 7-11.34A7 7 0 0 0 12 2z M12 6a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" },
+    { id: "memory", icon: "M12 2a7 7 0 0 0-7 7c0 4.42 6.26 11.34 7 11.34s7-6.92 7-11.34A7 7 0 0 0 12 2z M12 6a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" },
   ];
 
   let settings = $state<UserSettings | null>(null);
@@ -106,108 +106,38 @@
   let customFormEffort = $state("max");
   let customShowApiKey = $state(false);
 
-  // ── Embedding Config state ──
-  let embeddingEnabled = $state(false);
-  let embeddingEndpoint = $state("https://api.openai.com/v1/embeddings");
-  let embeddingApiKey = $state("");
-  let embeddingModel = $state("text-embedding-3-small");
-  let embeddingChatEndpoint = $state("");
-  let embeddingChatModel = $state("");
-  let embeddingChatApiKey = $state("");
-  let embeddingShowKey = $state(false);
-  let embeddingShowChatKey = $state(false);
-  let embeddingLoading = $state(false);
-  let embeddingSaveError = $state<string | null>(null);
-  let embeddingTestResult = $state<{
-    success: boolean;
-    latency_ms: number;
-    dimension: number;
-    error?: string;
-  } | null>(null);
-  let embeddingSaveDebounce: ReturnType<typeof setTimeout> | null = null;
+  // ── Memory Extraction Config state ──
+  let memoryExtractionEnabled = $state(true);
+  let memoryExtractionChatEndpoint = $state("");
+  let memoryExtractionChatModel = $state("");
+  let memoryExtractionChatApiKey = $state("");
+  let memoryExtractionShowKey = $state(false);
+  let memoryExtractionSaveDebounce: ReturnType<typeof setTimeout> | null = null;
 
-  async function loadEmbeddingConfig() {
+  function loadMemoryExtractionConfig() {
     try {
-      const cfg = await api.getEmbeddingConfig();
-      if (cfg) {
-        embeddingEnabled = cfg.enabled;
-        embeddingEndpoint = cfg.endpoint;
-        embeddingApiKey = cfg.api_key ?? "";
-        embeddingModel = cfg.model;
-        embeddingChatEndpoint = cfg.chat_endpoint ?? "";
-        embeddingChatModel = cfg.chat_model ?? "";
-        embeddingChatApiKey = cfg.chat_api_key ?? "";
-      }
+      const settings = JSON.parse(localStorage.getItem("clawgo-memory-extraction") ?? "{}");
+      if (settings.chat_endpoint) memoryExtractionChatEndpoint = settings.chat_endpoint;
+      if (settings.chat_model) memoryExtractionChatModel = settings.chat_model;
+      if (settings.chat_api_key) memoryExtractionChatApiKey = settings.chat_api_key;
+      if (settings.enabled === false) memoryExtractionEnabled = false;
     } catch {
       // defaults are fine
     }
   }
 
-  async function saveEmbeddingConfig() {
-    embeddingSaveError = null;
-    try {
-      await api.updateEmbeddingConfig({
-        enabled: embeddingEnabled,
-        endpoint: embeddingEndpoint,
-        api_key: embeddingApiKey.trim() || undefined,
-        model: embeddingModel,
-        chat_endpoint: embeddingChatEndpoint.trim() || undefined,
-        chat_model: embeddingChatModel.trim() || undefined,
-        chat_api_key: embeddingChatApiKey.trim() || undefined,
-      });
-    } catch (e: any) {
-      embeddingSaveError = e?.toString?.() ?? "保存失败";
-    }
+  function saveMemoryExtractionConfig() {
+    localStorage.setItem("clawgo-memory-extraction", JSON.stringify({
+      enabled: memoryExtractionEnabled,
+      chat_endpoint: memoryExtractionChatEndpoint.trim() || undefined,
+      chat_model: memoryExtractionChatModel.trim() || undefined,
+      chat_api_key: memoryExtractionChatApiKey.trim() || undefined,
+    }));
   }
 
-  function debouncedSaveEmbeddingConfig() {
-    if (embeddingSaveDebounce) clearTimeout(embeddingSaveDebounce);
-    embeddingSaveDebounce = setTimeout(() => saveEmbeddingConfig(), 500);
-  }
-
-  async function testEmbeddingConnection() {
-    // Save current form values first so the test uses them
-    await saveEmbeddingConfig();
-    if (embeddingSaveError) return;
-
-    embeddingLoading = true;
-    embeddingTestResult = null;
-    try {
-      embeddingTestResult = await api.testEmbeddingConnection();
-    } catch (e: any) {
-      embeddingTestResult = { success: false, latency_ms: 0, dimension: 0, error: e?.toString?.() ?? "Unknown error" };
-    } finally {
-      embeddingLoading = false;
-    }
-  }
-
-  const embeddingPresets: Array<{ id: "openai" | "ollama" | "bge" | "deepseek"; label: string }> = [
-    { id: "openai", label: "OpenAI" },
-    { id: "ollama", label: "Ollama (本地)" },
-    { id: "bge", label: "BGE (本地)" },
-    { id: "deepseek", label: "DeepSeek" },
-  ];
-
-  async function applyEmbeddingPreset(preset: "openai" | "ollama" | "bge" | "deepseek") {
-    switch (preset) {
-      case "openai":
-        embeddingEndpoint = "https://api.openai.com/v1/embeddings";
-        embeddingModel = "text-embedding-3-small";
-        break;
-      case "ollama":
-        embeddingEndpoint = "http://localhost:11434/v1/embeddings";
-        embeddingModel = "bge-large-zh";
-        break;
-      case "bge":
-        embeddingEndpoint = "http://localhost:8080/embed";
-        embeddingModel = "bge-large-zh";
-        break;
-      case "deepseek":
-        embeddingEndpoint = "https://api.deepseek.com/v1/embeddings";
-        embeddingModel = "deepseek-embedding";
-        break;
-    }
-    await saveEmbeddingConfig();
+  function debouncedSaveMemoryExtraction() {
+    if (memoryExtractionSaveDebounce) clearTimeout(memoryExtractionSaveDebounce);
+    memoryExtractionSaveDebounce = setTimeout(() => saveMemoryExtractionConfig(), 500);
   }
 
   type ConnectionAgentTab = "claude" | "codex";
@@ -1234,7 +1164,7 @@
     }
     void refreshConnectionCliChecks();
     void loadMsvcEnvStatus(settings?.working_directory);
-    void loadEmbeddingConfig();
+    loadMemoryExtractionConfig();
     // Load web server status + token (desktop only)
     if (getTransport().isDesktop()) {
       Promise.all([api.getWebServerStatus(), api.getWebServerToken()])
@@ -3563,141 +3493,65 @@
           {t("settings_characters_manage")}
         </a>
       </Card>
-    {:else if activeTab === "embedding"}
+    {:else if activeTab === "memory"}
       <Card class="p-6 space-y-4">
-        <h3 class="text-sm font-semibold">{t("settings_embedding_title")}</h3>
+        <h3 class="text-sm font-semibold">Memory Extraction</h3>
         <p class="text-xs text-muted-foreground">
-          {t("settings_embedding_description")}
+          配置从群聊对话中自动提取用户记忆的 LLM。使用 SQLite FTS5 全文检索，无需 Embedding API。
         </p>
-
-        {#if embeddingSaveError}
-          <div class="p-2 rounded text-xs bg-red-950/30 text-red-300">
-            {t("settings_embedding_save_error")}{embeddingSaveError}
-          </div>
-        {/if}
 
         <!-- Enable/Disable -->
         <label class="flex items-center gap-3 cursor-pointer">
           <input
             type="checkbox"
-            checked={embeddingEnabled}
+            checked={memoryExtractionEnabled}
             onchange={(e) => {
-              embeddingEnabled = e.currentTarget.checked;
-              saveEmbeddingConfig();
+              memoryExtractionEnabled = e.currentTarget.checked;
+              saveMemoryExtractionConfig();
             }}
             class="h-4 w-4 rounded border-input"
           />
-          <span class="text-sm">{t("settings_embedding_enable")}</span>
+          <span class="text-sm">启用自动记忆提取</span>
         </label>
 
-        {#if embeddingEnabled}
-          <!-- Quick Presets -->
-          <div>
-            <p class="text-xs text-muted-foreground mb-2">{t("settings_embedding_presets")}</p>
-            <div class="flex flex-wrap gap-2">
-              {#each embeddingPresets as preset}
-                <button
-                  class="px-3 py-1 text-xs rounded border border-input hover:bg-accent transition-colors"
-                  onclick={() => applyEmbeddingPreset(preset.id)}
-                >
-                  {preset.label}
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          <!-- Endpoint -->
+        {#if memoryExtractionEnabled}
+          <!-- Chat Endpoint -->
           <Input
-            label={t("settings_embedding_api_endpoint")}
+            label="Chat API Endpoint"
             type="text"
-            bind:value={embeddingEndpoint}
-            placeholder="https://api.openai.com/v1/embeddings"
-            onblur={debouncedSaveEmbeddingConfig}
+            bind:value={memoryExtractionChatEndpoint}
+            placeholder="留空使用 Provider 默认端点"
+            onblur={debouncedSaveMemoryExtraction}
           />
 
-          <!-- API Key -->
+          <!-- Chat API Key -->
           <div class="relative">
             <Input
-              label={t("settings_embedding_api_key_label")}
-              type={embeddingShowKey ? "text" : "password"}
-              bind:value={embeddingApiKey}
-              placeholder="sk-..."
-              onblur={debouncedSaveEmbeddingConfig}
+              label="Chat API Key"
+              type={memoryExtractionShowKey ? "text" : "password"}
+              bind:value={memoryExtractionChatApiKey}
+              placeholder="留空使用 Provider 默认 Key"
+              onblur={debouncedSaveMemoryExtraction}
             />
             <button
               class="absolute right-2 top-8 text-xs text-muted-foreground hover:text-foreground"
-              onclick={() => (embeddingShowKey = !embeddingShowKey)}
+              onclick={() => (memoryExtractionShowKey = !memoryExtractionShowKey)}
             >
-              {embeddingShowKey ? t("settings_embedding_hide") : t("settings_embedding_show")}
+              {memoryExtractionShowKey ? "隐藏" : "显示"}
             </button>
           </div>
 
-          <!-- Model -->
+          <!-- Chat Model -->
           <Input
-            label={t("settings_embedding_model_label")}
+            label="Chat Model"
             type="text"
-            bind:value={embeddingModel}
-            placeholder="text-embedding-3-small"
-            onblur={debouncedSaveEmbeddingConfig}
+            bind:value={memoryExtractionChatModel}
+            placeholder="留空使用 Provider 默认模型"
+            onblur={debouncedSaveMemoryExtraction}
           />
-
-          <!-- Chat Endpoint (optional, for memory extraction) -->
-          <Input
-            label={t("settings_embedding_chat_endpoint")}
-            type="text"
-            bind:value={embeddingChatEndpoint}
-            placeholder={t("settings_embedding_chat_endpoint_placeholder")}
-            onblur={debouncedSaveEmbeddingConfig}
-          />
-
-          <!-- Chat API Key (optional, for memory extraction) -->
-          <div class="relative">
-            <Input
-              label={t("settings_embedding_chat_api_key")}
-              type={embeddingShowChatKey ? "text" : "password"}
-              bind:value={embeddingChatApiKey}
-              placeholder={t("settings_embedding_chat_api_key_placeholder")}
-              onblur={debouncedSaveEmbeddingConfig}
-            />
-            <button
-              class="absolute right-2 top-8 text-xs text-muted-foreground hover:text-foreground"
-              onclick={() => (embeddingShowChatKey = !embeddingShowChatKey)}
-            >
-              {embeddingShowChatKey ? t("settings_embedding_hide") : t("settings_embedding_show")}
-            </button>
-          </div>
-
-          <!-- Chat Model (optional, for memory extraction) -->
-          <Input
-            label={t("settings_embedding_chat_model")}
-            type="text"
-            bind:value={embeddingChatModel}
-            placeholder={t("settings_embedding_chat_model_placeholder")}
-            onblur={debouncedSaveEmbeddingConfig}
-          />
-
-          <!-- Test Connection -->
-          <div class="space-y-2">
-            <Button
-              variant="secondary"
-              onclick={testEmbeddingConnection}
-              disabled={embeddingLoading}
-            >
-              {embeddingLoading ? t("settings_embedding_testing") : t("settings_embedding_test")}
-            </Button>
-            {#if embeddingTestResult}
-              <div class="p-3 rounded text-xs {embeddingTestResult.success ? 'bg-green-950/30 text-green-300' : 'bg-red-950/30 text-red-300'}">
-                {#if embeddingTestResult.success}
-                  <p>{t("settings_embedding_test_success")}{embeddingTestResult.latency_ms}ms · {t("settings_embedding_dimension")}{embeddingTestResult.dimension}</p>
-                {:else}
-                  <p>{t("settings_embedding_test_fail")}{embeddingTestResult.error || t("settings_embedding_unknown_error")}</p>
-                {/if}
-              </div>
-            {/if}
-          </div>
         {:else}
           <p class="text-xs text-muted-foreground">
-            {t("settings_embedding_disabled_notice")}
+            自动记忆提取已禁用。群聊对话中的信息将不会被自动提取为用户记忆。
           </p>
         {/if}
       </Card>

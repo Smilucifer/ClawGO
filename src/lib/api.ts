@@ -51,14 +51,9 @@ import type {
   BalanceHelperSettings,
   ValidatePlatformCredentialsResponse,
   AiCharacter,
-  CommunityInfo,
-  EmbeddingConfig,
-  KnowledgeGapInfo,
   MemoryConfig,
-  MemoryGraphData,
+  MemoryExtractionConfig,
   MemoryNode,
-  TestEmbeddingResult,
-  VectorSearchResult,
 } from "./types";
 
 // Runs
@@ -1603,21 +1598,6 @@ export async function cancelRalphLoop(
 
 // ── Embedding Config ──
 
-export async function getEmbeddingConfig(): Promise<EmbeddingConfig | null> {
-  dbg("api", "getEmbeddingConfig");
-  return invoke<EmbeddingConfig | null>("get_embedding_config");
-}
-
-export async function updateEmbeddingConfig(config: EmbeddingConfig): Promise<EmbeddingConfig> {
-  dbg("api", "updateEmbeddingConfig");
-  return invoke<EmbeddingConfig>("update_embedding_config", { config });
-}
-
-export async function testEmbeddingConnection(): Promise<TestEmbeddingResult> {
-  dbg("api", "testEmbeddingConnection");
-  return invoke<TestEmbeddingResult>("test_embedding_connection");
-}
-
 // ── Character Memory CRUD ──
 
 export async function listCharacterMemories(characterId: string): Promise<MemoryNode[]> {
@@ -1653,40 +1633,6 @@ export async function updateCharacterMemory(
 export async function deleteCharacterMemory(characterId: string, memoryId: string): Promise<void> {
   dbg("api", "deleteCharacterMemory", { characterId, memoryId });
   return invoke<void>("delete_character_memory", { characterId, memoryId });
-}
-
-// ── Knowledge Graph ──
-
-export async function getMemoryGraph(characterId: string): Promise<MemoryGraphData> {
-  dbg("api", "getMemoryGraph", { characterId });
-  return invoke<MemoryGraphData>("get_memory_graph", { characterId });
-}
-
-export async function getMemoryCommunities(characterId: string): Promise<CommunityInfo[]> {
-  dbg("api", "getMemoryCommunities", { characterId });
-  return invoke<CommunityInfo[]>("get_memory_communities", { characterId });
-}
-
-export async function getKnowledgeGaps(characterId: string): Promise<KnowledgeGapInfo[]> {
-  dbg("api", "getKnowledgeGaps", { characterId });
-  return invoke<KnowledgeGapInfo[]>("get_knowledge_gaps", { characterId });
-}
-
-// ── Vector Store ──
-
-export async function vectorSearch(characterId: string, queryVector: number[], topK: number): Promise<VectorSearchResult[]> {
-  dbg("api", "vectorSearch", { characterId, topK });
-  return invoke<VectorSearchResult[]>("vector_search", { characterId, queryVector, topK });
-}
-
-export async function resetVectorStore(characterId: string): Promise<number> {
-  dbg("api", "resetVectorStore", { characterId });
-  return invoke<number>("reset_vector_store", { characterId });
-}
-
-export async function rebuildVectorIndex(characterId: string): Promise<number> {
-  dbg("api", "rebuildVectorIndex", { characterId });
-  return invoke<number>("rebuild_vector_index", { characterId });
 }
 
 export async function searchCharacterMemories(

@@ -2071,6 +2071,7 @@ pub struct RunSearchResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryNode {
     pub id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub character_id: String,
     pub content: String,
     #[serde(rename = "type")]
@@ -2084,6 +2085,21 @@ pub struct MemoryNode {
     pub status: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryExtractionConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Chat completions endpoint for memory extraction LLM calls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_endpoint: Option<String>,
+    /// Model name for memory extraction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_model: Option<String>,
+    /// API key for memory extraction LLM calls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_api_key: Option<String>,
+}
+
 fn default_memory_status() -> String {
     "approved".to_string()
 }
@@ -2095,31 +2111,6 @@ pub struct MemorySource {
     pub run_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group_chat_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryEdge {
-    pub id: String,
-    pub source_id: String,
-    pub target_id: String,
-    pub relation: String,
-    pub weight: f64,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct MemoryGraphData {
-    pub nodes: Vec<MemoryNode>,
-    pub edges: Vec<MemoryEdge>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommunityInfo {
-    pub id: usize,
-    pub label: String,
-    pub cohesion: f64,
-    pub node_count: usize,
-    pub edge_count: usize,
-    pub node_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

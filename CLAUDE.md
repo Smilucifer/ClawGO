@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v2.6.0, 2026-05-27). Preview panel code review: keyboard shortcut scoping, Monaco $effect reactivity, DOMPurify style preservation, file-path regex URL false-positive fix, dirty-state guard, base64 size guard. See `docs/superpowers/plans/[done] 2026-05-27-preview-panel-packy-removal.md`.
+**Current phase:** Phase 10+ (v3.0.0, 2026-05-28). Memory system refactor: SQLite FTS5 user-centric architecture, removal of LanceDB + petgraph + Embedding API dependency. See `docs/superpowers/plans/[done] 2026-05-28-memory-user-centric-refactor.md`.
 
 ## Standard workflow
 
@@ -354,6 +354,7 @@ Key phases and their status:
 | 10+ (v2.4.0) | 1M 上下文窗口: per-provider AUTO_COMPACT_WINDOW, 前端进度条静态映射 + fallback, advisory 软策略, CONTEXT_TURN_WINDOW 3→1, 3 路审查修复 | [done] |
 | 10+ (v2.5.0) | Doctor 诊断面板, FilesPanel 树视图重写, 7 项审查修复 | [done] |
 | 10+ (v2.6.0) | Preview panel code review: keyboard scope, $effect reactivity, DOMPurify styles, regex URL FP, dirty guard, base64 guard | [done] |
+| 10+ (v3.0.0) | 记忆系统重构: SQLite FTS5 用户中心架构, 移除 LanceDB + petgraph + Embedding API, 15 项审查修复, shared injection, 前端去重 | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

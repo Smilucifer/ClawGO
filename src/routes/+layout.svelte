@@ -25,6 +25,7 @@
   import Modal from "$lib/components/Modal.svelte";
   import CliSessionBrowser from "$lib/components/CliSessionBrowser.svelte";
   import GlobalMemoPanel from "$lib/components/GlobalMemoPanel.svelte";
+  import UserMemoryPanel from "$lib/components/UserMemoryPanel.svelte";
   import DoctorPanel from "$lib/components/DoctorPanel.svelte";
   import UpdateBanner from "$lib/components/UpdateBanner.svelte";
   import type {
@@ -91,6 +92,7 @@
   let showAbout = $state(false);
   let showCliBrowser = $state(false);
   let showMemoPanel = $state(false);
+  let showUserMemoryPanel = $state(false);
   let showDoctorPanel = $state(false);
   let permissionsModalOpen = $state(false);
 
@@ -890,6 +892,11 @@
     }
     window.addEventListener("clawgo:toggle-memo", onToggleMemo);
 
+    function onToggleMemory() {
+      showUserMemoryPanel = !showUserMemoryPanel;
+    }
+    window.addEventListener("clawgo:toggle-memory", onToggleMemory);
+
     function onToggleDoctor() {
       showDoctorPanel = !showDoctorPanel;
     }
@@ -979,6 +986,7 @@
       window.removeEventListener("clawgo:memory-file-saved", onMemoryFileSaved);
       window.removeEventListener("clawgo:open-permissions", onOpenPermissions);
       window.removeEventListener("clawgo:toggle-memo", onToggleMemo);
+      window.removeEventListener("clawgo:toggle-memory", onToggleMemory);
       window.removeEventListener("clawgo:toggle-doctor", onToggleDoctor);
       document.removeEventListener("click", handleExternalLink, true);
       window.removeEventListener("clawgo:explorer-file-selected", onExplorerFileSelected);
@@ -2631,6 +2639,23 @@
             /><path d="M8 13h8" /><path d="M8 17h5" /></svg
           >
         </button>
+
+        <button
+          class="rounded-md p-1.5 hover:bg-accent transition-all duration-150"
+          onclick={() => (showUserMemoryPanel = !showUserMemoryPanel)}
+          title="用户记忆"
+        >
+          <svg
+            class="h-4 w-4 {showUserMemoryPanel ? 'text-primary' : ''}"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            ><path d="M12 2a8 8 0 0 0-8 8c0 3.4 2.1 6.3 5 7.5V20h6v-2.5c2.9-1.2 5-4.1 5-7.5a8 8 0 0 0-8-8z" /><path d="M9 22h6" /></svg
+          >
+        </button>
       </header>
     {/if}
 
@@ -2689,6 +2714,11 @@
 <GlobalMemoPanel
   open={showMemoPanel}
   onclose={() => (showMemoPanel = false)}
+/>
+
+<UserMemoryPanel
+  open={showUserMemoryPanel}
+  onclose={() => (showUserMemoryPanel = false)}
 />
 
 <DoctorPanel

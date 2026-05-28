@@ -1,6 +1,4 @@
-use crate::group_chat::memory_graph::{compute_relevance_edges, detect_communities, detect_knowledge_gaps};
-use crate::group_chat::memory_injection::search_memories_for_injection;
-use crate::models::{AiCharacter, AllSettings, CommunityInfo, KnowledgeGapInfo, MemoryGraphData, MemoryNode, MemorySource};
+use crate::models::{AiCharacter, AllSettings, MemoryNode};
 use crate::storage;
 
 #[tauri::command]
@@ -127,225 +125,162 @@ pub fn delete_character(id: String) -> Result<(), String> {
     save_all(&all)
 }
 
-// --- Memory CRUD ---
+// --- Memory CRUD (user-centric, via SQLite memory_store) ---
 
 #[tauri::command]
 pub async fn list_character_memories(
-    character_id: String,
+    _character_id: String,
 ) -> Result<Vec<MemoryNode>, String> {
-    storage::characters::read_all_memory_log_entries(&character_id)
+    storage::memory_store::list_memories(None, None, 500, 0)
 }
 
 #[tauri::command]
 pub async fn get_character_memory(
-    character_id: String,
+    _character_id: String,
     memory_id: String,
 ) -> Result<Option<MemoryNode>, String> {
-    let entries = storage::characters::read_all_memory_log_entries(&character_id)?;
-    Ok(entries.into_iter().find(|n| n.id == memory_id))
+    storage::memory_store::get_memory(&memory_id)
+}
+
+const ALLOWED_MEMORY_TYPES: &[&str] = &["fact", "preference", "skill", "feedback", "experience", "relationship"];
+const ALLOWED_STATUSES: &[&str] = &["pending", "approved", "rejected", "archived"];
+
+fn validate_memory_type(t: &str) -> Result<(), String> {
+    if ALLOWED_MEMORY_TYPES.contains(&t) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Invalid memory_type '{}'. Allowed: {}",
+            t,
+            ALLOWED_MEMORY_TYPES.join(", ")
+        ))
+    }
+}
+
+fn validate_memory_status(s: &str) -> Result<(), String> {
+    if ALLOWED_STATUSES.contains(&s) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Invalid status '{}'. Allowed: {}",
+            s,
+            ALLOWED_STATUSES.join(", ")
+        ))
+    }
 }
 
 #[tauri::command]
 pub async fn create_character_memory(
-    character_id: String,
+    _character_id: String,
     content: String,
     memory_type: String,
     confidence: f64,
     tags: Vec<String>,
 ) -> Result<MemoryNode, String> {
+    validate_memory_type(&memory_type)?;
     let now = chrono::Utc::now().to_rfc3339();
     let node = MemoryNode {
         id: uuid::Uuid::new_v4().to_string(),
-        character_id: character_id.clone(),
-        content: content.clone(),
-        memory_type: memory_type.clone(),
+        character_id: String::new(),
+        content,
+        memory_type,
         confidence,
-        source: MemorySource {
+        source: crate::models::MemorySource {
             kind: "manual".to_string(),
             run_id: None,
             group_chat_id: None,
         },
-        tags: tags.clone(),
+        tags,
         created_at: now.clone(),
         updated_at: now,
         status: "approved".to_string(),
     };
-
-    // 1. Append to authoritative log
-    storage::characters::append_memory_log(&character_id, &node)?;
-
-    // 2. Update graph
-    let existing = storage::characters::read_all_memory_log_entries(&character_id)?;
-    let mut graph = storage::characters::load_memory_graph(&character_id)?;
-    graph.nodes.push(node.clone());
-    let new_edges = compute_relevance_edges(&node, &existing, &graph.edges);
-    graph.edges.extend(new_edges);
-    if let Err(e) = storage::characters::save_memory_graph(&character_id, &graph) {
-        log::warn!("[characters] save_memory_graph failed for {}: {}", character_id, e);
-    }
-
-    // 3. LanceDB upsert (fire-and-forget if embedding fails)
-    if let Ok(embedding_vec) = crate::commands::embedding::fetch_embedding(&content).await {
-        let _ = crate::commands::vectorstore::vector_upsert(
-            character_id.clone(),
-            node.id.clone(),
-            embedding_vec,
-        )
-        .await;
-    }
-
+    storage::memory_store::insert_memory(&node)?;
     Ok(node)
 }
 
 #[tauri::command]
 pub async fn update_character_memory(
-    character_id: String,
+    _character_id: String,
     memory_id: String,
     content: Option<String>,
     memory_type: Option<String>,
     confidence: Option<f64>,
     tags: Option<Vec<String>>,
 ) -> Result<MemoryNode, String> {
-    let updated = storage::characters::update_memory_in_log(
-        &character_id,
-        &memory_id,
-        content.clone(),
-        memory_type.clone(),
-        confidence,
-        tags.clone(),
-        None, // status unchanged — use approve/reject commands
-    )?;
+    let mut node = storage::memory_store::get_memory(&memory_id)?
+        .ok_or_else(|| format!("Memory not found: {}", memory_id))?;
 
-    // Update vector if content changed
-    if let Some(ref c) = content {
-        let _ =
-            crate::commands::vectorstore::vector_delete(character_id.clone(), memory_id.clone())
-                .await;
-        if let Ok(embedding_vec) = crate::commands::embedding::fetch_embedding(c).await {
-            let _ = crate::commands::vectorstore::vector_upsert(
-                character_id.clone(),
-                memory_id.clone(),
-                embedding_vec,
-            )
-            .await;
-        }
+    if let Some(c) = content {
+        node.content = c;
     }
-
-    // Recompute graph edges for the updated node (content/tags/type may have changed)
-    if content.is_some() || memory_type.is_some() || tags.is_some() {
-        let entries = storage::characters::read_all_memory_log_entries(&character_id)?;
-        let mut graph = storage::characters::load_memory_graph(&character_id)?;
-        // Remove old edges from this node
-        graph.edges.retain(|e| e.source_id != memory_id && e.target_id != memory_id);
-        // Recompute new edges
-        let new_edges = crate::group_chat::memory_graph::compute_relevance_edges(&updated, &entries, &graph.edges);
-        graph.edges.extend(new_edges);
-        if let Err(e) = storage::characters::save_memory_graph(&character_id, &graph) {
-            log::warn!("[characters] save_memory_graph after update failed for {}: {}", character_id, e);
-        }
+    if let Some(t) = &memory_type {
+        validate_memory_type(t)?;
+        node.memory_type = t.clone();
     }
+    if let Some(c) = confidence {
+        node.confidence = c;
+    }
+    if let Some(t) = tags {
+        node.tags = t;
+    }
+    node.updated_at = chrono::Utc::now().to_rfc3339();
 
-    Ok(updated)
+    storage::memory_store::update_memory(&node)?;
+    Ok(node)
 }
 
 #[tauri::command]
 pub async fn delete_character_memory(
-    character_id: String,
+    _character_id: String,
     memory_id: String,
 ) -> Result<(), String> {
-    storage::characters::delete_memory_from_log(&character_id, &memory_id)?;
-    let _ = crate::commands::vectorstore::vector_delete(character_id.clone(), memory_id.clone()).await;
-
-    // Update knowledge graph: remove node and its edges
-    let mut graph = storage::characters::load_memory_graph(&character_id)?;
-    graph.nodes.retain(|n| n.id != memory_id);
-    graph.edges.retain(|e| e.source_id != memory_id && e.target_id != memory_id);
-    if let Err(e) = storage::characters::save_memory_graph(&character_id, &graph) {
-        log::warn!("[characters] save_memory_graph after delete failed for {}: {}", character_id, e);
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn get_memory_graph(
-    character_id: String,
-) -> Result<MemoryGraphData, String> {
-    storage::characters::load_memory_graph(&character_id)
-}
-
-#[tauri::command]
-pub async fn get_memory_communities(
-    character_id: String,
-) -> Result<Vec<CommunityInfo>, String> {
-    let graph = storage::characters::load_memory_graph(&character_id)?;
-    Ok(detect_communities(&graph.nodes, &graph.edges))
-}
-
-#[tauri::command]
-pub async fn get_knowledge_gaps(
-    character_id: String,
-) -> Result<Vec<KnowledgeGapInfo>, String> {
-    let graph = storage::characters::load_memory_graph(&character_id)?;
-    let communities = detect_communities(&graph.nodes, &graph.edges);
-    Ok(detect_knowledge_gaps(&graph.nodes, &graph.edges, &communities))
+    storage::memory_store::delete_memory(&memory_id)
 }
 
 #[tauri::command]
 pub async fn search_character_memories(
-    character_id: String,
+    _character_id: String,
     query: String,
     top_k: Option<usize>,
-    threshold: Option<f64>,
-    graph_hops: Option<usize>,
+    _threshold: Option<f64>,
+    _graph_hops: Option<usize>,
 ) -> Result<Vec<MemoryNode>, String> {
-    storage::characters::validate_character_id(&character_id)?;
-    let (results, _tier) = search_memories_for_injection(
-        &character_id,
-        &query,
-        top_k.unwrap_or(5),
-        threshold.unwrap_or(0.5),
-        graph_hops.unwrap_or(1),
-    ).await;
-    Ok(results)
+    storage::memory_store::search_fts(&query, top_k.unwrap_or(5), "approved")
 }
 
 #[tauri::command]
 pub async fn list_pending_memories(
-    character_id: String,
+    _character_id: String,
 ) -> Result<Vec<MemoryNode>, String> {
-    let entries = storage::characters::read_all_memory_log_entries(&character_id)?;
-    Ok(entries.into_iter().filter(|n| n.status == "pending").collect())
+    storage::memory_store::list_memories(Some("pending"), None, 100, 0)
 }
 
 #[tauri::command]
 pub async fn approve_memory(
-    character_id: String,
+    _character_id: String,
     memory_id: String,
 ) -> Result<MemoryNode, String> {
-    storage::characters::update_memory_in_log(
-        &character_id,
-        &memory_id,
-        None, None, None, None,
-        Some("approved".to_string()),
-    )
+    let mut node = storage::memory_store::get_memory(&memory_id)?
+        .ok_or_else(|| format!("memory {} not found", memory_id))?;
+    node.status = "approved".to_string();
+    storage::memory_store::update_memory(&node)?;
+    Ok(node)
 }
 
 #[tauri::command]
 pub async fn reject_memory(
-    character_id: String,
+    _character_id: String,
     memory_id: String,
 ) -> Result<MemoryNode, String> {
-    storage::characters::update_memory_in_log(
-        &character_id,
-        &memory_id,
-        None, None, None, None,
-        Some("rejected".to_string()),
-    )
+    let mut node = storage::memory_store::get_memory(&memory_id)?
+        .ok_or_else(|| format!("memory {} not found", memory_id))?;
+    node.status = "rejected".to_string();
+    storage::memory_store::update_memory(&node)?;
+    Ok(node)
 }
 
 fn load_all() -> Result<AllSettings, String> {
-    // Use the same load path as get_user_settings / update_user_settings
     Ok(storage::settings::load())
 }
 
