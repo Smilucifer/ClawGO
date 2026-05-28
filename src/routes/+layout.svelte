@@ -458,10 +458,12 @@
     { path: "/chat", label: () => t("nav_chat"), icon: "message" },
     { path: "/explorer", label: () => t("nav_explorer"), icon: "folder" },
     { path: "/plugins", label: () => t("nav_extend"), icon: "zap" },
+    { path: "/invest", label: () => t("nav_invest"), icon: "trendingUp" },
     { path: "/memory", label: () => t("nav_memory"), icon: "book" },
     { path: "/usage", label: () => t("nav_usage"), icon: "chart" },
-    { path: "/history", label: () => t("nav_history"), icon: "clock" },
     { path: "/settings", label: () => t("nav_settings"), icon: "settings" },
+    { path: "/memory-mgmt", label: () => t("nav_memoryMgmt"), icon: "database" },
+    { path: "/history", label: () => t("nav_history"), icon: "clock" },
   ];
 
   function navMatches(path: string): boolean {
@@ -1587,6 +1589,32 @@
                   stroke-linecap="round"
                   stroke-linejoin="round"
                   ><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg
+                >
+              {:else if item.icon === "trendingUp"}
+                <svg
+                  class="h-[18px] w-[18px]"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  ><polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline
+                    points="16 7 22 7 22 13"
+                  /></svg
+                >
+              {:else if item.icon === "database"}
+                <svg
+                  class="h-[18px] w-[18px]"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  ><ellipse cx="12" cy="5" rx="9" ry="3" /><path
+                    d="M3 5V19A9 3 0 0 0 21 19V5"
+                  /><path d="M3 12A9 3 0 0 0 21 12" /></svg
                 >
               {:else if item.icon === "settings"}
                 <svg

@@ -270,10 +270,26 @@
   "nav_chat": "Chat",
   "nav_explorer": "Explorer",
   "nav_extend": "Extend",
+  "nav_invest": "Investment Committee",
   "nav_memory": "Memory",
   "nav_groupChats": "Group Chats",
   "nav_usage": "Usage",
   "nav_settings": "Settings",
+  "nav_memoryMgmt": "Memory Management",
+
+  "moreMenu_doctor": "Doctor Diagnostics",
+  "moreMenu_releaseNotes": "Release Notes",
+  "moreMenu_allSettings": "All Settings",
+
+  "invest_tab_dashboard": "Dashboard",
+  "invest_tab_committee": "Committee",
+  "invest_tab_strategy": "Strategy",
+  "invest_tab_trades": "Trade Log",
+  "invest_tab_events": "Event Monitor",
+  "invest_tab_scheduler": "Scheduled Tasks",
+
+  "memoryMgmt_tab_userMemory": "User Memory",
+  "memoryMgmt_tab_extractionConfig": "Extraction Config",
 
   "layout_appName": "Claw GO",
   "layout_newConversation": "New conversation",

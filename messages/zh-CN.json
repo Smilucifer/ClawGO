@@ -270,10 +270,26 @@
   "nav_chat": "聊天",
   "nav_explorer": "文件浏览",
   "nav_extend": "扩展",
+  "nav_invest": "投资委员会",
   "nav_memory": "记忆",
   "nav_groupChats": "群聊",
   "nav_usage": "用量",
   "nav_settings": "设置",
+  "nav_memoryMgmt": "记忆管理",
+
+  "moreMenu_doctor": "Doctor 诊断",
+  "moreMenu_releaseNotes": "版本更新日志",
+  "moreMenu_allSettings": "全部设置",
+
+  "invest_tab_dashboard": "Dashboard",
+  "invest_tab_committee": "委员会",
+  "invest_tab_strategy": "策略",
+  "invest_tab_trades": "交易记录",
+  "invest_tab_events": "事件监控",
+  "invest_tab_scheduler": "定时任务",
+
+  "memoryMgmt_tab_userMemory": "用户记忆",
+  "memoryMgmt_tab_extractionConfig": "提取配置",
 
   "layout_appName": "Claw GO",
   "layout_newConversation": "新对话",
