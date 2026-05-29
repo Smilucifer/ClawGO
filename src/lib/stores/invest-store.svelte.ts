@@ -424,6 +424,23 @@ class InvestStore {
     }
   }
 
+  async triggerCommittee(eventId: string, verdictId: string | null): Promise<void> {
+    try {
+      await invoke("mark_event_triggered", { id: eventId, verdictId });
+      // Update local state
+      this.events = this.events.map((e) =>
+        e.id === eventId
+          ? { ...e, triggered: true, triggerVerdictId: verdictId }
+          : e,
+      );
+      // Refresh scan status
+      await this.fetchScanStatus();
+    } catch (e) {
+      console.error("Failed to mark event triggered:", e);
+      this.error = String(e);
+    }
+  }
+
   setEventFilter(filter: Partial<EventFilter>): void {
     this.eventFilter = { ...this.eventFilter, ...filter };
   }

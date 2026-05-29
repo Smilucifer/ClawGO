@@ -367,6 +367,25 @@
   "invest.eventWatch.untriggered": "未触发",
   "invest.eventWatch.last": "最近",
 
+  "invest.eventWatch.triggerDialogTitle": "事件触发委员会",
+  "invest.eventWatch.triggerDialogDetected": "检测到高影响事件",
+  "invest.eventWatch.triggerDialogHoldings": "关联持仓",
+  "invest.eventWatch.triggerDialogRounds": "辩论轮数",
+  "invest.eventWatch.triggerDialogConfirm": "是否立即启动委员会评估？",
+  "invest.eventWatch.triggerDialogCancel": "取消",
+  "invest.eventWatch.triggerDialogConfirmBtn": "确认启动",
+
+  "invest.eventWatch.severityLabel": "严重度",
+  "invest.eventWatch.stanceLabel": "立场",
+  "invest.eventWatch.timeMinutesAgo": "{min}分钟前",
+  "invest.eventWatch.timeHoursAgo": "{h}小时前",
+  "invest.eventWatch.searchPlaceholder": "搜索事件...",
+  "invest.eventWatch.filterAll": "全部",
+  "invest.eventWatch.filterHigh": "高",
+  "invest.eventWatch.filterMedium": "中",
+  "invest.eventWatch.filterLow": "低",
+  "invest.eventWatch.triggerError": "触发委员会失败",
+
   "memoryMgmt_tab_userMemory": "用户记忆",
   "memoryMgmt_tab_extractionConfig": "提取配置",
 

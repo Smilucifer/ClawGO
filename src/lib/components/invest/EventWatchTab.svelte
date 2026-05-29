@@ -2,6 +2,10 @@
   import { onMount } from 'svelte';
   import { t } from '$lib/i18n/index.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
+  import EventTriggerDialog from './EventTriggerDialog.svelte';
+  import type { InvestEvent } from '$lib/types';
+
+  let { onNavigateToCommittee }: { onNavigateToCommittee?: () => void } = $props();
 
   const store = investStore;
 
@@ -33,9 +37,9 @@
     const now = new Date();
     const diffMs = now.getTime() - d.getTime();
     const diffMin = Math.floor(diffMs / 60000);
-    if (diffMin < 60) return `${diffMin}m ago`;
+    if (diffMin < 60) return t('invest.eventWatch.timeMinutesAgo', { min: String(diffMin) });
     const diffH = Math.floor(diffMin / 60);
-    if (diffH < 24) return `${diffH}h ago`;
+    if (diffH < 24) return t('invest.eventWatch.timeHoursAgo', { h: String(diffH) });
     return d.toLocaleDateString();
   }
 
@@ -53,6 +57,12 @@
       case 'bearish': return 'text-red-400';
       default: return 'text-zinc-400';
     }
+  }
+
+  let triggerEvent = $state<InvestEvent | null>(null);
+
+  function handleTrigger(ev: InvestEvent) {
+    triggerEvent = ev;
   }
 
   let expandedIds = $state<Set<string>>(new Set());
@@ -111,14 +121,14 @@
         <button
           onclick={() => handleSeverityChange(sev as 'all' | 'high' | 'medium' | 'low')}
           class="px-2 py-0.5 text-xs rounded border {store.eventFilter.severity === sev ? 'border-zinc-500 text-white' : 'border-zinc-700 text-zinc-500 hover:text-zinc-400'}"
-        >{sev}</button>
+        >{sev === 'all' ? t('invest.eventWatch.filterAll') : sev === 'high' ? t('invest.eventWatch.filterHigh') : sev === 'medium' ? t('invest.eventWatch.filterMedium') : t('invest.eventWatch.filterLow')}</button>
       {/each}
     </div>
 
     <!-- Search -->
     <input
       type="text"
-      placeholder="Search..."
+      placeholder={t('invest.eventWatch.searchPlaceholder')}
       value={store.eventFilter.search}
       oninput={handleSearchInput}
       class="ml-auto px-2 py-0.5 text-xs bg-zinc-900 border border-zinc-700 rounded text-zinc-300 placeholder-zinc-600 w-40"
@@ -170,7 +180,7 @@
             <!-- Trigger button -->
             {#if event.severity === 'high' && !event.triggered}
               <button
-                onclick={() => {/* Task 10: trigger dialog */}}
+                onclick={(e) => { e.stopPropagation(); handleTrigger(event); }}
                 class="px-2 py-1 text-xs bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 rounded"
               >
                 {t('invest.eventWatch.triggerCommittee')}
@@ -184,3 +194,14 @@
     {/if}
   </div>
 </div>
+
+{#if triggerEvent}
+  <EventTriggerDialog
+    event={triggerEvent}
+    onClose={() => triggerEvent = null}
+    onTriggered={() => {
+      triggerEvent = null;
+      onNavigateToCommittee?.();
+    }}
+  />
+{/if}

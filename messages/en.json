@@ -367,6 +367,25 @@
   "invest.eventWatch.untriggered": "untriggered",
   "invest.eventWatch.last": "last",
 
+  "invest.eventWatch.triggerDialogTitle": "Event Triggers Committee",
+  "invest.eventWatch.triggerDialogDetected": "High-impact event detected",
+  "invest.eventWatch.triggerDialogHoldings": "Related holdings",
+  "invest.eventWatch.triggerDialogRounds": "Debate rounds",
+  "invest.eventWatch.triggerDialogConfirm": "Start committee evaluation now?",
+  "invest.eventWatch.triggerDialogCancel": "Cancel",
+  "invest.eventWatch.triggerDialogConfirmBtn": "Confirm & Start",
+
+  "invest.eventWatch.severityLabel": "severity",
+  "invest.eventWatch.stanceLabel": "stance",
+  "invest.eventWatch.timeMinutesAgo": "{min}m ago",
+  "invest.eventWatch.timeHoursAgo": "{h}h ago",
+  "invest.eventWatch.searchPlaceholder": "Search events...",
+  "invest.eventWatch.filterAll": "All",
+  "invest.eventWatch.filterHigh": "HIGH",
+  "invest.eventWatch.filterMedium": "MEDIUM",
+  "invest.eventWatch.filterLow": "LOW",
+  "invest.eventWatch.triggerError": "Failed to trigger committee",
+
   "memoryMgmt_tab_userMemory": "User Memory",
   "memoryMgmt_tab_extractionConfig": "Extraction Config",
 
