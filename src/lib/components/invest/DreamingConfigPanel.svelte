@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '$lib/i18n/index.svelte';
   import { getTransport } from '$lib/transport';
 
   const invoke = <T,>(cmd: string, args?: Record<string, unknown>) =>
@@ -89,6 +90,12 @@
     lastResult = null;
     try {
       lastResult = await invoke<DreamResult>('trigger_dream', { mode: path });
+      // Dispatch browser notification if permission granted
+      if (Notification.permission === 'granted') {
+        new Notification(
+          t('invest_insights_pipeline_notification', { count: String(lastResult.insightsWritten) }),
+        );
+      }
       // Reload traces after a successful run
       traces = await invoke<DreamSnapshot[]>('list_dream_traces', { dreamType: path, limit: 10 });
     } catch (e) {

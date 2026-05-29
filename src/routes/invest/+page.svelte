@@ -17,9 +17,10 @@
   import CommitteeToolsTab from '$lib/components/invest/CommitteeToolsTab.svelte';
   import EventWatchTab from '$lib/components/invest/EventWatchTab.svelte';
   import SchedulerTab from '$lib/components/invest/SchedulerTab.svelte';
+  import InsightsFeed from '$lib/components/invest/InsightsFeed.svelte';
   import type { Holding } from '$lib/types';
 
-  type InvestTab = 'dashboard' | 'committee' | 'strategy' | 'trades' | 'events' | 'scheduler';
+  type InvestTab = 'dashboard' | 'committee' | 'strategy' | 'trades' | 'events' | 'scheduler' | 'insights';
   type CommitteeSubTab = 'live' | 'replay' | 'archive' | 'roles' | 'accuracy' | 'tools';
 
   let activeTab: InvestTab = $state('dashboard');
@@ -32,6 +33,7 @@
     { id: 'trades', label: t('invest_trade_log') },
     { id: 'events', label: t('invest_tab_events') },
     { id: 'scheduler', label: t('invest_tab_scheduler') },
+    { id: 'insights', label: t('invest_insights_tab') },
   ]);
 
   const committeeSubTabs: { id: CommitteeSubTab; label: string }[] = $derived([
@@ -179,6 +181,8 @@
       <EventWatchTab onNavigateToCommittee={() => { activeTab = 'committee'; committeeSubTab = 'live'; }} />
     {:else if activeTab === 'scheduler'}
       <SchedulerTab />
+    {:else if activeTab === 'insights'}
+      <InsightsFeed />
     {/if}
   </div>
 </div>

@@ -1832,3 +1832,17 @@ export interface EventFilter {
   severity: "all" | "high" | "medium" | "low";
   search: string;
 }
+
+// ── Invest types (Phase 4a: Domain Insights) ──
+
+export interface DomainInsight {
+  id: string;
+  insightType: string;
+  symbol: string | null;
+  content: string;
+  confidence: number | null;
+  sourceVerdictIds: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
