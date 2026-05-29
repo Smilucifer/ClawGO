@@ -47,6 +47,7 @@ rand = "0.8"
 if-addrs = "0.15.0"
 urlencoding = "2"
 rayon = "1"
+dirs = "6"
 toml_edit = "0.25"
 portable-pty = "0.9"
 rusqlite = { version = "0.31", features = ["bundled", "backup"] }
