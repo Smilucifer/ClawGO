@@ -481,7 +481,7 @@ fn default_llm_config() -> InvestLlmConfig {
                 default_model: "mimo-v2.5-pro".to_string(),
             },
         ],
-        debate_rounds: 2,
+        debate_rounds: 4,
         emergency_buffer_cny: 100_000.0,
         timeout_secs: 120,
     }
@@ -526,7 +526,7 @@ pub fn get_llm_config() -> Result<InvestLlmConfig, String> {
 
     Ok(InvestLlmConfig {
         providers,
-        debate_rounds: data["debate_rounds"].as_u64().unwrap_or(2) as u8,
+        debate_rounds: data["debate_rounds"].as_u64().unwrap_or(4) as u8,
         emergency_buffer_cny: data["emergency_buffer_cny"]
             .as_f64()
             .unwrap_or(100_000.0),

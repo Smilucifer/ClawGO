@@ -169,7 +169,8 @@ async fn llm_call_with_retry(
             Err(
                 e @ (crate::invest::llm::LlmError::Timeout
                 | crate::invest::llm::LlmError::NetworkError(_)
-                | crate::invest::llm::LlmError::ServerError(_)),
+                | crate::invest::llm::LlmError::ServerError(_)
+                | crate::invest::llm::LlmError::ParseError(_)),
             ) => {
                 log::warn!(
                     "LLM call attempt {} failed: {}, retrying in {:?}",
@@ -199,8 +200,13 @@ async fn llm_call_with_retry(
 // ---------------------------------------------------------------------------
 
 /// Build the messages array for a role, injecting all prior round outputs as
-/// context.
-fn build_context_messages(round_outputs: &[RoundOutput], symbol: &str) -> Vec<Message> {
+/// context, plus macro signal and emergency buffer.
+fn build_context_messages(
+    round_outputs: &[RoundOutput],
+    symbol: &str,
+    macro_signal: &str,
+    emergency_buffer_cny: f64,
+) -> Vec<Message> {
     if round_outputs.is_empty() {
         return vec![Message::user(format!(
             "请分析 {} 的投资机会。",
@@ -208,10 +214,13 @@ fn build_context_messages(round_outputs: &[RoundOutput], symbol: &str) -> Vec<Me
         ))];
     }
 
-    let mut context = String::new();
+    let mut context = format!(
+        "【标的: {}】\nMacro SIGNAL: {}\nEmergency Buffer: {:.0} CNY\n",
+        symbol, macro_signal, emergency_buffer_cny
+    );
     for output in round_outputs {
         context.push_str(&format!(
-            "\n[{}] (Round {})\n{}\n",
+            "\n=== {} Round {} ===\n{}\n",
             output.role.label(),
             output.round,
             output.parsed.raw_text,
@@ -383,6 +392,8 @@ async fn run_role_phase(
     role: CommitteeRole,
     config: &CommitteeConfig,
     round_outputs: &[RoundOutput],
+    macro_signal: &str,
+    emergency_buffer_cny: f64,
 ) -> Result<RoundOutput, String> {
     let provider = resolve_provider(config, role);
     let llm_config = build_llm_config(provider, role, config.timeout_secs);
@@ -397,7 +408,7 @@ async fn run_role_phase(
         _ => 1,
     };
 
-    let mut messages = build_context_messages(round_outputs, symbol);
+    let mut messages = build_context_messages(round_outputs, symbol, macro_signal, emergency_buffer_cny);
 
     // For Round 2 rebuttal roles, append a rebuttal-specific instruction
     if matches!(role, CommitteeRole::QuantR2 | CommitteeRole::RiskR2) {
@@ -455,6 +466,8 @@ async fn run_debate_rounds(
     config: &CommitteeConfig,
     round_outputs: &mut Vec<RoundOutput>,
     total_tokens: &mut u32,
+    macro_signal: &str,
+    emergency_buffer_cny: f64,
 ) -> Result<bool, String> {
     let max_rounds = config.debate_rounds;
     let mut converged = false;
@@ -467,7 +480,7 @@ async fn run_debate_rounds(
         };
 
         for role in roles {
-            let output = run_role_phase(client, symbol, role, config, round_outputs).await?;
+            let output = run_role_phase(client, symbol, role, config, round_outputs, macro_signal, emergency_buffer_cny).await?;
             *total_tokens += output.tokens_used;
             round_outputs.push(output);
         }
@@ -523,17 +536,17 @@ pub async fn run_committee(
 
     // ── Step 2: Debate rounds ──────────────────────────────────────────
     let converged =
-        run_debate_rounds(client, symbol, config, &mut round_outputs, &mut total_tokens).await?;
+        run_debate_rounds(client, symbol, config, &mut round_outputs, &mut total_tokens, &macro_signal, config.emergency_buffer_cny).await?;
 
     // ── Step 3: Wealth context ─────────────────────────────────────────
     let wealth_output =
-        run_role_phase(client, symbol, CommitteeRole::Wealth, config, &round_outputs).await?;
+        run_role_phase(client, symbol, CommitteeRole::Wealth, config, &round_outputs, &macro_signal, config.emergency_buffer_cny).await?;
     total_tokens += wealth_output.tokens_used;
     round_outputs.push(wealth_output);
 
     // ── Step 4: CIO verdict ────────────────────────────────────────────
     let cio_output =
-        run_role_phase(client, symbol, CommitteeRole::Cio, config, &round_outputs).await?;
+        run_role_phase(client, symbol, CommitteeRole::Cio, config, &round_outputs, &macro_signal, config.emergency_buffer_cny).await?;
     total_tokens += cio_output.tokens_used;
     round_outputs.push(cio_output);
 
