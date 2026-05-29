@@ -15,6 +15,7 @@
   import CommitteeRolesTab from '$lib/components/invest/CommitteeRolesTab.svelte';
   import CommitteeAccuracyTab from '$lib/components/invest/CommitteeAccuracyTab.svelte';
   import CommitteeToolsTab from '$lib/components/invest/CommitteeToolsTab.svelte';
+  import EventWatchTab from '$lib/components/invest/EventWatchTab.svelte';
   import type { Holding } from '$lib/types';
 
   type InvestTab = 'dashboard' | 'committee' | 'strategy' | 'trades' | 'events' | 'scheduler';
@@ -167,7 +168,7 @@
         <CommitteeToolsTab />
       {/if}
     {:else if activeTab === 'events'}
-      <div class="text-muted-foreground">Event Monitor — coming in Phase 3c</div>
+      <EventWatchTab />
     {:else if activeTab === 'scheduler'}
       <div class="text-muted-foreground">Scheduled Tasks — coming in Phase 4</div>
     {/if}
