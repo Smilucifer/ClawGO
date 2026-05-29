@@ -81,6 +81,23 @@ fn archive_date_dir() -> PathBuf {
     archive_root().join(today)
 }
 
+/// Validate that a symbol contains only safe filesystem characters.
+fn validate_symbol(symbol: &str) -> Result<(), String> {
+    if symbol.is_empty() {
+        return Err("symbol must not be empty".into());
+    }
+    if !symbol
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+    {
+        return Err(format!("symbol contains unsafe characters: {symbol:?}"));
+    }
+    if symbol.contains("..") {
+        return Err(format!("symbol must not contain '..': {symbol:?}"));
+    }
+    Ok(())
+}
+
 /// Archive a full committee decision: writes markdown report and appends to
 /// `events.jsonl`. This is the high-fidelity archive path called alongside
 /// the DB-backed [`archive_decision`].
@@ -88,6 +105,7 @@ pub fn archive_decision_full(
     symbol: &str,
     result: &CommitteeResult,
 ) -> Result<(), String> {
+    validate_symbol(symbol)?;
     let dir = archive_date_dir();
     fs::create_dir_all(&dir)
         .map_err(|e| format!("create archive dir: {e}"))?;
@@ -123,13 +141,12 @@ pub fn archive_decision_full(
         .append(true)
         .open(&jsonl_path)
         .map_err(|e| format!("open events.jsonl: {e}"))?;
+    let mut line = serde_json::to_string(&event)
+        .map_err(|e| format!("serialize event: {e}"))?;
+    line.push('\n');
     jsonl_file
-        .write_all(serde_json::to_string(&event)
-            .map_err(|e| format!("serialize event: {e}"))?
-            .as_bytes())
+        .write_all(line.as_bytes())
         .map_err(|e| format!("write events.jsonl: {e}"))?;
-    jsonl_file.write_all(b"\n")
-        .map_err(|e| format!("write newline: {e}"))?;
 
     Ok(())
 }
@@ -246,6 +263,7 @@ pub fn load_archive(
     symbol: &str,
     days: i64,
 ) -> Result<Vec<ArchivedDecision>, String> {
+    validate_symbol(symbol)?;
     let root = archive_root();
     if !root.exists() {
         return Ok(Vec::new());
