@@ -2611,3 +2611,43 @@ npm run i18n:check
 git add -A
 git commit -m "chore(invest): Phase 2 verification fixes"
 ```
+
+---
+
+## Post-Implementation Code Review (2026-05-29)
+
+9 finder angles × 8 candidates, 1-vote verify, sweep. 13 confirmed, 1 refuted.
+
+### Critical (4)
+
+| # | File | Finding | Fix |
+|---|------|---------|-----|
+| 1 | `storage/settings.rs:544` | `update_user_settings` never persists `tushare_token` — all Tushare ops silently fail | Added `apply_optional_string_empty_as_none` call |
+| 2 | `lib.rs:95` | `Handle::block_on()` inside tokio async context panics on every PnL cron tick | Made `run_pnl_snapshot` async, use `.await` |
+| 3 | `storage/invest/strategy.rs:10` | `targets: String` serializes as quoted JSON string, frontend expects `StrategyTarget[]` | Custom serde deserialize + `parse_targets` helper for SQLite reads |
+| 4 | `tushare/tushare-api-reference.py:7` | Hardcoded API token in committed reference file | Replaced with placeholder |
+
+### High (3)
+
+| # | File | Finding | Fix |
+|---|------|---------|-----|
+| 5 | `tushare/client.rs:23,39` | DailyBar/StockBasic missing `#[serde(rename_all = "camelCase")]` — frontend gets snake_case | Added serde rename attribute |
+| 6 | `invest-store.svelte.ts:221` | sellStock no oversell validation — credits phantom cash | Added `qty > currentShares` guard |
+| 7 | `routes/invest/+page.svelte:66` | openConvert creates duplicate holdings (watch + hold) | New `convert` dialog mode calling `convertWatchToHold` |
+
+### Medium (4)
+
+| # | File | Finding | Fix |
+|---|------|---------|-----|
+| 8 | `storage/invest/verdicts.rs:90` | PnL snapshot no dedup — duplicates on app restart | Upsert on `snapshot_date` |
+| 9 | `invest-store.svelte.ts:128` | refreshPrices replaces entire priceMap — cached prices lost on failure | Merge instead of replace |
+| 10 | `PnlChart.svelte:55,61` | Double `buildChart()` call ($effect + onMount) | Removed redundant onMount |
+| 11 | `HoldingsTable.svelte:18` | `!price` treats 0 as null | Explicit `== null` check |
+
+### Refuted (1)
+
+| # | File | Finding | Reason |
+|---|------|---------|--------|
+| 12 | `storage/invest/mod.rs:29` | Trades migration fragile (DROP between rename) | Wrapped in SQLite transaction — atomic |
+
+**Commits:** `a1a41f6` (fixes), `3acd188` (docs)
