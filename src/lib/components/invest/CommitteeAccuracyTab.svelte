@@ -64,7 +64,7 @@
     try {
       const settings = await invoke<{ tushareToken?: string }>('get_user_settings');
       if (!settings.tushareToken) {
-        error = 'No Tushare token configured';
+        error = t('invest_accuracy_noToken');
         return;
       }
       summary = await invoke<ReviewSummary>('run_verdict_review_cmd', { tushareToken: settings.tushareToken });
@@ -147,7 +147,7 @@
     <div class="rounded-lg border">
       <div class="border-b bg-muted/50 px-4 py-2 text-sm font-medium">{t('invest_accuracy_by_window')}</div>
       <div class="p-4 space-y-3">
-        {#each summary.byWindow.sort((a, b) => a.windowDays - b.windowDays) as w}
+        {#each [...summary.byWindow].sort((a, b) => a.windowDays - b.windowDays) as w}
           <div class="flex items-center gap-3">
             <span class="w-12 text-sm font-medium">{w.windowDays}d</span>
             <div class="flex-1">
@@ -156,7 +156,7 @@
               </div>
             </div>
             <span class="w-16 text-right text-sm font-mono {hitColor(w.hitRate)}">{pct(w.hitRate)}</span>
-            <span class="w-16 text-right text-xs text-muted-foreground">{w.sampleCount} samples</span>
+            <span class="w-16 text-right text-xs text-muted-foreground">{w.sampleCount} {t('invest_accuracy_samples')}</span>
           </div>
         {/each}
       </div>
@@ -168,15 +168,15 @@
       <table class="w-full text-sm">
         <thead>
           <tr class="border-b text-left text-xs text-muted-foreground">
-            <th class="px-4 py-2">Type</th>
-            <th class="px-4 py-2 text-right">Count</th>
+            <th class="px-4 py-2">{t('invest_accuracy_type')}</th>
+            <th class="px-4 py-2 text-right">{t('invest_accuracy_count')}</th>
             <th class="px-4 py-2 text-right">1d</th>
             <th class="px-4 py-2 text-right">7d</th>
             <th class="px-4 py-2 text-right">30d</th>
           </tr>
         </thead>
         <tbody>
-          {#each summary.byVerdict.sort((a, b) => b.sampleCount - a.sampleCount) as v}
+          {#each [...summary.byVerdict].sort((a, b) => b.sampleCount - a.sampleCount) as v}
             <tr class="border-b last:border-0">
               <td class="px-4 py-2 font-medium">{v.verdictType}</td>
               <td class="px-4 py-2 text-right">{v.sampleCount}</td>
@@ -191,7 +191,7 @@
 
     <!-- Detail toggle -->
     <button class="text-sm text-muted-foreground hover:text-foreground" onclick={loadDetail}>
-      {showDetail ? 'Hide' : 'Show'} detail ({detail.length} entries)
+      {showDetail ? t('invest_accuracy_hide') : t('invest_accuracy_show')} {t('invest_accuracy_detail')} ({detail.length} {t('invest_accuracy_entries')})
     </button>
 
     {#if showDetail && detail.length > 0}
@@ -199,12 +199,12 @@
         <table class="w-full text-xs">
           <thead>
             <tr class="border-b bg-muted/50 text-left">
-              <th class="px-3 py-2">Symbol</th>
-              <th class="px-3 py-2">Date</th>
-              <th class="px-3 py-2">Verdict</th>
-              <th class="px-3 py-2 text-right">Window</th>
-              <th class="px-3 py-2 text-right">Return%</th>
-              <th class="px-3 py-2 text-center">Hit</th>
+              <th class="px-3 py-2">{t('invest_accuracy_symbol')}</th>
+              <th class="px-3 py-2">{t('invest_accuracy_date')}</th>
+              <th class="px-3 py-2">{t('invest_accuracy_verdict')}</th>
+              <th class="px-3 py-2 text-right">{t('invest_accuracy_window')}</th>
+              <th class="px-3 py-2 text-right">{t('invest_accuracy_returnPct')}</th>
+              <th class="px-3 py-2 text-center">{t('invest_accuracy_hit')}</th>
             </tr>
           </thead>
           <tbody>
@@ -230,7 +230,7 @@
     {/if}
 
     {#if summary.lastReviewAt}
-      <p class="text-xs text-muted-foreground">Last review: {new Date(summary.lastReviewAt).toLocaleString()}</p>
+      <p class="text-xs text-muted-foreground">{t('invest_accuracy_lastReview')} {new Date(summary.lastReviewAt).toLocaleString()}</p>
     {/if}
   {/if}
 </div>

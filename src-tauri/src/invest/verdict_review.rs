@@ -306,6 +306,124 @@ pub async fn run_verdict_review(tushare_token: &str) -> Result<VerdictReviewSumm
 // Aggregation
 // ---------------------------------------------------------------------------
 
+/// Aggregate summary from stored `VerdictReviewEntry` rows (loaded from DB).
+///
+/// Uses 30-day focused semantics for the overall and directional hit rates,
+/// which matches what the UI displays.
+pub fn aggregate_from_stored(reviews: &[VerdictReviewEntry]) -> VerdictReviewSummary {
+    if reviews.is_empty() {
+        return VerdictReviewSummary {
+            total_verdicts: 0,
+            overall_hit_rate: 0.0,
+            directional_hit_rate: 0.0,
+            by_window: vec![],
+            by_verdict: vec![],
+            last_review_at: None,
+        };
+    }
+
+    // Overall hit rate (30-day focused)
+    let total_30d = reviews.iter().filter(|r| r.window_days == 30).count();
+    let hits_30d = reviews.iter().filter(|r| r.window_days == 30 && r.hit).count();
+    let overall_hit_rate = if total_30d > 0 {
+        hits_30d as f64 / total_30d as f64
+    } else {
+        0.0
+    };
+
+    // Directional hit rate (30-day, exclude HOLD)
+    let dir_total = reviews
+        .iter()
+        .filter(|r| r.verdict_type != "HOLD" && r.window_days == 30)
+        .count();
+    let dir_hits = reviews
+        .iter()
+        .filter(|r| r.verdict_type != "HOLD" && r.window_days == 30 && r.hit)
+        .count();
+    let directional_hit_rate = if dir_total > 0 {
+        dir_hits as f64 / dir_total as f64
+    } else {
+        0.0
+    };
+
+    // By window
+    let mut by_window: Vec<WindowStats> = WINDOWS
+        .iter()
+        .map(|&w| {
+            let window_reviews: Vec<&VerdictReviewEntry> =
+                reviews.iter().filter(|r| r.window_days == w).collect();
+            let sample_count = window_reviews.len();
+            let hits = window_reviews.iter().filter(|r| r.hit).count();
+            WindowStats {
+                window_days: w,
+                sample_count,
+                hit_rate: if sample_count > 0 {
+                    hits as f64 / sample_count as f64
+                } else {
+                    0.0
+                },
+            }
+        })
+        .collect();
+    by_window.sort_by_key(|w| w.window_days);
+
+    // By verdict type
+    let mut verdict_types: Vec<String> = {
+        let mut types: Vec<String> = reviews.iter().map(|r| r.verdict_type.clone()).collect();
+        types.sort();
+        types.dedup();
+        types
+    };
+    verdict_types.sort();
+
+    let by_verdict: Vec<VerdictStats> = verdict_types
+        .iter()
+        .map(|vt| {
+            let vtype_reviews: Vec<&VerdictReviewEntry> =
+                reviews.iter().filter(|r| &r.verdict_type == vt).collect();
+            let sample_count = vtype_reviews.len();
+
+            let hit_rate_for_window = |window: i64| -> Option<f64> {
+                let wr: Vec<&&VerdictReviewEntry> = vtype_reviews
+                    .iter()
+                    .filter(|r| r.window_days == window)
+                    .collect();
+                if wr.is_empty() {
+                    None
+                } else {
+                    let hits = wr.iter().filter(|r| r.hit).count();
+                    Some(hits as f64 / wr.len() as f64)
+                }
+            };
+
+            VerdictStats {
+                verdict_type: vt.clone(),
+                sample_count,
+                avg_confidence: None,
+                hit_rate_1d: hit_rate_for_window(1),
+                hit_rate_7d: hit_rate_for_window(7),
+                hit_rate_30d: hit_rate_for_window(30),
+            }
+        })
+        .collect();
+
+    let total_verdicts = reviews
+        .iter()
+        .map(|r| &r.verdict_id)
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    let last_review_at = reviews.iter().map(|r| r.created_at.clone()).max();
+
+    VerdictReviewSummary {
+        total_verdicts,
+        overall_hit_rate,
+        directional_hit_rate,
+        by_window,
+        by_verdict,
+        last_review_at,
+    }
+}
+
 /// Compute summary statistics from review data and verdicts.
 fn aggregate(reviews: &[VerdictReviewEntry], verdicts_list: &[verdicts::Verdict]) -> VerdictReviewSummary {
     let total_verdicts = verdicts_list.len();
