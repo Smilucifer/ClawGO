@@ -1,4 +1,5 @@
 pub mod domain_insights;
+pub mod dream_snapshots;
 pub mod events;
 pub mod portfolio;
 pub mod scheduler;
@@ -71,6 +72,9 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
 
     // Migration: create verdict_reviews table (use local conn, DB not yet in static)
     verdict_reviews::create_table(&conn)?;
+
+    // Migration: create dream_snapshots table (use local conn, DB not yet in static)
+    dream_snapshots::create_table(&conn)?;
 
     let mut guard = DB.lock().map_err(|e| format!("lock db: {}", e))?;
     *guard = Some(conn);
