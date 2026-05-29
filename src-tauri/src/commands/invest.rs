@@ -818,6 +818,26 @@ pub struct ScanStatus {
 // ── Domain Insights ────────────────────────────────────────────────────
 
 #[tauri::command]
+pub fn list_insights(
+    status: Option<String>,
+    insight_type: Option<String>,
+    symbol: Option<String>,
+    limit: Option<i64>,
+) -> Result<Vec<crate::storage::invest::domain_insights::DomainInsight>, String> {
+    crate::storage::invest::domain_insights::list_insights(
+        status.as_deref(),
+        insight_type.as_deref(),
+        symbol.as_deref(),
+        limit,
+    )
+}
+
+#[tauri::command]
+pub fn unarchive_insight(id: String) -> Result<(), String> {
+    crate::storage::invest::domain_insights::unarchive_insight(&id)
+}
+
+#[tauri::command]
 pub fn search_domain_insights(
     query: String,
     limit: Option<i64>,

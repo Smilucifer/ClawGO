@@ -124,6 +124,22 @@ fn row_to_insight(row: &rusqlite::Row) -> rusqlite::Result<DomainInsight> {
     })
 }
 
+/// Set an insight's status back to 'active' (unarchive).
+pub fn unarchive_insight(id: &str) -> Result<(), String> {
+    with_conn_mut(|conn| {
+        let updated = conn
+            .execute(
+                "UPDATE domain_insights SET status = 'active', updated_at = datetime('now') WHERE id = ?1",
+                [id],
+            )
+            .map_err(|e| format!("unarchive insight: {e}"))?;
+        if updated == 0 {
+            return Err(format!("Insight '{}' not found", id));
+        }
+        Ok(())
+    })
+}
+
 /// Sanitize a user query for FTS5 MATCH — escapes or strips special operators.
 fn sanitize_fts_query(query: &str) -> String {
     query

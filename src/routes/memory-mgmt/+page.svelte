@@ -2,12 +2,13 @@
   import { t } from "$lib/i18n/index.svelte";
   import { getTransport } from "$lib/transport";
 
-  type MemTab = "userMemory" | "extractionConfig";
+  type MemTab = "userMemory" | "extractionConfig" | "archived";
   let activeTab: MemTab = $state("userMemory");
 
   const tabs: { id: MemTab; label: string }[] = $derived([
     { id: "userMemory", label: t("memoryMgmt_tab_userMemory") },
     { id: "extractionConfig", label: t("memoryMgmt_tab_extractionConfig") },
+    { id: "archived", label: "Archived" },
   ]);
 
   let scopeFilter: string | null = $state(null);
@@ -39,6 +40,47 @@
   $effect(() => {
     void scopeFilter;
     loadMemories();
+  });
+
+  // ── Archived insights ──────────────────────────────────────────────
+
+  let archivedInsights: any[] = $state([]);
+  let archivedLoading = $state(false);
+  let archivedLoadVersion = $state(0);
+
+  async function loadArchivedInsights() {
+    const version = ++archivedLoadVersion;
+    archivedLoading = true;
+    try {
+      const result = await getTransport().invoke<any[]>("list_insights", {
+        status: "archived",
+        limit: 50,
+      });
+      if (version === archivedLoadVersion) {
+        archivedInsights = result;
+      }
+    } catch (e) {
+      console.error("Failed to load archived insights:", e);
+    } finally {
+      if (version === archivedLoadVersion) {
+        archivedLoading = false;
+      }
+    }
+  }
+
+  async function restoreInsight(id: string) {
+    try {
+      await getTransport().invoke("unarchive_insight", { id });
+      await loadArchivedInsights();
+    } catch (e) {
+      console.error("Failed to restore insight:", e);
+    }
+  }
+
+  $effect(() => {
+    if (activeTab === "archived") {
+      loadArchivedInsights();
+    }
   });
 
   let configDirty = $state(false);
@@ -163,6 +205,36 @@
           </button>
         </div>
       </div>
+
+    {:else if activeTab === "archived"}
+      {#if archivedLoading}
+        <div class="text-muted-foreground text-sm">Loading...</div>
+      {:else if archivedInsights.length === 0}
+        <div class="text-muted-foreground text-sm">No archived insights</div>
+      {:else}
+        <div class="flex flex-col gap-2">
+          {#each archivedInsights as insight}
+            <div class="rounded-md border border-border p-3">
+              <div class="mb-1 flex items-center gap-2">
+                <span class="rounded bg-muted px-1.5 py-0.5 text-xs">{insight.insightType}</span>
+                {#if insight.symbol}
+                  <span class="rounded bg-muted px-1.5 py-0.5 text-xs">{insight.symbol}</span>
+                {/if}
+                <span class="text-muted-foreground text-xs">{insight.updatedAt}</span>
+              </div>
+              <div class="text-sm">{insight.content}</div>
+              <div class="mt-2">
+                <button
+                  class="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                  onclick={() => restoreInsight(insight.id)}
+                >
+                  Restore
+                </button>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
     {/if}
   </div>
 </div>

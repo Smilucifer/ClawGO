@@ -471,6 +471,8 @@ pub fn run() {
             commands::invest::save_dream_config,
             commands::invest::list_dream_traces,
             commands::invest::rollback_dream,
+            commands::invest::list_insights,
+            commands::invest::unarchive_insight,
             commands::invest::search_domain_insights,
         ])
         .setup(move |app| {
