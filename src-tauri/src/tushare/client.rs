@@ -60,12 +60,14 @@ pub struct TradeCal {
 // Row helpers — extract typed values from a positional row slice
 // ---------------------------------------------------------------------------
 
-/// Extract a `String` from `row[idx]`, converting via `to_string()`.
+/// Extract a `String` from `row[idx]`.
 /// Returns `None` if the index is out of bounds or the value is null.
 pub fn get_str(row: &[serde_json::Value], idx: usize) -> Option<String> {
     row.get(idx).and_then(|v| {
         if v.is_null() {
             None
+        } else if let Some(s) = v.as_str() {
+            Some(s.to_string())
         } else {
             Some(v.to_string())
         }
