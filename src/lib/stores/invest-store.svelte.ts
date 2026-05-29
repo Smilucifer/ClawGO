@@ -6,6 +6,9 @@ import type {
   Verdict,
   Strategy,
   PriceQuote,
+  InvestEvent,
+  ScanStatus,
+  EventFilter,
 } from "$lib/types";
 
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -26,6 +29,16 @@ class InvestStore {
 
   /** Live price cache: tsCode → PriceQuote */
   priceMap = $state<Record<string, PriceQuote>>({});
+
+  // ── Event Watch State ───────────────────────────────────────────────
+  events = $state<InvestEvent[]>([]);
+  eventFilter = $state<EventFilter>({
+    timeWindow: "24h",
+    severity: "all",
+    search: "",
+  });
+  scanStatus = $state<ScanStatus | null>(null);
+  isScanning = $state<boolean>(false);
 
   // ── Derived ──────────────────────────────────────────────────────────
   holdHoldings = $derived(this.holdings.filter((h) => h.kind === "hold"));
@@ -55,6 +68,52 @@ class InvestStore {
       ? ((this.totalAssets - this.totalCostBasis) / this.totalCostBasis) * 100
       : 0,
   );
+
+  // ── Event Watch Derived ─────────────────────────────────────────────
+
+  filteredEvents = $derived.by(() => {
+    let filtered = this.events;
+
+    // Time window filter
+    const now = Date.now();
+    const windows: Record<string, number> = {
+      "24h": 86_400_000,
+      "48h": 172_800_000,
+      "7d": 604_800_000,
+    };
+    const cutoff = now - (windows[this.eventFilter.timeWindow] ?? 86_400_000);
+    filtered = filtered.filter(
+      (e) => new Date(e.createdAt).getTime() > cutoff,
+    );
+
+    // Severity filter
+    if (this.eventFilter.severity !== "all") {
+      filtered = filtered.filter(
+        (e) => e.severity === this.eventFilter.severity,
+      );
+    }
+
+    // Search filter
+    if (this.eventFilter.search) {
+      const q = this.eventFilter.search.toLowerCase();
+      filtered = filtered.filter(
+        (e) =>
+          e.title.toLowerCase().includes(q) ||
+          (e.body && e.body.toLowerCase().includes(q)),
+      );
+    }
+
+    // Sort: HIGH severity first, then by created_at desc
+    filtered.sort((a, b) => {
+      if (a.severity === "high" && b.severity !== "high") return -1;
+      if (b.severity === "high" && a.severity !== "high") return 1;
+      return (
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    });
+
+    return filtered;
+  });
 
   // ── Actions ──────────────────────────────────────────────────────────
 
@@ -326,6 +385,40 @@ class InvestStore {
   async deleteStrategy(id: string): Promise<void> {
     await invoke("delete_strategy", { id });
     await this.loadAll();
+  }
+
+  // ── Event Watch Actions ─────────────────────────────────────────────
+
+  async fetchEvents(): Promise<void> {
+    const events = await invoke<InvestEvent[]>("get_events", {
+      source: null,
+      limit: 200,
+    });
+    this.events = events;
+  }
+
+  async fetchScanStatus(): Promise<void> {
+    const status = await invoke<ScanStatus>("get_scan_status");
+    this.scanStatus = status;
+  }
+
+  async triggerScan(): Promise<unknown> {
+    this.isScanning = true;
+    try {
+      const result = await invoke("scan_events", {
+        normalizerPrompt: null,
+      });
+      // Refresh events and status after scan
+      await this.fetchEvents();
+      await this.fetchScanStatus();
+      return result;
+    } finally {
+      this.isScanning = false;
+    }
+  }
+
+  setEventFilter(filter: Partial<EventFilter>): void {
+    this.eventFilter = { ...this.eventFilter, ...filter };
   }
 }
 

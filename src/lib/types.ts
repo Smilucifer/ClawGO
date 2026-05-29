@@ -1803,3 +1803,32 @@ export interface PriceQuote {
   vol: number;
   amount: number;
 }
+
+// ── Invest types (Phase 3c: Event Watch) ──
+
+export interface InvestEvent {
+  id: string;
+  source: string;
+  eventType: string;
+  title: string;
+  body: string | null;
+  symbols: string | null;
+  severity: string;
+  stance: string;
+  triggered: boolean;
+  triggerVerdictId: string | null;
+  createdAt: string;
+}
+
+export interface ScanStatus {
+  totalEvents: number;
+  highCount: number;
+  untriggeredHigh: number;
+  lastEventAt: string | null;
+}
+
+export interface EventFilter {
+  timeWindow: "24h" | "48h" | "7d";
+  severity: "all" | "high" | "medium";
+  search: string;
+}
