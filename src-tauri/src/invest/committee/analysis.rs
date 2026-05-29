@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 // ---------------------------------------------------------------------------
 
 /// Check if Quant and Risk have converged over the last 2 rounds.
-/// Convergence = same SIGNAL + strength difference < 1.0.
+/// Convergence = same quant_view + same risk_view + strength difference < 1.0.
 pub fn check_convergence(round_outputs: &[RoundOutput]) -> bool {
     if round_outputs.len() < 4 {
         return false; // need at least Q1, R1, Q2, R2
@@ -31,12 +31,6 @@ pub fn check_convergence(round_outputs: &[RoundOutput]) -> bool {
     let q2 = &quant_rounds[quant_rounds.len() - 1];
     let r1 = &risk_rounds[risk_rounds.len() - 2];
     let r2 = &risk_rounds[risk_rounds.len() - 1];
-
-    // Check SIGNAL agreement across all 4
-    let _signals: Vec<Option<&str>> = [q1, q2, r1, r2]
-        .iter()
-        .map(|o| o.parsed.signal.as_deref().or(o.parsed.quant_view.as_deref()))
-        .collect();
 
     // All must agree on direction (simplified: check if quant_view/risk_view are consistent)
     let q_views_match = q1.parsed.quant_view == q2.parsed.quant_view;
