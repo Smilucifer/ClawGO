@@ -146,7 +146,7 @@ impl TushareClient {
         for attempt in 0..max_retries {
             let resp = self
                 .client
-                .post("https://api.tushare.pro")
+                .post("http://101.35.233.113:8020/")
                 .json(&body)
                 .send()
                 .await
