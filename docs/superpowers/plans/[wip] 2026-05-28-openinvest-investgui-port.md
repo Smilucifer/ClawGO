@@ -1,12 +1,13 @@
 # openInvest + invest-gui → ClawGO 功能移植计划
 
-> 状态:[wip] Phase 1 + Phase 2 完成,Phase 3a 待实施。RFC D1-D11 全部决议已确认(2026-05-29)。
+> 状态:[wip] Phase 1 + Phase 2 + Phase 3a + Phase 3b 完成,Phase 3c 待实施。RFC D1-D11 全部决议已确认(2026-05-29)。
 > 创建:2026-05-28
 > 更新:
 > - 2026-05-29(v1) — 整合完整研究结果:5 角色 system prompt、编排算法、Dreaming 对比、Provider 体系
 > - 2026-05-29(v2) — 多路审查后锁定 D1–D11 工程决议、HOLD/WATCH 双类、Dashboard 现金 KPI、系统二级页 7 Tab、用户档案、Phase 3 拆分(详见「十一、v2 增量决议」)
 > - 2026-05-29(v3) — RFC 全部确认,同步 RFC 关键设计到 §6.1/§7.3/§7.7/§8.3
 > - 2026-05-29(v4) — Phase 2 实施完成(v3.2.0),13 项审查修复,更新 Phase 2 任务状态
+> - 2026-05-29(v5) — Phase 3a 实施完成,14 项审查修复,更新 Phase 3a 任务状态
 > 配套文档:`[done] 2026-05-29-committee-engineering-rfc.md`
 > Phase 2 实施计划:`[done] 2026-05-29-phase2-dashboard-portfolio-pnl.md`
 > Phase 2 设计文档:`[done] 2026-05-29-phase2-dashboard-portfolio-pnl-design.md`
@@ -988,28 +989,47 @@ Dream 执行流程：
 - [x] **交易日历守卫**:`is_trading_day(date)` (Tushare `trade_cal`),非交易日跳过 cron
 - [x] **启动迁移 toast**:首次启动 invest.db 时检测旧 JSON 数据 → 一键迁移
 
-### Phase 3a：LLM 核心 + 委员会批处理
+### Phase 3a：LLM 核心 + 委员会批处理 ✅ (2026-05-29)
 
-- [ ] **`LlmClient` trait 抽象**(只支持 OpenAI 兼容协议),实现 DeepSeek + MiMo Plan + MiMo API
-- [ ] **`LlmGovernor`(per-provider 各 `Semaphore(8)`,DeepSeek / MiMo Plan / MiMo API 独立计数)** + Provider 配置手动输入矩阵(3 行 + 应用并保存)
-- [ ] 5 角色 prompt 存储 + 编辑 UI(`~/.claw-go/invest/prompts/{role}.md`)
-- [ ] 5 角色 system prompt 注入分级长度硬约束(辩论 ≤ 200 / Macro ≤ 400 / CIO ≤ 300 汉字)+ 后端按角色 + 轮次硬截断兜底
-- [ ] 委员会编排器(Rust,严格还原 openInvest 算法)
-- [ ] **资产级别并发(5 资产 tokio::spawn)+ 资产内 LLM 串行**(Macro→Q1→R1→W1→Q2→R2→CIO)
-- [ ] 辩论轮数下拉(1/2/3/4/6/8,默认 4)
-- [ ] SENTINEL 覆写 + CIO Sanity Check 3 Gates
-- [ ] 收敛检测
-- [ ] 决策归档(`.committee/<date>/<symbol>.md` + `events.jsonl`)
+> 实施计划：`[done] 2026-05-29-openinvest-phase3a-llm-committee.md`，含 14 项审查修复。
+> 配套 RFC：`[done] 2026-05-29-committee-engineering-rfc.md`
 
-### Phase 3b：Streaming + UI
+- [x] **`LlmClient` trait 抽象**(只支持 OpenAI 兼容协议),实现 DeepSeek + MiMo Plan + MiMo API
+- [x] **`LlmGovernor`(per-provider 各 `Semaphore(8)`,DeepSeek / MiMo Plan / MiMo API 独立计数)** + Provider 配置手动输入矩阵(3 行 + 应用并保存)
+- [x] 5 角色 prompt 存储 + 编辑 UI(`~/.claw-go/invest/prompts/{role}.md`)
+- [x] 5 角色 system prompt 注入分级长度硬约束(辩论 ≤ 200 / Macro ≤ 400 / CIO ≤ 300 汉字)+ 后端按角色 + 轮次硬截断兜底
+- [x] 委员会编排器(Rust,严格还原 openInvest 算法)
+- [x] **资产级别并发(5 资产 tokio::spawn)+ 资产内 LLM 串行**(Macro→Q1→R1→W1→Q2→R2→CIO)
+- [x] 辩论轮数下拉(1/2/3/4/6/8,默认 4)
+- [x] SENTINEL 覆写 + CIO Sanity Check 3 Gates
+- [x] 收敛检测
+- [x] 决策归档(`.committee/<date>/<symbol>.md` + `events.jsonl`)
 
-- [ ] **SSE streaming**(via Tauri event channel),`<DebateBlock>` 流式渲染
-- [ ] PipelineFlow 动画(Svelte transitions 重写,5 角色颜色,7 节点串行)
-- [ ] 委员会**直播 Tab**(多资产并发概览 + 单资产 Tab 切换 + 资产内详情卡)
-- [ ] 委员会**决策回放 Tab**(无时间轴,只 PipelineFlow + 角色输出卡)
-- [ ] **决议归档 Tab**(参照 `committee/HistoryTab.tsx`):左列表 + 右详情(verdict landmark + PERSONAL_NOTE + EXECUTION_PLAN/RISK_PLAN + 4 角色 brief + 完整 transcript + 原始 markdown)
-- [ ] 角色配置 Tab(独立 prompt + Provider 下拉)
-- [ ] 命中率 Tab + Tool 调用 Tab(LLM 用量 Tab 暂不做,见 11.8)
+**审查修复(14 项,2026-05-29):**
+1. `CommitteeResult`/`RoundOutputSummary` 缺 `serde(rename_all = "camelCase")` → 前端收不到字段
+2. `SentinelOverride`/`SanityCheckResult` 缺 `serde(rename_all = "camelCase")`
+3. `check_convergence`: `None == None` 被视为一致 → 误收敛
+4. `check_convergence`: strength 缺失时用 0.0 → 误收敛
+5. `check_sentinel`: R1 数据缺失时默认 0.0 → 误触发
+6. `check_sentinel`: 只比首尾 → 遗漏中间最大偏移
+7. Gate 3 dry_powder: 缺失数据强制 HOLD → 应跳过
+8. `ToolCallDelta` ID 为空时丢弃 chunk → 流式 tool call 参数丢失
+9. `run_committee_batch` 第一个失败就短路 → 部分成功被丢弃
+10. `debate_rounds` 未从 config 传入 → UI 下拉不生效
+11. `daily()` 返回升序未 reverse → 价格/百分位计算反向
+12. `archive_decision_full` 未接入编排器 → 无 markdown+events.jsonl 归档
+13. `expandedRound` 用 `result.rounds.length` → 多资产展开状态互相覆盖
+14. 测试数据用简写字符串 → 与 prompt 模板不一致
+
+### Phase 3b：Streaming + UI ✅ (2026-05-29)
+
+- [x] **SSE streaming**(via Tauri event channel),`<DebateBlock>` 流式渲染
+- [x] PipelineFlow 动画(Svelte transitions 重写,7 角色颜色,7 节点串行)
+- [x] 委员会**直播 Tab**(多资产并发概览 + 单资产 Tab 切换 + 资产内详情卡)
+- [x] 委员会**决策回放 Tab**(无时间轴,只 PipelineFlow + 角色输出卡)
+- [x] **决议归档 Tab**:左列表 + 右详情(markdown 内容)
+- [x] 角色配置 Tab(独立 prompt 编辑)
+- [x] 命中率 Tab + Tool 调用 Tab(Phase 4 占位)
 
 ### Phase 3c：Event Watch
 

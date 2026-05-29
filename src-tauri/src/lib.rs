@@ -416,6 +416,8 @@ pub fn run() {
             commands::invest::get_llm_config,
             commands::invest::save_llm_config,
             commands::invest::run_committee,
+            commands::invest::run_committee_stream,
+            commands::invest::load_committee_archive,
             commands::invest::get_role_prompts,
             commands::invest::save_role_prompt,
         ])

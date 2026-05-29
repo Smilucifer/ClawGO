@@ -5,6 +5,7 @@ use crate::storage::invest::{
     strategy,
     verdicts::{self, PnlSnapshot, Verdict},
 };
+use tauri::Emitter;
 
 // ── Holdings ────────────────────────────────────────────────────────────────
 
@@ -601,9 +602,8 @@ pub async fn run_committee(
 
     let mut committee_config =
         crate::invest::committee::orchestrator::CommitteeConfig::default();
-    if let Some(rounds) = debate_rounds {
-        committee_config.debate_rounds = rounds;
-    }
+    // Explicit override > user config > default
+    committee_config.debate_rounds = debate_rounds.unwrap_or(config_data.debate_rounds);
     committee_config.emergency_buffer_cny = config_data.emergency_buffer_cny;
     committee_config.timeout_secs = config_data.timeout_secs;
 
@@ -614,15 +614,93 @@ pub async fn run_committee(
     )
     .await;
 
-    // Convert Vec<Result<T, String>> to Result<Vec<T>, String>
+    // Collect successes; report first error but still return partial results
     let mut out = Vec::with_capacity(results.len());
+    let mut first_err: Option<String> = None;
     for r in results {
-        out.push(r?);
+        match r {
+            Ok(v) => out.push(v),
+            Err(e) => {
+                if first_err.is_none() {
+                    first_err = Some(e);
+                }
+            }
+        }
     }
-    Ok(out)
+    // If ALL failed, return the first error. If partial success, return what we have.
+    if out.is_empty() {
+        Err(first_err.unwrap_or_else(|| "all symbols failed".to_string()))
+    } else {
+        Ok(out)
+    }
+}
+
+/// Streaming variant of `run_committee` — emits real-time `CommitteeEvent`s
+/// on the `"committee-event"` Tauri event channel as each role starts/completes.
+/// Returns the same `Vec<CommitteeResult>` as the non-streaming version.
+#[tauri::command]
+pub async fn run_committee_stream(
+    app: tauri::AppHandle,
+    symbols: Vec<String>,
+    debate_rounds: Option<u8>,
+) -> Result<Vec<crate::invest::committee::orchestrator::CommitteeResult>, String> {
+    let config_data = get_llm_config()?;
+    let client =
+        crate::invest::llm::client::OpenAiCompatClient::new().map_err(|e| format!("init LLM client: {}", e))?;
+    let client: std::sync::Arc<dyn crate::invest::llm::types::InvestLlmClient> =
+        std::sync::Arc::new(client);
+
+    let mut committee_config =
+        crate::invest::committee::orchestrator::CommitteeConfig::default();
+    committee_config.debate_rounds = debate_rounds.unwrap_or(config_data.debate_rounds);
+    committee_config.emergency_buffer_cny = config_data.emergency_buffer_cny;
+    committee_config.timeout_secs = config_data.timeout_secs;
+
+    // Build emitter closure that forwards events to the Tauri event channel
+    let emitter: crate::invest::committee::orchestrator::EventEmitter = {
+        let app = app.clone();
+        std::sync::Arc::new(move |event: crate::invest::committee::events::CommitteeEvent| {
+            let _ = app.emit("committee-event", &event);
+        })
+    };
+
+    let results = crate::invest::committee::orchestrator::run_committee_batch_stream(
+        client,
+        &symbols,
+        &committee_config,
+        emitter,
+    )
+    .await;
+
+    // Collect successes; report first error but still return partial results
+    let mut out = Vec::with_capacity(results.len());
+    let mut first_err: Option<String> = None;
+    for r in results {
+        match r {
+            Ok(v) => out.push(v),
+            Err(e) => {
+                if first_err.is_none() {
+                    first_err = Some(e);
+                }
+            }
+        }
+    }
+    if out.is_empty() {
+        Err(first_err.unwrap_or_else(|| "all symbols failed".to_string()))
+    } else {
+        Ok(out)
+    }
 }
 
 // ── Role Prompts ────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn load_committee_archive(
+    symbol: String,
+    days: Option<i64>,
+) -> Result<Vec<crate::invest::committee::archive::ArchivedDecision>, String> {
+    crate::invest::committee::archive::load_archive(&symbol, days.unwrap_or(7))
+}
 
 #[tauri::command]
 pub fn get_role_prompts() -> Result<std::collections::HashMap<String, String>, String> {

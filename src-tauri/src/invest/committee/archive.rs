@@ -11,7 +11,8 @@ use super::analysis::{SanityCheckResult, SentinelOverride};
 // ---------------------------------------------------------------------------
 
 /// A previously archived committee decision returned by [`load_archive`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ArchivedDecision {
     pub date: String,
     pub symbol: String,

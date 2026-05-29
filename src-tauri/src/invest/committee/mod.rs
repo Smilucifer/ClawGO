@@ -1,5 +1,6 @@
 pub mod analysis;
 pub mod archive;
+pub mod events;
 pub mod orchestrator;
 pub mod parser;
 pub mod roles;

@@ -302,6 +302,13 @@
   "invest_committee_sentinel": "SENTINEL",
   "invest_committee_show_rounds": "Show {count} rounds",
   "invest_committee_hide_rounds": "Hide rounds",
+  "invest_committee_sub_live": "Live",
+  "invest_committee_sub_replay": "Replay",
+  "invest_committee_sub_archive": "Archive",
+  "invest_committee_sub_roles": "Role Config",
+  "invest_committee_sub_accuracy": "Accuracy",
+  "invest_committee_sub_tools": "Tool Calls",
+  "invest_committee_config": "Provider Config",
 
   "invest_dashboard": "Dashboard",
   "invest_total_assets": "Total Assets",

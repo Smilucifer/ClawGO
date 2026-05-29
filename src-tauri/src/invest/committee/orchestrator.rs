@@ -2,7 +2,8 @@ use super::analysis::{
     check_convergence, check_sentinel, cio_sanity_check, RoundOutput, SanityCheckResult,
     SentinelOverride,
 };
-use super::archive::archive_decision;
+use super::archive::{archive_decision, archive_decision_full};
+use super::events::{step_index_for_role, CommitteeEvent};
 use super::parser::{parse_role_output, ParsedFields};
 use super::roles::{hard_truncate, length_constraint_suffix, load_prompt, CommitteeRole};
 use super::tools::{execute_tool, macro_tool_defs, tool_result_message};
@@ -13,6 +14,9 @@ use crate::invest::llm::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+/// Callback for emitting committee streaming events.
+pub type EventEmitter = Arc<dyn Fn(CommitteeEvent) + Send + Sync>;
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -51,6 +55,7 @@ impl Default for CommitteeConfig {
 
 /// Per-role summary for frontend display / serialization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RoundOutputSummary {
     pub role: CommitteeRole,
     pub round: u8,
@@ -75,6 +80,7 @@ impl From<&RoundOutput> for RoundOutputSummary {
 
 /// Complete committee decision output.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CommitteeResult {
     pub symbol: String,
     pub final_verdict: String,
@@ -468,6 +474,7 @@ async fn run_debate_rounds(
     total_tokens: &mut u32,
     macro_signal: &str,
     emergency_buffer_cny: f64,
+    emitter: &Option<EventEmitter>,
 ) -> Result<bool, String> {
     let max_rounds = config.debate_rounds;
     let mut converged = false;
@@ -480,8 +487,29 @@ async fn run_debate_rounds(
         };
 
         for role in roles {
+            let si = step_index_for_role(role, round);
+            if let Some(ref emit) = emitter {
+                emit(CommitteeEvent::RoleStart {
+                    symbol: symbol.to_string(),
+                    role,
+                    round,
+                    step_index: si,
+                });
+            }
+
             let output = run_role_phase(client, symbol, role, config, round_outputs, macro_signal, emergency_buffer_cny).await?;
             *total_tokens += output.tokens_used;
+
+            if let Some(ref emit) = emitter {
+                emit(CommitteeEvent::RoleComplete {
+                    symbol: symbol.to_string(),
+                    role,
+                    round,
+                    summary: RoundOutputSummary::from(&output),
+                    step_index: si,
+                });
+            }
+
             round_outputs.push(output);
         }
 
@@ -513,19 +541,46 @@ async fn run_debate_rounds(
 /// 4. CIO verdict
 /// 5. Post-analysis: sentinel, convergence, sanity check
 /// 6. Archive (fire-and-forget)
+///
+/// When `emitter` is `Some`, events are emitted at each pipeline step boundary
+/// for real-time frontend streaming via `"committee-event"` Tauri event channel.
 pub async fn run_committee(
     client: &dyn InvestLlmClient,
     symbol: &str,
     config: &CommitteeConfig,
+    emitter: Option<EventEmitter>,
 ) -> Result<CommitteeResult, String> {
     let start = std::time::Instant::now();
     let mut round_outputs: Vec<RoundOutput> = Vec::new();
     let mut total_tokens: u32 = 0;
 
     // ── Step 1: Macro phase (with tool-call loop) ──────────────────────
-    let (macro_output, macro_tokens) = run_macro_phase(client, symbol, config).await?;
-    total_tokens += macro_tokens;
-    round_outputs.push(macro_output);
+    {
+        let si = step_index_for_role(CommitteeRole::Macro, 1);
+        if let Some(ref emit) = emitter {
+            emit(CommitteeEvent::RoleStart {
+                symbol: symbol.to_string(),
+                role: CommitteeRole::Macro,
+                round: 1,
+                step_index: si,
+            });
+        }
+
+        let (macro_output, macro_tokens) = run_macro_phase(client, symbol, config).await?;
+        total_tokens += macro_tokens;
+
+        if let Some(ref emit) = emitter {
+            emit(CommitteeEvent::RoleComplete {
+                symbol: symbol.to_string(),
+                role: CommitteeRole::Macro,
+                round: 1,
+                summary: RoundOutputSummary::from(&macro_output),
+                step_index: si,
+            });
+        }
+
+        round_outputs.push(macro_output);
+    }
 
     let macro_signal = round_outputs[0]
         .parsed
@@ -536,19 +591,65 @@ pub async fn run_committee(
 
     // ── Step 2: Debate rounds ──────────────────────────────────────────
     let converged =
-        run_debate_rounds(client, symbol, config, &mut round_outputs, &mut total_tokens, &macro_signal, config.emergency_buffer_cny).await?;
+        run_debate_rounds(client, symbol, config, &mut round_outputs, &mut total_tokens, &macro_signal, config.emergency_buffer_cny, &emitter).await?;
 
     // ── Step 3: Wealth context ─────────────────────────────────────────
-    let wealth_output =
-        run_role_phase(client, symbol, CommitteeRole::Wealth, config, &round_outputs, &macro_signal, config.emergency_buffer_cny).await?;
-    total_tokens += wealth_output.tokens_used;
-    round_outputs.push(wealth_output);
+    {
+        let si = step_index_for_role(CommitteeRole::Wealth, 1);
+        if let Some(ref emit) = emitter {
+            emit(CommitteeEvent::RoleStart {
+                symbol: symbol.to_string(),
+                role: CommitteeRole::Wealth,
+                round: 1,
+                step_index: si,
+            });
+        }
+
+        let wealth_output =
+            run_role_phase(client, symbol, CommitteeRole::Wealth, config, &round_outputs, &macro_signal, config.emergency_buffer_cny).await?;
+        total_tokens += wealth_output.tokens_used;
+
+        if let Some(ref emit) = emitter {
+            emit(CommitteeEvent::RoleComplete {
+                symbol: symbol.to_string(),
+                role: CommitteeRole::Wealth,
+                round: 1,
+                summary: RoundOutputSummary::from(&wealth_output),
+                step_index: si,
+            });
+        }
+
+        round_outputs.push(wealth_output);
+    }
 
     // ── Step 4: CIO verdict ────────────────────────────────────────────
-    let cio_output =
-        run_role_phase(client, symbol, CommitteeRole::Cio, config, &round_outputs, &macro_signal, config.emergency_buffer_cny).await?;
-    total_tokens += cio_output.tokens_used;
-    round_outputs.push(cio_output);
+    {
+        let si = step_index_for_role(CommitteeRole::Cio, 1);
+        if let Some(ref emit) = emitter {
+            emit(CommitteeEvent::RoleStart {
+                symbol: symbol.to_string(),
+                role: CommitteeRole::Cio,
+                round: 1,
+                step_index: si,
+            });
+        }
+
+        let cio_output =
+            run_role_phase(client, symbol, CommitteeRole::Cio, config, &round_outputs, &macro_signal, config.emergency_buffer_cny).await?;
+        total_tokens += cio_output.tokens_used;
+
+        if let Some(ref emit) = emitter {
+            emit(CommitteeEvent::RoleComplete {
+                symbol: symbol.to_string(),
+                role: CommitteeRole::Cio,
+                round: 1,
+                summary: RoundOutputSummary::from(&cio_output),
+                step_index: si,
+            });
+        }
+
+        round_outputs.push(cio_output);
+    }
 
     // ── Step 5: Post-analysis ──────────────────────────────────────────
     let sentinel = check_sentinel(&round_outputs);
@@ -598,7 +699,7 @@ pub async fn run_committee(
         log::warn!("archive_decision failed for {}: {}", symbol, e);
     }
 
-    Ok(CommitteeResult {
+    let result = CommitteeResult {
         symbol: symbol.to_string(),
         final_verdict,
         final_confidence,
@@ -611,7 +712,14 @@ pub async fn run_committee(
         converged,
         sentinel_override: sentinel,
         sanity_check: sanity,
-    })
+    };
+
+    // Archive full report (markdown + events.jsonl) — fire-and-forget
+    if let Err(e) = archive_decision_full(symbol, &result) {
+        log::warn!("archive_decision_full failed for {}: {}", symbol, e);
+    }
+
+    Ok(result)
 }
 
 // ---------------------------------------------------------------------------
@@ -620,6 +728,7 @@ pub async fn run_committee(
 
 /// Run committee analysis for multiple symbols concurrently, respecting
 /// per-provider concurrency limits via the governor.
+/// Non-streaming wrapper — no events emitted.
 pub async fn run_committee_batch(
     client: Arc<dyn InvestLlmClient>,
     symbols: &[String],
@@ -632,7 +741,7 @@ pub async fn run_committee_batch(
         let config = config.clone();
         let symbol = symbol.clone();
         handles.push(tokio::spawn(async move {
-            run_committee(&*client, &symbol, &config).await
+            run_committee(&*client, &symbol, &config, None).await
         }));
     }
 
@@ -643,5 +752,70 @@ pub async fn run_committee_batch(
             Err(e) => results.push(Err(format!("task join error: {}", e))),
         }
     }
+    results
+}
+
+/// Run committee analysis for multiple symbols concurrently with real-time
+/// event emission. Each symbol's pipeline emits `CommitteeEvent`s via the
+/// provided emitter as roles start/complete.
+pub async fn run_committee_batch_stream(
+    client: Arc<dyn InvestLlmClient>,
+    symbols: &[String],
+    config: &CommitteeConfig,
+    emitter: EventEmitter,
+) -> Vec<Result<CommitteeResult, String>> {
+    // Emit batch-start event
+    emitter(CommitteeEvent::CommitteeStart {
+        symbols: symbols.to_vec(),
+        total: symbols.len(),
+    });
+
+    let mut handles = Vec::with_capacity(symbols.len());
+
+    for symbol in symbols {
+        let client = client.clone();
+        let config = config.clone();
+        let symbol = symbol.clone();
+        let emitter = emitter.clone();
+        handles.push(tokio::spawn(async move {
+            run_committee(&*client, &symbol, &config, Some(emitter)).await
+        }));
+    }
+
+    let mut results = Vec::with_capacity(handles.len());
+    let mut completed = 0usize;
+    let total = handles.len();
+
+    for handle in handles {
+        match handle.await {
+            Ok(r) => {
+                match &r {
+                    Ok(result) => {
+                        emitter(CommitteeEvent::SymbolComplete {
+                            symbol: result.symbol.clone(),
+                            result: result.clone(),
+                        });
+                    }
+                    Err(e) => {
+                        // Error already emitted per-symbol if available;
+                        // this covers task-join or unexpected errors.
+                        log::warn!("committee batch task error: {}", e);
+                    }
+                }
+                completed += 1;
+                results.push(r);
+            }
+            Err(e) => {
+                completed += 1;
+                results.push(Err(format!("task join error: {}", e)));
+            }
+        }
+    }
+
+    emitter(CommitteeEvent::Done {
+        completed,
+        total,
+    });
+
     results
 }

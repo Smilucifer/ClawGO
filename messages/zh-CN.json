@@ -302,6 +302,13 @@
   "invest_committee_sentinel": "SENTINEL",
   "invest_committee_show_rounds": "展开 {count} 轮",
   "invest_committee_hide_rounds": "收起轮次",
+  "invest_committee_sub_live": "直播",
+  "invest_committee_sub_replay": "决策回放",
+  "invest_committee_sub_archive": "决议归档",
+  "invest_committee_sub_roles": "角色配置",
+  "invest_committee_sub_accuracy": "命中率",
+  "invest_committee_sub_tools": "Tool 调用",
+  "invest_committee_config": "供应商配置",
 
   "invest_dashboard": "仪表盘",
   "invest_total_assets": "总资产",
