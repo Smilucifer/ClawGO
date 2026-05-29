@@ -356,24 +356,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_archive_decision_signature_compiles() {
-        // Verify the function signature matches what the orchestrator expects.
-        // Actual DB tests require a running invest.db — tested via integration.
-        let _f = archive_decision;
-        let _: fn(
-            &str,
-            &str,
-            f64,
-            Option<&str>,
-            Option<f64>,
-            &str,
-            &str,
-            &str,
-            u32,
-            u64,
-        ) -> _ = archive_decision;
-    }
+    // NOTE: archive_decision is async, so it cannot be coerced to a fn pointer.
+    // Signature validation is done via the compiler when the orchestrator calls it.
 
     #[test]
     fn test_format_markdown() {

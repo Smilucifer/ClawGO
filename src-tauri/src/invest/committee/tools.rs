@@ -191,7 +191,9 @@ async fn exec_multi_timeframe(symbol: &str) -> Result<String, String> {
     let start_date =
         (chrono::Local::now() - chrono::Duration::days(180)).format("%Y%m%d").to_string();
 
-    let bars = client.daily(symbol, &start_date, &end_date).await?;
+    let mut bars = client.daily(symbol, &start_date, &end_date).await?;
+    // daily() returns ascending (oldest first); reverse to descending (newest first)
+    bars.reverse();
     if bars.len() < 5 {
         return Ok(format!("{} 数据不足，无法进行多时间框架分析", symbol));
     }
@@ -255,15 +257,17 @@ async fn exec_macro_snapshot() -> Result<String, String> {
     let start_date =
         (chrono::Local::now() - chrono::Duration::days(90)).format("%Y%m%d").to_string();
 
-    let idx_bars = client
+    let mut idx_bars = client
         .daily("000300.SH", &start_date, &end_date)
         .await
         .unwrap_or_default();
+    // daily() returns ascending (oldest first); reverse to descending (newest first)
+    idx_bars.reverse();
 
     let csi300_latest = idx_bars.first().map(|b| b.close).unwrap_or(0.0);
     let csi300_pct = idx_bars.first().map(|b| b.pct_chg).unwrap_or(0.0);
 
-    // 60-day percentile rank
+    // 60-day percentile rank (most recent 60 bars)
     let csi300_60d: Vec<f64> = idx_bars.iter().take(60).map(|b| b.close).collect();
     let csi300_pctile = if !csi300_60d.is_empty() {
         let mut sorted = csi300_60d.clone();
@@ -408,7 +412,8 @@ mod tests {
 
     #[test]
     fn test_macro_tool_names() {
-        let names: Vec<&str> = macro_tool_defs().iter().map(|t| t.name.as_str()).collect();
+        let defs = macro_tool_defs();
+        let names: Vec<&str> = defs.iter().map(|t| t.name.as_str()).collect();
         assert!(names.contains(&"get_history_data"));
         assert!(names.contains(&"analyze_multi_timeframe"));
         assert!(names.contains(&"get_macro_snapshot"));
