@@ -124,6 +124,54 @@ pub fn get_active_insights_json() -> Result<String, String> {
     })
 }
 
+fn row_to_insight(row: &rusqlite::Row) -> rusqlite::Result<DomainInsight> {
+    Ok(DomainInsight {
+        id: row.get(0)?,
+        insight_type: row.get(1)?,
+        symbol: row.get(2)?,
+        content: row.get(3)?,
+        confidence: row.get(4)?,
+        source_verdict_ids: row.get(5)?,
+        status: row.get(6)?,
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
+    })
+}
+
+/// Full-text search on domain_insights using FTS5. Returns results ranked by BM25.
+pub fn search_insights(query: &str, limit: Option<i64>) -> Result<Vec<DomainInsight>, String> {
+    if query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    with_conn(|conn| {
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(query.to_string())];
+        let sql = if let Some(l) = limit {
+            params.push(Box::new(l));
+            "SELECT d.id, d.insight_type, d.symbol, d.content, d.confidence, d.source_verdict_ids, d.status, d.created_at, d.updated_at
+             FROM domain_insights d
+             JOIN domain_insights_fts fts ON d.rowid = fts.rowid
+             WHERE domain_insights_fts MATCH ?1
+             ORDER BY bm25(fts)
+             LIMIT ?2"
+        } else {
+            "SELECT d.id, d.insight_type, d.symbol, d.content, d.confidence, d.source_verdict_ids, d.status, d.created_at, d.updated_at
+             FROM domain_insights d
+             JOIN domain_insights_fts fts ON d.rowid = fts.rowid
+             WHERE domain_insights_fts MATCH ?1
+             ORDER BY bm25(fts)"
+        };
+        let mut stmt = conn.prepare(sql).map_err(|e| format!("prepare fts search: {e}"))?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(params.iter()), row_to_insight)
+            .map_err(|e| format!("query fts: {e}"))?;
+        let mut result = Vec::new();
+        for r in rows {
+            result.push(r.map_err(|e| format!("read fts row: {e}"))?);
+        }
+        Ok(result)
+    })
+}
+
 /// Restore active insights from a JSON snapshot. Deletes all current active
 /// insights and replaces them with the snapshot contents.
 /// Wrapped in a transaction so DELETE+INSERT is atomic.

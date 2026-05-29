@@ -471,6 +471,7 @@ pub fn run() {
             commands::invest::save_dream_config,
             commands::invest::list_dream_traces,
             commands::invest::rollback_dream,
+            commands::invest::search_domain_insights,
         ])
         .setup(move |app| {
             // Set up broadcast emitter (requires AppHandle, so must be in setup)

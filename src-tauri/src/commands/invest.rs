@@ -815,6 +815,16 @@ pub struct ScanStatus {
     pub last_event_at: Option<String>,
 }
 
+// ── Domain Insights ────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn search_domain_insights(
+    query: String,
+    limit: Option<i64>,
+) -> Result<Vec<crate::storage::invest::domain_insights::DomainInsight>, String> {
+    crate::storage::invest::domain_insights::search_insights(&query, limit)
+}
+
 // ── Scheduler commands ──────────────────────────────────────────────
 
 #[tauri::command]

@@ -76,6 +76,28 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
     // Migration: create dream_snapshots table (use local conn, DB not yet in static)
     dream_snapshots::create_table(&conn)?;
 
+    // FTS5 virtual table for domain_insights full-text search
+    conn.execute_batch(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS domain_insights_fts USING fts5(content, symbol, tokenize='unicode61');"
+    ).map_err(|e| format!("create domain_insights_fts: {e}"))?;
+
+    // Triggers to keep FTS in sync with domain_insights
+    conn.execute_batch(
+        "DROP TRIGGER IF EXISTS domain_insights_ai;
+         DROP TRIGGER IF EXISTS domain_insights_ad;
+         DROP TRIGGER IF EXISTS domain_insights_au;
+         CREATE TRIGGER domain_insights_ai AFTER INSERT ON domain_insights BEGIN
+             INSERT INTO domain_insights_fts(rowid, content, symbol) VALUES (new.rowid, new.content, new.symbol);
+         END;
+         CREATE TRIGGER domain_insights_ad AFTER DELETE ON domain_insights BEGIN
+             INSERT INTO domain_insights_fts(domain_insights_fts, rowid, content, symbol) VALUES ('delete', old.rowid, old.content, old.symbol);
+         END;
+         CREATE TRIGGER domain_insights_au AFTER UPDATE ON domain_insights BEGIN
+             INSERT INTO domain_insights_fts(domain_insights_fts, rowid, content, symbol) VALUES ('delete', old.rowid, old.content, old.symbol);
+             INSERT INTO domain_insights_fts(rowid, content, symbol) VALUES (new.rowid, new.content, new.symbol);
+         END;"
+    ).map_err(|e| format!("create domain_insights_fts triggers: {e}"))?;
+
     let mut guard = DB.lock().map_err(|e| format!("lock db: {}", e))?;
     *guard = Some(conn);
     log::info!("invest.db initialized at {:?}", db_path);
