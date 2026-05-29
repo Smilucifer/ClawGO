@@ -89,9 +89,10 @@ pub async fn normalize_events(
     let mut items = String::new();
     for (i, ev) in raw_events.iter().enumerate() {
         items.push_str(&format!(
-            "\n[{}] source={} title={}\n{}\n",
+            "\n[{}] source={} type={} title={}\n{}\n",
             i + 1,
             ev.source,
+            ev.event_type,
             ev.title,
             if ev.body.is_empty() { &ev.title } else { &ev.body }
         ));
@@ -124,9 +125,9 @@ fn parse_normalized_response(content: &str, raw_events: &[RawEvent]) -> Vec<Norm
         json_str
             .lines()
             .skip(1)
+            .filter(|l| l.trim() != "```")
             .collect::<Vec<_>>()
             .join("\n")
-            .trim_end_matches("```")
             .trim()
             .to_string()
     } else {
@@ -154,11 +155,6 @@ fn parse_normalized_response(content: &str, raw_events: &[RawEvent]) -> Vec<Norm
 /// Fallback: use rule-based severity, neutral stance, no symbols.
 fn fallback_normalize(ev: &RawEvent) -> NormalizedEvent {
     let severity = classify_severity(&ev.title, &ev.body)
-        .map(|s| match s {
-            Severity::High => Severity::High,
-            Severity::Medium => Severity::Medium,
-            Severity::Low => Severity::Low,
-        })
         .unwrap_or(Severity::Low);
 
     NormalizedEvent {
@@ -206,5 +202,33 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].stance, "bullish");
         assert_eq!(result[0].affected_symbols, vec!["600519"]);
+    }
+
+    #[test]
+    fn test_parse_markdown_wrapped_json() {
+        let raw = vec![
+            RawEvent {
+                source: "test".into(),
+                event_type: "news".into(),
+                title: "Event 1".into(),
+                body: "body 1".into(),
+                url: None,
+                created_at: "2026-01-01".into(),
+            },
+            RawEvent {
+                source: "test".into(),
+                event_type: "news".into(),
+                title: "Event 2".into(),
+                body: "body 2".into(),
+                url: None,
+                created_at: "2026-01-02".into(),
+            },
+        ];
+        let wrapped = "```json\n[{\"one_line_claim\":\"claim 1\",\"stance\":\"neutral\",\"severity\":\"low\",\"affected_symbols\":[]}]\n```";
+        let result = parse_normalized_response(wrapped, &raw);
+        assert_eq!(result.len(), 2); // 1 parsed + 1 fallback for missing
+        assert_eq!(result[0].stance, "neutral");
+        // Second event falls back
+        assert_eq!(result[1].stance, "neutral");
     }
 }
