@@ -1803,5 +1803,5 @@
   "settings_embedding_unknown_error": "未知错误",
   "settings_embedding_disabled_notice": "角色记忆已暂停。启用后可恢复语义搜索。已存储的记忆数据不会丢失。",
 
-  "settings_tushare_token": "Tushare Token"
+  "settings_tushare_token": "Tushare 数据令牌"
 }
