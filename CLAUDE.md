@@ -356,7 +356,7 @@ Key phases and their status:
 | 10+ (v2.6.0) | Preview panel code review: keyboard scope, $effect reactivity, DOMPurify styles, regex URL FP, dirty guard, base64 guard | [done] |
 | 10+ (v3.0.0) | 记忆系统重构: SQLite FTS5 用户中心架构, 移除 LanceDB + petgraph + Embedding API, 15 项审查修复, shared injection, 前端去重 | [done] |
 | 10+ (v3.1.0) | openInvest Phase 1: invest.db 数据层, scope-aware 记忆, /invest + /memory-mgmt 路由, MoreMenu, 18 commits, 8 项审查修复 | [done] |
-| 10+ (v3.2.0) | openInvest Phase 2: Dashboard KPI, 持仓管理(HOLD/WATCH), 交易对话框, 交易记录+CSV导出, 策略配置CRUD, Chart.js PnL 图表, Tushare HTTP client(自定义代理), PnL 定时快照, 交易日历同步, Legacy 迁移, 55+ i18n keys | [done] |
+| 10+ (v3.2.0) | openInvest Phase 2: Dashboard KPI, 持仓管理(HOLD/WATCH), 交易对话框, 交易记录+CSV导出, 策略配置CRUD, Chart.js PnL 图表, Tushare HTTP client(自定义代理), PnL 定时快照, 交易日历同步, Legacy 迁移, 55+ i18n keys, 13 项审查修复 | [done] |
 
 Detailed plans and review responses are in `docs/`.
 
