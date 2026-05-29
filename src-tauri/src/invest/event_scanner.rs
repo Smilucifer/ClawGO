@@ -117,6 +117,161 @@ pub async fn normalize_events(
     parse_normalized_response(&content, raw_events)
 }
 
+/// Result of a scan run.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanResult {
+    pub fetched: usize,
+    pub filtered: usize,
+    pub saved: usize,
+    pub sources_scanned: Vec<String>,
+}
+
+/// Run a full event scan: fetch from Tushare, filter by keywords, normalize via LLM, save to DB.
+pub async fn scan_events(
+    tushare: &crate::tushare::TushareClient,
+    llm_client: &dyn InvestLlmClient,
+    llm_config: &LlmConfig,
+    normalizer_prompt: Option<&str>,
+) -> Result<ScanResult, String> {
+    use chrono::{Local, Duration as ChronoDuration};
+
+    let now = Local::now();
+    let today = now.format("%Y%m%d").to_string();
+    let _two_hours_ago = (now - ChronoDuration::hours(2)).format("%Y%m%d%H%M%S").to_string();
+    let one_day_ago = (now - ChronoDuration::days(1)).format("%Y%m%d").to_string();
+
+    let mut raw_events: Vec<RawEvent> = Vec::new();
+    let mut sources_scanned: Vec<String> = Vec::new();
+
+    // 1. Fetch major_news (sina + cls)
+    for src in &["sina", "cls"] {
+        sources_scanned.push(format!("tushare_major_news:{}", src));
+        match tushare.major_news(src, &one_day_ago, &today).await {
+            Ok(items) => {
+                for item in items {
+                    let created_at = if item.datetime.is_empty() {
+                        now.format("%Y-%m-%dT%H:%M:%S").to_string()
+                    } else {
+                        item.datetime
+                    };
+                    raw_events.push(RawEvent {
+                        source: format!("tushare_major_news:{}", src),
+                        event_type: "news".to_string(),
+                        title: item.title,
+                        body: item.content,
+                        url: None,
+                        created_at,
+                    });
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to fetch major_news ({}): {}", src, e);
+            }
+        }
+    }
+
+    // 2. Fetch announcements for HOLD + WATCH holdings
+    let holdings = crate::storage::invest::portfolio::list_holdings()
+        .unwrap_or_default();
+    let active_symbols: Vec<&str> = holdings
+        .iter()
+        .filter(|h| h.kind == "HOLD" || h.kind == "WATCH")
+        .map(|h| h.symbol.as_str())
+        .collect();
+
+    for symbol in &active_symbols {
+        sources_scanned.push(format!("tushare_anns_d:{}", symbol));
+        match tushare.anns_d(symbol, &one_day_ago, &today).await {
+            Ok(items) => {
+                for item in items {
+                    let created_at = if item.ann_date.is_empty() {
+                        now.format("%Y-%m-%dT%H:%M:%S").to_string()
+                    } else {
+                        item.ann_date.clone()
+                    };
+                    raw_events.push(RawEvent {
+                        source: "tushare_anns_d".to_string(),
+                        event_type: "announcement".to_string(),
+                        title: item.title,
+                        body: String::new(),
+                        url: Some(item.url),
+                        created_at,
+                    });
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to fetch announcements for {}: {}", symbol, e);
+            }
+        }
+    }
+
+    let fetched = raw_events.len();
+
+    // 3. Filter by keyword severity (drop LOW)
+    let filtered_events: Vec<RawEvent> = raw_events
+        .into_iter()
+        .filter(|ev| classify_severity(&ev.title, &ev.body).is_some())
+        .collect();
+    let filtered = filtered_events.len();
+
+    if filtered_events.is_empty() {
+        return Ok(ScanResult {
+            fetched,
+            filtered: 0,
+            saved: 0,
+            sources_scanned,
+        });
+    }
+
+    // 4. Normalize via LLM
+    let normalized = normalize_events(llm_client, llm_config, &filtered_events, normalizer_prompt).await;
+
+    // 5. Save to DB (dedup by source+title via INSERT OR REPLACE)
+    let mut saved = 0usize;
+    for (ev, norm) in filtered_events.iter().zip(normalized.iter()) {
+        let symbols_str = norm.affected_symbols.join(",");
+        let body = if norm.one_line_claim.is_empty() {
+            Some(ev.title.clone())
+        } else {
+            Some(norm.one_line_claim.clone())
+        };
+        let event = crate::storage::invest::events::Event {
+            id: uuid::Uuid::new_v4().to_string(),
+            source: ev.source.clone(),
+            event_type: ev.event_type.clone(),
+            title: ev.title.clone(),
+            body,
+            symbols: if symbols_str.is_empty() {
+                None
+            } else {
+                Some(symbols_str)
+            },
+            severity: format!("{:?}", norm.severity).to_lowercase(),
+            stance: norm.stance.clone(),
+            triggered: false,
+            trigger_verdict_id: None,
+            created_at: ev.created_at.clone(),
+        };
+        match crate::storage::invest::events::save_event(&event) {
+            Ok(()) => saved += 1,
+            Err(e) => {
+                // Duplicate key errors are expected (dedup)
+                if !e.to_string().contains("UNIQUE") {
+                    log::warn!("Failed to save event '{}': {}", ev.title, e);
+                }
+            }
+        }
+    }
+
+    Ok(ScanResult {
+        fetched,
+        filtered,
+        saved,
+        sources_scanned,
+    })
+}
+
 /// Parse LLM JSON response, matching results to raw events by index.
 fn parse_normalized_response(content: &str, raw_events: &[RawEvent]) -> Vec<NormalizedEvent> {
     // Extract JSON array from response (handle markdown code blocks)
