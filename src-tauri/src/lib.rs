@@ -463,6 +463,9 @@ pub fn run() {
             commands::invest::update_cron_schedule,
             commands::invest::get_cron_job_logs,
             commands::invest::trigger_cron_job,
+            commands::invest::run_verdict_review_cmd,
+            commands::invest::get_verdict_review_summary,
+            commands::invest::get_verdict_review_detail,
         ])
         .setup(move |app| {
             // Set up broadcast emitter (requires AppHandle, so must be in setup)

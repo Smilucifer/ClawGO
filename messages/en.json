@@ -299,6 +299,16 @@
   "invest_scheduler_cancel": "Cancel",
   "invest_scheduler_edit": "Edit",
 
+  "invest_accuracy_title": "Hit Rate Tracking",
+  "invest_accuracy_run_review": "Run Review",
+  "invest_accuracy_no_data": "No verdict review data yet. Run a review to get started.",
+  "invest_accuracy_total_verdicts": "Total Verdicts",
+  "invest_accuracy_overall_hit_rate": "Overall Hit Rate (30d)",
+  "invest_accuracy_directional_hit_rate": "Directional Hit Rate (30d)",
+  "invest_accuracy_honesty_banner": "Directional accuracy below 50% — the committee's non-HOLD recommendations are worse than random. Consider reviewing role prompts or adjusting debate rounds.",
+  "invest_accuracy_by_window": "Hit Rate by Window",
+  "invest_accuracy_by_verdict": "Hit Rate by Verdict Type",
+
   "invest_committee_llm_config": "LLM Provider Config",
   "invest_committee_api_key": "API Key",
   "invest_committee_base_url": "Base URL",

@@ -299,6 +299,16 @@
   "invest_scheduler_cancel": "取消",
   "invest_scheduler_edit": "编辑",
 
+  "invest_accuracy_title": "命中率追踪",
+  "invest_accuracy_run_review": "运行评审",
+  "invest_accuracy_no_data": "暂无评审数据，运行评审以开始。",
+  "invest_accuracy_total_verdicts": "决策总数",
+  "invest_accuracy_overall_hit_rate": "总体命中率 (30d)",
+  "invest_accuracy_directional_hit_rate": "方向性命中率 (30d)",
+  "invest_accuracy_honesty_banner": "方向性命中率低于 50% — 委员会非 HOLD 决策表现不如随机。建议检查角色提示词或调整辩论轮次。",
+  "invest_accuracy_by_window": "按窗口命中率",
+  "invest_accuracy_by_verdict": "按决策类型命中率",
+
   "invest_committee_llm_config": "LLM 供应商配置",
   "invest_committee_api_key": "API Key",
   "invest_committee_base_url": "Base URL",

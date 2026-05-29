@@ -1,10 +1,236 @@
 <script lang="ts">
   import { t } from '$lib/i18n/index.svelte';
+  import { getTransport } from '$lib/transport';
+
+  const invoke = <T,>(cmd: string, args?: Record<string, unknown>) =>
+    getTransport().invoke<T>(cmd, args);
+
+  interface WindowStats {
+    windowDays: number;
+    sampleCount: number;
+    hitRate: number;
+  }
+  interface VerdictStats {
+    verdictType: string;
+    sampleCount: number;
+    avgConfidence: number;
+    hitRate1d: number;
+    hitRate7d: number;
+    hitRate30d: number;
+  }
+  interface ReviewSummary {
+    totalVerdicts: number;
+    overallHitRate: number;
+    directionalHitRate: number;
+    byWindow: WindowStats[];
+    byVerdict: VerdictStats[];
+    lastReviewAt?: string;
+  }
+  interface ReviewEntry {
+    id: number;
+    verdictId: string;
+    symbol: string;
+    verdictType: string;
+    verdictDate: string;
+    windowDays: number;
+    priceAtVerdict?: number;
+    priceAfter?: number;
+    returnPct?: number;
+    hit: boolean;
+    flatThreshold?: number;
+  }
+
+  let summary = $state<ReviewSummary | null>(null);
+  let detail = $state<ReviewEntry[]>([]);
+  let loading = $state(false);
+  let running = $state(false);
+  let showDetail = $state(false);
+  let error = $state<string | null>(null);
+
+  async function loadSummary() {
+    loading = true;
+    try {
+      summary = await invoke<ReviewSummary>('get_verdict_review_summary');
+    } catch (e) {
+      error = String(e);
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function runReview() {
+    running = true;
+    error = null;
+    try {
+      const settings = await invoke<{ tushareToken?: string }>('get_user_settings');
+      if (!settings.tushareToken) {
+        error = 'No Tushare token configured';
+        return;
+      }
+      summary = await invoke<ReviewSummary>('run_verdict_review_cmd', { tushareToken: settings.tushareToken });
+    } catch (e) {
+      error = String(e);
+    } finally {
+      running = false;
+    }
+  }
+
+  async function loadDetail() {
+    showDetail = !showDetail;
+    if (showDetail && detail.length === 0) {
+      detail = await invoke<ReviewEntry[]>('get_verdict_review_detail', {});
+    }
+  }
+
+  function pct(n: number): string {
+    return (n * 100).toFixed(1) + '%';
+  }
+
+  function hitColor(rate: number): string {
+    if (rate >= 0.6) return 'text-green-500';
+    if (rate >= 0.4) return 'text-yellow-500';
+    return 'text-red-500';
+  }
+
+  $effect(() => { loadSummary(); });
 </script>
 
-<div class="flex h-48 items-center justify-center">
-  <div class="text-center text-muted-foreground">
-    <p class="text-lg font-medium">命中率追踪</p>
-    <p class="mt-1 text-sm">Phase 4 开发中 — 将对比决策结果与实际价格走势</p>
+<div class="space-y-4">
+  <div class="flex items-center justify-between">
+    <h3 class="text-lg font-semibold">{t('invest_accuracy_title')}</h3>
+    <button
+      class="rounded bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+      disabled={running}
+      onclick={runReview}
+    >
+      {running ? '...' : t('invest_accuracy_run_review')}
+    </button>
   </div>
+
+  {#if error}
+    <div class="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+      {error}
+    </div>
+  {/if}
+
+  {#if loading}
+    <p class="text-muted-foreground">{t('common_loading')}</p>
+  {:else if !summary || summary.totalVerdicts === 0}
+    <div class="flex h-32 items-center justify-center">
+      <p class="text-muted-foreground">{t('invest_accuracy_no_data')}</p>
+    </div>
+  {:else}
+    <!-- KPI Cards -->
+    <div class="grid grid-cols-3 gap-4">
+      <div class="rounded-lg border p-4 text-center">
+        <div class="text-2xl font-bold">{summary.totalVerdicts}</div>
+        <div class="text-xs text-muted-foreground">{t('invest_accuracy_total_verdicts')}</div>
+      </div>
+      <div class="rounded-lg border p-4 text-center">
+        <div class="text-2xl font-bold {hitColor(summary.overallHitRate)}">{pct(summary.overallHitRate)}</div>
+        <div class="text-xs text-muted-foreground">{t('invest_accuracy_overall_hit_rate')}</div>
+      </div>
+      <div class="rounded-lg border p-4 text-center border-primary/30">
+        <div class="text-2xl font-bold {hitColor(summary.directionalHitRate)}">{pct(summary.directionalHitRate)}</div>
+        <div class="text-xs text-muted-foreground">{t('invest_accuracy_directional_hit_rate')}</div>
+      </div>
+    </div>
+
+    <!-- Honesty banner -->
+    {#if summary.directionalHitRate < 0.5}
+      <div class="rounded border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
+        {t('invest_accuracy_honesty_banner')}
+      </div>
+    {/if}
+
+    <!-- By Window -->
+    <div class="rounded-lg border">
+      <div class="border-b bg-muted/50 px-4 py-2 text-sm font-medium">{t('invest_accuracy_by_window')}</div>
+      <div class="p-4 space-y-3">
+        {#each summary.byWindow.sort((a, b) => a.windowDays - b.windowDays) as w}
+          <div class="flex items-center gap-3">
+            <span class="w-12 text-sm font-medium">{w.windowDays}d</span>
+            <div class="flex-1">
+              <div class="h-3 rounded-full bg-muted overflow-hidden">
+                <div class="h-full rounded-full bg-primary transition-all" style="width: {w.hitRate * 100}%"></div>
+              </div>
+            </div>
+            <span class="w-16 text-right text-sm font-mono {hitColor(w.hitRate)}">{pct(w.hitRate)}</span>
+            <span class="w-16 text-right text-xs text-muted-foreground">{w.sampleCount} samples</span>
+          </div>
+        {/each}
+      </div>
+    </div>
+
+    <!-- By Verdict Type -->
+    <div class="rounded-lg border">
+      <div class="border-b bg-muted/50 px-4 py-2 text-sm font-medium">{t('invest_accuracy_by_verdict')}</div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b text-left text-xs text-muted-foreground">
+            <th class="px-4 py-2">Type</th>
+            <th class="px-4 py-2 text-right">Count</th>
+            <th class="px-4 py-2 text-right">1d</th>
+            <th class="px-4 py-2 text-right">7d</th>
+            <th class="px-4 py-2 text-right">30d</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each summary.byVerdict.sort((a, b) => b.sampleCount - a.sampleCount) as v}
+            <tr class="border-b last:border-0">
+              <td class="px-4 py-2 font-medium">{v.verdictType}</td>
+              <td class="px-4 py-2 text-right">{v.sampleCount}</td>
+              <td class="px-4 py-2 text-right {hitColor(v.hitRate1d)}">{pct(v.hitRate1d)}</td>
+              <td class="px-4 py-2 text-right {hitColor(v.hitRate7d)}">{pct(v.hitRate7d)}</td>
+              <td class="px-4 py-2 text-right {hitColor(v.hitRate30d)}">{pct(v.hitRate30d)}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Detail toggle -->
+    <button class="text-sm text-muted-foreground hover:text-foreground" onclick={loadDetail}>
+      {showDetail ? 'Hide' : 'Show'} detail ({detail.length} entries)
+    </button>
+
+    {#if showDetail && detail.length > 0}
+      <div class="max-h-80 overflow-y-auto rounded-lg border">
+        <table class="w-full text-xs">
+          <thead>
+            <tr class="border-b bg-muted/50 text-left">
+              <th class="px-3 py-2">Symbol</th>
+              <th class="px-3 py-2">Date</th>
+              <th class="px-3 py-2">Verdict</th>
+              <th class="px-3 py-2 text-right">Window</th>
+              <th class="px-3 py-2 text-right">Return%</th>
+              <th class="px-3 py-2 text-center">Hit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each detail as d}
+              <tr class="border-b last:border-0">
+                <td class="px-3 py-2 font-mono">{d.symbol}</td>
+                <td class="px-3 py-2">{d.verdictDate}</td>
+                <td class="px-3 py-2">{d.verdictType}</td>
+                <td class="px-3 py-2 text-right">{d.windowDays}d</td>
+                <td class="px-3 py-2 text-right {(d.returnPct ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'}">
+                  {d.returnPct != null ? pct(d.returnPct) : '-'}
+                </td>
+                <td class="px-3 py-2 text-center">
+                  <span class="inline-block w-5 rounded text-center {d.hit ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
+                    {d.hit ? '✓' : '✗'}
+                  </span>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
+
+    {#if summary.lastReviewAt}
+      <p class="text-xs text-muted-foreground">Last review: {new Date(summary.lastReviewAt).toLocaleString()}</p>
+    {/if}
+  {/if}
 </div>

@@ -852,3 +852,131 @@ pub async fn trigger_cron_job(id: String) -> Result<String, String> {
     let _ = log_task_end(log_id, status, msg);
     result
 }
+
+// ── Verdict Review commands ──────────────────────────────────────────
+
+#[tauri::command]
+pub async fn run_verdict_review_cmd(
+    tushare_token: String,
+) -> Result<crate::invest::verdict_review::VerdictReviewSummary, String> {
+    crate::invest::verdict_review::run_verdict_review(&tushare_token).await
+}
+
+#[tauri::command]
+pub fn get_verdict_review_summary(
+) -> Result<crate::invest::verdict_review::VerdictReviewSummary, String> {
+    use crate::storage::invest::verdict_reviews;
+    let reviews = verdict_reviews::list_reviews(None, None)?;
+    if reviews.is_empty() {
+        return Ok(crate::invest::verdict_review::VerdictReviewSummary {
+            total_verdicts: 0,
+            overall_hit_rate: 0.0,
+            directional_hit_rate: 0.0,
+            by_window: vec![],
+            by_verdict: vec![],
+            last_review_at: None,
+        });
+    }
+    // Aggregate from stored reviews
+    let mut by_window = std::collections::HashMap::new();
+    let mut by_verdict_type = std::collections::HashMap::new();
+    let mut total_30d = 0usize;
+    let mut hits_30d = 0usize;
+    let mut dir_total = 0usize;
+    let mut dir_hits = 0usize;
+
+    for r in &reviews {
+        let entry = by_window.entry(r.window_days).or_insert((0usize, 0usize));
+        entry.0 += 1;
+        if r.hit {
+            entry.1 += 1;
+        }
+
+        let v_entry = by_verdict_type
+            .entry(r.verdict_type.clone())
+            .or_insert((0usize, [0usize; 3], [0usize; 3]));
+        v_entry.0 += 1;
+        let w_idx = match r.window_days {
+            1 => 0,
+            7 => 1,
+            _ => 2,
+        };
+        v_entry.2[w_idx] += 1;
+        if r.hit {
+            v_entry.1[w_idx] += 1;
+        }
+
+        if r.window_days == 30 {
+            total_30d += 1;
+            if r.hit {
+                hits_30d += 1;
+            }
+        }
+        if r.verdict_type != "HOLD" && r.window_days == 30 {
+            dir_total += 1;
+            if r.hit {
+                dir_hits += 1;
+            }
+        }
+    }
+
+    Ok(crate::invest::verdict_review::VerdictReviewSummary {
+        total_verdicts: reviews
+            .iter()
+            .map(|r| &r.verdict_id)
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        overall_hit_rate: if total_30d > 0 {
+            hits_30d as f64 / total_30d as f64
+        } else {
+            0.0
+        },
+        directional_hit_rate: if dir_total > 0 {
+            dir_hits as f64 / dir_total as f64
+        } else {
+            0.0
+        },
+        by_window: by_window
+            .into_iter()
+            .map(|(days, (total, hits))| {
+                crate::invest::verdict_review::WindowStats {
+                    window_days: days,
+                    sample_count: total,
+                    hit_rate: if total > 0 {
+                        hits as f64 / total as f64
+                    } else {
+                        0.0
+                    },
+                }
+            })
+            .collect(),
+        by_verdict: by_verdict_type
+            .into_iter()
+            .map(|(vt, (count, hits, totals))| {
+                let rate = |i: usize| {
+                    if totals[i] > 0 {
+                        hits[i] as f64 / totals[i] as f64
+                    } else {
+                        0.0
+                    }
+                };
+                crate::invest::verdict_review::VerdictStats {
+                    verdict_type: vt,
+                    sample_count: count,
+                    avg_confidence: None,
+                    hit_rate_1d: Some(rate(0)),
+                    hit_rate_7d: Some(rate(1)),
+                    hit_rate_30d: Some(rate(2)),
+                }
+            })
+            .collect(),
+        last_review_at: reviews.first().map(|r| r.created_at.clone()),
+    })
+}
+
+#[tauri::command]
+pub fn get_verdict_review_detail(
+    symbol: Option<String>,
+) -> Result<Vec<crate::storage::invest::verdict_reviews::VerdictReviewEntry>, String> {
+    crate::storage::invest::verdict_reviews::list_reviews(symbol.as_deref(), Some(200))
+}
