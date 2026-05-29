@@ -54,6 +54,17 @@
       default: return 'text-zinc-400';
     }
   }
+
+  let expandedIds = $state<Set<string>>(new Set());
+
+  function toggleExpand(id: string) {
+    if (expandedIds.has(id)) {
+      expandedIds.delete(id);
+    } else {
+      expandedIds.add(id);
+    }
+    expandedIds = new Set(expandedIds); // trigger reactivity
+  }
 </script>
 
 <div class="flex flex-col h-full">
@@ -118,7 +129,7 @@
   <div class="flex-1 overflow-y-auto">
     {#if store.filteredEvents.length === 0}
       <div class="flex items-center justify-center h-full text-zinc-500 text-sm">
-        No events found
+        No events found. Click Scan Now to check for updates.
       </div>
     {:else}
       {#each store.filteredEvents as event (event.id)}
@@ -130,13 +141,18 @@
             </span>
 
             <!-- Content -->
-            <div class="flex-1 min-w-0">
+            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+            <div class="flex-1 min-w-0 cursor-pointer" role="button" tabindex="0" onclick={() => toggleExpand(event.id)} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpand(event.id); } }}>
               <div class="flex items-center gap-2">
                 <span class="text-sm text-zinc-200 truncate">{event.title}</span>
                 <span class="text-[10px] {stanceColor(event.stance)}">{event.stance}</span>
               </div>
               {#if event.body && event.body !== event.title}
-                <p class="text-xs text-zinc-500 mt-0.5 line-clamp-2">{event.body}</p>
+                {#if expandedIds.has(event.id)}
+                  <p class="text-xs text-zinc-400 mt-1">{event.body}</p>
+                {:else}
+                  <p class="text-xs text-zinc-500 mt-0.5 line-clamp-2">{event.body}</p>
+                {/if}
               {/if}
               <div class="flex items-center gap-2 mt-1">
                 <span class="text-[10px] text-zinc-600">{event.source}</span>
@@ -157,7 +173,7 @@
                 onclick={() => {/* Task 10: trigger dialog */}}
                 class="px-2 py-1 text-xs bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 rounded"
               >
-                Trigger
+                Trigger Committee
               </button>
             {:else if event.triggered}
               <span class="text-[10px] text-zinc-600">Triggered</span>
