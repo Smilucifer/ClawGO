@@ -71,7 +71,7 @@ impl ShutdownGate {
 }
 
 /// Run a PnL snapshot: get current holdings, calculate total value, save snapshot.
-async fn run_pnl_snapshot() -> Result<String, String> {
+pub async fn run_pnl_snapshot() -> Result<String, String> {
     use crate::storage::invest::{portfolio, verdicts};
 
     let settings = crate::storage::settings::get_user_settings();
@@ -492,34 +492,7 @@ pub fn run() {
 
             // Start invest scheduler runner (background cron loop)
             invest::scheduler::runner::start(|job_id| async move {
-                match job_id.as_str() {
-                    "pnl_snapshot" => Ok("PnL snapshot saved (stub)".to_string()),
-                    "event_scan" => {
-                        let (tushare, llm_client, llm_config) =
-                            commands::invest::build_scan_clients()?;
-                        let result = invest::event_scanner::scan_events(
-                            &tushare,
-                            &llm_client,
-                            &llm_config,
-                            None,
-                        )
-                        .await?;
-                        Ok(format!(
-                            "Scanned: {} fetched, {} saved",
-                            result.fetched, result.saved
-                        ))
-                    }
-                    "verdict_review" => {
-                        Err("verdict_review not yet implemented (Task 3)".to_string())
-                    }
-                    "dream_invest" => {
-                        Err("dream_invest not yet implemented (Task 5)".to_string())
-                    }
-                    "dream_user" => {
-                        Err("dream_user not yet implemented (Task 5)".to_string())
-                    }
-                    _ => Err(format!("Unknown job: {}", job_id)),
-                }
+                invest::scheduler::runner::dispatch_job(&job_id).await
             });
 
             // System tray — hide-to-tray on close, left-click to show

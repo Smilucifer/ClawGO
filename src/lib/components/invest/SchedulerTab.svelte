@@ -35,6 +35,7 @@
   let editingJob = $state<string | null>(null);
   let editCronValue = $state('');
   let triggering = $state<string | null>(null);
+  let error = $state<string | null>(null);
 
   async function loadJobs() {
     loading = true;
@@ -53,24 +54,37 @@
   }
 
   async function toggle(job: CronJob) {
-    await invoke('toggle_cron_job', { id: job.id, enabled: !job.enabled });
-    await loadJobs();
+    error = null;
+    try {
+      await invoke('toggle_cron_job', { id: job.id, enabled: !job.enabled });
+      await loadJobs();
+    } catch (e) {
+      error = `Failed to toggle job: ${e}`;
+    }
   }
 
   async function runNow(jobId: string) {
+    error = null;
     triggering = jobId;
     try {
       await invoke('trigger_cron_job', { id: jobId });
       await loadJobs();
+    } catch (e) {
+      error = `Job failed: ${e}`;
     } finally {
       triggering = null;
     }
   }
 
   async function saveCron(jobId: string) {
-    await invoke('update_cron_schedule', { id: jobId, cronExpr: editCronValue });
-    editingJob = null;
-    await loadJobs();
+    error = null;
+    try {
+      await invoke('update_cron_schedule', { id: jobId, cronExpr: editCronValue });
+      editingJob = null;
+      await loadJobs();
+    } catch (e) {
+      error = `Failed to save schedule: ${e}`;
+    }
   }
 
   function humanCron(expr: string): string {
@@ -102,6 +116,12 @@
   {#if loading}
     <p class="text-muted-foreground">{t('invest_scheduler_loading')}</p>
   {:else}
+    {#if error}
+      <div class="flex items-center justify-between rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <span>{error}</span>
+        <button class="ml-2 text-xs hover:underline" onclick={() => (error = null)}>Dismiss</button>
+      </div>
+    {/if}
     <div class="rounded-lg border">
       <table class="w-full text-sm">
         <thead>

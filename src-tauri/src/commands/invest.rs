@@ -842,39 +842,7 @@ pub async fn trigger_cron_job(id: String) -> Result<String, String> {
     use crate::storage::invest::scheduler::{log_task_end, log_task_start};
 
     let log_id = log_task_start(&id)?;
-    let result = match id.as_str() {
-        "pnl_snapshot" => {
-            // TODO: call actual PnL snapshot function when available
-            Ok("PnL snapshot saved (stub)".to_string())
-        }
-        "event_scan" => {
-            let (tushare, llm_client, llm_config) = build_scan_clients()?;
-            let result = crate::invest::event_scanner::scan_events(
-                &tushare,
-                &llm_client,
-                &llm_config,
-                None,
-            )
-            .await?;
-            Ok(format!(
-                "Scanned: {} fetched, {} saved",
-                result.fetched, result.saved
-            ))
-        }
-        "verdict_review" => {
-            // TODO: implement in Task 3 — verdict_review module not yet available
-            Err("verdict_review not yet implemented (Task 3)".to_string())
-        }
-        "dream_invest" => {
-            // TODO: implement in Task 5 — dreaming module not yet available
-            Err("dream_invest not yet implemented (Task 5)".to_string())
-        }
-        "dream_user" => {
-            // TODO: implement in Task 5 — dreaming module not yet available
-            Err("dream_user not yet implemented (Task 5)".to_string())
-        }
-        _ => Err(format!("Unknown job: {}", id)),
-    };
+    let result = crate::invest::scheduler::runner::dispatch_job(&id).await;
 
     let status = if result.is_ok() { "ok" } else { "error" };
     let msg = match &result {

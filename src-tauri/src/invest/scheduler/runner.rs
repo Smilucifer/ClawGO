@@ -1,11 +1,51 @@
 use super::config;
 use crate::storage::invest::scheduler::{is_trading_day, log_task_end, log_task_start};
+use chrono::TimeZone;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Shared dispatch for scheduler jobs. Called from both the background runner
+/// loop and the manual `trigger_cron_job` Tauri command.
+pub async fn dispatch_job(id: &str) -> Result<String, String> {
+    match id {
+        "pnl_snapshot" => {
+            let result = crate::run_pnl_snapshot().await?;
+            Ok(result)
+        }
+        "event_scan" => {
+            let (tushare, llm_client, llm_config) =
+                crate::commands::invest::build_scan_clients()?;
+            let result = crate::invest::event_scanner::scan_events(
+                &tushare,
+                &llm_client,
+                &llm_config,
+                None,
+            )
+            .await?;
+            Ok(format!(
+                "Scanned: {} fetched, {} saved",
+                result.fetched, result.saved
+            ))
+        }
+        "verdict_review" => {
+            // TODO: implement in Task 3 — verdict_review module not yet available
+            Err("verdict_review not yet implemented (Task 3)".into())
+        }
+        "dream_invest" => {
+            // TODO: implement in Task 5 — dreaming module not yet available
+            Err("dream_invest not yet implemented (Task 5)".into())
+        }
+        "dream_user" => {
+            // TODO: implement in Task 5 — dreaming module not yet available
+            Err("dream_user not yet implemented (Task 5)".into())
+        }
+        _ => Err(format!("Unknown job: {}", id)),
+    }
+}
 
 /// Start the scheduler loop. Call once from lib.rs setup.
 /// The `dispatch` callback maps job_id to the async function to execute.
@@ -51,20 +91,28 @@ where
                         continue;
                     };
                     let after = match &job.last_run {
-                        Some(last) => chrono::DateTime::parse_from_str(
-                            &format!("{}+08:00", last),
-                            "%Y-%m-%dT%H:%M:%S%z",
+                        Some(last) => chrono::NaiveDateTime::parse_from_str(
+                            last,
+                            "%Y-%m-%dT%H:%M:%S",
                         )
-                        .ok()
-                        .map(|dt| dt.with_timezone(&chrono::Local)),
+                        .ok(),
                         None => None,
                     };
                     match after {
                         Some(after) => {
-                            if let Some(next) = schedule.after(&after).next() {
-                                chrono::Local::now() >= next
-                            } else {
-                                false
+                            // Convert naive back to local for cron schedule comparison
+                            let after_local = chrono::Local
+                                .from_local_datetime(&after)
+                                .single();
+                            match after_local {
+                                Some(after_local) => {
+                                    if let Some(next) = schedule.after(&after_local).next() {
+                                        chrono::Local::now() >= next
+                                    } else {
+                                        false
+                                    }
+                                }
+                                None => true, // ambiguous/invalid local time -> fire
                             }
                         }
                         None => true, // never run -> fire now
@@ -77,8 +125,9 @@ where
 
                 // Trading day guard
                 if job.requires_trading_day && !is_trading_day(&today).unwrap_or(false) {
-                    // Log skip (the log_task_start already created the row)
-                    let _ = log_task_start(&job.id);
+                    if let Ok(id) = log_task_start(&job.id) {
+                        let _ = log_task_end(id, "skipped", Some("non-trading day"));
+                    }
                     continue;
                 }
 
