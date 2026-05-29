@@ -80,11 +80,11 @@ pub fn list_events(source: Option<&str>, limit: Option<i64>) -> Result<Vec<Event
     })
 }
 
-pub fn mark_event_triggered(event_id: &str, verdict_id: &str) -> Result<(), String> {
+pub fn mark_event_triggered(event_id: &str, verdict_id: Option<&str>) -> Result<(), String> {
     with_conn(|conn| {
         let changed = conn
             .execute(
-                "UPDATE events SET triggered = 1, trigger_verdict_id = ?1 WHERE id = ?2",
+                "UPDATE events SET triggered = 1, trigger_verdict_id = ?1 WHERE id = ?2 AND triggered = 0",
                 params![verdict_id, event_id],
             )
             .map_err(|e| format!("mark triggered: {}", e))?;
@@ -93,6 +93,38 @@ pub fn mark_event_triggered(event_id: &str, verdict_id: &str) -> Result<(), Stri
         } else {
             Ok(())
         }
+    })
+}
+
+pub fn get_event_stats() -> Result<(usize, usize, usize, Option<String>), String> {
+    with_conn(|conn| {
+        let total: usize = conn
+            .query_row("SELECT COUNT(*) FROM events", [], |row| row.get(0))
+            .map_err(|e| format!("count events: {}", e))?;
+        let high: usize = conn
+            .query_row(
+                "SELECT COUNT(*) FROM events WHERE severity = 'high'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("count high: {}", e))?;
+        let untriggered_high: usize = conn
+            .query_row(
+                "SELECT COUNT(*) FROM events WHERE severity = 'high' AND triggered = 0",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("count untriggered: {}", e))?;
+        let last_at: Option<String> = match conn.query_row(
+            "SELECT created_at FROM events ORDER BY created_at DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        ) {
+            Ok(v) => Some(v),
+            Err(rusqlite::Error::QueryReturnedNoRows) => None,
+            Err(e) => return Err(format!("last event: {}", e)),
+        };
+        Ok((total, high, untriggered_high, last_at))
     })
 }
 

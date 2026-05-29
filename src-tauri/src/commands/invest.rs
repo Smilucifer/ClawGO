@@ -239,8 +239,8 @@ pub fn save_event(
 }
 
 #[tauri::command]
-pub fn mark_event_triggered(id: String, verdict_id: String) -> Result<(), String> {
-    events::mark_event_triggered(&id, &verdict_id)
+pub fn mark_event_triggered(id: String, verdict_id: Option<String>) -> Result<(), String> {
+    events::mark_event_triggered(&id, verdict_id.as_deref())
 }
 
 #[tauri::command]
@@ -793,18 +793,13 @@ pub async fn scan_events(
 
 #[tauri::command]
 pub fn get_scan_status() -> Result<ScanStatus, String> {
-    let event_list = events::list_events(None, Some(50))?;
-    let high_count = event_list.iter().filter(|e| e.severity == "high").count();
-    let untriggered_high = event_list
-        .iter()
-        .filter(|e| e.severity == "high" && !e.triggered)
-        .count();
+    let (total_events, high_count, untriggered_high, last_event_at) = events::get_event_stats()?;
 
     Ok(ScanStatus {
-        total_events: event_list.len(),
+        total_events,
         high_count,
         untriggered_high,
-        last_event_at: event_list.first().map(|e| e.created_at.clone()),
+        last_event_at,
     })
 }
 

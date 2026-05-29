@@ -49,10 +49,9 @@ const MEDIUM_KEYWORDS: &[&str] = &[
 /// Classify severity by keyword matching.
 /// Returns None for LOW (irrelevant) events that should be filtered out.
 pub fn classify_severity(title: &str, body: &str) -> Option<Severity> {
-    let text = format!("{} {}", title, body);
-    if HIGH_KEYWORDS.iter().any(|k| text.contains(k)) {
+    if HIGH_KEYWORDS.iter().any(|k| title.contains(k) || body.contains(k)) {
         Some(Severity::High)
-    } else if MEDIUM_KEYWORDS.iter().any(|k| text.contains(k)) {
+    } else if MEDIUM_KEYWORDS.iter().any(|k| title.contains(k) || body.contains(k)) {
         Some(Severity::Medium)
     } else {
         None
@@ -179,9 +178,22 @@ pub async fn scan_events(
         .map(|h| h.symbol.as_str())
         .collect();
 
-    for symbol in &active_symbols {
+    // Fetch announcements in parallel for all active symbols
+    let ann_futures: Vec<_> = active_symbols
+        .iter()
+        .map(|symbol| {
+            let start = one_day_ago.clone();
+            let end = today.clone();
+            async move {
+                let result = tushare.anns_d(symbol, &start, &end).await;
+                (symbol, result)
+            }
+        })
+        .collect();
+    let ann_results = futures_util::future::join_all(ann_futures).await;
+    for (symbol, result) in ann_results {
         sources_scanned.push(format!("tushare_anns_d:{}", symbol));
-        match tushare.anns_d(symbol, &one_day_ago, &today).await {
+        match result {
             Ok(items) => {
                 for item in items {
                     let created_at = if item.ann_date.is_empty() {
@@ -229,6 +241,10 @@ pub async fn scan_events(
     // 5. Save to DB (dedup by source+title via INSERT OR IGNORE)
     let mut saved = 0usize;
     for (ev, norm) in filtered_events.iter().zip(normalized.iter()) {
+        // Skip events the LLM reclassified as LOW (pre-filter only keeps HIGH/MEDIUM)
+        if norm.severity == Severity::Low {
+            continue;
+        }
         let symbols_str = norm.affected_symbols.join(",");
         let body = if norm.one_line_claim.is_empty() {
             Some(ev.title.clone())

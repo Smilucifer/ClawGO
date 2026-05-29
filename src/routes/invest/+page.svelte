@@ -51,11 +51,15 @@
     getTransport().invoke<T>(cmd, args);
 
   onMount(() => {
+    let destroyed = false;
+
     (async () => {
       try {
         const settings = await invoke<{ tushare_token?: string }>('get_user_settings');
         tushareToken = settings.tushare_token ?? '';
       } catch {}
+
+      if (destroyed) return;
 
       await investStore.loadAll();
 
@@ -66,6 +70,8 @@
         }
       } catch {}
 
+      if (destroyed) return;
+
       if (tushareToken) {
         investStore.refreshPrices(tushareToken);
         refreshInterval = setInterval(() => {
@@ -75,6 +81,7 @@
     })();
 
     return () => {
+      destroyed = true;
       if (refreshInterval) clearInterval(refreshInterval);
     };
   });
@@ -168,7 +175,7 @@
         <CommitteeToolsTab />
       {/if}
     {:else if activeTab === 'events'}
-      <EventWatchTab />
+      <EventWatchTab onNavigateToCommittee={() => { activeTab = 'committee'; committeeSubTab = 'live'; }} />
     {:else if activeTab === 'scheduler'}
       <div class="text-muted-foreground">Scheduled Tasks — coming in Phase 4</div>
     {/if}

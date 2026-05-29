@@ -72,9 +72,10 @@ class InvestStore {
   // ── Event Watch Derived ─────────────────────────────────────────────
 
   filteredEvents = $derived.by(() => {
-    let filtered = this.events;
+    const filtered = this.events;
 
     // Time window filter
+    // Note: Date.now() is not reactive — cutoff is refreshed when events or filter change (e.g. after scan).
     const now = Date.now();
     const windows = {
       "24h": 86_400_000,
@@ -82,37 +83,40 @@ class InvestStore {
       "7d": 604_800_000,
     } as const;
     const cutoff = now - windows[this.eventFilter.timeWindow];
-    filtered = filtered.filter(
-      (e) => new Date(e.createdAt).getTime() > cutoff,
-    );
+
+    // Pre-compute timestamps to avoid redundant Date allocations in filter + sort
+    const withTs = filtered.map((e) => ({
+      e,
+      ts: new Date(e.createdAt).getTime(),
+    }));
+
+    let result = withTs.filter((item) => item.ts > cutoff);
 
     // Severity filter
     if (this.eventFilter.severity !== "all") {
-      filtered = filtered.filter(
-        (e) => e.severity === this.eventFilter.severity,
+      result = result.filter(
+        (item) => item.e.severity === this.eventFilter.severity,
       );
     }
 
     // Search filter
     if (this.eventFilter.search) {
       const q = this.eventFilter.search.toLowerCase();
-      filtered = filtered.filter(
-        (e) =>
-          e.title.toLowerCase().includes(q) ||
-          (e.body && e.body.toLowerCase().includes(q)),
+      result = result.filter(
+        (item) =>
+          item.e.title.toLowerCase().includes(q) ||
+          (item.e.body && item.e.body.toLowerCase().includes(q)),
       );
     }
 
     // Sort: HIGH severity first, then by created_at desc
-    filtered.sort((a, b) => {
-      if (a.severity === "high" && b.severity !== "high") return -1;
-      if (b.severity === "high" && a.severity !== "high") return 1;
-      return (
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
+    result.sort((a, b) => {
+      if (a.e.severity === "high" && b.e.severity !== "high") return -1;
+      if (b.e.severity === "high" && a.e.severity !== "high") return 1;
+      return b.ts - a.ts;
     });
 
-    return filtered;
+    return result.map((item) => item.e);
   });
 
   // ── Actions ──────────────────────────────────────────────────────────
@@ -203,7 +207,7 @@ class InvestStore {
     name: string,
     qty: number,
     price: number,
-    tushareToken: string,
+    _tushareToken: string,
   ): Promise<void> {
     const amount = qty * price;
     const now = new Date().toISOString();
@@ -221,7 +225,7 @@ class InvestStore {
     });
 
     const existing = this.holdHoldings.find((h) => h.symbol === symbol);
-    if (existing && existing.shares && existing.avgCost) {
+    if (existing && existing.shares != null && existing.shares > 0 && existing.avgCost != null) {
       const newShares = existing.shares + qty;
       const newAvgCost =
         (existing.avgCost * existing.shares + price * qty) / newShares;
@@ -329,36 +333,60 @@ class InvestStore {
     price: number,
   ): Promise<void> {
     const amount = qty * price;
+    const prevCash = this.cash;
 
-    await invoke("delete_holding", { symbol, currency: "CNY", kind: "watch" });
+    // Save watch holding data for rollback
+    const watchHolding = this.watchHoldings.find((h) => h.symbol === symbol);
 
-    await invoke("add_holding", {
-      symbol,
-      currency: "CNY",
-      kind: "hold",
-      name,
-      notional: 0,
-      avgCost: price,
-      shares: qty,
-      entryDate: new Date().toISOString().split("T")[0],
-      linkedVerdictId: null,
-      notes: "converted from watchlist",
-    });
+    try {
+      await invoke("delete_holding", { symbol, currency: "CNY", kind: "watch" });
 
-    await invoke("record_trade", {
-      id: null,
-      symbol,
-      currency: "CNY",
-      kind: "hold",
-      action: "convert_watch_to_hold",
-      shares: qty,
-      price,
-      amount,
-      notes: null,
-    });
+      await invoke("add_holding", {
+        symbol,
+        currency: "CNY",
+        kind: "hold",
+        name,
+        notional: 0,
+        avgCost: price,
+        shares: qty,
+        entryDate: new Date().toISOString().split("T")[0],
+        linkedVerdictId: null,
+        notes: "converted from watchlist",
+      });
 
-    await invoke("update_cash", { available: this.cash - amount });
-    this.cash = this.cash - amount;
+      await invoke("record_trade", {
+        id: null,
+        symbol,
+        currency: "CNY",
+        kind: "hold",
+        action: "convert_watch_to_hold",
+        shares: qty,
+        price,
+        amount,
+        notes: null,
+      });
+
+      await invoke("update_cash", { available: this.cash - amount });
+      this.cash = this.cash - amount;
+    } catch (e) {
+      // Rollback: restore watch holding and cash
+      this.cash = prevCash;
+      if (watchHolding) {
+        await invoke("add_holding", {
+          symbol,
+          currency: "CNY",
+          kind: "watch",
+          name: watchHolding.name,
+          notional: watchHolding.notional ?? 0,
+          avgCost: watchHolding.avgCost ?? null,
+          shares: watchHolding.shares ?? null,
+          entryDate: watchHolding.entryDate ?? null,
+          linkedVerdictId: watchHolding.linkedVerdictId ?? null,
+          notes: watchHolding.notes ?? null,
+        }).catch(() => {}); // Best-effort rollback
+      }
+      throw e;
+    }
 
     await this.loadAll();
   }
@@ -416,15 +444,15 @@ class InvestStore {
       await invoke("scan_events", {
         normalizerPrompt: null,
       });
-      // Refresh events and status after scan
-      await this.fetchEvents();
-      await this.fetchScanStatus();
+      // Refresh events and status after scan (parallel)
+      await Promise.all([this.fetchEvents(), this.fetchScanStatus()]);
     } finally {
       this.isScanning = false;
     }
   }
 
-  async triggerCommittee(eventId: string, verdictId: string | null): Promise<void> {
+  async triggerCommittee(eventId: string, verdictId: string | null): Promise<boolean> {
+    this.error = null;
     try {
       await invoke("mark_event_triggered", { id: eventId, verdictId });
       // Update local state
@@ -435,9 +463,11 @@ class InvestStore {
       );
       // Refresh scan status
       await this.fetchScanStatus();
+      return true;
     } catch (e) {
       console.error("Failed to mark event triggered:", e);
       this.error = String(e);
+      return false;
     }
   }
 

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from '$lib/i18n/index.svelte';
+  import { fmtRelative } from '$lib/i18n/format';
   import { investStore } from '$lib/stores/invest-store.svelte';
   import EventTriggerDialog from './EventTriggerDialog.svelte';
   import type { InvestEvent } from '$lib/types';
@@ -29,18 +30,6 @@
 
   function handleScan() {
     store.triggerScan();
-  }
-
-  function formatTime(dateStr: string): string {
-    if (!dateStr) return '';
-    const d = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - d.getTime();
-    const diffMin = Math.floor(diffMs / 60000);
-    if (diffMin < 60) return t('invest.eventWatch.timeMinutesAgo', { min: String(diffMin) });
-    const diffH = Math.floor(diffMin / 60);
-    if (diffH < 24) return t('invest.eventWatch.timeHoursAgo', { h: String(diffH) });
-    return d.toLocaleDateString();
   }
 
   function severityColor(severity: string): string {
@@ -88,7 +77,7 @@
           <span class="text-amber-400">{store.scanStatus.untriggeredHigh} {t('invest.eventWatch.untriggered')}</span>
         {/if}
         {#if store.scanStatus.lastEventAt}
-          <span>{t('invest.eventWatch.last')}: {formatTime(store.scanStatus.lastEventAt)}</span>
+          <span>{t('invest.eventWatch.last')}: {fmtRelative(store.scanStatus.lastEventAt)}</span>
         {/if}
       {:else}
         <span>{t('invest.eventWatch.noScanData')}</span>
@@ -151,7 +140,6 @@
             </span>
 
             <!-- Content -->
-            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
             <div class="flex-1 min-w-0 cursor-pointer" role="button" tabindex="0" onclick={() => toggleExpand(event.id)} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpand(event.id); } }}>
               <div class="flex items-center gap-2">
                 <span class="text-sm text-zinc-200 truncate">{event.title}</span>
@@ -166,7 +154,7 @@
               {/if}
               <div class="flex items-center gap-2 mt-1">
                 <span class="text-[10px] text-zinc-600">{event.source}</span>
-                <span class="text-[10px] text-zinc-600">{formatTime(event.createdAt)}</span>
+                <span class="text-[10px] text-zinc-600">{fmtRelative(event.createdAt)}</span>
                 {#if event.symbols}
                   <div class="flex gap-1">
                     {#each event.symbols.split(',').filter(Boolean) as sym}
