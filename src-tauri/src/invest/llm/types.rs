@@ -87,17 +87,23 @@ impl Default for LlmConfig {
 pub struct Message {
     pub role: String,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 impl Message {
     pub fn system(content: impl Into<String>) -> Self {
-        Self { role: "system".to_string(), content: content.into() }
+        Self { role: "system".to_string(), content: content.into(), tool_call_id: None, tool_calls: None, name: None }
     }
     pub fn user(content: impl Into<String>) -> Self {
-        Self { role: "user".to_string(), content: content.into() }
+        Self { role: "user".to_string(), content: content.into(), tool_call_id: None, tool_calls: None, name: None }
     }
     pub fn assistant(content: impl Into<String>) -> Self {
-        Self { role: "assistant".to_string(), content: content.into() }
+        Self { role: "assistant".to_string(), content: content.into(), tool_call_id: None, tool_calls: None, name: None }
     }
 }
 
