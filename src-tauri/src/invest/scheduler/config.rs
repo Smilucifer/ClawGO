@@ -23,8 +23,8 @@ struct JobOverride {
 }
 
 fn config_path() -> PathBuf {
-    let data = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
-    data.join("claw-go").join("invest").join("scheduler.json")
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    home.join(".claw-go").join("invest").join("scheduler.json")
 }
 
 /// Load jobs: start from defaults, overlay user overrides from scheduler.json.
