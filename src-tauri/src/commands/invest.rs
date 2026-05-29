@@ -433,3 +433,225 @@ pub async fn migrate_legacy_portfolio() -> Result<String, String> {
 
     Ok(format!("migrated {} items", migrated))
 }
+
+// ── LLM Config ──────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvestLlmProviderConfig {
+    pub provider_id: String,
+    pub api_key: String,
+    pub base_url: String,
+    pub default_model: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvestLlmConfig {
+    pub providers: Vec<InvestLlmProviderConfig>,
+    pub debate_rounds: u8,
+    pub emergency_buffer_cny: f64,
+    pub timeout_secs: u64,
+}
+
+fn llm_config_path() -> std::path::PathBuf {
+    let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    home.join(".claw-go").join("invest").join("llm_config.json")
+}
+
+fn default_llm_config() -> InvestLlmConfig {
+    InvestLlmConfig {
+        providers: vec![
+            InvestLlmProviderConfig {
+                provider_id: "deepseek".to_string(),
+                api_key: String::new(),
+                base_url: "https://api.deepseek.com/v1".to_string(),
+                default_model: "deepseek-v4-pro".to_string(),
+            },
+            InvestLlmProviderConfig {
+                provider_id: "mimo-plan".to_string(),
+                api_key: String::new(),
+                base_url: "https://token-plan-cn.xiaomimimo.com/v1".to_string(),
+                default_model: "mimo-v2.5-pro".to_string(),
+            },
+            InvestLlmProviderConfig {
+                provider_id: "mimo-api".to_string(),
+                api_key: String::new(),
+                base_url: "https://api.xiaomimimo.com/v1".to_string(),
+                default_model: "mimo-v2.5-pro".to_string(),
+            },
+        ],
+        debate_rounds: 2,
+        emergency_buffer_cny: 100_000.0,
+        timeout_secs: 120,
+    }
+}
+
+#[tauri::command]
+pub fn get_llm_config() -> Result<InvestLlmConfig, String> {
+    let path = llm_config_path();
+    if !path.exists() {
+        return Ok(default_llm_config());
+    }
+    let content =
+        std::fs::read_to_string(&path).map_err(|e| format!("read llm_config: {}", e))?;
+    let data: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("parse llm_config: {}", e))?;
+
+    let mut providers = Vec::new();
+    for pid in &["deepseek", "mimo_plan", "mimo_api"] {
+        let obj = data.get(*pid).cloned().unwrap_or(serde_json::Value::Null);
+        let display_id = match *pid {
+            "deepseek" => "deepseek",
+            "mimo_plan" => "mimo-plan",
+            "mimo_api" => "mimo-api",
+            _ => pid,
+        };
+        providers.push(InvestLlmProviderConfig {
+            provider_id: display_id.to_string(),
+            api_key: obj["api_key"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
+            base_url: obj["base_url"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
+            default_model: obj["default_model"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
+        });
+    }
+
+    Ok(InvestLlmConfig {
+        providers,
+        debate_rounds: data["debate_rounds"].as_u64().unwrap_or(2) as u8,
+        emergency_buffer_cny: data["emergency_buffer_cny"]
+            .as_f64()
+            .unwrap_or(100_000.0),
+        timeout_secs: data["timeout_secs"].as_u64().unwrap_or(120),
+    })
+}
+
+#[tauri::command]
+pub fn save_llm_config(config: InvestLlmConfig) -> Result<(), String> {
+    let path = llm_config_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("create dir: {}", e))?;
+    }
+
+    let mut data = serde_json::Map::new();
+
+    // Write providers in the nested key format expected by resolve_api_key()
+    for p in &config.providers {
+        let internal_id = match p.provider_id.as_str() {
+            "deepseek" => "deepseek",
+            "mimo-plan" => "mimo_plan",
+            "mimo-api" => "mimo_api",
+            other => other,
+        };
+        let mut obj = serde_json::Map::new();
+        obj.insert("api_key".into(), serde_json::Value::String(p.api_key.clone()));
+        obj.insert(
+            "base_url".into(),
+            serde_json::Value::String(p.base_url.clone()),
+        );
+        obj.insert(
+            "default_model".into(),
+            serde_json::Value::String(p.default_model.clone()),
+        );
+        data.insert(
+            internal_id.to_string(),
+            serde_json::Value::Object(obj),
+        );
+    }
+
+    data.insert(
+        "debate_rounds".into(),
+        serde_json::Value::Number(config.debate_rounds.into()),
+    );
+    data.insert(
+        "emergency_buffer_cny".into(),
+        serde_json::json!(config.emergency_buffer_cny),
+    );
+    data.insert(
+        "timeout_secs".into(),
+        serde_json::Value::Number(config.timeout_secs.into()),
+    );
+
+    let json = serde_json::to_string_pretty(&serde_json::Value::Object(data))
+        .map_err(|e| format!("serialize: {}", e))?;
+    std::fs::write(&path, json).map_err(|e| format!("write llm_config: {}", e))
+}
+
+// ── Committee ───────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn run_committee(
+    symbols: Vec<String>,
+    debate_rounds: Option<u8>,
+) -> Result<Vec<crate::invest::committee::orchestrator::CommitteeResult>, String> {
+    let config_data = get_llm_config()?;
+    let client =
+        crate::invest::llm::client::OpenAiCompatClient::new().map_err(|e| format!("init LLM client: {}", e))?;
+    let client: std::sync::Arc<dyn crate::invest::llm::types::InvestLlmClient> =
+        std::sync::Arc::new(client);
+
+    let mut committee_config =
+        crate::invest::committee::orchestrator::CommitteeConfig::default();
+    if let Some(rounds) = debate_rounds {
+        committee_config.debate_rounds = rounds;
+    }
+    committee_config.emergency_buffer_cny = config_data.emergency_buffer_cny;
+    committee_config.timeout_secs = config_data.timeout_secs;
+
+    let results = crate::invest::committee::orchestrator::run_committee_batch(
+        client,
+        &symbols,
+        &committee_config,
+    )
+    .await;
+
+    // Convert Vec<Result<T, String>> to Result<Vec<T>, String>
+    let mut out = Vec::with_capacity(results.len());
+    for r in results {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+// ── Role Prompts ────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_role_prompts() -> Result<std::collections::HashMap<String, String>, String> {
+    use crate::invest::committee::roles::{load_prompt, CommitteeRole};
+
+    let mut map = std::collections::HashMap::new();
+    for role in CommitteeRole::all() {
+        let key = serde_json::to_value(role)
+            .ok()
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .unwrap_or_else(|| format!("{:?}", role));
+        map.insert(key, load_prompt(*role));
+    }
+    Ok(map)
+}
+
+#[tauri::command]
+pub fn save_role_prompt(role: String, content: String) -> Result<(), String> {
+    use crate::invest::committee::roles::{save_prompt, CommitteeRole};
+
+    let role_enum: CommitteeRole = match role.as_str() {
+        "macro" => CommitteeRole::Macro,
+        "quant_r1" => CommitteeRole::QuantR1,
+        "risk_r1" => CommitteeRole::RiskR1,
+        "wealth" => CommitteeRole::Wealth,
+        "quant_r2" => CommitteeRole::QuantR2,
+        "risk_r2" => CommitteeRole::RiskR2,
+        "cio" => CommitteeRole::Cio,
+        other => return Err(format!("unknown role: {}", other)),
+    };
+    save_prompt(role_enum, &content)
+}
