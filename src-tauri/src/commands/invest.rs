@@ -811,3 +811,76 @@ pub struct ScanStatus {
     pub untriggered_high: usize,
     pub last_event_at: Option<String>,
 }
+
+// ── Scheduler commands ──────────────────────────────────────────────
+
+#[tauri::command]
+pub fn list_cron_jobs() -> Result<Vec<crate::invest::scheduler::CronJob>, String> {
+    Ok(crate::invest::scheduler::config::load_jobs())
+}
+
+#[tauri::command]
+pub fn toggle_cron_job(id: String, enabled: bool) -> Result<(), String> {
+    crate::invest::scheduler::config::toggle_job(&id, enabled)
+}
+
+#[tauri::command]
+pub fn update_cron_schedule(id: String, cron_expr: String) -> Result<(), String> {
+    crate::invest::scheduler::config::update_cron(&id, &cron_expr)
+}
+
+#[tauri::command]
+pub fn get_cron_job_logs(
+    task_name: String,
+    limit: Option<i64>,
+) -> Result<Vec<crate::storage::invest::scheduler::SchedulerLog>, String> {
+    crate::storage::invest::scheduler::get_task_logs(&task_name, limit)
+}
+
+#[tauri::command]
+pub async fn trigger_cron_job(id: String) -> Result<String, String> {
+    use crate::storage::invest::scheduler::{log_task_end, log_task_start};
+
+    let log_id = log_task_start(&id)?;
+    let result = match id.as_str() {
+        "pnl_snapshot" => {
+            // TODO: call actual PnL snapshot function when available
+            Ok("PnL snapshot saved (stub)".to_string())
+        }
+        "event_scan" => {
+            let (tushare, llm_client, llm_config) = build_scan_clients()?;
+            let result = crate::invest::event_scanner::scan_events(
+                &tushare,
+                &llm_client,
+                &llm_config,
+                None,
+            )
+            .await?;
+            Ok(format!(
+                "Scanned: {} fetched, {} saved",
+                result.fetched, result.saved
+            ))
+        }
+        "verdict_review" => {
+            // TODO: implement in Task 3 — verdict_review module not yet available
+            Err("verdict_review not yet implemented (Task 3)".to_string())
+        }
+        "dream_invest" => {
+            // TODO: implement in Task 5 — dreaming module not yet available
+            Err("dream_invest not yet implemented (Task 5)".to_string())
+        }
+        "dream_user" => {
+            // TODO: implement in Task 5 — dreaming module not yet available
+            Err("dream_user not yet implemented (Task 5)".to_string())
+        }
+        _ => Err(format!("Unknown job: {}", id)),
+    };
+
+    let status = if result.is_ok() { "ok" } else { "error" };
+    let msg = match &result {
+        Ok(m) => Some(m.as_str()),
+        Err(e) => Some(e.as_str()),
+    };
+    let _ = log_task_end(log_id, status, msg);
+    result
+}

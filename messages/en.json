@@ -288,6 +288,17 @@
   "invest_tab_events": "Event Monitor",
   "invest_tab_scheduler": "Scheduled Tasks",
 
+  "invest_scheduler_title": "Scheduled Tasks",
+  "invest_scheduler_loading": "Loading...",
+  "invest_scheduler_job_name": "Job",
+  "invest_scheduler_cron_expr": "Schedule",
+  "invest_scheduler_last_run": "Last Run",
+  "invest_scheduler_run_now": "Run Now",
+  "invest_scheduler_view_logs": "Logs",
+  "invest_scheduler_save": "Save",
+  "invest_scheduler_cancel": "Cancel",
+  "invest_scheduler_edit": "Edit",
+
   "invest_committee_llm_config": "LLM Provider Config",
   "invest_committee_api_key": "API Key",
   "invest_committee_base_url": "Base URL",

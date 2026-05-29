@@ -288,6 +288,17 @@
   "invest_tab_events": "事件监控",
   "invest_tab_scheduler": "定时任务",
 
+  "invest_scheduler_title": "定时任务",
+  "invest_scheduler_loading": "加载中...",
+  "invest_scheduler_job_name": "任务",
+  "invest_scheduler_cron_expr": "调度",
+  "invest_scheduler_last_run": "上次运行",
+  "invest_scheduler_run_now": "立即运行",
+  "invest_scheduler_view_logs": "日志",
+  "invest_scheduler_save": "保存",
+  "invest_scheduler_cancel": "取消",
+  "invest_scheduler_edit": "编辑",
+
   "invest_committee_llm_config": "LLM 供应商配置",
   "invest_committee_api_key": "API Key",
   "invest_committee_base_url": "Base URL",

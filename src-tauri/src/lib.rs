@@ -458,6 +458,11 @@ pub fn run() {
             commands::invest::save_role_prompt,
             commands::invest::scan_events,
             commands::invest::get_scan_status,
+            commands::invest::list_cron_jobs,
+            commands::invest::toggle_cron_job,
+            commands::invest::update_cron_schedule,
+            commands::invest::get_cron_job_logs,
+            commands::invest::trigger_cron_job,
         ])
         .setup(move |app| {
             // Set up broadcast emitter (requires AppHandle, so must be in setup)
@@ -484,6 +489,38 @@ pub fn run() {
             // Start team file watcher for ~/.claude/teams/ and ~/.claude/tasks/
             let cancel = app.state::<CancellationToken>().inner().clone();
             hooks::team_watcher::start_team_watcher(app.handle().clone(), cancel);
+
+            // Start invest scheduler runner (background cron loop)
+            invest::scheduler::runner::start(|job_id| async move {
+                match job_id.as_str() {
+                    "pnl_snapshot" => Ok("PnL snapshot saved (stub)".to_string()),
+                    "event_scan" => {
+                        let (tushare, llm_client, llm_config) =
+                            commands::invest::build_scan_clients()?;
+                        let result = invest::event_scanner::scan_events(
+                            &tushare,
+                            &llm_client,
+                            &llm_config,
+                            None,
+                        )
+                        .await?;
+                        Ok(format!(
+                            "Scanned: {} fetched, {} saved",
+                            result.fetched, result.saved
+                        ))
+                    }
+                    "verdict_review" => {
+                        Err("verdict_review not yet implemented (Task 3)".to_string())
+                    }
+                    "dream_invest" => {
+                        Err("dream_invest not yet implemented (Task 5)".to_string())
+                    }
+                    "dream_user" => {
+                        Err("dream_user not yet implemented (Task 5)".to_string())
+                    }
+                    _ => Err(format!("Unknown job: {}", job_id)),
+                }
+            });
 
             // System tray — hide-to-tray on close, left-click to show
             // Non-fatal: if tray library is unavailable (e.g. some Linux desktops),

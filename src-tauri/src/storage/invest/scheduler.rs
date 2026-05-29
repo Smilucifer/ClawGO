@@ -74,6 +74,10 @@ pub fn list_scheduler_logs(task_name: Option<&str>, limit: Option<i64>) -> Resul
     })
 }
 
+pub fn get_task_logs(task: &str, limit: Option<i64>) -> Result<Vec<SchedulerLog>, String> {
+    list_scheduler_logs(Some(task), limit)
+}
+
 pub fn is_trading_day(date: &str) -> Result<bool, String> {
     with_conn(|conn| {
         let result = conn.query_row(
