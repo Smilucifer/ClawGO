@@ -1,11 +1,12 @@
 # openInvest + invest-gui → ClawGO 功能移植计划
 
-> 状态:[wip] 用户确认中,v1 + v2 决议均已锁定
+> 状态:[wip] Phase 1 完成,Phase 2 待实施。RFC D1-D11 全部决议已确认(2026-05-29)。
 > 创建:2026-05-28
 > 更新:
 > - 2026-05-29(v1) — 整合完整研究结果:5 角色 system prompt、编排算法、Dreaming 对比、Provider 体系
 > - 2026-05-29(v2) — 多路审查后锁定 D1–D11 工程决议、HOLD/WATCH 双类、Dashboard 现金 KPI、系统二级页 7 Tab、用户档案、Phase 3 拆分(详见「十一、v2 增量决议」)
-> 配套文档:`[wip] 2026-05-29-committee-engineering-rfc.md`
+> - 2026-05-29(v3) — RFC 全部确认,同步 RFC 关键设计到 §6.1/§7.3/§7.7/§8.3
+> 配套文档:`[done] 2026-05-29-committee-engineering-rfc.md`
 
 ## 背景
 
@@ -493,6 +494,8 @@ commands/scheduler.rs — list_cron_jobs, get_cron_job_detail, toggle_cron_job,
 
 ### 6.1 新增存储模块
 
+> **RFC 同步 (2026-05-29)**: 持仓/交易/现金/PnL/裁决/事件/洞察 迁入独立 `invest.db`(D4),与 `memory.db` 物理隔离。使用 SQLite WAL + `BEGIN IMMEDIATE` 保证 `record_external_trade` 原子性(D3)。详见 RFC §3。
+
 | 模块 | 文件 | 数据模型 |
 |------|------|----------|
 | 持仓管理 | `storage/portfolio.rs` | Holdings: symbol(A股代码), qty, avg_cost, status, ccy; cash: HashMap<ccy, f64> |
@@ -552,6 +555,8 @@ commands/scheduler.rs  — list_cron_jobs, get_cron_job_detail, toggle_cron_job,
 | CIO | `cio.md` | 综合裁决（BUY/ACCUMULATE/HOLD/TRIM/SELL） | 看所有（宏观 + 辩论历史 + portfolio + wealth） | ❌ 无工具 |
 
 ### 7.3 工具白名单 `[已确认]`
+
+> **RFC 同步**: LLM 调用层设计详见 RFC §1 — `InvestLlmClient` trait、`LlmGovernor`(per-provider Semaphore(8))、重试退避、proxy 复用、输出长度硬截断(D9)、streaming via Tauri event channel(D11)。
 
 委员会成员使用白名单工具，严格禁用 MCP、hook、自定义 slash command 等额外功能。
 
@@ -670,6 +675,8 @@ run_committee_for_symbol(symbol):
 - 不支持自由输入 API endpoint
 
 ### 7.7 数据准备层
+
+> **RFC 同步**: `get_macro_snapshot` 输出 schema 详见 RFC §2.3 — A 股本地化替代 Yahoo(VIX→HV20/HV60、TNX→国债 ETF、Fed→DR007、S&P500→沪深300、Gold→黄金 ETF)，新增北向资金/两融/涨跌停广度。Crash regime 定义改为「5 日跌幅>8% 且跌停占比>5%」。
 
 **Rust 后端预处理：**
 - `portfolio_summary`：持仓市值、集中度、浮盈/浮亏、cash 比例
