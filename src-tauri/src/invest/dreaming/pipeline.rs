@@ -261,7 +261,7 @@ pub async fn run_invest_pipeline(tushare_token: &str) -> Result<DreamResult, Str
 
     let after_json = domain_insights::get_active_insights_json()?;
 
-    // Snapshot (stub until Task 6)
+    // Snapshot (for rollback)
     if let Err(e) = super::snapshot::save_snapshot(
         "invest",
         "pipeline",

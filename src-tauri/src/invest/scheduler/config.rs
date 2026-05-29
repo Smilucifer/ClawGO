@@ -117,3 +117,90 @@ pub fn update_cron(id: &str, cron_expr: &str) -> Result<(), String> {
     job.cron_expr = cron_expr.to_string();
     save_jobs(&jobs)
 }
+
+/// Load dream-specific config (lookback_days, min_score, min_count) from dream_config.json,
+/// merged with scheduler job state (enabled, cron/interval).
+pub fn load_dream_config() -> super::super::dreaming::DreamConfig {
+    let mut config = super::super::dreaming::DreamConfig::default();
+
+    // Overlay scheduler job state
+    let jobs = load_jobs();
+    if let Some(j) = jobs.iter().find(|j| j.id == "dream_invest") {
+        config.invest_enabled = j.enabled;
+        config.invest_cron = j.cron_expr.clone();
+    }
+    if let Some(j) = jobs.iter().find(|j| j.id == "dream_user") {
+        config.user_memory_enabled = j.enabled;
+        config.user_memory_interval_min = j.interval_min.unwrap_or(120);
+    }
+
+    // Overlay dream_config.json for pipeline params
+    let path = dream_config_path();
+    if path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if let Ok(override_cfg) = serde_json::from_str::<DreamConfigOverride>(&content) {
+                if let Some(v) = override_cfg.lookback_days {
+                    config.lookback_days = v;
+                }
+                if let Some(v) = override_cfg.min_score {
+                    config.min_score = v;
+                }
+                if let Some(v) = override_cfg.min_count {
+                    config.min_count = v;
+                }
+            }
+        }
+    }
+
+    config
+}
+
+/// Save dream config: pipeline params to dream_config.json, scheduler state via save_jobs.
+pub fn save_dream_config(config: &super::super::dreaming::DreamConfig) -> Result<(), String> {
+    // Validate cron expression
+    if !config.invest_cron.is_empty() {
+        cron::Schedule::from_str(&config.invest_cron)
+            .map_err(|e| format!("Invalid cron expression: {e}"))?;
+    }
+
+    // Save pipeline params to dream_config.json
+    let override_cfg = DreamConfigOverride {
+        lookback_days: Some(config.lookback_days),
+        min_score: Some(config.min_score),
+        min_count: Some(config.min_count),
+    };
+    let json = serde_json::to_string_pretty(&override_cfg).map_err(|e| format!("{e}"))?;
+    let path = dream_config_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("{e}"))?;
+    }
+    std::fs::write(&path, json).map_err(|e| format!("write dream_config.json: {e}"))?;
+
+    // Save scheduler state
+    let mut jobs = load_jobs();
+    if let Some(j) = jobs.iter_mut().find(|j| j.id == "dream_user") {
+        j.enabled = config.user_memory_enabled;
+        j.interval_min = Some(config.user_memory_interval_min);
+    }
+    if let Some(j) = jobs.iter_mut().find(|j| j.id == "dream_invest") {
+        j.enabled = config.invest_enabled;
+        j.cron_expr = config.invest_cron.clone();
+    }
+    save_jobs(&jobs)
+}
+
+fn dream_config_path() -> PathBuf {
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    home.join(".claw-go").join("invest").join("dream_config.json")
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DreamConfigOverride {
+    #[serde(default)]
+    lookback_days: Option<i64>,
+    #[serde(default)]
+    min_score: Option<f64>,
+    #[serde(default)]
+    min_count: Option<i64>,
+}

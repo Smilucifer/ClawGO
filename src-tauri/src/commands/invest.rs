@@ -883,39 +883,22 @@ pub fn get_verdict_review_detail(
 // ── Dreaming commands ────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn trigger_dream(mode: String, tushare_token: String) -> Result<crate::invest::dreaming::DreamResult, String> {
+pub async fn trigger_dream(mode: String) -> Result<crate::invest::dreaming::DreamResult, String> {
+    let settings = crate::storage::settings::get_user_settings();
+    let tushare_token = settings
+        .tushare_token
+        .ok_or("No Tushare token configured")?;
     crate::invest::dreaming::trigger_dream(&mode, &tushare_token).await
 }
 
 #[tauri::command]
 pub fn get_dream_config() -> Result<crate::invest::dreaming::DreamConfig, String> {
-    let jobs = crate::invest::scheduler::config::load_jobs();
-    let mut config = crate::invest::dreaming::DreamConfig::default();
-
-    if let Some(j) = jobs.iter().find(|j| j.id == "dream_invest") {
-        config.invest_enabled = j.enabled;
-        config.invest_cron = j.cron_expr.clone();
-    }
-    if let Some(j) = jobs.iter().find(|j| j.id == "dream_user") {
-        config.user_memory_enabled = j.enabled;
-        config.user_memory_interval_min = j.interval_min.unwrap_or(120);
-    }
-
-    Ok(config)
+    Ok(crate::invest::scheduler::config::load_dream_config())
 }
 
 #[tauri::command]
 pub fn save_dream_config(config: crate::invest::dreaming::DreamConfig) -> Result<(), String> {
-    let mut jobs = crate::invest::scheduler::config::load_jobs();
-    if let Some(j) = jobs.iter_mut().find(|j| j.id == "dream_user") {
-        j.enabled = config.user_memory_enabled;
-        j.interval_min = Some(config.user_memory_interval_min);
-    }
-    if let Some(j) = jobs.iter_mut().find(|j| j.id == "dream_invest") {
-        j.enabled = config.invest_enabled;
-        j.cron_expr = config.invest_cron.clone();
-    }
-    crate::invest::scheduler::config::save_jobs(&jobs)
+    crate::invest::scheduler::config::save_dream_config(&config)
 }
 
 #[tauri::command]

@@ -49,6 +49,7 @@
   let loading = $state(false);
   let saving = $state(false);
   let triggering = $state(false);
+  let rollingBack = $state<number | null>(null);
   let lastResult = $state<DreamResult | null>(null);
   let error = $state<string | null>(null);
   let success = $state<string | null>(null);
@@ -87,9 +88,7 @@
     error = null;
     lastResult = null;
     try {
-      const settings = await invoke<{ tushareToken?: string }>('get_user_settings');
-      const token = settings.tushareToken || '';
-      lastResult = await invoke<DreamResult>('trigger_dream', { mode: path, tushareToken: token });
+      lastResult = await invoke<DreamResult>('trigger_dream', { mode: path });
       // Reload traces after a successful run
       traces = await invoke<DreamSnapshot[]>('list_dream_traces', { dreamType: path, limit: 10 });
     } catch (e) {
@@ -100,6 +99,7 @@
   }
 
   async function rollback(snapshotId: number) {
+    rollingBack = snapshotId;
     error = null;
     try {
       await invoke('rollback_dream', { snapshotId });
@@ -108,6 +108,8 @@
       setTimeout(() => (success = null), 2000);
     } catch (e) {
       error = `Rollback failed: ${e}`;
+    } finally {
+      rollingBack = null;
     }
   }
 
@@ -140,15 +142,20 @@
     <div class="rounded-lg border p-4 space-y-3">
       <h4 class="text-sm font-medium">Configuration</h4>
 
+      {#if !isInvest}
+        <div class="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+          User memory dreaming is not yet implemented. This panel is a preview.
+        </div>
+      {/if}
+
       <div class="flex items-center gap-3">
         <button
-          class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors {isInvest ? config.investEnabled : config.userMemoryEnabled ? 'bg-primary' : 'bg-muted'}"
+          class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors {(isInvest ? config.investEnabled : config.userMemoryEnabled) ? 'bg-primary' : 'bg-muted'} {!isInvest ? 'opacity-50 cursor-not-allowed' : ''}"
           aria-label="Toggle enabled"
+          disabled={!isInvest}
           onclick={() => {
             if (isInvest) {
               config!.investEnabled = !config!.investEnabled;
-            } else {
-              config!.userMemoryEnabled = !config!.userMemoryEnabled;
             }
           }}
         >
@@ -158,7 +165,7 @@
               : 'translate-x-1'}"
           ></span>
         </button>
-        <span class="text-sm">{isInvest ? 'Invest pipeline enabled' : 'User memory enabled'}</span>
+        <span class="text-sm {!isInvest ? 'text-muted-foreground' : ''}">{isInvest ? 'Invest pipeline enabled' : 'User memory enabled (coming soon)'}</span>
       </div>
 
       {#if isInvest}
@@ -174,7 +181,8 @@
           <label class="text-xs text-muted-foreground w-20">Interval (min)</label>
           <input
             type="number"
-            class="w-24 rounded border bg-background px-2 py-1 text-xs"
+            class="w-24 rounded border bg-background px-2 py-1 text-xs opacity-50"
+            disabled
             bind:value={config!.userMemoryIntervalMin}
           />
         </div>
@@ -219,7 +227,7 @@
         </button>
         <button
           class="rounded bg-amber-600 px-3 py-1.5 text-xs text-white hover:bg-amber-700 disabled:opacity-50"
-          disabled={triggering}
+          disabled={triggering || !isInvest}
           onclick={trigger}
         >
           {triggering ? 'Running...' : 'Run Now'}
@@ -287,10 +295,11 @@
               </div>
               {#if trace.rollbackReady && trace.status === 'completed'}
                 <button
-                  class="ml-2 rounded border px-2 py-1 text-xs hover:bg-destructive/10 text-destructive"
+                  class="ml-2 rounded border px-2 py-1 text-xs hover:bg-destructive/10 text-destructive disabled:opacity-50"
+                  disabled={rollingBack === trace.id}
                   onclick={() => rollback(trace.id)}
                 >
-                  Rollback
+                  {rollingBack === trace.id ? 'Rolling back...' : 'Rollback'}
                 </button>
               {/if}
             </div>
