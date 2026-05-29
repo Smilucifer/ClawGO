@@ -236,18 +236,33 @@ impl InvestLlmClient for OpenAiCompatClient {
         }
 
         let byte_stream = resp.bytes_stream();
-        let chunk_stream = byte_stream.filter_map(move |result| {
+
+        // Buffer across HTTP chunks to handle SSE lines split by chunked transfer
+        let mut line_buffer = String::new();
+        // Track open tool call IDs so we can emit ToolCallEnd on finish
+        let mut open_tool_calls: Vec<String> = Vec::new();
+
+        let chunk_stream = byte_stream.flat_map(move |result| {
             let bytes = match result {
                 Ok(b) => b,
                 Err(e) => {
-                    return futures_util::future::ready(Some(StreamChunk::Error {
+                    return futures_util::stream::iter(vec![StreamChunk::Error {
                         message: format!("stream read: {}", e),
-                    }))
+                    }]);
                 }
             };
+
             let text = String::from_utf8_lossy(&bytes);
+            line_buffer.push_str(&text);
+
             let mut chunks = Vec::new();
-            for line in text.split('\n') {
+
+            // Process all complete lines; the last element may be a partial line.
+            let lines: Vec<&str> = line_buffer.split('\n').collect();
+            let last = lines.last().copied().unwrap_or("");
+            let complete_lines = &lines[..lines.len().saturating_sub(1)];
+
+            for line in complete_lines {
                 if let Some(data) = parse_sse_line(line) {
                     match serde_json::from_str::<StreamResponse>(data) {
                         Ok(resp) => {
@@ -260,23 +275,35 @@ impl InvestLlmClient for OpenAiCompatClient {
                                     }
                                     if let Some(tool_calls) = delta.tool_calls {
                                         for tc in tool_calls {
-                                            if let Some(ref id) = tc.id {
-                                                if let Some(ref func) = tc.function {
-                                                    if let Some(ref name) = func.name {
-                                                        chunks.push(StreamChunk::ToolCallStart {
-                                                            id: id.clone(),
-                                                            name: name.clone(),
-                                                        });
-                                                    }
-                                                }
+                                            let has_id = tc.id.is_some();
+                                            let has_name = tc
+                                                .function
+                                                .as_ref()
+                                                .and_then(|f| f.name.as_ref())
+                                                .is_some();
+
+                                            // Emit ToolCallStart when we get id + name
+                                            if has_id && has_name {
+                                                let id = tc.id.clone().unwrap();
+                                                let name =
+                                                    tc.function.as_ref().unwrap().name.clone().unwrap();
+                                                chunks.push(StreamChunk::ToolCallStart {
+                                                    id: id.clone(),
+                                                    name,
+                                                });
+                                                open_tool_calls.push(id);
                                             }
+
+                                            // Emit ToolCallDelta for arguments
                                             if let Some(ref func) = tc.function {
                                                 if let Some(ref args) = func.arguments {
                                                     if !args.is_empty() {
                                                         let id = tc
                                                             .id
                                                             .clone()
-                                                            .unwrap_or_else(|| format!("tc_{}", tc.index));
+                                                            .unwrap_or_else(|| {
+                                                                format!("tc_{}", tc.index)
+                                                            });
                                                         chunks.push(StreamChunk::ToolCallDelta {
                                                             id,
                                                             args_delta: args.clone(),
@@ -288,6 +315,10 @@ impl InvestLlmClient for OpenAiCompatClient {
                                     }
                                 }
                                 if let Some(finish_reason) = choice.finish_reason {
+                                    // Emit ToolCallEnd for all open tool calls before finishing
+                                    for id in open_tool_calls.drain(..) {
+                                        chunks.push(StreamChunk::ToolCallEnd { id });
+                                    }
                                     let usage = resp
                                         .usage
                                         .as_ref()
@@ -304,15 +335,17 @@ impl InvestLlmClient for OpenAiCompatClient {
                                 }
                             }
                         }
-                        Err(_) => {}
+                        Err(e) => {
+                            log::debug!("SSE parse error: {}", e);
+                        }
                     }
                 }
             }
-            if chunks.is_empty() {
-                futures_util::future::ready(None)
-            } else {
-                futures_util::future::ready(Some(chunks.remove(0)))
-            }
+
+            // Keep the last (potentially incomplete) line in the buffer
+            line_buffer = last.to_string();
+
+            futures_util::stream::iter(chunks)
         });
 
         Ok(Box::pin(chunk_stream))
