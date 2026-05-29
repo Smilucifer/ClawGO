@@ -31,7 +31,7 @@ pub struct EventSource {
 pub fn save_event(e: &Event) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute(
-            "INSERT INTO events (id, source, event_type, title, body, symbols, severity, triggered, trigger_verdict_id, created_at)
+            "INSERT OR REPLACE INTO events (id, source, event_type, title, body, symbols, severity, triggered, trigger_verdict_id, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![e.id, e.source, e.event_type, e.title, e.body, e.symbols, e.severity, e.triggered as i32, e.trigger_verdict_id, e.created_at],
         )

@@ -15,17 +15,24 @@
 
   let memories: any[] = $state([]);
   let loading = $state(false);
+  let loadVersion = $state(0);
 
   async function loadMemories() {
+    const version = ++loadVersion;
     loading = true;
     try {
-      memories = await getTransport().invoke<any[]>("list_memories", {
+      const result = await getTransport().invoke<any[]>("list_memories", {
         scope_filter: scopeFilter,
       });
+      if (version === loadVersion) {
+        memories = result;
+      }
     } catch (e) {
       console.error("Failed to load memories:", e);
     } finally {
-      loading = false;
+      if (version === loadVersion) {
+        loading = false;
+      }
     }
   }
 
@@ -93,7 +100,9 @@
               <div class="mb-1 flex items-center gap-2">
                 <span class="rounded bg-muted px-1.5 py-0.5 text-xs">{mem.scope}</span>
                 <span class="rounded bg-muted px-1.5 py-0.5 text-xs">{mem.type}</span>
-                <span class="text-muted-foreground text-xs">confidence: {mem.confidence.toFixed(1)}</span>
+                {#if mem.confidence != null}
+                  <span class="text-muted-foreground text-xs">confidence: {mem.confidence.toFixed(1)}</span>
+                {/if}
               </div>
               <div class="text-sm">{mem.content}</div>
               <div class="text-muted-foreground mt-1 text-xs">Updated: {mem.updated_at}</div>

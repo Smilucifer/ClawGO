@@ -67,12 +67,13 @@ pub fn list_holdings() -> Result<Vec<Holding>, String> {
 pub fn upsert_holding(h: &Holding) -> Result<(), String> {
     with_conn(|conn| {
         let now = chrono::Utc::now().to_rfc3339();
+        let created = if h.created_at.is_empty() { &now } else { &h.created_at };
         conn.execute(
             "INSERT INTO holdings (symbol, currency, kind, name, notional, avg_cost, shares, entry_date, linked_verdict_id, notes, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(symbol, currency, kind) DO UPDATE SET
                name=?4, notional=?5, avg_cost=?6, shares=?7, entry_date=?8, linked_verdict_id=?9, notes=?10, updated_at=?12",
-            params![h.symbol, h.currency, h.kind, h.name, h.notional, h.avg_cost, h.shares, h.entry_date, h.linked_verdict_id, h.notes, now, now],
+            params![h.symbol, h.currency, h.kind, h.name, h.notional, h.avg_cost, h.shares, h.entry_date, h.linked_verdict_id, h.notes, created, now],
         )
         .map_err(|e| format!("upsert holding: {}", e))?;
         Ok(())

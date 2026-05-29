@@ -341,6 +341,7 @@ pub fn run() {
             commands::invest::save_event,
             commands::invest::mark_event_triggered,
             commands::invest::get_event_sources,
+            commands::invest::save_event_source,
             commands::invest::is_trading_day,
             commands::invest::get_scheduler_logs,
         ])

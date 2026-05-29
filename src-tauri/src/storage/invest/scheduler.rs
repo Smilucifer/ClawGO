@@ -97,7 +97,7 @@ fn is_weekday(date: &str) -> bool {
         let weekday = d.weekday();
         weekday != chrono::Weekday::Sat && weekday != chrono::Weekday::Sun
     } else {
-        true
+        false
     }
 }
 

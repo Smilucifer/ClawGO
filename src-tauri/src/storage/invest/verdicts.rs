@@ -35,7 +35,7 @@ pub struct PnlSnapshot {
 pub fn save_verdict(v: &Verdict) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute(
-            "INSERT INTO verdicts (id, symbol, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at)
+            "INSERT OR REPLACE INTO verdicts (id, symbol, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![v.id, v.symbol, v.verdict, v.confidence, v.macro_signal, v.macro_strength, v.reasoning, v.model, v.provider, v.tokens_used, v.latency_ms, v.created_at],
         )

@@ -244,6 +244,28 @@ pub fn get_event_sources() -> Result<Vec<EventSource>, String> {
     events::list_event_sources()
 }
 
+#[tauri::command]
+pub fn save_event_source(
+    id: Option<String>,
+    name: String,
+    source_type: String,
+    config: Option<String>,
+    enabled: bool,
+) -> Result<(), String> {
+    let sid = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let now = chrono::Utc::now().to_rfc3339();
+    let s = EventSource {
+        id: sid,
+        name,
+        source_type,
+        config,
+        enabled,
+        last_poll_at: None,
+        created_at: now,
+    };
+    events::save_event_source(&s)
+}
+
 // ── Scheduler ───────────────────────────────────────────────────────────────
 
 #[tauri::command]

@@ -2651,7 +2651,7 @@
         </div>
 
         <button
-          class="rounded-md p-1.5 hover:bg-accent transition-all duration-150"
+          class="ml-auto rounded-md p-1.5 hover:bg-accent transition-all duration-150"
           onclick={() => (showMemoPanel = !showMemoPanel)}
           title={t("memo_panelTitle")}
         >
