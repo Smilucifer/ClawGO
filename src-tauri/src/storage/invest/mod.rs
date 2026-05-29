@@ -39,6 +39,12 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
         }
     }
 
+    // Add UNIQUE index on (source, title) for event dedup
+    conn.execute_batch(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_events_source_title ON events(source, title);"
+    )
+    .map_err(|e| format!("Failed to add events dedup index: {}", e))?;
+
     // Migrate trades table to include 'cash_adjust' action.
     // SQLite doesn't support ALTER CHECK, so we rebuild the table.
     conn.execute_batch(
