@@ -191,6 +191,7 @@ where
     Fut: std::future::Future<Output = Result<T, LlmError>>,
 {
     let mut delay = std::time::Duration::from_millis(500);
+    let mut last_err = LlmError::Timeout;
     for attempt in 0..3 {
         match f().await {
             Ok(v) => return Ok(v),
@@ -198,20 +199,20 @@ where
                 let d = retry_after_ms
                     .map(std::time::Duration::from_millis)
                     .unwrap_or(delay);
+                last_err = LlmError::RateLimit { retry_after_ms };
                 tokio::time::sleep(d).await;
                 delay *= 2;
             }
-            Err(LlmError::Timeout)
-            | Err(LlmError::NetworkError(_))
-            | Err(LlmError::ServerError(_)) => {
+            Err(e @ (LlmError::Timeout | LlmError::NetworkError(_) | LlmError::ServerError(_))) => {
                 log::warn!("LLM call attempt {} failed, retrying in {:?}", attempt + 1, delay);
+                last_err = e;
                 tokio::time::sleep(delay).await;
                 delay *= 2;
             }
             Err(e) => return Err(e), // 401/400 never retry
         }
     }
-    Err(LlmError::Timeout)
+    Err(last_err)
 }
 
 // ---------------------------------------------------------------------------
@@ -265,7 +266,10 @@ pub async fn collect_stream(mut stream: BoxStream<'static, StreamChunk>) -> Coll
             }
             StreamChunk::ToolCallEnd { id } => {
                 if let Some((name, args)) = tool_call_map.remove(&id) {
-                    let arguments = serde_json::from_str(&args).unwrap_or(serde_json::Value::Null);
+                    let arguments = serde_json::from_str(&args).unwrap_or_else(|e| {
+                        log::warn!("Failed to parse tool call args for {}: {}", id, e);
+                        serde_json::Value::Null
+                    });
                     result.tool_calls.push(ToolCall { id, name, arguments });
                 }
             }
