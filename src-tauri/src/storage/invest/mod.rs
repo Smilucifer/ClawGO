@@ -2,6 +2,7 @@ pub mod events;
 pub mod portfolio;
 pub mod scheduler;
 pub mod strategy;
+pub mod verdict_reviews;
 pub mod verdicts;
 
 use rusqlite::Connection;
@@ -66,6 +67,9 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
         ALTER TABLE trades_new RENAME TO trades;
         COMMIT;"
     ).map_err(|e| format!("migrate trades table: {}", e))?;
+
+    // Migration: create verdict_reviews table
+    verdict_reviews::create_table_if_not_exists()?;
 
     let mut guard = DB.lock().map_err(|e| format!("lock db: {}", e))?;
     *guard = Some(conn);
