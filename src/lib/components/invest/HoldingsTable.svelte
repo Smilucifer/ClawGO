@@ -15,7 +15,7 @@
 
   function getPnlPct(h: Holding): number | null {
     const price = getPrice(h.symbol);
-    if (!price || !h.avgCost) return null;
+    if (price == null || h.avgCost == null || h.avgCost === 0) return null;
     return ((price - h.avgCost) / h.avgCost) * 100;
   }
 </script>

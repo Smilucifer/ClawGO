@@ -70,7 +70,7 @@ impl ShutdownGate {
 }
 
 /// Run a PnL snapshot: get current holdings, calculate total value, save snapshot.
-fn run_pnl_snapshot() -> Result<String, String> {
+async fn run_pnl_snapshot() -> Result<String, String> {
     use crate::storage::invest::{portfolio, verdicts};
 
     let settings = crate::storage::settings::get_user_settings();
@@ -85,18 +85,12 @@ fn run_pnl_snapshot() -> Result<String, String> {
     }
 
     let cash = portfolio::get_cash()?;
-    let rt = tokio::runtime::Handle::current();
 
+    let client = crate::tushare::TushareClient::new(token);
     let mut holdings_value = 0.0;
     for h in &hold_items {
         if let (Some(shares), Some(_cost)) = (h.shares, h.avg_cost) {
-            let sym = h.symbol.clone();
-            let tok = token.clone();
-            let price = rt.block_on(async {
-                let client = crate::tushare::TushareClient::new(tok);
-                client.get_latest_price(&sym).await
-            });
-            match price {
+            match client.get_latest_price(&h.symbol).await {
                 Ok(p) => holdings_value += p * shares,
                 Err(e) => log::warn!("[invest-pnl] price fetch failed for {}: {}", h.symbol, e),
             }
@@ -621,7 +615,7 @@ pub fn run() {
                     }
                 };
 
-                let result = run_pnl_snapshot();
+                let result = run_pnl_snapshot().await;
                 match &result {
                     Ok(msg) => {
                         let _ = crate::storage::invest::scheduler::log_task_end(task_id, "success", Some(msg));

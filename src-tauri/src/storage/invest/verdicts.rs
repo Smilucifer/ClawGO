@@ -86,11 +86,19 @@ pub fn list_verdicts(symbol: Option<&str>, limit: Option<i64>) -> Result<Vec<Ver
 
 pub fn save_pnl_snapshot(s: &PnlSnapshot) -> Result<i64, String> {
     with_conn_mut(|conn| {
-        conn.execute(
-            "INSERT INTO pnl_snapshots (snapshot_date, total_value, cash, holdings_value, daily_pnl, daily_pnl_pct) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![s.snapshot_date, s.total_value, s.cash, s.holdings_value, s.daily_pnl, s.daily_pnl_pct],
-        )
-        .map_err(|e| format!("save pnl: {}", e))?;
+        // Upsert: update existing snapshot for the same date, or insert new
+        let updated = conn.execute(
+            "UPDATE pnl_snapshots SET total_value=?1, cash=?2, holdings_value=?3, daily_pnl=?4, daily_pnl_pct=?5 WHERE snapshot_date=?6",
+            params![s.total_value, s.cash, s.holdings_value, s.daily_pnl, s.daily_pnl_pct, s.snapshot_date],
+        ).map_err(|e| format!("update pnl: {}", e))?;
+
+        if updated == 0 {
+            conn.execute(
+                "INSERT INTO pnl_snapshots (snapshot_date, total_value, cash, holdings_value, daily_pnl, daily_pnl_pct) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![s.snapshot_date, s.total_value, s.cash, s.holdings_value, s.daily_pnl, s.daily_pnl_pct],
+            )
+            .map_err(|e| format!("save pnl: {}", e))?;
+        }
         Ok(conn.last_insert_rowid())
     })
 }

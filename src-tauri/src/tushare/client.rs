@@ -21,6 +21,7 @@ pub struct TushareResponseData {
 
 /// A single daily bar (日线行情).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DailyBar {
     pub ts_code: String,
     pub trade_date: String,
@@ -37,6 +38,7 @@ pub struct DailyBar {
 
 /// Stock basic info (股票列表).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StockBasic {
     pub ts_code: String,
     pub symbol: String,

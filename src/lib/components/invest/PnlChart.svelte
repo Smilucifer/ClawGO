@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { t } from '$lib/i18n/index.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
   import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend } from 'chart.js';
@@ -56,10 +56,6 @@
     if (investStore.pnlSnapshots.length > 0 && canvas) {
       buildChart();
     }
-  });
-
-  onMount(() => {
-    buildChart();
   });
 
   onDestroy(() => {

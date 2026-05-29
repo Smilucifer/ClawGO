@@ -88,7 +88,8 @@ class InvestStore {
     const holdSyms = this.holdHoldings.map((h) => h.symbol);
     if (holdSyms.length === 0 || !tushareToken) return;
 
-    const entries: [string, PriceQuote][] = [];
+    // Merge new prices into existing map (preserve cached prices for failed fetches)
+    const updated = { ...this.priceMap };
     for (const sym of holdSyms) {
       try {
         const bars = await invoke<
@@ -108,24 +109,21 @@ class InvestStore {
         });
         if (bars.length > 0) {
           const latest = bars[0];
-          entries.push([
-            sym,
-            {
-              tsCode: latest.tsCode,
-              name: "",
-              close: latest.close,
-              change: latest.change,
-              pctChg: latest.pctChg,
-              vol: latest.vol,
-              amount: latest.amount,
-            },
-          ]);
+          updated[sym] = {
+            tsCode: latest.tsCode,
+            name: "",
+            close: latest.close,
+            change: latest.change,
+            pctChg: latest.pctChg,
+            vol: latest.vol,
+            amount: latest.amount,
+          };
         }
       } catch {
-        // Skip failed stocks silently
+        // Keep existing cached price for this symbol
       }
     }
-    this.priceMap = Object.fromEntries(entries);
+    this.priceMap = updated;
   }
 
   async searchStocks(
@@ -202,9 +200,15 @@ class InvestStore {
   }
 
   async sellStock(symbol: string, qty: number, price: number): Promise<void> {
-    const amount = qty * price;
     const existing = this.holdHoldings.find((h) => h.symbol === symbol);
     if (!existing) throw new Error("Holding not found");
+
+    const currentShares = existing.shares || 0;
+    if (qty > currentShares) {
+      throw new Error(`Cannot sell ${qty} shares, only hold ${currentShares}`);
+    }
+
+    const amount = qty * price;
 
     await invoke("record_trade", {
       id: null,
@@ -218,7 +222,7 @@ class InvestStore {
       notes: null,
     });
 
-    const remaining = (existing.shares || 0) - qty;
+    const remaining = currentShares - qty;
     if (remaining <= 0.0001) {
       await invoke("delete_holding", { symbol, currency: "CNY", kind: "hold" });
     } else {

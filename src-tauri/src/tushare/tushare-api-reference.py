@@ -4,7 +4,7 @@
 import os
 import tushare as ts
 
-pro = ts.pro_api('885e1148928c6b99a505cf1438bca2a01ce5d7c048545f8fa4d488bb')
+pro = ts.pro_api('YOUR_TUSHARE_TOKEN_HERE')  # 从 settings.tushare_token 获取
 
 # ⭐️ 必须设置自定义代理 URL
 # 如果显示 Token 不对，请检查代码是不是少了这行

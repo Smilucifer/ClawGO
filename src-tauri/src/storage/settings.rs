@@ -570,6 +570,7 @@ pub fn update_user_settings(patch: serde_json::Value) -> Result<UserSettings, St
     apply_hashmap_field(&mut all.user.mcp_servers, &patch, "mcp_servers")?;
     apply_hashmap_field(&mut all.user.hooks, &patch, "hooks")?;
     apply_hashmap_field(&mut all.user.enabled_plugins, &patch, "enabled_plugins")?;
+    apply_optional_string_empty_as_none(&mut all.user.tushare_token, &patch, "tushare_token");
     all.user.updated_at = crate::models::now_iso();
     save(&all)?;
     Ok(all.user)

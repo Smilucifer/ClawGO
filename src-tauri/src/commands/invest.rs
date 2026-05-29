@@ -304,10 +304,12 @@ pub fn save_strategy(
 ) -> Result<(), String> {
     let sid = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let now = chrono::Utc::now().to_rfc3339();
+    let parsed_targets: Vec<serde_json::Value> =
+        serde_json::from_str(&targets).map_err(|e| format!("invalid targets JSON: {e}"))?;
     let s = strategy::Strategy {
         id: sid,
         name,
-        targets,
+        targets: parsed_targets,
         max_single_pct,
         min_cash_pct,
         updated_at: now,
