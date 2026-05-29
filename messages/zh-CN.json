@@ -356,6 +356,17 @@
   "invest_no_token": "请在设置中配置 Tushare Token 以启用实时行情",
   "invest_refresh_prices": "刷新行情",
 
+  "invest.eventWatch.noScanData": "暂无扫描数据",
+  "invest.eventWatch.scanning": "扫描中...",
+  "invest.eventWatch.scanNow": "立即扫描",
+  "invest.eventWatch.noEvents": "暂无事件，点击立即扫描",
+  "invest.eventWatch.triggerCommittee": "触发委员会",
+  "invest.eventWatch.triggered": "已触发",
+  "invest.eventWatch.events": "事件",
+  "invest.eventWatch.high": "高",
+  "invest.eventWatch.untriggered": "未触发",
+  "invest.eventWatch.last": "最近",
+
   "memoryMgmt_tab_userMemory": "用户记忆",
   "memoryMgmt_tab_extractionConfig": "提取配置",
 

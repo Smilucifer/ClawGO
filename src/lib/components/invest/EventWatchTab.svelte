@@ -1,11 +1,11 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { t } from '$lib/i18n/index.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
 
   const store = investStore;
 
-  // Load events on mount
-  $effect(() => {
+  onMount(() => {
     store.fetchEvents();
     store.fetchScanStatus();
   });
@@ -72,16 +72,16 @@
   <div class="flex items-center justify-between px-4 py-2 border-b border-zinc-800">
     <div class="flex items-center gap-3 text-xs text-zinc-400">
       {#if store.scanStatus}
-        <span>{store.scanStatus.totalEvents} events</span>
-        <span class="text-red-400">{store.scanStatus.highCount} high</span>
+        <span>{store.scanStatus.totalEvents} {t('invest.eventWatch.events')}</span>
+        <span class="text-red-400">{store.scanStatus.highCount} {t('invest.eventWatch.high')}</span>
         {#if store.scanStatus.untriggeredHigh > 0}
-          <span class="text-amber-400">{store.scanStatus.untriggeredHigh} untriggered</span>
+          <span class="text-amber-400">{store.scanStatus.untriggeredHigh} {t('invest.eventWatch.untriggered')}</span>
         {/if}
         {#if store.scanStatus.lastEventAt}
-          <span>last: {formatTime(store.scanStatus.lastEventAt)}</span>
+          <span>{t('invest.eventWatch.last')}: {formatTime(store.scanStatus.lastEventAt)}</span>
         {/if}
       {:else}
-        <span>No scan data</span>
+        <span>{t('invest.eventWatch.noScanData')}</span>
       {/if}
     </div>
     <button
@@ -89,7 +89,7 @@
       disabled={store.isScanning}
       class="px-3 py-1 text-xs rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 disabled:opacity-50"
     >
-      {store.isScanning ? 'Scanning...' : 'Scan Now'}
+      {store.isScanning ? t('invest.eventWatch.scanning') : t('invest.eventWatch.scanNow')}
     </button>
   </div>
 
@@ -129,7 +129,7 @@
   <div class="flex-1 overflow-y-auto">
     {#if store.filteredEvents.length === 0}
       <div class="flex items-center justify-center h-full text-zinc-500 text-sm">
-        No events found. Click Scan Now to check for updates.
+        {t('invest.eventWatch.noEvents')}
       </div>
     {:else}
       {#each store.filteredEvents as event (event.id)}
@@ -173,10 +173,10 @@
                 onclick={() => {/* Task 10: trigger dialog */}}
                 class="px-2 py-1 text-xs bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 rounded"
               >
-                Trigger Committee
+                {t('invest.eventWatch.triggerCommittee')}
               </button>
             {:else if event.triggered}
-              <span class="text-[10px] text-zinc-600">Triggered</span>
+              <span class="text-[10px] text-zinc-600">{t('invest.eventWatch.triggered')}</span>
             {/if}
           </div>
         </div>

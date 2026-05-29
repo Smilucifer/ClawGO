@@ -356,6 +356,17 @@
   "invest_no_token": "Set Tushare token in Settings to enable live prices.",
   "invest_refresh_prices": "Refresh Prices",
 
+  "invest.eventWatch.noScanData": "No scan data",
+  "invest.eventWatch.scanning": "Scanning...",
+  "invest.eventWatch.scanNow": "Scan Now",
+  "invest.eventWatch.noEvents": "No events found. Click Scan Now to check for updates.",
+  "invest.eventWatch.triggerCommittee": "Trigger Committee",
+  "invest.eventWatch.triggered": "Triggered",
+  "invest.eventWatch.events": "events",
+  "invest.eventWatch.high": "high",
+  "invest.eventWatch.untriggered": "untriggered",
+  "invest.eventWatch.last": "last",
+
   "memoryMgmt_tab_userMemory": "User Memory",
   "memoryMgmt_tab_extractionConfig": "Extraction Config",
 
