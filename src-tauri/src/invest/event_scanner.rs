@@ -138,7 +138,6 @@ pub async fn scan_events(
 
     let now = Local::now();
     let today = now.format("%Y%m%d").to_string();
-    let _two_hours_ago = (now - ChronoDuration::hours(2)).format("%Y%m%d%H%M%S").to_string();
     let one_day_ago = (now - ChronoDuration::days(1)).format("%Y%m%d").to_string();
 
     let mut raw_events: Vec<RawEvent> = Vec::new();
@@ -176,7 +175,7 @@ pub async fn scan_events(
         .unwrap_or_default();
     let active_symbols: Vec<&str> = holdings
         .iter()
-        .filter(|h| h.kind == "HOLD" || h.kind == "WATCH")
+        .filter(|h| h.kind == "hold" || h.kind == "watch")
         .map(|h| h.symbol.as_str())
         .collect();
 
@@ -227,7 +226,7 @@ pub async fn scan_events(
     // 4. Normalize via LLM
     let normalized = normalize_events(llm_client, llm_config, &filtered_events, normalizer_prompt).await;
 
-    // 5. Save to DB (dedup by source+title via INSERT OR REPLACE)
+    // 5. Save to DB (dedup by source+title via INSERT OR IGNORE)
     let mut saved = 0usize;
     for (ev, norm) in filtered_events.iter().zip(normalized.iter()) {
         let symbols_str = norm.affected_symbols.join(",");
@@ -247,7 +246,12 @@ pub async fn scan_events(
             } else {
                 Some(symbols_str)
             },
-            severity: format!("{:?}", norm.severity).to_lowercase(),
+            severity: match norm.severity {
+                Severity::High => "high",
+                Severity::Medium => "medium",
+                Severity::Low => "low",
+            }
+            .to_string(),
             stance: norm.stance.clone(),
             triggered: false,
             trigger_verdict_id: None,
