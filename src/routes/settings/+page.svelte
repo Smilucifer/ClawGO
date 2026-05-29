@@ -1991,6 +1991,34 @@
             {/if}
           </Card>
         {/if}
+
+        <!-- Tushare Token Card -->
+        <Card class="p-6 space-y-4">
+          <h2 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+            {t("settings_tushare_token")}
+          </h2>
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium">{t("settings_tushare_token")}</p>
+              <p class="text-xs text-muted-foreground">{t("invest_no_token")}</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <input
+                type="password"
+                class="w-64 rounded-md border bg-background px-3 py-1.5 text-sm"
+                placeholder="Tushare Pro token"
+                value={settings?.tushare_token ?? ""}
+                onblur={async (e) => {
+                  const val = (e.currentTarget as HTMLInputElement).value.trim();
+                  const prev = settings?.tushare_token ?? "";
+                  if (val !== prev) {
+                    await saveGeneralPatch({ tushare_token: val || undefined });
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </Card>
       </div>
 
       <!-- ═══ Connection tab ═══ -->

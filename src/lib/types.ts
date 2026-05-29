@@ -249,6 +249,7 @@ export interface UserSettings {
   windows_msvc_env_mode?: WindowsMsvcEnvMode;
   mcp_servers?: Record<string, McpServerConfig>;
   ai_characters?: AiCharacter[];
+  tushare_token?: string;
   updated_at: string;
 }
 
