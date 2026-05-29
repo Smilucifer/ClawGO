@@ -24,6 +24,21 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
     conn.execute_batch(CREATE_TABLES_SQL)
         .map_err(|e| format!("create tables: {}", e))?;
 
+    // Migration: add stance column to events table if missing
+    {
+        let has_stance: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('events') WHERE name='stance'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        if has_stance == 0 {
+            conn.execute_batch("ALTER TABLE events ADD COLUMN stance TEXT DEFAULT 'neutral';")
+                .map_err(|e| format!("Failed to add stance column: {}", e))?;
+        }
+    }
+
     // Migrate trades table to include 'cash_adjust' action.
     // SQLite doesn't support ALTER CHECK, so we rebuild the table.
     conn.execute_batch(

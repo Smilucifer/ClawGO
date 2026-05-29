@@ -218,6 +218,7 @@ pub fn save_event(
     body: Option<String>,
     symbols: Option<String>,
     severity: Option<String>,
+    stance: Option<String>,
 ) -> Result<(), String> {
     let eid = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let now = chrono::Utc::now().to_rfc3339();
@@ -229,6 +230,7 @@ pub fn save_event(
         body,
         symbols,
         severity: severity.unwrap_or_else(|| "info".to_string()),
+        stance: stance.unwrap_or_else(|| "neutral".to_string()),
         triggered: false,
         trigger_verdict_id: None,
         created_at: now,

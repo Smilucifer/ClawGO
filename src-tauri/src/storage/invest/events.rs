@@ -11,6 +11,7 @@ pub struct Event {
     pub body: Option<String>,
     pub symbols: Option<String>,
     pub severity: String,
+    pub stance: String,
     pub triggered: bool,
     pub trigger_verdict_id: Option<String>,
     pub created_at: String,
@@ -31,9 +32,9 @@ pub struct EventSource {
 pub fn save_event(e: &Event) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute(
-            "INSERT OR REPLACE INTO events (id, source, event_type, title, body, symbols, severity, triggered, trigger_verdict_id, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![e.id, e.source, e.event_type, e.title, e.body, e.symbols, e.severity, e.triggered as i32, e.trigger_verdict_id, e.created_at],
+            "INSERT OR REPLACE INTO events (id, source, event_type, title, body, symbols, severity, stance, triggered, trigger_verdict_id, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![e.id, e.source, e.event_type, e.title, e.body, e.symbols, e.severity, e.stance, e.triggered as i32, e.trigger_verdict_id, e.created_at],
         )
         .map_err(|e| format!("save event: {}", e))?;
         Ok(())
@@ -45,11 +46,11 @@ pub fn list_events(source: Option<&str>, limit: Option<i64>) -> Result<Vec<Event
         let limit_val = limit.unwrap_or(100);
         let (sql, query_params): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = match source {
             Some(s) => (
-                "SELECT id, source, event_type, title, body, symbols, severity, triggered, trigger_verdict_id, created_at FROM events WHERE source = ?1 ORDER BY created_at DESC LIMIT ?2",
+                "SELECT id, source, event_type, title, body, symbols, severity, stance, triggered, trigger_verdict_id, created_at FROM events WHERE source = ?1 ORDER BY created_at DESC LIMIT ?2",
                 vec![Box::new(s.to_string()), Box::new(limit_val)],
             ),
             None => (
-                "SELECT id, source, event_type, title, body, symbols, severity, triggered, trigger_verdict_id, created_at FROM events ORDER BY created_at DESC LIMIT ?1",
+                "SELECT id, source, event_type, title, body, symbols, severity, stance, triggered, trigger_verdict_id, created_at FROM events ORDER BY created_at DESC LIMIT ?1",
                 vec![Box::new(limit_val)],
             ),
         };
@@ -64,9 +65,10 @@ pub fn list_events(source: Option<&str>, limit: Option<i64>) -> Result<Vec<Event
                     body: row.get(4)?,
                     symbols: row.get(5)?,
                     severity: row.get(6)?,
-                    triggered: row.get::<_, i32>(7)? != 0,
-                    trigger_verdict_id: row.get(8)?,
-                    created_at: row.get(9)?,
+                    stance: row.get(7)?,
+                    triggered: row.get::<_, i32>(8)? != 0,
+                    trigger_verdict_id: row.get(9)?,
+                    created_at: row.get(10)?,
                 })
             })
             .map_err(|e| format!("query: {}", e))?;
