@@ -735,3 +735,54 @@ pub fn save_role_prompt(role: String, content: String) -> Result<(), String> {
     };
     save_prompt(role_enum, &content)
 }
+
+// ── Event Scanner ─────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn scan_events(
+    normalizer_prompt: Option<String>,
+) -> Result<crate::invest::event_scanner::ScanResult, String> {
+    let settings = crate::storage::settings::get_user_settings();
+    let token = settings
+        .tushare_token
+        .ok_or("no tushare_token configured")?;
+    let tushare = crate::tushare::TushareClient::new(token);
+
+    let client =
+        crate::invest::llm::client::OpenAiCompatClient::new().map_err(|e| format!("init LLM client: {}", e))?;
+    let llm_config = crate::invest::llm::types::LlmConfig::default();
+
+    crate::invest::event_scanner::scan_events(
+        &tushare,
+        &client,
+        &llm_config,
+        normalizer_prompt.as_deref(),
+    )
+    .await
+}
+
+#[tauri::command]
+pub fn get_scan_status() -> Result<ScanStatus, String> {
+    let event_list = events::list_events(None, Some(50))?;
+    let high_count = event_list.iter().filter(|e| e.severity == "high").count();
+    let untriggered_high = event_list
+        .iter()
+        .filter(|e| e.severity == "high" && !e.triggered)
+        .count();
+
+    Ok(ScanStatus {
+        total_events: event_list.len(),
+        high_count,
+        untriggered_high,
+        last_event_at: event_list.first().map(|e| e.created_at.clone()),
+    })
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanStatus {
+    pub total_events: usize,
+    pub high_count: usize,
+    pub untriggered_high: usize,
+    pub last_event_at: Option<String>,
+}

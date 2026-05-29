@@ -420,6 +420,8 @@ pub fn run() {
             commands::invest::load_committee_archive,
             commands::invest::get_role_prompts,
             commands::invest::save_role_prompt,
+            commands::invest::scan_events,
+            commands::invest::get_scan_status,
         ])
         .setup(move |app| {
             // Set up broadcast emitter (requires AppHandle, so must be in setup)
