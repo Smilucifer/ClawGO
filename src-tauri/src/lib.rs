@@ -6,6 +6,7 @@ pub mod pricing;
 pub mod process_ext;
 pub mod group_chat;
 pub mod storage;
+pub mod tushare;
 pub mod web_server;
 
 use agent::adapter::new_actor_session_map;
