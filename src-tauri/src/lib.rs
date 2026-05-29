@@ -137,32 +137,18 @@ fn spawn_event_scanner_cron() {
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
 
         loop {
-            // Check prerequisites: tushare token + LLM provider
-            let settings = crate::storage::settings::get_user_settings();
-            let has_tushare = settings.tushare_token.is_some();
-            let has_llm = match crate::commands::invest::get_llm_config() {
-                Ok(config) => config.providers.iter().any(|p| !p.api_key.is_empty()),
-                Err(_) => false,
-            };
-
-            if has_tushare && has_llm {
-                log::info!("[invest-scanner] cron: starting scan");
-                match run_event_scan_once(&settings.tushare_token.unwrap()).await {
-                    Ok(result) => {
-                        log::info!(
-                            "[invest-scanner] cron: scan complete — fetched={}, filtered={}, saved={}",
-                            result.fetched, result.filtered, result.saved
-                        );
-                    }
-                    Err(e) => {
-                        log::warn!("[invest-scanner] cron: scan failed: {}", e);
-                    }
+            log::info!("[invest-scanner] cron: starting scan");
+            match run_event_scan_once().await {
+                Ok(result) => {
+                    log::info!(
+                        "[invest-scanner] cron: scan complete — fetched={}, filtered={}, saved={}",
+                        result.fetched, result.filtered, result.saved
+                    );
                 }
-            } else {
-                log::debug!(
-                    "[invest-scanner] cron: skipping (tushare={}, llm={})",
-                    has_tushare, has_llm
-                );
+                Err(e) => {
+                    // Config errors (missing token/provider) are expected when not set up
+                    log::debug!("[invest-scanner] cron: scan skipped/failed: {}", e);
+                }
             }
 
             // Sleep 30 minutes between scans
@@ -172,36 +158,8 @@ fn spawn_event_scanner_cron() {
 }
 
 /// Run a single event scan: create clients and call the scanner.
-async fn run_event_scan_once(
-    tushare_token: &str,
-) -> Result<crate::invest::event_scanner::ScanResult, String> {
-    let tushare = crate::tushare::TushareClient::new(tushare_token.to_string());
-
-    let config_data = crate::commands::invest::get_llm_config()?;
-    let client = crate::invest::llm::client::OpenAiCompatClient::new()
-        .map_err(|e| format!("init LLM client: {}", e))?;
-
-    // Use the first provider that has an API key configured
-    let provider_cfg = config_data
-        .providers
-        .iter()
-        .find(|p| !p.api_key.is_empty())
-        .ok_or("no LLM provider with an API key configured")?;
-
-    let provider_id = match provider_cfg.provider_id.as_str() {
-        "deepseek" => crate::invest::llm::types::ProviderId::DeepSeek,
-        "mimo-plan" => crate::invest::llm::types::ProviderId::MiMoPlan,
-        "mimo-api" => crate::invest::llm::types::ProviderId::MiMoApi,
-        _ => return Err(format!("unknown provider: {}", provider_cfg.provider_id)),
-    };
-
-    let llm_config = crate::invest::llm::types::LlmConfig {
-        provider: provider_id,
-        model: provider_cfg.default_model.clone(),
-        temperature: 0.7,
-        max_tokens: 4096,
-        timeout_secs: config_data.timeout_secs,
-    };
+async fn run_event_scan_once() -> Result<crate::invest::event_scanner::ScanResult, String> {
+    let (tushare, client, llm_config) = crate::commands::invest::build_scan_clients()?;
 
     crate::invest::event_scanner::scan_events(&tushare, &client, &llm_config, None).await
 }

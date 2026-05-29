@@ -738,10 +738,9 @@ pub fn save_role_prompt(role: String, content: String) -> Result<(), String> {
 
 // ── Event Scanner ─────────────────────────────────────────────────────────
 
-#[tauri::command]
-pub async fn scan_events(
-    normalizer_prompt: Option<String>,
-) -> Result<crate::invest::event_scanner::ScanResult, String> {
+/// Build TushareClient + LLM client + config for event scanning.
+/// Used by both the `scan_events` Tauri command and the background cron.
+pub fn build_scan_clients() -> Result<(crate::tushare::TushareClient, crate::invest::llm::client::OpenAiCompatClient, crate::invest::llm::types::LlmConfig), String> {
     let settings = crate::storage::settings::get_user_settings();
     let token = settings
         .tushare_token
@@ -773,6 +772,15 @@ pub async fn scan_events(
         max_tokens: 4096,
         timeout_secs: config_data.timeout_secs,
     };
+
+    Ok((tushare, client, llm_config))
+}
+
+#[tauri::command]
+pub async fn scan_events(
+    normalizer_prompt: Option<String>,
+) -> Result<crate::invest::event_scanner::ScanResult, String> {
+    let (tushare, client, llm_config) = build_scan_clients()?;
 
     crate::invest::event_scanner::scan_events(
         &tushare,
