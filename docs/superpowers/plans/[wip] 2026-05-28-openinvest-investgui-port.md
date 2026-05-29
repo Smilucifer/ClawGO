@@ -1,12 +1,15 @@
 # openInvest + invest-gui → ClawGO 功能移植计划
 
-> 状态:[wip] Phase 1 完成,Phase 2 待实施。RFC D1-D11 全部决议已确认(2026-05-29)。
+> 状态:[wip] Phase 1 + Phase 2 完成,Phase 3a 待实施。RFC D1-D11 全部决议已确认(2026-05-29)。
 > 创建:2026-05-28
 > 更新:
 > - 2026-05-29(v1) — 整合完整研究结果:5 角色 system prompt、编排算法、Dreaming 对比、Provider 体系
 > - 2026-05-29(v2) — 多路审查后锁定 D1–D11 工程决议、HOLD/WATCH 双类、Dashboard 现金 KPI、系统二级页 7 Tab、用户档案、Phase 3 拆分(详见「十一、v2 增量决议」)
 > - 2026-05-29(v3) — RFC 全部确认,同步 RFC 关键设计到 §6.1/§7.3/§7.7/§8.3
+> - 2026-05-29(v4) — Phase 2 实施完成(v3.2.0),13 项审查修复,更新 Phase 2 任务状态
 > 配套文档:`[done] 2026-05-29-committee-engineering-rfc.md`
+> Phase 2 实施计划:`[done] 2026-05-29-phase2-dashboard-portfolio-pnl.md`
+> Phase 2 设计文档:`[done] 2026-05-29-phase2-dashboard-portfolio-pnl-design.md`
 
 ## 背景
 
@@ -951,36 +954,39 @@ Dream 执行流程：
 
 - [x] 新增 `/invest` 路由 + 侧边栏入口（6 Tab skeleton）
 - [x] 新增 `/memory-mgmt` 独立路由 + 侧边栏入口（2 Tab: 用户记忆 + 提取配置）
-- [ ] 移除角色记忆：`/memory-mgmt` 只保留用户记忆，AiCharacter 库移除记忆入口 — **延后到 Phase 2**
+- [ ] 移除角色记忆：`/memory-mgmt` 只保留用户记忆，AiCharacter 库移除记忆入口 — **延后到 Phase 3+**
 - [x] `memories` 表新增 `scope` + `project_id` 字段，去掉 approve 流程（pending→approved 简化为 active）
-- [x] `storage/portfolio.rs`、`storage/trades.rs` — **`storage/strategy.rs` 延后到 Phase 2**
+- [x] `storage/portfolio.rs`、`storage/trades.rs`、`storage/strategy.rs` — **strategy.rs Phase 2 完成**
 - [x] 对应 Tauri commands（含 `list_memories(scope_filter)` 等，20+ commands）
 - [x] `/memory-mgmt` 页面（用户记忆 + Scope 筛选 + 提取配置）— **Dreaming 控制区延后到 Phase 4**
-- [ ] Memory Extraction 添加「应用并重载」按钮 — **延后到 Phase 2**（当前为 TODO placeholder）
+- [ ] Memory Extraction 添加「应用并重载」按钮 — **延后到 Phase 3+**
 - [x] 标题栏 `[···]` 下拉菜单（含 Doctor 入口 + Release Notes + All Settings）
-- [ ] 设置页移除旧 `memory` Tab — **延后到 Phase 2**
+- [ ] 设置页移除旧 `memory` Tab — **延后到 Phase 3+**
 - [x] i18n 更新（14 keys: en + zh-CN）
 
-### Phase 2：Dashboard + 持仓 + 交易 + PnL 快照
+### Phase 2：Dashboard + 持仓 + 交易 + PnL 快照 ✅ (v3.2.0, 2026-05-29)
 
-- [ ] `/invest` Dashboard 页面(KPI 5 卡:总资产/持仓市值/**可用现金(带 ✎ 编辑入口)**/总收益率/持仓数量、持仓+观望表格、最新裁决、PnL 趋势图)
-- [ ] **HOLD / WATCH 双类资产**(主键 `(symbol, currency, kind)`,`kind IN ('hold','watch')`)
+> 实施计划：`[done] 2026-05-29-phase2-dashboard-portfolio-pnl.md`，22 commits，含 13 项审查修复。
+> 设计文档：`[done] 2026-05-29-phase2-dashboard-portfolio-pnl-design.md`
+
+- [x] `/invest` Dashboard 页面(KPI 5 卡:总资产/持仓市值/**可用现金(带 ✎ 编辑入口)**/总收益率/持仓数量、持仓+观望表格、最新裁决、PnL 趋势图)
+- [x] **HOLD / WATCH 双类资产**(主键 `(symbol, currency, kind)`,`kind IN ('hold','watch')`)
   - WATCH 不占现金,只追踪虚拟 PnL,但进入命中率统计
   - WATCH ↔ HOLD 转换对话框(写 history.jsonl)
-- [ ] **现金编辑对话框**:写入 `cash[CNY]` + 追加 `history.jsonl` `{type: 'cash_adjust', delta, reason}`
-- [ ] 持仓管理:调整持仓(买入/卖出/修改),加权平均成本计算
-- [ ] 买进/卖出流水(`record_external_trade` 原子事务,WAL + `BEGIN IMMEDIATE`,`history.jsonl` 审计)
-- [ ] 策略配置 CRUD
-- [ ] PnL 快照定时任务(工作日 4 次,贴盘前/盘中/盘后,Tauri background task)
+- [x] **现金编辑对话框**:写入 `cash[CNY]` + 追加 `history.jsonl` `{type: 'cash_adjust', delta, reason}`
+- [x] 持仓管理:调整持仓(买入/卖出/修改),加权平均成本计算
+- [x] 买进/卖出流水(`record_external_trade` 原子事务,WAL + `BEGIN IMMEDIATE`,`history.jsonl` 审计)
+- [x] 策略配置 CRUD
+- [x] PnL 快照定时任务(工作日 4 次,贴盘前/盘中/盘后,Tauri background task)
   - `30 9,11 * * 1-5` + `0 13,15 * * 1-5`(北京时间 9:30 / 11:00 / 13:00 / 15:00)— 对齐 RFC §4.6
   - `is_trading_day` 守卫,非交易日跳过
-  - 存储:`~/.claw-go/invest/pnl_history.jsonl`
-  - Dashboard 渲染 PnL 趋势折线图
-- [ ] Tushare MCP 数据准备层(Rust)
-- [ ] **A 股本地化宏观数据层**(替换 yfinance/VIX/TNX):HV20/HV60、10Y 国债 ETF、DR007、北向、两融、涨跌停广度
-- [ ] **数据刷新策略**:交易时段 60s 轮询 + 盘前/盘后定时 3x/天 + 委员会运行时立即拉取
-- [ ] **交易日历守卫**:`is_trading_day(date)` (Tushare `trade_cal`),非交易日跳过 cron
-- [ ] **启动迁移 toast**:首次启动 invest.db 时检测旧 JSON 数据 → 一键迁移
+  - 存储:invest.db `pnl_snapshots` 表(upsert 去重)
+  - Dashboard 渲染 PnL 趋势折线图(Chart.js)
+- [x] Tushare HTTP Client(Rust,reqwest,自定义代理 `http://101.35.233.113:8020/`)
+- [ ] **A 股本地化宏观数据层**(替换 yfinance/VIX/TNX):HV20/HV60、10Y 国债 ETF、DR007、北向、两融、涨跌停广度 — **延后到 Phase 3a**
+- [ ] **数据刷新策略**:交易时段 60s 轮询 + 盘前/盘后定时 3x/天 + 委员会运行时立即拉取 — **延后到 Phase 3a**（前端定时轮询组件待实现）
+- [x] **交易日历守卫**:`is_trading_day(date)` (Tushare `trade_cal`),非交易日跳过 cron
+- [x] **启动迁移 toast**:首次启动 invest.db 时检测旧 JSON 数据 → 一键迁移
 
 ### Phase 3a：LLM 核心 + 委员会批处理
 
@@ -1053,7 +1059,7 @@ Dream 执行流程：
 ## 依赖项
 
 - [x] ClawGO 记忆系统更新完毕（v3.0.0 SQLite FTS5 已完成）
-- [ ] 确认 Tushare MCP 覆盖范围满足需求（ETF 数据、板块数据等）
+- [x] 确认 Tushare MCP 覆盖范围满足需求（ETF 数据、板块数据等）— Phase 2 Tushare HTTP Client 已验证 A 股日线、股票搜索、交易日历
 - [x] 用户确认 UI 方案（侧边栏布局、记忆管理独立路由、openInvest 页面结构）
 - [x] 用户确认委员会架构（独立 prompt 注入、不进 AiCharacter 库、与 Group Chat 隔离）
 - [x] 用户确认 LLM 配置（Provider 下拉选择、角色级覆盖）
