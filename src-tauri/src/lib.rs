@@ -345,6 +345,15 @@ pub fn run() {
             commands::invest::save_event_source,
             commands::invest::is_trading_day,
             commands::invest::get_scheduler_logs,
+            commands::invest::get_strategy,
+            commands::invest::list_strategies,
+            commands::invest::save_strategy,
+            commands::invest::delete_strategy,
+            commands::invest::search_stocks,
+            commands::invest::get_latest_price,
+            commands::invest::get_daily_bars,
+            commands::invest::sync_trade_calendar,
+            commands::invest::migrate_legacy_portfolio,
         ])
         .setup(move |app| {
             // Set up broadcast emitter (requires AppHandle, so must be in setup)
@@ -460,6 +469,39 @@ pub fn run() {
     // Initialize invest database (holdings, trades, verdicts, events, scheduler).
     if let Err(e) = crate::storage::invest::init_db(&data_dir) {
         log::warn!("Failed to init invest DB: {}", e);
+    }
+
+    // Sync trade calendar on startup (non-blocking).
+    {
+        tauri::async_runtime::spawn(async move {
+            let settings = crate::storage::settings::get_user_settings();
+            if let Some(token) = settings.tushare_token {
+                let client = crate::tushare::TushareClient::new(token);
+                let today = chrono::Local::now();
+                let start = today.format("%Y%m%d").to_string();
+                let end = (today + chrono::Duration::days(730)).format("%Y%m%d").to_string();
+                match client.trade_cal("SSE", &start, &end).await {
+                    Ok(cals) => {
+                        let mut count = 0;
+                        for cal in &cals {
+                            if crate::storage::invest::scheduler::upsert_trade_calendar(
+                                &cal.cal_date,
+                                cal.is_open != 0,
+                                Some(&cal.pretrade_date),
+                            )
+                            .is_ok()
+                            {
+                                count += 1;
+                            }
+                        }
+                        log::info!("[invest] synced {} trade calendar entries", count);
+                    }
+                    Err(e) => log::warn!("[invest] trade calendar sync failed: {}", e),
+                }
+            } else {
+                log::debug!("[invest] no tushare_token, skipping calendar sync");
+            }
+        });
     }
 
     // Run memory migration from per-character JSONL to SQLite (idempotent).
