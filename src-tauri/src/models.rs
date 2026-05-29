@@ -369,6 +369,9 @@ pub struct UserSettings {
     pub native_hooks_migrated: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embedding_config: Option<EmbeddingConfig>,
+    /// Tushare Pro API token for market data fetching.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tushare_token: Option<String>,
     pub updated_at: String,
 }
 
@@ -547,6 +550,7 @@ impl Default for UserSettings {
             enabled_plugins: std::collections::HashMap::new(),
             native_hooks_migrated: false,
             embedding_config: None,
+            tushare_token: None,
             updated_at: now_iso(),
         }
     }
