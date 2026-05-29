@@ -428,23 +428,26 @@ pub fn aggregate_from_stored(reviews: &[VerdictReviewEntry]) -> VerdictReviewSum
 fn aggregate(reviews: &[VerdictReviewEntry], verdicts_list: &[verdicts::Verdict]) -> VerdictReviewSummary {
     let total_verdicts = verdicts_list.len();
 
-    // Overall hit rate
-    let total_reviews = reviews.len();
-    let total_hits = reviews.iter().filter(|r| r.hit).count();
-    let overall_hit_rate = if total_reviews > 0 {
-        total_hits as f64 / total_reviews as f64
+    // Overall hit rate (30-day focused, matching aggregate_from_stored)
+    let total_30d = reviews.iter().filter(|r| r.window_days == 30).count();
+    let hits_30d = reviews.iter().filter(|r| r.window_days == 30 && r.hit).count();
+    let overall_hit_rate = if total_30d > 0 {
+        hits_30d as f64 / total_30d as f64
     } else {
         0.0
     };
 
-    // Directional hit rate: exclude HOLD verdicts
-    let directional: Vec<&VerdictReviewEntry> = reviews
+    // Directional hit rate (30-day, exclude HOLD)
+    let dir_total = reviews
         .iter()
-        .filter(|r| r.verdict_type != "HOLD")
-        .collect();
-    let directional_hits = directional.iter().filter(|r| r.hit).count();
-    let directional_hit_rate = if !directional.is_empty() {
-        directional_hits as f64 / directional.len() as f64
+        .filter(|r| r.verdict_type != "HOLD" && r.window_days == 30)
+        .count();
+    let dir_hits = reviews
+        .iter()
+        .filter(|r| r.verdict_type != "HOLD" && r.window_days == 30 && r.hit)
+        .count();
+    let directional_hit_rate = if dir_total > 0 {
+        dir_hits as f64 / dir_total as f64
     } else {
         0.0
     };

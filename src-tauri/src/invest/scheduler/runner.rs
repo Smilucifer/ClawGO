@@ -32,16 +32,27 @@ pub async fn dispatch_job(id: &str) -> Result<String, String> {
             ))
         }
         "verdict_review" => {
-            // TODO: implement in Task 3 — verdict_review module not yet available
-            Err("verdict_review not yet implemented (Task 3)".into())
+            let settings = crate::storage::settings::get_user_settings();
+            let tushare_token = settings
+                .tushare_token
+                .ok_or("no tushare_token configured for verdict_review")?;
+            let summary = crate::invest::verdict_review::run_verdict_review(&tushare_token).await?;
+            Ok(format!(
+                "Verdict review complete: {} verdicts, {:.1}% hit rate",
+                summary.total_verdicts,
+                summary.overall_hit_rate * 100.0
+            ))
         }
         "dream_invest" => {
-            // TODO: implement in Task 5 — dreaming module not yet available
-            Err("dream_invest not yet implemented (Task 5)".into())
+            let settings = crate::storage::settings::get_user_settings();
+            let tushare_token = settings
+                .tushare_token
+                .ok_or("no tushare_token configured for dream_invest")?;
+            let result = crate::invest::dreaming::trigger_dream("invest", &tushare_token).await?;
+            Ok(format!("Dream invest complete: {:?}", result))
         }
         "dream_user" => {
-            // TODO: implement in Task 5 — dreaming module not yet available
-            Err("dream_user not yet implemented (Task 5)".into())
+            Err("user_memory dreaming not yet implemented".into())
         }
         _ => Err(format!("Unknown job: {}", id)),
     }

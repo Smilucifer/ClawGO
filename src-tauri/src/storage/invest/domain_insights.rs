@@ -25,6 +25,7 @@ pub fn upsert_insight(insight: &DomainInsight) -> Result<(), String> {
                content = excluded.content,
                confidence = excluded.confidence,
                source_verdict_ids = excluded.source_verdict_ids,
+               status = excluded.status,
                updated_at = excluded.updated_at",
             rusqlite::params![
                 insight.id,
@@ -121,6 +122,22 @@ fn row_to_insight(row: &rusqlite::Row) -> rusqlite::Result<DomainInsight> {
         status: row.get(6)?,
         created_at: row.get(7)?,
         updated_at: row.get(8)?,
+    })
+}
+
+/// Set an insight's status to 'archived'.
+pub fn archive_insight(id: &str) -> Result<(), String> {
+    with_conn_mut(|conn| {
+        let updated = conn
+            .execute(
+                "UPDATE domain_insights SET status = 'archived', updated_at = datetime('now') WHERE id = ?1 AND status = 'active'",
+                [id],
+            )
+            .map_err(|e| format!("archive insight: {e}"))?;
+        if updated == 0 {
+            return Err(format!("Insight '{}' not found or not active", id));
+        }
+        Ok(())
     })
 }
 

@@ -472,6 +472,7 @@ pub fn run() {
             commands::invest::list_dream_traces,
             commands::invest::rollback_dream,
             commands::invest::list_insights,
+            commands::invest::archive_insight,
             commands::invest::unarchive_insight,
             commands::invest::search_domain_insights,
         ])

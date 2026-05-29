@@ -833,6 +833,11 @@ pub fn list_insights(
 }
 
 #[tauri::command]
+pub fn archive_insight(id: String) -> Result<(), String> {
+    crate::storage::invest::domain_insights::archive_insight(&id)
+}
+
+#[tauri::command]
 pub fn unarchive_insight(id: String) -> Result<(), String> {
     crate::storage::invest::domain_insights::unarchive_insight(&id)
 }
