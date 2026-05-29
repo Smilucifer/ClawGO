@@ -68,8 +68,8 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
         COMMIT;"
     ).map_err(|e| format!("migrate trades table: {}", e))?;
 
-    // Migration: create verdict_reviews table
-    verdict_reviews::create_table_if_not_exists()?;
+    // Migration: create verdict_reviews table (use local conn, DB not yet in static)
+    verdict_reviews::create_table(&conn)?;
 
     let mut guard = DB.lock().map_err(|e| format!("lock db: {}", e))?;
     *guard = Some(conn);

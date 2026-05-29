@@ -10,7 +10,7 @@ use crate::tushare::client::TushareClient;
 // ---------------------------------------------------------------------------
 
 /// ATR multiplier for the flat-zone threshold.
-const K_FLAT: f64 = 0.5;
+const K_FLAT: f64 = 1.0;
 
 /// Maximum flat threshold (8%).
 const MAX_FLAT_THRESHOLD: f64 = 0.08;
@@ -70,14 +70,14 @@ pub fn flat_threshold(atr_pct: f64, days: i64) -> f64 {
 /// Determine if a verdict was "hit" given the actual return.
 ///
 /// Directional logic:
-/// - BUY / ACCUMULATE: hit if return > +threshold
-/// - SELL / TRIM: hit if return < -threshold
-/// - HOLD: hit if abs(return) <= threshold (stayed within flat zone)
+/// - BUY / ACCUMULATE: hit if return > 0 (raw comparison, no threshold)
+/// - SELL / TRIM: hit if return < 0 (raw comparison, no threshold)
+/// - HOLD: hit if abs(return) < threshold (stayed within flat zone)
 pub fn is_hit(verdict_type: &str, return_pct: f64, threshold: f64) -> bool {
     match verdict_type {
-        "BUY" | "ACCUMULATE" => return_pct > threshold,
-        "SELL" | "TRIM" => return_pct < -threshold,
-        "HOLD" => return_pct.abs() <= threshold,
+        "BUY" | "ACCUMULATE" => return_pct > 0.0,
+        "SELL" | "TRIM" => return_pct < 0.0,
+        "HOLD" => return_pct.abs() < threshold,
         // Unknown verdict types: conservative — treat as not hit
         _ => false,
     }
@@ -92,7 +92,11 @@ pub fn to_ts_code(symbol: &str) -> String {
     let suffix = match symbol.chars().next() {
         Some('6') | Some('9') => ".SH",
         Some('0') | Some('3') => ".SZ",
-        _ => ".SH", // default to SH for unknown prefixes
+        Some('4') | Some('8') => ".BJ",
+        _ => {
+            log::warn!("Unknown stock prefix for '{}', defaulting to .SH", symbol);
+            ".SH"
+        }
     };
     format!("{}{}", symbol, suffix)
 }
@@ -427,9 +431,9 @@ mod tests {
 
     #[test]
     fn test_flat_threshold_basic() {
-        // 3% ATR, 7 days: 0.5 * 0.03 * sqrt(7) ≈ 0.5 * 0.03 * 2.646 ≈ 0.0397
+        // 3% ATR, 7 days: 1.0 * 0.03 * sqrt(7) ≈ 1.0 * 0.03 * 2.646 ≈ 0.0794
         let result = flat_threshold(0.03, 7);
-        assert!((result - 0.0397).abs() < 0.001);
+        assert!((result - 0.0794).abs() < 0.001);
     }
 
     #[test]
@@ -443,40 +447,48 @@ mod tests {
     fn test_flat_threshold_one_day() {
         // 1 day: sqrt(1) = 1, so threshold = K_FLAT * atr_pct
         let result = flat_threshold(0.04, 1);
-        assert!((result - 0.02).abs() < 0.001); // 0.5 * 0.04 = 0.02
+        assert!((result - 0.04).abs() < 0.001); // 1.0 * 0.04 = 0.04
     }
 
     #[test]
     fn test_is_hit_buy() {
+        // BUY: hit if return > 0 (raw comparison, no threshold)
         assert!(is_hit("BUY", 0.05, 0.03));
-        assert!(!is_hit("BUY", 0.01, 0.03));
+        assert!(is_hit("BUY", 0.01, 0.03)); // any positive return is a hit
         assert!(!is_hit("BUY", -0.05, 0.03));
+        assert!(!is_hit("BUY", 0.0, 0.03)); // exactly zero is not a hit
     }
 
     #[test]
     fn test_is_hit_sell() {
+        // SELL: hit if return < 0 (raw comparison, no threshold)
         assert!(is_hit("SELL", -0.05, 0.03));
-        assert!(!is_hit("SELL", -0.01, 0.03));
+        assert!(is_hit("SELL", -0.01, 0.03)); // any negative return is a hit
         assert!(!is_hit("SELL", 0.05, 0.03));
+        assert!(!is_hit("SELL", 0.0, 0.03)); // exactly zero is not a hit
     }
 
     #[test]
     fn test_is_hit_hold() {
+        // HOLD: hit if abs(return) < threshold (strict less-than)
         assert!(is_hit("HOLD", 0.01, 0.03));
         assert!(is_hit("HOLD", -0.01, 0.03));
         assert!(!is_hit("HOLD", 0.05, 0.03));
+        assert!(!is_hit("HOLD", 0.03, 0.03)); // exactly at threshold is not a hit
     }
 
     #[test]
     fn test_is_hit_accumulate() {
+        // ACCUMULATE: same as BUY (raw comparison)
         assert!(is_hit("ACCUMULATE", 0.05, 0.03));
-        assert!(!is_hit("ACCUMULATE", 0.01, 0.03));
+        assert!(is_hit("ACCUMULATE", 0.01, 0.03)); // any positive return
     }
 
     #[test]
     fn test_is_hit_trim() {
+        // TRIM: same as SELL (raw comparison)
         assert!(is_hit("TRIM", -0.05, 0.03));
-        assert!(!is_hit("TRIM", -0.01, 0.03));
+        assert!(is_hit("TRIM", -0.01, 0.03)); // any negative return
     }
 
     #[test]
@@ -507,6 +519,16 @@ mod tests {
     #[test]
     fn test_to_ts_code_star_market() {
         assert_eq!(to_ts_code("688001"), "688001.SH");
+    }
+
+    #[test]
+    fn test_to_ts_code_bse_4() {
+        assert_eq!(to_ts_code("430047"), "430047.BJ");
+    }
+
+    #[test]
+    fn test_to_ts_code_bse_8() {
+        assert_eq!(to_ts_code("830799"), "830799.BJ");
     }
 
     #[test]

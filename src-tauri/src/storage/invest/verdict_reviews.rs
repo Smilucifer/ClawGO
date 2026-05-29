@@ -1,6 +1,6 @@
 use super::with_conn;
 use super::with_conn_mut;
-use rusqlite::params;
+use rusqlite::{params, Connection};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,29 +19,38 @@ pub struct VerdictReviewEntry {
     pub created_at: String,
 }
 
+const CREATE_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS verdict_reviews (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    verdict_id      TEXT NOT NULL,
+    symbol          TEXT NOT NULL,
+    verdict_type    TEXT NOT NULL,
+    verdict_date    TEXT NOT NULL,
+    window_days     INTEGER NOT NULL,
+    price_at_verdict REAL,
+    price_after     REAL,
+    return_pct      REAL,
+    hit             INTEGER NOT NULL,
+    flat_threshold  REAL,
+    created_at      TEXT NOT NULL,
+    UNIQUE(verdict_id, window_days)
+);
+CREATE INDEX IF NOT EXISTS idx_vr_verdict ON verdict_reviews(verdict_id);
+CREATE INDEX IF NOT EXISTS idx_vr_symbol ON verdict_reviews(symbol);
+CREATE INDEX IF NOT EXISTS idx_vr_date ON verdict_reviews(verdict_date);";
+
+/// Create the verdict_reviews table using a provided connection.
+/// Used during init_db when the static DB is not yet available.
+pub fn create_table(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch(CREATE_TABLE_SQL)
+        .map_err(|e| format!("create verdict_reviews table: {}", e))?;
+    Ok(())
+}
+
+/// Create the verdict_reviews table using the global connection.
 pub fn create_table_if_not_exists() -> Result<(), String> {
     with_conn(|conn| {
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS verdict_reviews (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                verdict_id      TEXT NOT NULL,
-                symbol          TEXT NOT NULL,
-                verdict_type    TEXT NOT NULL,
-                verdict_date    TEXT NOT NULL,
-                window_days     INTEGER NOT NULL,
-                price_at_verdict REAL,
-                price_after     REAL,
-                return_pct      REAL,
-                hit             INTEGER NOT NULL,
-                flat_threshold  REAL,
-                created_at      TEXT NOT NULL,
-                UNIQUE(verdict_id, window_days)
-            );
-            CREATE INDEX IF NOT EXISTS idx_vr_verdict ON verdict_reviews(verdict_id);
-            CREATE INDEX IF NOT EXISTS idx_vr_symbol ON verdict_reviews(symbol);
-            CREATE INDEX IF NOT EXISTS idx_vr_date ON verdict_reviews(verdict_date);",
-        )
-        .map_err(|e| format!("create verdict_reviews table: {}", e))?;
+        conn.execute_batch(CREATE_TABLE_SQL)
+            .map_err(|e| format!("create verdict_reviews table: {}", e))?;
         Ok(())
     })
 }
