@@ -76,12 +76,12 @@ class InvestStore {
 
     // Time window filter
     const now = Date.now();
-    const windows: Record<string, number> = {
+    const windows = {
       "24h": 86_400_000,
       "48h": 172_800_000,
       "7d": 604_800_000,
-    };
-    const cutoff = now - (windows[this.eventFilter.timeWindow] ?? 86_400_000);
+    } as const;
+    const cutoff = now - windows[this.eventFilter.timeWindow];
     filtered = filtered.filter(
       (e) => new Date(e.createdAt).getTime() > cutoff,
     );
@@ -390,28 +390,35 @@ class InvestStore {
   // ── Event Watch Actions ─────────────────────────────────────────────
 
   async fetchEvents(): Promise<void> {
-    const events = await invoke<InvestEvent[]>("get_events", {
-      source: null,
-      limit: 200,
-    });
-    this.events = events;
+    try {
+      const events = await invoke<InvestEvent[]>("get_events", {
+        source: null,
+        limit: 200,
+      });
+      this.events = events;
+    } catch (e) {
+      console.error("Failed to fetch events:", e);
+    }
   }
 
   async fetchScanStatus(): Promise<void> {
-    const status = await invoke<ScanStatus>("get_scan_status");
-    this.scanStatus = status;
+    try {
+      const status = await invoke<ScanStatus>("get_scan_status");
+      this.scanStatus = status;
+    } catch (e) {
+      console.error("Failed to fetch scan status:", e);
+    }
   }
 
-  async triggerScan(): Promise<unknown> {
+  async triggerScan(): Promise<void> {
     this.isScanning = true;
     try {
-      const result = await invoke("scan_events", {
+      await invoke("scan_events", {
         normalizerPrompt: null,
       });
       // Refresh events and status after scan
       await this.fetchEvents();
       await this.fetchScanStatus();
-      return result;
     } finally {
       this.isScanning = false;
     }

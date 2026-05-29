@@ -1829,6 +1829,6 @@ export interface ScanStatus {
 
 export interface EventFilter {
   timeWindow: "24h" | "48h" | "7d";
-  severity: "all" | "high" | "medium";
+  severity: "all" | "high" | "medium" | "low";
   search: string;
 }
