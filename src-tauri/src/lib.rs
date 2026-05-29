@@ -69,6 +69,70 @@ impl ShutdownGate {
     }
 }
 
+/// Run a PnL snapshot: get current holdings, calculate total value, save snapshot.
+fn run_pnl_snapshot() -> Result<String, String> {
+    use crate::storage::invest::{portfolio, verdicts};
+
+    let settings = crate::storage::settings::get_user_settings();
+    let token = settings
+        .tushare_token
+        .ok_or("no tushare_token configured")?;
+
+    let holdings = portfolio::list_holdings()?;
+    let hold_items: Vec<_> = holdings.iter().filter(|h| h.kind == "hold").collect();
+    if hold_items.is_empty() {
+        return Ok("no holdings, skipping".to_string());
+    }
+
+    let cash = portfolio::get_cash()?;
+    let rt = tokio::runtime::Handle::current();
+
+    let mut holdings_value = 0.0;
+    for h in &hold_items {
+        if let (Some(shares), Some(_cost)) = (h.shares, h.avg_cost) {
+            let sym = h.symbol.clone();
+            let tok = token.clone();
+            let price = rt.block_on(async {
+                let client = crate::tushare::TushareClient::new(tok);
+                client.get_latest_price(&sym).await
+            });
+            match price {
+                Ok(p) => holdings_value += p * shares,
+                Err(e) => log::warn!("[invest-pnl] price fetch failed for {}: {}", h.symbol, e),
+            }
+        }
+    }
+
+    let total_value = cash + holdings_value;
+
+    let prev = verdicts::list_pnl_snapshots(Some(1))?;
+    let (daily_pnl, daily_pnl_pct) = if let Some(last) = prev.first() {
+        let pnl = total_value - last.total_value;
+        let pct = if last.total_value > 0.0 {
+            (pnl / last.total_value) * 100.0
+        } else {
+            0.0
+        };
+        (Some(pnl), Some(pct))
+    } else {
+        (None, None)
+    };
+
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let snapshot = verdicts::PnlSnapshot {
+        id: 0,
+        snapshot_date: today,
+        total_value,
+        cash,
+        holdings_value,
+        daily_pnl,
+        daily_pnl_pct,
+        created_at: String::new(),
+    };
+    let id = verdicts::save_pnl_snapshot(&snapshot)?;
+    Ok(format!("saved snapshot #{}: total={:.2}", id, total_value))
+}
+
 pub fn run() {
     // Initialize logging — our crate at debug level by default
     // Override with RUST_LOG env var, e.g. RUST_LOG=warn cargo tauri dev
@@ -500,6 +564,74 @@ pub fn run() {
                 }
             } else {
                 log::debug!("[invest] no tushare_token, skipping calendar sync");
+            }
+        });
+    }
+
+    // Start PnL snapshot cron job.
+    // Runs at 9:30, 11:00, 13:00, 15:00 Beijing time on weekdays.
+    {
+        tauri::async_runtime::spawn(async {
+            use chrono::TimeZone;
+
+            // Target times: 9:30, 11:00, 13:00, 15:00
+            let target_times: [(u32, u32); 4] = [(9, 30), (11, 0), (13, 0), (15, 0)];
+
+            loop {
+                let now = chrono::Local::now();
+                let mut next_run = None;
+
+                for &(hour, minute) in &target_times {
+                    let candidate = now
+                        .date_naive()
+                        .and_hms_opt(hour, minute, 0)
+                        .unwrap();
+                    let candidate = chrono::Local.from_local_datetime(&candidate).unwrap();
+                    if candidate > now {
+                        next_run = Some(candidate);
+                        break;
+                    }
+                }
+
+                let next = next_run.unwrap_or_else(|| {
+                    let tomorrow = now.date_naive() + chrono::Duration::days(1);
+                    let t = tomorrow.and_hms_opt(9, 30, 0).unwrap();
+                    chrono::Local.from_local_datetime(&t).unwrap()
+                });
+
+                let sleep_duration = (next - now).to_std().unwrap_or(std::time::Duration::from_secs(3600));
+                log::info!("[invest-pnl] next snapshot at {:?}", next);
+                tokio::time::sleep(sleep_duration).await;
+
+                // Guard: only run on trading days
+                let date_str = chrono::Local::now().format("%Y-%m-%d").to_string();
+                match crate::storage::invest::scheduler::is_trading_day(&date_str) {
+                    Ok(true) => {}
+                    _ => {
+                        log::debug!("[invest-pnl] skipping non-trading day {}", date_str);
+                        continue;
+                    }
+                }
+
+                let task_id = match crate::storage::invest::scheduler::log_task_start("pnl_snapshot") {
+                    Ok(id) => id,
+                    Err(e) => {
+                        log::warn!("[invest-pnl] failed to log start: {}", e);
+                        continue;
+                    }
+                };
+
+                let result = run_pnl_snapshot();
+                match &result {
+                    Ok(msg) => {
+                        let _ = crate::storage::invest::scheduler::log_task_end(task_id, "success", Some(msg));
+                        log::info!("[invest-pnl] snapshot: {}", msg);
+                    }
+                    Err(e) => {
+                        let _ = crate::storage::invest::scheduler::log_task_end(task_id, "error", Some(e));
+                        log::warn!("[invest-pnl] failed: {}", e);
+                    }
+                }
             }
         });
     }
