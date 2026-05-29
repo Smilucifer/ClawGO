@@ -1717,3 +1717,88 @@ export interface MemoryConfig {
 }
 
 export type MemoryStatus = "pending" | "approved" | "rejected";
+
+// ── Invest types (Phase 2) ──
+
+export interface Holding {
+  symbol: string;
+  currency: string;
+  kind: "hold" | "watch";
+  name: string | null;
+  notional: number;
+  avgCost: number | null;
+  shares: number | null;
+  entryDate: string | null;
+  linkedVerdictId: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Trade {
+  id: string;
+  symbol: string;
+  currency: string;
+  kind: string;
+  action: string;
+  shares: number | null;
+  price: number | null;
+  amount: number | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface PnlSnapshot {
+  id: number;
+  snapshotDate: string;
+  totalValue: number;
+  cash: number;
+  holdingsValue: number;
+  dailyPnl: number | null;
+  dailyPnlPct: number | null;
+}
+
+export interface Verdict {
+  id: string;
+  symbol: string;
+  verdict: string;
+  confidence: number | null;
+  macroSignal: string | null;
+  macroStrength: number | null;
+  reasoning: string | null;
+  model: string | null;
+  provider: string | null;
+  tokensUsed: number | null;
+  latencyMs: number | null;
+  createdAt: string;
+}
+
+export interface CashBalance {
+  available: number;
+}
+
+export interface Strategy {
+  id: string;
+  name: string;
+  targets: StrategyTarget[];
+  maxSinglePct: number | null;
+  minCashPct: number | null;
+  updatedAt: string;
+}
+
+export interface StrategyTarget {
+  symbol: string;
+  name: string;
+  targetPct: number;
+}
+
+/** Real-time price quote from Tushare. */
+export interface PriceQuote {
+  tsCode: string;
+  name: string;
+  close: number;
+  change: number;
+  pctChg: number;
+  vol: number;
+  amount: number;
+}
