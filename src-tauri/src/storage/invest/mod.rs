@@ -1,3 +1,4 @@
+pub mod domain_insights;
 pub mod events;
 pub mod portfolio;
 pub mod scheduler;
