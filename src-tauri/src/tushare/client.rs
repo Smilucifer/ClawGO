@@ -58,6 +58,25 @@ pub struct TradeCal {
     pub pretrade_date: String,
 }
 
+/// A single major news item (新闻通讯).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MajorNewsItem {
+    pub datetime: String,
+    pub title: String,
+    pub content: String,
+    pub src: String,
+}
+
+/// A single company announcement (上市公司公告).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Announcement {
+    pub ann_date: String,
+    pub ts_code: String,
+    pub name: String,
+    pub title: String,
+    pub url: String,
+}
+
 // ---------------------------------------------------------------------------
 // Row helpers — extract typed values from a positional row slice
 // ---------------------------------------------------------------------------
@@ -362,6 +381,90 @@ impl TushareClient {
         }
 
         Ok(cal)
+    }
+
+    /// Fetch major news (新闻通讯) for a given source within a date range.
+    pub async fn major_news(
+        &self,
+        src: &str,
+        start_date: &str,
+        end_date: &str,
+    ) -> Result<Vec<MajorNewsItem>, String> {
+        let params = serde_json::json!({
+            "src": src,
+            "start_date": start_date,
+            "end_date": end_date,
+        });
+        let resp = self.call_api("major_news", params, "").await?;
+
+        let fields = &resp.data.fields;
+        let datetime_idx = fields.iter().position(|f| f == "datetime");
+        let title_idx = fields.iter().position(|f| f == "title");
+        let content_idx = fields.iter().position(|f| f == "content");
+        let src_idx = fields.iter().position(|f| f == "src");
+
+        let mut items = Vec::with_capacity(resp.data.items.len());
+        for row in &resp.data.items {
+            items.push(MajorNewsItem {
+                datetime: datetime_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+                title: title_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+                content: content_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+                src: src_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+            });
+        }
+        Ok(items)
+    }
+
+    /// Fetch company announcements (上市公司公告) for a stock within a date range.
+    pub async fn anns_d(
+        &self,
+        ts_code: &str,
+        start_date: &str,
+        end_date: &str,
+    ) -> Result<Vec<Announcement>, String> {
+        let params = serde_json::json!({
+            "ts_code": ts_code,
+            "start_date": start_date,
+            "end_date": end_date,
+        });
+        let resp = self.call_api("anns_d", params, "").await?;
+
+        let fields = &resp.data.fields;
+        let ann_date_idx = fields.iter().position(|f| f == "ann_date");
+        let ts_code_idx = fields.iter().position(|f| f == "ts_code");
+        let name_idx = fields.iter().position(|f| f == "name");
+        let title_idx = fields.iter().position(|f| f == "title");
+        let url_idx = fields.iter().position(|f| f == "url");
+
+        let mut items = Vec::with_capacity(resp.data.items.len());
+        for row in &resp.data.items {
+            items.push(Announcement {
+                ann_date: ann_date_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+                ts_code: ts_code_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+                name: name_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+                title: title_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+                url: url_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+            });
+        }
+        Ok(items)
     }
 }
 
