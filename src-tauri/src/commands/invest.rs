@@ -748,9 +748,31 @@ pub async fn scan_events(
         .ok_or("no tushare_token configured")?;
     let tushare = crate::tushare::TushareClient::new(token);
 
+    let config_data = get_llm_config()?;
     let client =
         crate::invest::llm::client::OpenAiCompatClient::new().map_err(|e| format!("init LLM client: {}", e))?;
-    let llm_config = crate::invest::llm::types::LlmConfig::default();
+
+    // Use the first provider that has an API key configured
+    let provider_cfg = config_data
+        .providers
+        .iter()
+        .find(|p| !p.api_key.is_empty())
+        .ok_or("no LLM provider with an API key configured")?;
+
+    let provider_id = match provider_cfg.provider_id.as_str() {
+        "deepseek" => crate::invest::llm::types::ProviderId::DeepSeek,
+        "mimo-plan" => crate::invest::llm::types::ProviderId::MiMoPlan,
+        "mimo-api" => crate::invest::llm::types::ProviderId::MiMoApi,
+        other => return Err(format!("unknown provider: {}", other)),
+    };
+
+    let llm_config = crate::invest::llm::types::LlmConfig {
+        provider: provider_id,
+        model: provider_cfg.default_model.clone(),
+        temperature: 0.7,
+        max_tokens: 4096,
+        timeout_secs: config_data.timeout_secs,
+    };
 
     crate::invest::event_scanner::scan_events(
         &tushare,
