@@ -879,3 +879,51 @@ pub fn get_verdict_review_detail(
 ) -> Result<Vec<crate::storage::invest::verdict_reviews::VerdictReviewEntry>, String> {
     crate::storage::invest::verdict_reviews::list_reviews(symbol.as_deref(), Some(MAX_DETAIL_ENTRIES))
 }
+
+// ── Dreaming commands ────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn trigger_dream(mode: String, tushare_token: String) -> Result<crate::invest::dreaming::DreamResult, String> {
+    crate::invest::dreaming::trigger_dream(&mode, &tushare_token).await
+}
+
+#[tauri::command]
+pub fn get_dream_config() -> Result<crate::invest::dreaming::DreamConfig, String> {
+    let jobs = crate::invest::scheduler::config::load_jobs();
+    let mut config = crate::invest::dreaming::DreamConfig::default();
+
+    if let Some(j) = jobs.iter().find(|j| j.id == "dream_invest") {
+        config.invest_enabled = j.enabled;
+        config.invest_cron = j.cron_expr.clone();
+    }
+    if let Some(j) = jobs.iter().find(|j| j.id == "dream_user") {
+        config.user_memory_enabled = j.enabled;
+        config.user_memory_interval_min = j.interval_min.unwrap_or(120);
+    }
+
+    Ok(config)
+}
+
+#[tauri::command]
+pub fn save_dream_config(config: crate::invest::dreaming::DreamConfig) -> Result<(), String> {
+    let mut jobs = crate::invest::scheduler::config::load_jobs();
+    if let Some(j) = jobs.iter_mut().find(|j| j.id == "dream_user") {
+        j.enabled = config.user_memory_enabled;
+        j.interval_min = Some(config.user_memory_interval_min);
+    }
+    if let Some(j) = jobs.iter_mut().find(|j| j.id == "dream_invest") {
+        j.enabled = config.invest_enabled;
+        j.cron_expr = config.invest_cron.clone();
+    }
+    crate::invest::scheduler::config::save_jobs(&jobs)
+}
+
+#[tauri::command]
+pub fn list_dream_traces(dream_type: Option<String>, limit: Option<i64>) -> Result<Vec<crate::storage::invest::dream_snapshots::DreamSnapshot>, String> {
+    crate::storage::invest::dream_snapshots::list_snapshots(dream_type.as_deref(), limit)
+}
+
+#[tauri::command]
+pub fn rollback_dream(snapshot_id: i64) -> Result<(), String> {
+    crate::invest::dreaming::snapshot::rollback_snapshot(snapshot_id)
+}

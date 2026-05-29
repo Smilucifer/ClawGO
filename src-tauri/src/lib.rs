@@ -466,6 +466,11 @@ pub fn run() {
             commands::invest::run_verdict_review_cmd,
             commands::invest::get_verdict_review_summary,
             commands::invest::get_verdict_review_detail,
+            commands::invest::trigger_dream,
+            commands::invest::get_dream_config,
+            commands::invest::save_dream_config,
+            commands::invest::list_dream_traces,
+            commands::invest::rollback_dream,
         ])
         .setup(move |app| {
             // Set up broadcast emitter (requires AppHandle, so must be in setup)
