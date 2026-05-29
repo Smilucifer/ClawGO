@@ -44,30 +44,53 @@ pub fn create_table_if_not_exists() -> Result<(), String> {
     })
 }
 
-pub fn insert_pending(
+/// Insert a fully-completed snapshot in a single atomic INSERT.
+/// Used by save_snapshot where all fields are known upfront.
+pub fn insert_complete(
     dream_type: &str,
     trigger_type: &str,
     before_json: &str,
+    after_json: &str,
+    summary: &str,
 ) -> Result<i64, String> {
     with_conn_mut(|conn| {
         conn.execute(
-            "INSERT INTO dream_snapshots (dream_type, trigger_type, before_json, status, created_at)
-             VALUES (?1, ?2, ?3, 'pending', datetime('now'))",
-            rusqlite::params![dream_type, trigger_type, before_json],
+            "INSERT INTO dream_snapshots (dream_type, trigger_type, before_json, after_json, status, summary, rollback_ready, created_at)
+             VALUES (?1, ?2, ?3, ?4, 'completed', ?5, 1, datetime('now'))",
+            rusqlite::params![dream_type, trigger_type, before_json, after_json, summary],
         )
-        .map_err(|e| format!("insert pending snapshot: {e}"))?;
+        .map_err(|e| format!("insert complete snapshot: {e}"))?;
         Ok(conn.last_insert_rowid())
     })
 }
 
-pub fn complete_snapshot(id: i64, after_json: &str, summary: &str) -> Result<(), String> {
-    with_conn_mut(|conn| {
-        conn.execute(
-            "UPDATE dream_snapshots SET after_json = ?1, status = 'completed', summary = ?2, rollback_ready = 1 WHERE id = ?3",
-            rusqlite::params![after_json, summary, id],
-        )
-        .map_err(|e| format!("complete snapshot: {e}"))?;
-        Ok(())
+/// Get a single snapshot by ID.
+pub fn get_by_id(id: i64) -> Result<Option<DreamSnapshot>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, dream_type, trigger_type, before_json, after_json, status, summary, rollback_ready, created_at
+                 FROM dream_snapshots WHERE id = ?1",
+            )
+            .map_err(|e| format!("prepare get_by_id: {e}"))?;
+        let mut rows = stmt
+            .query_map([id], |row| {
+                Ok(DreamSnapshot {
+                    id: row.get(0)?,
+                    dream_type: row.get(1)?,
+                    trigger_type: row.get(2)?,
+                    before_json: row.get(3)?,
+                    after_json: row.get(4)?,
+                    status: row.get(5)?,
+                    summary: row.get(6)?,
+                    rollback_ready: row.get::<_, i32>(7)? != 0,
+                    created_at: row.get(8)?,
+                })
+            })
+            .map_err(|e| format!("query get_by_id: {e}"))?;
+        rows.next()
+            .transpose()
+            .map_err(|e| format!("read get_by_id row: {e}"))
     })
 }
 

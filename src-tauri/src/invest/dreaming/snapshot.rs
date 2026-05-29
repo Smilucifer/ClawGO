@@ -1,6 +1,6 @@
 use crate::storage::invest::dream_snapshots;
 
-/// Save a dream snapshot record. Called at start (pending) and end (completed).
+/// Save a dream snapshot record. Single atomic INSERT with all fields.
 pub fn save_snapshot(
     dream_type: &str,
     trigger_type: &str,
@@ -8,17 +8,12 @@ pub fn save_snapshot(
     after_json: &str,
     summary: &str,
 ) -> Result<i64, String> {
-    let id = dream_snapshots::insert_pending(dream_type, trigger_type, before_json)?;
-    dream_snapshots::complete_snapshot(id, after_json, summary)?;
-    Ok(id)
+    dream_snapshots::insert_complete(dream_type, trigger_type, before_json, after_json, summary)
 }
 
 /// Rollback a dream snapshot: restore domain_insights to before state.
 pub fn rollback_snapshot(snapshot_id: i64) -> Result<(), String> {
-    let snapshots = dream_snapshots::list_snapshots(None, Some(100))?;
-    let snapshot = snapshots
-        .iter()
-        .find(|s| s.id == snapshot_id)
+    let snapshot = dream_snapshots::get_by_id(snapshot_id)?
         .ok_or("Snapshot not found")?;
 
     if !snapshot.rollback_ready {
