@@ -70,6 +70,8 @@ struct ChatMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_call_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
 }
 
@@ -165,14 +167,16 @@ impl InvestLlmClient for OpenAiCompatClient {
             role: "system".to_string(),
             content: system.to_string(),
             tool_call_id: None,
+            tool_calls: None,
             name: None,
         }];
         for msg in messages {
             chat_messages.push(ChatMessage {
                 role: msg.role.clone(),
                 content: msg.content.clone(),
-                tool_call_id: None,
-                name: None,
+                tool_call_id: msg.tool_call_id.clone(),
+                tool_calls: msg.tool_calls.clone(),
+                name: msg.name.clone(),
             });
         }
 
