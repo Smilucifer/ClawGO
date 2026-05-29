@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub enum Severity {
     High,
     Medium,
+    Low,
 }
 
 /// Result of LLM normalization for a single event.
@@ -14,7 +15,7 @@ pub enum Severity {
 pub struct NormalizedEvent {
     pub one_line_claim: String,
     pub stance: String,
-    pub severity: String,
+    pub severity: Severity,
     pub affected_symbols: Vec<String>,
 }
 
