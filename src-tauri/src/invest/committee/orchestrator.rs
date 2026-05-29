@@ -770,23 +770,23 @@ pub async fn run_committee_batch_stream(
         total: symbols.len(),
     });
 
-    let mut handles = Vec::with_capacity(symbols.len());
+    let mut handles: Vec<(String, _)> = Vec::with_capacity(symbols.len());
 
     for symbol in symbols {
         let client = client.clone();
         let config = config.clone();
         let symbol = symbol.clone();
         let emitter = emitter.clone();
-        handles.push(tokio::spawn(async move {
+        handles.push((symbol.clone(), tokio::spawn(async move {
             run_committee(&*client, &symbol, &config, Some(emitter)).await
-        }));
+        })));
     }
 
     let mut results = Vec::with_capacity(handles.len());
     let mut completed = 0usize;
     let total = handles.len();
 
-    for handle in handles {
+    for (sym, handle) in handles {
         match handle.await {
             Ok(r) => {
                 match &r {
@@ -797,15 +797,21 @@ pub async fn run_committee_batch_stream(
                         });
                     }
                     Err(e) => {
-                        // Error already emitted per-symbol if available;
-                        // this covers task-join or unexpected errors.
-                        log::warn!("committee batch task error: {}", e);
+                        emitter(CommitteeEvent::Error {
+                            symbol: sym.clone(),
+                            error: e.clone(),
+                        });
+                        log::warn!("committee batch task error for {}: {}", sym, e);
                     }
                 }
                 completed += 1;
                 results.push(r);
             }
             Err(e) => {
+                emitter(CommitteeEvent::Error {
+                    symbol: sym.clone(),
+                    error: format!("task join error: {}", e),
+                });
                 completed += 1;
                 results.push(Err(format!("task join error: {}", e)));
             }

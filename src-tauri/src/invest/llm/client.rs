@@ -302,16 +302,20 @@ impl InvestLlmClient for OpenAiCompatClient {
                                             if let Some(ref func) = tc.function {
                                                 if let Some(ref args) = func.arguments {
                                                     if !args.is_empty() {
-                                                        let id = tc
-                                                            .id
-                                                            .clone()
-                                                            .unwrap_or_else(|| {
-                                                                format!("tc_{}", tc.index)
-                                                            });
-                                                        chunks.push(StreamChunk::ToolCallDelta {
-                                                            id,
-                                                            args_delta: args.clone(),
+                                                        // Use the real ID from ToolCallStart via index lookup.
+                                                        // Subsequent deltas have id: None per OpenAI spec.
+                                                        let id = tc.id.clone().unwrap_or_else(|| {
+                                                            open_tool_calls
+                                                                .get(tc.index)
+                                                                .cloned()
+                                                                .unwrap_or_default()
                                                         });
+                                                        if !id.is_empty() {
+                                                            chunks.push(StreamChunk::ToolCallDelta {
+                                                                id,
+                                                                args_delta: args.clone(),
+                                                            });
+                                                        }
                                                     }
                                                 }
                                             }

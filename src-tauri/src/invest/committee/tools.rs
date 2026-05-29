@@ -368,22 +368,10 @@ fn exec_recent_verdicts(symbol: Option<&str>, days: i64) -> Result<String, Strin
 // ---------------------------------------------------------------------------
 
 fn read_tushare_token() -> Result<String, String> {
-    let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-    let settings_path = home.join(".claw-go").join("settings.json");
-
-    if !settings_path.exists() {
-        return Err("ClawGO settings not found".to_string());
-    }
-
-    let content =
-        std::fs::read_to_string(&settings_path).map_err(|e| format!("read settings: {}", e))?;
-    let settings: serde_json::Value =
-        serde_json::from_str(&content).map_err(|e| format!("parse settings: {}", e))?;
-
-    settings["tushare_token"]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| "tushare_token not found in settings".to_string())
+    let settings = crate::storage::settings::get_user_settings();
+    settings
+        .tushare_token
+        .ok_or_else(|| "tushare_token not configured".to_string())
 }
 
 /// Build a `Message` with role `"tool"` for returning tool results to the LLM.

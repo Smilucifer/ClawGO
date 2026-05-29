@@ -32,15 +32,26 @@ pub fn check_convergence(round_outputs: &[RoundOutput]) -> bool {
     let r1 = &risk_rounds[risk_rounds.len() - 2];
     let r2 = &risk_rounds[risk_rounds.len() - 1];
 
-    // All must agree on direction (simplified: check if quant_view/risk_view are consistent)
-    let q_views_match = q1.parsed.quant_view == q2.parsed.quant_view;
-    let r_views_match = r1.parsed.risk_view == r2.parsed.risk_view;
+    // All must agree on direction — require both views to be present and match.
+    // None == None is NOT agreement (missing data != consensus).
+    let q_views_match = match (&q1.parsed.quant_view, &q2.parsed.quant_view) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    };
+    let r_views_match = match (&r1.parsed.risk_view, &r2.parsed.risk_view) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    };
 
-    // Strength difference < 1.0
-    let q_strength_diff =
-        (q1.parsed.strength.unwrap_or(5.0) - q2.parsed.strength.unwrap_or(5.0)).abs();
-    let r_strength_diff =
-        (r1.parsed.strength.unwrap_or(5.0) - r2.parsed.strength.unwrap_or(5.0)).abs();
+    // Strength difference < 1.0 — require both values present.
+    let q_strength_diff = match (q1.parsed.strength, q2.parsed.strength) {
+        (Some(a), Some(b)) => (a - b).abs(),
+        _ => f64::MAX, // missing strength = no convergence
+    };
+    let r_strength_diff = match (r1.parsed.strength, r2.parsed.strength) {
+        (Some(a), Some(b)) => (a - b).abs(),
+        _ => f64::MAX,
+    };
 
     q_views_match && r_views_match && q_strength_diff < 1.0 && r_strength_diff < 1.0
 }
@@ -61,18 +72,30 @@ pub fn check_sentinel(round_outputs: &[RoundOutput]) -> Option<SentinelOverride>
         return None;
     }
 
-    let r1 = &risk_outputs[0];
-    let r2 = &risk_outputs[risk_outputs.len() - 1];
+    // Guard: need actual concentration data from R1 to assess
+    let r1_pct = match risk_outputs[0].parsed.concentration_pct {
+        Some(v) => v,
+        None => return None, // can't assess without baseline
+    };
 
-    let r1_pct = r1.parsed.concentration_pct.unwrap_or(0.0);
-    let r2_pct = r2.parsed.concentration_pct.unwrap_or(0.0);
-    let diff = (r2_pct - r1_pct).abs();
+    // Track max concentration shift across ALL risk outputs (not just first vs last)
+    let mut max_diff: f64 = 0.0;
+    let mut max_pct = r1_pct;
+    for ro in risk_outputs.iter().skip(1) {
+        if let Some(pct) = ro.parsed.concentration_pct {
+            let diff = (pct - r1_pct).abs();
+            if diff > max_diff {
+                max_diff = diff;
+                max_pct = pct;
+            }
+        }
+    }
 
-    if diff > 0.3 {
+    if max_diff > 0.3 {
         Some(SentinelOverride {
             reason: format!(
-                "SENTINEL: CONCENTRATION_PCT shifted by {:.1}% (R1={:.1}% -> R2={:.1}%)",
-                diff, r1_pct, r2_pct
+                "SENTINEL: CONCENTRATION_PCT shifted by {:.1}% (R1={:.1}% -> peak {:.1}%)",
+                max_diff, r1_pct, max_pct
             ),
             forced_verdict: "TRIM".to_string(),
             forced_confidence: 0.3,
@@ -83,6 +106,7 @@ pub fn check_sentinel(round_outputs: &[RoundOutput]) -> Option<SentinelOverride>
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SentinelOverride {
     pub reason: String,
     pub forced_verdict: String,
@@ -94,6 +118,7 @@ pub struct SentinelOverride {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SanityCheckResult {
     pub gate1_pass: bool, // signal consistency
     pub gate2_pass: bool, // concentration < 40%
@@ -161,21 +186,26 @@ pub fn cio_sanity_check(
     }
 
     // Gate 3 -- Dry powder check
-    let dry_powder = cio_parsed.dry_powder_cny.unwrap_or(
+    // Only enforce when data is available; missing data does NOT force HOLD.
+    let dry_powder = cio_parsed.dry_powder_cny.or_else(|| {
         round_outputs
             .iter()
             .filter_map(|o| o.parsed.dry_powder_cny)
             .last()
-            .unwrap_or(0.0),
-    );
-    if dry_powder < emergency_buffer_cny {
-        result.gate3_pass = false;
-        result.final_verdict = "HOLD".to_string();
-        result.final_confidence = result.final_confidence.min(0.4);
-        result.notes.push(format!(
-            "Gate 3: dry powder {:.0} < emergency buffer {:.0}, downgraded to HOLD",
-            dry_powder, emergency_buffer_cny
-        ));
+    });
+    if let Some(dp) = dry_powder {
+        if dp < emergency_buffer_cny {
+            result.gate3_pass = false;
+            result.final_verdict = "HOLD".to_string();
+            result.final_confidence = result.final_confidence.min(0.4);
+            result.notes.push(format!(
+                "Gate 3: dry powder {:.0} < emergency buffer {:.0}, downgraded to HOLD",
+                dp, emergency_buffer_cny
+            ));
+        }
+    } else {
+        // Data unavailable — note it but don't suppress the verdict
+        result.notes.push("Gate 3: dry powder data unavailable, gate skipped".to_string());
     }
 
     // Check for WORKER_UNAVAILABLE (retry exhaustion)
@@ -249,6 +279,7 @@ mod tests {
 
     #[test]
     fn test_convergence_detected() {
+        // Use production-like strings from role prompt templates
         let outputs = vec![
             make_output(
                 CommitteeRole::QuantR1,
@@ -257,7 +288,7 @@ mod tests {
                 Some(7.0),
                 None,
                 None,
-                Some("AGREE"),
+                Some("AGREE_with_Macro"),
             ),
             make_output(
                 CommitteeRole::RiskR1,
@@ -275,7 +306,7 @@ mod tests {
                 Some(7.0),
                 None,
                 None,
-                Some("AGREE"),
+                Some("AGREE_with_Macro"),
             ),
             make_output(
                 CommitteeRole::RiskR2,
@@ -374,6 +405,28 @@ mod tests {
             ),
         ];
         assert!(!check_convergence(&outputs));
+    }
+
+    #[test]
+    fn test_convergence_none_views_not_agreement() {
+        // Missing views (None == None) must NOT be treated as agreement
+        let outputs = vec![
+            make_output(CommitteeRole::QuantR1, 1, None, Some(7.0), None, None, None),
+            make_output(CommitteeRole::RiskR1, 1, None, Some(6.0), None, None, None),
+            make_output(CommitteeRole::QuantR2, 2, None, Some(7.0), None, None, None),
+            make_output(CommitteeRole::RiskR2, 2, None, Some(6.0), None, None, None),
+        ];
+        assert!(!check_convergence(&outputs));
+    }
+
+    #[test]
+    fn test_sentinel_no_trigger_when_data_missing() {
+        // Missing concentration data should NOT trigger sentinel
+        let outputs = vec![
+            make_output(CommitteeRole::RiskR1, 1, None, None, None, None, None),
+            make_output(CommitteeRole::RiskR2, 2, None, None, None, None, None),
+        ];
+        assert!(check_sentinel(&outputs).is_none());
     }
 
     #[test]

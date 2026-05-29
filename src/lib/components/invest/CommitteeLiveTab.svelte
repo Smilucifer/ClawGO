@@ -112,7 +112,7 @@
       {#each currentProgress.completedRounds as round, i}
         <DebateBlock
           {round}
-          blockState={i === currentProgress.completedRounds.length - 1 && currentProgress.activeStep >= 0 ? 'done' : 'done'}
+          blockState={i === currentProgress.completedRounds.length - 1 && currentProgress.activeStep >= 0 ? 'active' : 'done'}
         />
       {/each}
     </div>

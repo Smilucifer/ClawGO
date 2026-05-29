@@ -125,6 +125,11 @@ class InvestCommitteeStore {
   // ── Committee Run (streaming) ──────────────────────────────────────────
 
   async runCommittee(symbols: string[], debateRounds?: number) {
+    // Guard against concurrent calls — tear down previous listener first
+    const prevUnlisten = this._unlisten;
+    this._unlisten = null;
+    prevUnlisten?.();
+
     this.streaming = true;
     this.running = true;
     this.runError = null;
@@ -144,13 +149,13 @@ class InvestCommitteeStore {
     }
     this.perSymbolProgress = progress;
 
-    // Subscribe to streaming events
-    this._unlisten = await getTransport().listen<CommitteeEventType>(
-      'committee-event',
-      (event) => this._handleCommitteeEvent(event),
-    );
-
     try {
+      // Subscribe to streaming events
+      this._unlisten = await getTransport().listen<CommitteeEventType>(
+        'committee-event',
+        (event) => this._handleCommitteeEvent(event),
+      );
+
       // Invoke the streaming command — results arrive via events,
       // but the final return value is also captured.
       const results = await invoke<CommitteeResult[]>('run_committee_stream', {
@@ -220,7 +225,7 @@ class InvestCommitteeStore {
       case 'error': {
         const p = progress.get(event.symbol);
         if (p) {
-          progress.set(event.symbol, { ...p, error: event.error, done: true });
+          progress.set(event.symbol, { ...p, error: event.error, done: true, activeStep: -1 });
         }
         break;
       }

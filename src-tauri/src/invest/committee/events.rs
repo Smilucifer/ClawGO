@@ -31,6 +31,7 @@ pub enum CommitteeEvent {
         total: usize,
     },
     /// A role's LLM call is about to begin.
+    #[serde(rename_all = "camelCase")]
     RoleStart {
         symbol: String,
         role: CommitteeRole,
@@ -38,6 +39,7 @@ pub enum CommitteeEvent {
         step_index: usize,
     },
     /// A role's LLM call completed (or fell back to unavailable).
+    #[serde(rename_all = "camelCase")]
     RoleComplete {
         symbol: String,
         role: CommitteeRole,
