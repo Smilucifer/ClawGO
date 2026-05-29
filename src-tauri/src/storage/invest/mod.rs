@@ -1,6 +1,7 @@
 pub mod events;
 pub mod portfolio;
 pub mod scheduler;
+pub mod strategy;
 pub mod verdicts;
 
 use rusqlite::Connection;
@@ -22,6 +23,28 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
 
     conn.execute_batch(CREATE_TABLES_SQL)
         .map_err(|e| format!("create tables: {}", e))?;
+
+    // Migrate trades table to include 'cash_adjust' action.
+    // SQLite doesn't support ALTER CHECK, so we rebuild the table.
+    conn.execute_batch(
+        "BEGIN;
+        CREATE TABLE IF NOT EXISTS trades_new (
+            id TEXT PRIMARY KEY,
+            symbol TEXT NOT NULL,
+            currency TEXT NOT NULL DEFAULT 'CNY',
+            kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
+            action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_watch_to_hold', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust')),
+            shares REAL,
+            price REAL,
+            amount REAL,
+            notes TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT OR IGNORE INTO trades_new SELECT * FROM trades;
+        DROP TABLE IF EXISTS trades;
+        ALTER TABLE trades_new RENAME TO trades;
+        COMMIT;"
+    ).map_err(|e| format!("migrate trades table: {}", e))?;
 
     let mut guard = DB.lock().map_err(|e| format!("lock db: {}", e))?;
     *guard = Some(conn);
@@ -170,4 +193,13 @@ CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
 CREATE INDEX IF NOT EXISTS idx_pnl_snapshots_date ON pnl_snapshots(snapshot_date);
 CREATE INDEX IF NOT EXISTS idx_scheduler_logs_task ON scheduler_logs(task_name);
 CREATE INDEX IF NOT EXISTS idx_trade_calendar_date ON trade_calendar(cal_date);
+
+CREATE TABLE IF NOT EXISTS strategy (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT 'default',
+    targets TEXT NOT NULL DEFAULT '[]',
+    max_single_pct REAL,
+    min_cash_pct REAL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 ";
