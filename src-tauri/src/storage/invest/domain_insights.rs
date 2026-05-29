@@ -129,12 +129,12 @@ pub fn unarchive_insight(id: &str) -> Result<(), String> {
     with_conn_mut(|conn| {
         let updated = conn
             .execute(
-                "UPDATE domain_insights SET status = 'active', updated_at = datetime('now') WHERE id = ?1",
+                "UPDATE domain_insights SET status = 'active', updated_at = datetime('now') WHERE id = ?1 AND status = 'archived'",
                 [id],
             )
             .map_err(|e| format!("unarchive insight: {e}"))?;
         if updated == 0 {
-            return Err(format!("Insight '{}' not found", id));
+            return Err(format!("Insight '{}' not found or not archived", id));
         }
         Ok(())
     })

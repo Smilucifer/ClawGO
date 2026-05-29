@@ -68,12 +68,17 @@
     }
   }
 
+  let restoringId: string | null = $state(null);
+
   async function restoreInsight(id: string) {
+    restoringId = id;
     try {
       await getTransport().invoke("unarchive_insight", { id });
       await loadArchivedInsights();
     } catch (e) {
       console.error("Failed to restore insight:", e);
+    } finally {
+      restoringId = null;
     }
   }
 
@@ -225,10 +230,11 @@
               <div class="text-sm">{insight.content}</div>
               <div class="mt-2">
                 <button
-                  class="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                  class="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={restoringId === insight.id}
                   onclick={() => restoreInsight(insight.id)}
                 >
-                  Restore
+                  {restoringId === insight.id ? "Restoring..." : "Restore"}
                 </button>
               </div>
             </div>
