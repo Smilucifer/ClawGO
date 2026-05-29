@@ -595,6 +595,7 @@ mod tests {
     fn test_node(id: &str, content: &str, tags: Vec<&str>) -> MemoryNode {
         MemoryNode {
             id: id.to_string(),
+            character_id: String::new(),
             content: content.to_string(),
             memory_type: "fact".to_string(),
             confidence: 0.9,
