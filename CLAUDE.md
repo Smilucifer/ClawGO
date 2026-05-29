@@ -355,6 +355,7 @@ Key phases and their status:
 | 10+ (v2.5.0) | Doctor 诊断面板, FilesPanel 树视图重写, 7 项审查修复 | [done] |
 | 10+ (v2.6.0) | Preview panel code review: keyboard scope, $effect reactivity, DOMPurify styles, regex URL FP, dirty guard, base64 guard | [done] |
 | 10+ (v3.0.0) | 记忆系统重构: SQLite FTS5 用户中心架构, 移除 LanceDB + petgraph + Embedding API, 15 项审查修复, shared injection, 前端去重 | [done] |
+| 10+ (v3.1.0) | openInvest Phase 1: invest.db 数据层, scope-aware 记忆, /invest + /memory-mgmt 路由, MoreMenu, 18 commits, 8 项审查修复 | [done] |
 
 Detailed plans and review responses are in `docs/`.
 
