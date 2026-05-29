@@ -706,18 +706,18 @@ pub async fn run_cron_tick(job: &CronJob, pool: &SqlitePool, mcp: &TushareMcp) {
 **目标**：新闻事件监控 + 触发委员会确认流。
 
 任务清单：
-- [ ] `src-tauri/src/invest/events/` 模块
-  - [ ] Tushare `news` / `major_news` / `anns_d` 适配
-  - [ ] RSS 抓取（feed-rs Rust crate)
-  - [ ] LLM 归一化（severity / stance / entity match）
-- [ ] `events` + `event_sources` 表
-- [ ] FTS5 索引（按 claim、affected_symbols 搜索）
-- [ ] 三重过滤逻辑
-- [ ] Event Watch cron（`*/30 8-22 * * 1-5` + 周末早晚)
-- [ ] 触发确认对话框 UI（高 severity 事件弹窗）
-- [ ] 事件监控 Tab
-  - [ ] 事件流列表
-  - [ ] 配置区（频率、最低 severity、关注 symbol）
+- [x] `src-tauri/src/invest/event_scanner.rs` 模块
+  - [x] Tushare `major_news` + `anns_d` 适配
+  - [ ] RSS 抓取（feed-rs Rust crate) — 延期到 Phase 5
+  - [x] LLM 归一化（severity / stance / entity match）
+- [x] `events` + `event_sources` 表（stance 字段 migration）
+- [ ] FTS5 索引（按 claim、affected_symbols 搜索）— 延期到 Phase 5
+- [x] 三重过滤逻辑（keyword → LLM severity re-check → dedup）
+- [x] Event Watch cron（`*/30 8-22 * * 1-5` + 周末早晚)
+- [x] 触发确认对话框 UI（EventTriggerDialog — 委员会启动 + 事件标记）
+- [x] 事件监控 Tab（EventWatchTab）
+  - [x] 事件流列表
+  - [x] 时窗筛选(24h/48h/7d) + 严重度筛选 + 搜索
 
 **验收标准**：
 - 真实 Tushare 新闻能被抓取并归一化

@@ -1,6 +1,6 @@
 # openInvest + invest-gui → ClawGO 功能移植计划
 
-> 状态:[wip] Phase 1 + Phase 2 + Phase 3a + Phase 3b 完成,Phase 3c 待实施。RFC D1-D11 全部决议已确认(2026-05-29)。
+> 状态:[wip] Phase 1 + Phase 2 + Phase 3a + Phase 3b + Phase 3c 完成,Phase 4 待实施。RFC D1-D11 全部决议已确认(2026-05-29)。
 > 创建:2026-05-28
 > 更新:
 > - 2026-05-29(v1) — 整合完整研究结果:5 角色 system prompt、编排算法、Dreaming 对比、Provider 体系
@@ -8,9 +8,11 @@
 > - 2026-05-29(v3) — RFC 全部确认,同步 RFC 关键设计到 §6.1/§7.3/§7.7/§8.3
 > - 2026-05-29(v4) — Phase 2 实施完成(v3.2.0),13 项审查修复,更新 Phase 2 任务状态
 > - 2026-05-29(v5) — Phase 3a 实施完成,14 项审查修复,更新 Phase 3a 任务状态
+> - 2026-05-30(v6) — Phase 3c 实施完成(Event Watch),8 项审查修复,更新 Phase 3c 任务状态
 > 配套文档:`[done] 2026-05-29-committee-engineering-rfc.md`
 > Phase 2 实施计划:`[done] 2026-05-29-phase2-dashboard-portfolio-pnl.md`
 > Phase 2 设计文档:`[done] 2026-05-29-phase2-dashboard-portfolio-pnl-design.md`
+> Phase 3c 实施计划:`[done] 2026-05-29-event-watch-impl.md`
 
 ## 背景
 
@@ -1031,12 +1033,24 @@ Dream 执行流程：
 - [x] 角色配置 Tab(独立 prompt 编辑)
 - [x] 命中率 Tab + Tool 调用 Tab(Phase 4 占位)
 
-### Phase 3c：Event Watch
+**Phase 3b 代码审查修复**(2026-05-29):
 
-- [ ] Event Watch 新闻扫描(Tushare + RSS 多源 + LLM 归一化)
-- [ ] 事件触发确认对话框
-- [ ] **事件监控 → 迁移到「系统/事件」二级 Tab**(参照 invest-gui `system/EventsTab.tsx`)
-- [ ] 时窗筛选(24h/48h/7d)+ 严重度筛选 + 立即扫描按钮 + counts chips
+1. **serde stepIndex 命名**(`events.rs`):`RoleStart`/`RoleComplete` 添加 `#[serde(rename_all = "camelCase")]`,修复 `step_index` → `stepIndex` 序列化不匹配
+2. **Error 事件发射**(`orchestrator.rs`):`run_committee_batch_stream` 在符号失败和 task join 失败时发射 `CommitteeEvent::Error`,并用 `(symbol, handle)` 元组追踪符号名
+3. **死三元表达式**(`CommitteeLiveTab.svelte`):`'done' : 'done'` → `'active' : 'done'`,流式期间最后完成的 round 现在正确显示 active spinner
+4. **_unlisten 竞态**(`invest-committee-store.svelte.ts`):`runCommittee()` 入口先捕获并调用旧 listener,防止并发调用覆盖
+5. **error handler 缺少 activeStep**(`invest-committee-store.svelte.ts`):错误处理添加 `activeStep: -1`,PipelineFlow 可正确显示 error 状态
+
+### Phase 3c：Event Watch `[完成]`
+
+- [x] Event Watch 新闻扫描(Tushare major_news + anns_d + LLM 归一化)
+- [x] 事件触发确认对话框(EventTriggerDialog — 委员会启动 + 事件标记)
+- [x] 事件监控 Tab(EventWatchTab — 时窗/严重度/搜索筛选 + 立即扫描)
+- [x] 时窗筛选(24h/48h/7d)+ 严重度筛选 + 立即扫描按钮 + counts chips
+- [x] 后台 cron 工作日 8-22 每 30 分钟 / 周末 9:00+18:00
+- [x] 8 项审查修复:runCommittee/triggerCommittee 静默捕获、listen() try/finally、LOW 严重度穿透、convertWatchToHold 回滚完整性、|| vs ??、get_event_stats 错误吞没
+
+实施计划:`[done] 2026-05-29-event-watch-impl.md`
 
 ### Phase 4：历史命中率 + Dreaming + 定时任务 + 系统页 + 用户档案
 
