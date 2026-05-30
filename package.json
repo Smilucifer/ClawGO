@@ -1,6 +1,6 @@
 {
   "name": "claw-go",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "Local-first desktop app for AI-assisted vibe coding",
   "type": "module",
   "license": "Apache-2.0",
