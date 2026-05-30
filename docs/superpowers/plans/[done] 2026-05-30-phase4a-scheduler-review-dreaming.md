@@ -2833,11 +2833,32 @@ All 10 tasks completed on 2026-05-30.
 | 9 | Archived Memory View | `feat: add archived memory view with restore/delete` |
 | 10 | i18n Keys + Integration Polish | `feat(invest): i18n keys, insights feed, pipeline notifications` |
 
-Review fixes applied:
+### Initial review fixes (same day):
 - Fix C1: `.sort()` on reactive arrays in CommitteeAccuracyTab
 - Fix C2: Extract `aggregate_from_stored` in verdict_review.rs
 - Fix I1: Add i18n keys for hardcoded English strings
 - Fix M1: Add MAX_DETAIL_ENTRIES constant
 - FTS5: Implement full-text search for domain_insights
 
-Total: 15 commits (10 tasks + 5 review fixes).
+### Comprehensive code review (commit `8f2ebe8`):
+
+14 findings across 6 severity levels, all fixed:
+
+| # | Severity | File | Finding | Fix |
+|---|----------|------|---------|-----|
+| 1 | CRITICAL | `dreaming/pipeline.rs:130` | Missing `to_ts_code()` conversion before `client.daily()` — Tushare expects "600519.SH" but raw symbol "600519" was passed | Added `to_ts_code(symbol)` call |
+| 2 | CRITICAL | `dreaming/pipeline.rs:118` | `config.min_count as usize` on negative i64 wraps to ~18 quintillion, silently skipping all groups | Changed to `(group.len() as i64) < config.min_count` |
+| 3 | CRITICAL | `scheduler/config.rs` | `JobOverride` omitted `last_run`/`last_status` — scheduler run history lost on reload | Added `last_run`/`last_status` fields with `#[serde(default)]` |
+| 4 | HIGH | `storage/invest/domain_insights.rs` | ROLLBACK failure swallowed by `.ok()` — poisons connection for subsequent operations | Added `log::error!` on ROLLBACK failure |
+| 5 | HIGH | `dreaming/snapshot.rs` | `mark_rolled_back()` called on divergence branch — snapshot status changed to "rolled_back" even when rollback was aborted, destroying the rollback option | Removed `mark_rolled_back` call from divergence branch |
+| 6 | MEDIUM | `dreaming/pipeline.rs:99-106` | `HashMap<(&str, &str), &str>` drops duplicate verdicts for same (symbol, date) — only last ID kept | Changed to `Vec<&str>` values with `flat_map` collection |
+| 7 | MEDIUM | `CommitteeAccuracyTab.svelte` | `null` hitRate renders as "0.0%" — misleading for verdicts without price data | Added `?? null` guards with "—" fallback display |
+| 8 | MEDIUM | `scheduler/runner.rs` | `save_jobs` error discarded silently — job state changes lost without trace | Wrapped in `if let Err(e) = ... { log::error!(...) }` |
+| 9 | MEDIUM | `SchedulerTab.svelte` | `loadJobs`/`loadLogs` had no error handling — UI shows stale data on failure | Added try/catch blocks with error state display |
+| 10 | LOW | `SchedulerTab.svelte` | `$effect` fetch can resolve after component unmounts — sets state on disposed component | Added `disposed` boolean flag with cleanup guard |
+| 11 | LOW | `InsightsFeed.svelte` | FTS5 `search_domain_insights` command existed but UI used client-side filtering | Wired to FTS5-backed command with 300ms debounce |
+| 12 | LOW | `DreamingConfigPanel.svelte` | Hardcoded English strings ("Invest Dream", "Save Config", etc.) not i18n'd | Replaced with `t('invest_dreaming.*')` keys |
+| 13 | LOW | `SchedulerTab.svelte` | Hardcoded English strings ("Last run:", "Loading jobs...", etc.) not i18n'd | Replaced with `t('invest_scheduler.*')` keys |
+| 14 | LOW | `messages/*.json` | 42 missing i18n keys for dreaming and scheduler UI | Added ~30 `invest_dreaming.*` + ~12 `invest_scheduler.*` keys to both en.json and zh-CN.json |
+
+Total: 19 commits (10 tasks + 5 initial review fixes + 1 comprehensive review fix).

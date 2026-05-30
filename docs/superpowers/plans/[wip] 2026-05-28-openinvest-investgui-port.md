@@ -1,6 +1,6 @@
 # openInvest + invest-gui → ClawGO 功能移植计划
 
-> 状态:[wip] Phase 1 + Phase 2 + Phase 3a + Phase 3b + Phase 3c 完成,Phase 4 待实施。RFC D1-D11 全部决议已确认(2026-05-29)。
+> 状态:[wip] Phase 1 + Phase 2 + Phase 3a + Phase 3b + Phase 3c + Phase 4a 完成,Phase 4b+ 待实施。RFC D1-D11 全部决议已确认(2026-05-29)。
 > 创建:2026-05-28
 > 更新:
 > - 2026-05-29(v1) — 整合完整研究结果:5 角色 system prompt、编排算法、Dreaming 对比、Provider 体系
@@ -8,6 +8,7 @@
 > - 2026-05-29(v3) — RFC 全部确认,同步 RFC 关键设计到 §6.1/§7.3/§7.7/§8.3
 > - 2026-05-29(v4) — Phase 2 实施完成(v3.2.0),13 项审查修复,更新 Phase 2 任务状态
 > - 2026-05-29(v5) — Phase 3a 实施完成,14 项审查修复,更新 Phase 3a 任务状态
+> - 2026-05-30(v6) — Phase 4a 实施完成(Scheduler + Verdict Review + Dreaming + FTS5 + Archived),14 项审查修复
 > - 2026-05-30(v6) — Phase 3c 实施完成(Event Watch),8 项审查修复,更新 Phase 3c 任务状态
 > 配套文档:`[done] 2026-05-29-committee-engineering-rfc.md`
 > Phase 2 实施计划:`[done] 2026-05-29-phase2-dashboard-portfolio-pnl.md`
@@ -1052,16 +1053,25 @@ Dream 执行流程：
 
 实施计划:`[done] 2026-05-29-event-watch-impl.md`
 
-### Phase 4：历史命中率 + Dreaming + 定时任务 + 系统页 + 用户档案
+### Phase 4a：Scheduler + Verdict Review + Dreaming + FTS5 + Archived (完成)
 
-- [ ] 历史命中率 Tab(AccuracyTab:verdict_review 事后回顾,1d/7d/30d 窗口 + 波动率自适应阈值)
+实施计划:`[done] 2026-05-30-phase4a-scheduler-review-dreaming.md`
+
+- [x] Scheduler Framework — 后端类型 + Config 持久化
+- [x] Scheduler Runner + Tauri Commands + SchedulerTab UI
+- [x] 历史命中率 Tab(AccuracyTab:verdict_review 事后回顾,1d/7d/30d 窗口)
   - **HOLD + WATCH 都进入统计**(避免幸存者偏差)
-- [ ] Dreaming 统计管道(Rust 移植,`domain_insights` 表 → invest.db)
-- [ ] Dreaming 开关 + 自动间隔配置
-- [ ] **Dreaming 双路径快照**(路径 A: user memory global/project + 路径 B: invest domain_insights)+ 独立回滚
-- [ ] **已归档记忆视图**(`/memory-mgmt` 增加「已归档」Tab,展示路径 A 快照,支持恢复)
-- [ ] Dream Trace 审计记录
-- [ ] Risk Officer 记忆查询(FTS5 替代 glob)
+- [x] Dreaming 统计管道(Rust 移植,`domain_insights` 表 → invest.db,3 阶段:Light→REM→Deep)
+- [x] Dreaming 开关 + cron 配置 + DreamConfig 双文件持久化
+- [x] Dreaming 快照 + 独立回滚(状态一致性校验)
+- [x] Dream Trace 审计记录(dream_snapshots 表)
+- [x] FTS5 全文检索(domain_insights 升级为 FTS5 虚拟表,unicode61 tokenizer,BM25 排序)
+- [x] **已归档记忆视图**(`/memory-mgmt` 增加「已归档」Tab,支持恢复/删除)
+- [x] i18n + InsightsFeed 搜索 + Pipeline 通知
+- [x] 14 项代码审查修复(3 CRITICAL + 2 HIGH + 4 MEDIUM + 5 LOW)
+
+### Phase 4b：系统页 + 用户档案 + 每日报告 (待实施)
+
 - [ ] **系统二级页**(`/invest` 顶部新增「系统」Tab,内嵌 7 个二级 Tab,无 LLM 成本):
   - Cron Jobs(复用改动 5b)
   - 市场 Regime
