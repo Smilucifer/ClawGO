@@ -86,5 +86,17 @@ pub fn default_jobs() -> Vec<CronJob> {
             last_status: None,
             description: "投资洞察管线: Light→REM→Deep".into(),
         },
+        CronJob {
+            id: "daily_report".into(),
+            name: "每日报告".into(),
+            cron_expr: "0 22 * * 1-5".into(),
+            interval_min: None,
+            enabled: true,
+            requires_trading_day: true,
+            last_run: None,
+            next_run: None,
+            last_status: None,
+            description: "生成每日投资报告并存档".into(),
+        },
     ]
 }

@@ -4,6 +4,7 @@ pub mod events;
 pub mod portfolio;
 pub mod scheduler;
 pub mod strategy;
+pub mod user_profile;
 pub mod verdict_reviews;
 pub mod verdicts;
 
@@ -253,5 +254,26 @@ CREATE TABLE IF NOT EXISTS strategy (
     max_single_pct REAL,
     min_cash_pct REAL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS user_profile (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    emergency_buffer_cny REAL NOT NULL DEFAULT 100000,
+    family_backup_available INTEGER NOT NULL DEFAULT 0,
+    account_purpose TEXT NOT NULL DEFAULT 'long_term',
+    lifestyle_notes TEXT NOT NULL DEFAULT '',
+    display_name TEXT,
+    risk_tolerance TEXT,
+    exchange_buffer_cny REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS daily_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    report_date TEXT NOT NULL UNIQUE,
+    summary TEXT,
+    file_path TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 ";

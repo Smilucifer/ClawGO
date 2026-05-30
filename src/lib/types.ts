@@ -1846,3 +1846,22 @@ export interface DomainInsight {
   createdAt: string;
   updatedAt: string;
 }
+
+// ── Invest types (Phase 4b: User Profile & Daily Report) ──
+
+export interface UserProfile {
+  emergencyBufferCny: number;
+  familyBackupAvailable: boolean;
+  accountPurpose: string;
+  lifestyleNotes: string;
+  displayName?: string;
+  riskTolerance?: string;
+  exchangeBufferCny?: number;
+}
+
+export interface DailyReportRecord {
+  id: number;
+  reportDate: string;
+  summary: string | null;
+  filePath: string | null;
+}

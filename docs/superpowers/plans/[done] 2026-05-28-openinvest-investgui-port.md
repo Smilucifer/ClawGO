@@ -1,6 +1,6 @@
 # openInvest + invest-gui → ClawGO 功能移植计划
 
-> 状态:[wip] Phase 1 + Phase 2 + Phase 3a + Phase 3b + Phase 3c + Phase 4a 完成,Phase 4b+ 待实施。RFC D1-D11 全部决议已确认(2026-05-29)。
+> 状态:[done] Phase 1 + Phase 2 + Phase 3a + Phase 3b + Phase 3c + Phase 4a + Phase 4b 全部完成。RFC D1-D11 全部决议已确认(2026-05-29)。
 > 创建:2026-05-28
 > 更新:
 > - 2026-05-29(v1) — 整合完整研究结果:5 角色 system prompt、编排算法、Dreaming 对比、Provider 体系
@@ -1070,21 +1070,36 @@ Dream 执行流程：
 - [x] i18n + InsightsFeed 搜索 + Pipeline 通知
 - [x] 14 项代码审查修复(3 CRITICAL + 2 HIGH + 4 MEDIUM + 5 LOW)
 
-### Phase 4b：系统页 + 用户档案 + 每日报告 (待实施)
+### Phase 4b：系统页 + 用户档案 + 每日报告 (已完成, 2026-05-30)
 
-- [ ] **系统二级页**(`/invest` 顶部新增「系统」Tab,内嵌 7 个二级 Tab,无 LLM 成本):
-  - Cron Jobs(复用改动 5b)
-  - 市场 Regime
-  - 事件(从改动 4 迁移)
-  - 数据源
-  - PnL 历史
-  - 长期模式(Insights)
-  - Dreams(短期 + candidates)
-- [ ] **用户档案页**(`/settings/profile`,参照 invest-gui `Settings.tsx`):
+- [x] **系统二级页**(`/invest` 顶部新增「系统」Tab,内嵌 7 个二级 Tab,无 LLM 成本):
+  - Cron Jobs(复用改动 5b) — `<SchedulerTab />`
+  - 市场 Regime — `<SystemRegimeTab />`(新组件,`get_regime_classification` 命令)
+  - 事件(从改动 4 迁移) — `<EventWatchTab />`
+  - 数据源 — `<SystemDatasourceTab />`(新组件,`get_datasource_health` 命令)
+  - PnL 历史 — `<SystemPnlHistoryTab />`(新组件)
+  - 长期模式(Insights) — `<InsightsFeed />`
+  - Dreams(短期 + candidates) — `<SystemDreamsTab />`(新组件)
+- [x] **用户档案页**(`/settings/profile`,参照 invest-gui `Settings.tsx`):
   - 可编辑:`emergency_buffer_cny`、`family_backup_available`、`account_purpose`(5 选 1 radio)、`lifestyle_notes`
   - 只读:`display_name`、`risk_tolerance`、`exchange_buffer_cny`(从 ClawGO `UserSettings` 同步)
   - 注入 Wealth Context Officer system prompt
-- [ ] 每日报告定时任务
+  - `user_profile.rs` 单行表模式 + `Option<UserProfile>` 返回(避免默认值覆盖)
+  - NaN 前端校验 + `$derived` i18n 响应式
+- [x] 每日报告定时任务
+  - `daily_report.rs` — 非 async,`ON CONFLICT DO UPDATE` 正确 upsert
+  - Scheduler 注册: `0 22 * * 1-5`, `requires_trading_day: true`
+
+**Phase 4b 代码审查修复(9 项):**
+1. 实现缺失的 `get_regime_classification` 命令(Tushare 日线 + MA20/MA60/volatility)
+2. 实现缺失的 `get_datasource_health` 命令(连通性检查 + DB 健康)
+3. `get_profile()` 返回 `Option<UserProfile>` 避免默认值覆盖 llm_config
+4. `INSERT OR REPLACE` → `ON CONFLICT DO UPDATE` 保留 AUTOINCREMENT id
+5. `emergencyBufferCny` NaN 前端校验
+6. `generate_daily_report` 移除多余 `async`(纯阻塞 I/O)
+7. 新增 `invest_loading` i18n key
+8. `SystemDreamsTab` 展开时隐藏 truncated shortTerm
+9. `accountPurposeOptions` → `$derived` i18n 响应式
 
 ---
 

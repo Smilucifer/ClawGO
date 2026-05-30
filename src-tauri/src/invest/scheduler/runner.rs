@@ -54,6 +54,11 @@ pub async fn dispatch_job(id: &str) -> Result<String, String> {
         "dream_user" => {
             Err("user_memory dreaming not yet implemented".into())
         }
+        "daily_report" => {
+            let data_dir = crate::storage::data_dir();
+            let result = crate::invest::daily_report::generate_daily_report(&data_dir)?;
+            Ok(result)
+        }
         _ => Err(format!("Unknown job: {}", id)),
     }
 }

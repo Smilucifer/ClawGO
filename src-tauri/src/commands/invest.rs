@@ -945,3 +945,179 @@ pub fn list_dream_traces(dream_type: Option<String>, limit: Option<i64>) -> Resu
 pub fn rollback_dream(snapshot_id: i64) -> Result<(), String> {
     crate::invest::dreaming::snapshot::rollback_snapshot(snapshot_id)
 }
+
+// ── User Profile ──────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_user_profile() -> Result<crate::storage::invest::user_profile::UserProfile, String> {
+    crate::storage::invest::user_profile::get_profile()
+        .map(|opt| opt.unwrap_or_default())
+}
+
+#[tauri::command]
+pub fn save_user_profile(profile: crate::storage::invest::user_profile::UserProfile) -> Result<(), String> {
+    crate::storage::invest::user_profile::save_profile(&profile)
+}
+
+// ── Daily Report ──────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn generate_daily_report() -> Result<String, String> {
+    let data_dir = crate::storage::data_dir();
+    crate::invest::daily_report::generate_daily_report(&data_dir)
+}
+
+#[tauri::command]
+pub fn list_daily_reports(limit: Option<i64>) -> Result<Vec<crate::invest::daily_report::DailyReportRecord>, String> {
+    crate::invest::daily_report::list_daily_reports(limit.unwrap_or(30))
+}
+
+// ── Regime Classification ──────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegimeResult {
+    pub ts_code: String,
+    pub regime: String,
+    pub brief: String,
+    pub metrics: std::collections::HashMap<String, f64>,
+    pub computed_at: String,
+}
+
+#[tauri::command]
+pub async fn get_regime_classification(ts_code: String, tushare_token: String) -> Result<RegimeResult, String> {
+    use chrono::{Local, Duration as ChronoDur};
+    use crate::tushare::client::TushareClient;
+
+    let client = TushareClient::new(tushare_token);
+    let end = Local::now().format("%Y%m%d").to_string();
+    let start = (Local::now() - ChronoDur::days(120)).format("%Y%m%d").to_string();
+
+    let bars = client.daily(&ts_code, &start, &end).await?;
+    if bars.len() < 20 {
+        return Err(format!("Not enough data for {ts_code}: {} bars (need >= 20)", bars.len()));
+    }
+
+    let closes: Vec<f64> = bars.iter().map(|b| b.close).collect();
+    let n = closes.len();
+
+    // Simple moving averages
+    let ma20: f64 = closes[n - 20..].iter().sum::<f64>() / 20.0;
+    let ma60: f64 = if n >= 60 {
+        closes[n - 60..].iter().sum::<f64>() / 60.0
+    } else {
+        closes.iter().sum::<f64>() / n as f64
+    };
+
+    let latest = *closes.last().unwrap();
+
+    // 20-day volatility (annualized)
+    if closes.iter().any(|&c| c == 0.0) {
+        return Err(format!("Zero close price detected for {ts_code}, cannot compute volatility"));
+    }
+    let returns: Vec<f64> = closes.windows(2).map(|w| (w[1] / w[0] - 1.0)).collect();
+    let recent_returns = &returns[returns.len().saturating_sub(20)..];
+    let mean_ret = recent_returns.iter().sum::<f64>() / recent_returns.len() as f64;
+    let variance = recent_returns.iter().map(|r| (r - mean_ret).powi(2)).sum::<f64>() / recent_returns.len() as f64;
+    let volatility = (variance.sqrt()) * (252.0_f64).sqrt(); // annualized
+
+    // Classification logic
+    let (regime, brief) = if latest > ma20 && ma20 > ma60 {
+        ("uptrend".into(), format!("{} is in an uptrend: price {:.2} > MA20 {:.2} > MA60 {:.2}", ts_code, latest, ma20, ma60))
+    } else if latest < ma20 && ma20 < ma60 {
+        ("downtrend".into(), format!("{} is in a downtrend: price {:.2} < MA20 {:.2} < MA60 {:.2}", ts_code, latest, ma20, ma60))
+    } else if volatility > 0.35 {
+        ("volatile".into(), format!("{} is volatile: annualized vol {:.1}%, mixed MA signals", ts_code, volatility * 100.0))
+    } else {
+        ("ranging".into(), format!("{} is range-bound: price {:.2}, MA20 {:.2}, MA60 {:.2}, vol {:.1}%", ts_code, latest, ma20, ma60, volatility * 100.0))
+    };
+
+    let mut metrics = std::collections::HashMap::new();
+    metrics.insert("latest".into(), latest);
+    metrics.insert("ma20".into(), ma20);
+    metrics.insert("ma60".into(), ma60);
+    metrics.insert("volatility_ann".into(), volatility);
+
+    Ok(RegimeResult {
+        ts_code,
+        regime,
+        brief,
+        metrics,
+        computed_at: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+    })
+}
+
+// ── Data Source Health ──────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DataSourceStatus {
+    pub name: String,
+    pub ok: bool,
+    pub last_success: Option<String>,
+    pub sample_value: Option<String>,
+}
+
+#[tauri::command]
+pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
+    use chrono::Local;
+    use crate::tushare::client::TushareClient;
+
+    let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let mut sources = Vec::new();
+
+    // Check Tushare
+    let settings = crate::storage::settings::get_user_settings();
+    if let Some(ref token) = settings.tushare_token {
+        let client = TushareClient::new(token.clone());
+        match client.get_latest_price("000001.SZ").await {
+            Ok(price) => {
+                sources.push(DataSourceStatus {
+                    name: "Tushare".into(),
+                    ok: true,
+                    last_success: Some(now_str.clone()),
+                    sample_value: Some(format!("000001.SZ = {:.2}", price)),
+                });
+            }
+            Err(_) => {
+                sources.push(DataSourceStatus {
+                    name: "Tushare".into(),
+                    ok: false,
+                    last_success: None,
+                    sample_value: None,
+                });
+            }
+        }
+    } else {
+        sources.push(DataSourceStatus {
+            name: "Tushare".into(),
+            ok: false,
+            last_success: None,
+            sample_value: Some("no token configured".into()),
+        });
+    }
+
+    // Check invest.db
+    let db_ok = crate::storage::invest::with_conn(|_| Ok(())).is_ok();
+    sources.push(DataSourceStatus {
+        name: "invest.db".into(),
+        ok: db_ok,
+        last_success: if db_ok { Some(now_str.clone()) } else { None },
+        sample_value: if db_ok { Some("connected".into()) } else { Some("connection failed".into()) },
+    });
+
+    // Check LLM config
+    let llm_result: Result<i64, String> = crate::storage::invest::with_conn(|conn| {
+        conn.query_row("SELECT COUNT(*) FROM strategy", [], |row| row.get::<_, i64>(0))
+            .map_err(|e| format!("strategy query: {e}"))
+    });
+    let llm_ok = matches!(llm_result, Ok(count) if count > 0);
+    sources.push(DataSourceStatus {
+        name: "LLM Config".into(),
+        ok: llm_ok,
+        last_success: if llm_ok { Some(now_str) } else { None },
+        sample_value: if llm_ok { Some("loaded".into()) } else { Some("not found".into()) },
+    });
+
+    sources
+}

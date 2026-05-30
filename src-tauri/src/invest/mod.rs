@@ -1,3 +1,4 @@
+pub mod daily_report;
 pub mod dreaming;
 pub mod llm;
 pub mod committee;

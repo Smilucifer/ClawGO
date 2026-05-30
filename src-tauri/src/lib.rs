@@ -475,6 +475,12 @@ pub fn run() {
             commands::invest::archive_insight,
             commands::invest::unarchive_insight,
             commands::invest::search_domain_insights,
+            commands::invest::get_user_profile,
+            commands::invest::save_user_profile,
+            commands::invest::generate_daily_report,
+            commands::invest::list_daily_reports,
+            commands::invest::get_regime_classification,
+            commands::invest::get_datasource_health,
         ])
         .setup(move |app| {
             // Set up broadcast emitter (requires AppHandle, so must be in setup)

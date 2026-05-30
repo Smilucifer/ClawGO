@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v3.2.0, 2026-05-29). openInvest Phase 2 complete: Dashboard, Portfolio, Trading, PnL Snapshot. See `docs/superpowers/plans/[done] 2026-05-29-phase2-dashboard-portfolio-pnl.md`.
+**Current phase:** Phase 10+ (v3.4.0, 2026-05-30). openInvest Phase 4b complete: System 7-Tab page, User Profile settings, Daily Report scheduler. See `docs/superpowers/plans/[done] 2026-05-28-openinvest-investgui-port.md`.
 
 ## Standard workflow
 
@@ -357,6 +357,8 @@ Key phases and their status:
 | 10+ (v3.0.0) | 记忆系统重构: SQLite FTS5 用户中心架构, 移除 LanceDB + petgraph + Embedding API, 15 项审查修复, shared injection, 前端去重 | [done] |
 | 10+ (v3.1.0) | openInvest Phase 1: invest.db 数据层, scope-aware 记忆, /invest + /memory-mgmt 路由, MoreMenu, 18 commits, 8 项审查修复 | [done] |
 | 10+ (v3.2.0) | openInvest Phase 2: Dashboard KPI, 持仓管理(HOLD/WATCH), 交易对话框, 交易记录+CSV导出, 策略配置CRUD, Chart.js PnL 图表, Tushare HTTP client(自定义代理), PnL 定时快照, 交易日历同步, Legacy 迁移, 55+ i18n keys, 13 项审查修复 | [done] |
+| 10+ (v3.3.0) | openInvest Phase 3a+3b+3c+4a: LLM 委员会编排, SSE streaming, 角色配置, Insights Feed, Pipeline Notifications, Event Watch(Tushare 新闻+LLM 归一化), Scheduler 6 jobs, Verdict Review, Dreaming 3 阶段管道, FTS5 domain_insights, Archived 视图 | [done] |
+| 10+ (v3.4.0) | openInvest Phase 4b: 系统二级页 7 Tab(Regime/Datasource/PnL/Dreams+3 复用), 用户档案(/settings/profile), 每日报告定时任务, 9 项审查修复 | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

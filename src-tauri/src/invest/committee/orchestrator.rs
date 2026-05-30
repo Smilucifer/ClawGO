@@ -551,6 +551,13 @@ pub async fn run_committee(
     emitter: Option<EventEmitter>,
 ) -> Result<CommitteeResult, String> {
     let start = std::time::Instant::now();
+
+    // Override emergency_buffer_cny from user profile if explicitly saved
+    let mut config_owned = config.clone();
+    if let Ok(Some(profile)) = crate::storage::invest::user_profile::get_profile() {
+        config_owned.emergency_buffer_cny = profile.emergency_buffer_cny;
+    }
+    let config = &config_owned;
     let mut round_outputs: Vec<RoundOutput> = Vec::new();
     let mut total_tokens: u32 = 0;
 
