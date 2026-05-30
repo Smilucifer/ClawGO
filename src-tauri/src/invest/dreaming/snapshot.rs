@@ -24,8 +24,6 @@ pub fn rollback_snapshot(snapshot_id: i64) -> Result<(), String> {
     if let Some(after) = &snapshot.after_json {
         let current = crate::storage::invest::domain_insights::get_active_insights_json()?;
         if &current != after {
-            // State has been modified since this dream — invalidate
-            dream_snapshots::mark_rolled_back(snapshot_id)?;
             return Err(
                 "Current domain_insights state has changed since this dream. Rollback aborted."
                     .into(),

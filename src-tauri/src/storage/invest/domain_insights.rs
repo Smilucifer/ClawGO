@@ -240,7 +240,9 @@ pub fn restore_insight_snapshot(json: &str) -> Result<(), String> {
             conn.execute_batch("COMMIT;")
                 .map_err(|e| format!("commit transaction: {e}"))?;
         } else {
-            conn.execute_batch("ROLLBACK;").ok();
+            if let Err(rb_err) = conn.execute_batch("ROLLBACK;") {
+                log::error!("ROLLBACK failed in restore_insight_snapshot — connection may be poisoned: {rb_err}");
+            }
         }
         result
     })

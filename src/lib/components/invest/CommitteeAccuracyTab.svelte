@@ -14,9 +14,9 @@
     verdictType: string;
     sampleCount: number;
     avgConfidence: number;
-    hitRate1d: number;
-    hitRate7d: number;
-    hitRate30d: number;
+    hitRate1d: number | null;
+    hitRate7d: number | null;
+    hitRate30d: number | null;
   }
   interface ReviewSummary {
     totalVerdicts: number;
@@ -82,13 +82,15 @@
     }
   }
 
-  function pct(n: number): string {
-    return (n * 100).toFixed(1) + '%';
+  function pct(v: number | null | undefined): string {
+    if (v == null) return '-';
+    return `${(v * 100).toFixed(1)}%`;
   }
 
-  function hitColor(rate: number): string {
-    if (rate >= 0.6) return 'text-green-500';
-    if (rate >= 0.4) return 'text-yellow-500';
+  function hitColor(v: number | null | undefined): string {
+    if (v == null) return 'text-muted-foreground';
+    if (v >= 0.6) return 'text-green-500';
+    if (v >= 0.4) return 'text-amber-500';
     return 'text-red-500';
   }
 

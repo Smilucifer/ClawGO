@@ -11,6 +11,7 @@
   let searchQuery = $state('');
   let statusFilter = $state<'active' | 'archived'>('active');
   let error = $state<string | null>(null);
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   async function loadInsights() {
     loading = true;
@@ -19,6 +20,21 @@
       insights = await invoke<DomainInsight[]>('list_insights', {
         status: statusFilter,
         symbol: null,
+        limit: 50,
+      });
+    } catch (e) {
+      error = String(e);
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function doSearch() {
+    loading = true;
+    error = null;
+    try {
+      insights = await invoke<DomainInsight[]>('search_domain_insights', {
+        query: searchQuery,
         limit: 50,
       });
     } catch (e) {
@@ -46,16 +62,16 @@
     }
   }
 
-  const filteredInsights = $derived(
-    searchQuery
-      ? insights.filter(
-          (i) =>
-            i.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            (i.symbol && i.symbol.toLowerCase().includes(searchQuery.toLowerCase())) ||
-            i.insightType.toLowerCase().includes(searchQuery.toLowerCase()),
-        )
-      : insights,
-  );
+  $effect(() => {
+    const q = searchQuery;
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+    if (q) {
+      searchDebounceTimer = setTimeout(() => doSearch(), 300);
+    } else {
+      loadInsights();
+    }
+    return () => { if (searchDebounceTimer) clearTimeout(searchDebounceTimer); };
+  });
 
   function confidenceColor(c: number | null): string {
     if (c == null) return 'text-muted-foreground';
@@ -75,9 +91,6 @@
     return map[type] || 'bg-muted text-muted-foreground';
   }
 
-  $effect(() => {
-    loadInsights();
-  });
 </script>
 
 <div class="space-y-4">
@@ -127,11 +140,11 @@
 
   {#if loading}
     <p class="text-sm text-muted-foreground">{t('invest_scheduler_loading')}</p>
-  {:else if filteredInsights.length === 0}
+  {:else if insights.length === 0}
     <p class="text-sm text-muted-foreground">{t('invest_insights_empty')}</p>
   {:else}
     <div class="space-y-2">
-      {#each filteredInsights as insight}
+      {#each insights as insight}
         <div class="rounded-lg border p-4 space-y-2">
           <div class="flex items-start justify-between gap-3">
             <div class="flex items-center gap-2">

@@ -20,6 +20,10 @@ struct JobOverride {
     enabled: Option<bool>,
     #[serde(default)]
     requires_trading_day: Option<bool>,
+    #[serde(default)]
+    last_run: Option<String>,
+    #[serde(default)]
+    last_status: Option<String>,
 }
 
 fn config_path() -> PathBuf {
@@ -54,6 +58,12 @@ pub fn load_jobs() -> Vec<CronJob> {
             if let Some(r) = ov.requires_trading_day {
                 job.requires_trading_day = r;
             }
+            if let Some(lr) = ov.last_run {
+                job.last_run = Some(lr);
+            }
+            if let Some(ls) = ov.last_status {
+                job.last_status = Some(ls);
+            }
         }
     }
     jobs
@@ -71,6 +81,8 @@ pub fn save_jobs(jobs: &[CronJob]) -> Result<(), String> {
                     || d.interval_min != job.interval_min
                     || d.enabled != job.enabled
                     || d.requires_trading_day != job.requires_trading_day
+                    || d.last_run != job.last_run
+                    || d.last_status != job.last_status
             });
             if changed {
                 Some(JobOverride {
@@ -79,6 +91,8 @@ pub fn save_jobs(jobs: &[CronJob]) -> Result<(), String> {
                     interval_min: job.interval_min,
                     enabled: Some(job.enabled),
                     requires_trading_day: Some(job.requires_trading_day),
+                    last_run: job.last_run.clone(),
+                    last_status: job.last_status.clone(),
                 })
             } else {
                 None

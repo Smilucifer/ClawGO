@@ -36,20 +36,34 @@
   let editCronValue = $state('');
   let triggering = $state<string | null>(null);
   let error = $state<string | null>(null);
+  let disposed = false;
 
   async function loadJobs() {
     loading = true;
     try {
-      jobs = await invoke<CronJob[]>('list_cron_jobs');
+      const result = await invoke<CronJob[]>('list_cron_jobs');
+      if (!disposed) jobs = result;
+    } catch (e) {
+      if (!disposed) error = String(e);
     } finally {
-      loading = false;
+      if (!disposed) loading = false;
     }
   }
 
   async function loadLogs(jobId: string) {
     expandedJob = expandedJob === jobId ? null : jobId;
-    if (expandedJob) {
-      logs = await invoke<SchedulerLog[]>('get_cron_job_logs', { taskName: jobId, limit: 20 });
+    if (!expandedJob) {
+      logs = [];
+      return;
+    }
+    try {
+      const result = await invoke<SchedulerLog[]>('get_cron_job_logs', { taskName: jobId, limit: 20 });
+      if (!disposed) logs = result;
+    } catch (e) {
+      if (!disposed) {
+        error = String(e);
+        logs = [];
+      }
     }
   }
 
@@ -59,7 +73,7 @@
       await invoke('toggle_cron_job', { id: job.id, enabled: !job.enabled });
       await loadJobs();
     } catch (e) {
-      error = `Failed to toggle job: ${e}`;
+      error = t('invest_scheduler_toggle_failed', { error: String(e) });
     }
   }
 
@@ -70,7 +84,7 @@
       await invoke('trigger_cron_job', { id: jobId });
       await loadJobs();
     } catch (e) {
-      error = `Job failed: ${e}`;
+      error = t('invest_scheduler_job_failed', { error: String(e) });
     } finally {
       triggering = null;
     }
@@ -83,7 +97,7 @@
       editingJob = null;
       await loadJobs();
     } catch (e) {
-      error = `Failed to save schedule: ${e}`;
+      error = t('invest_scheduler_save_failed', { error: String(e) });
     }
   }
 
@@ -106,7 +120,9 @@
   }
 
   $effect(() => {
+    disposed = false;
     loadJobs();
+    return () => { disposed = true; };
   });
 </script>
 
@@ -119,7 +135,7 @@
     {#if error}
       <div class="flex items-center justify-between rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
         <span>{error}</span>
-        <button class="ml-2 text-xs hover:underline" onclick={() => (error = null)}>Dismiss</button>
+        <button class="ml-2 text-xs hover:underline" onclick={() => (error = null)}>{t('invest_scheduler_dismiss')}</button>
       </div>
     {/if}
     <div class="rounded-lg border">
@@ -128,9 +144,9 @@
           <tr class="border-b bg-muted/50 text-left">
             <th class="p-3">{t('invest_scheduler_job_name')}</th>
             <th class="p-3">{t('invest_scheduler_cron_expr')}</th>
-            <th class="p-3 text-center">Status</th>
+            <th class="p-3 text-center">{t('invest_scheduler_status')}</th>
             <th class="p-3">{t('invest_scheduler_last_run')}</th>
-            <th class="p-3 text-right">Actions</th>
+            <th class="p-3 text-right">{t('invest_scheduler_actions')}</th>
           </tr>
         </thead>
         <tbody>
@@ -173,7 +189,7 @@
               <td class="p-3 text-center">
                 <button
                   class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors {job.enabled ? 'bg-primary' : 'bg-muted'}"
-                  aria-label={job.enabled ? 'Disable' : 'Enable'}
+                  aria-label={job.enabled ? t('invest_scheduler_disable') : t('invest_scheduler_enable')}
                   onclick={() => toggle(job)}
                 >
                   <span
@@ -216,9 +232,9 @@
 
     {#if expandedJob}
       <div class="rounded-lg border p-4">
-        <h4 class="mb-2 text-sm font-medium">Logs: {expandedJob}</h4>
+        <h4 class="mb-2 text-sm font-medium">{t('invest_scheduler_logs_for', { job: expandedJob })}</h4>
         {#if logs.length === 0}
-          <p class="text-xs text-muted-foreground">No logs yet</p>
+          <p class="text-xs text-muted-foreground">{t('invest_scheduler_no_logs')}</p>
         {:else}
           <div class="max-h-60 space-y-1 overflow-y-auto">
             {#each logs as log}

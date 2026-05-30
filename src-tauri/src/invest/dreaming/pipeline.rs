@@ -95,14 +95,15 @@ pub async fn run_invest_pipeline(tushare_token: &str) -> Result<DreamResult, Str
         groups.entry(key).or_default().push(t);
     }
 
-    // Pre-build lookup: recent verdict by (symbol, date_prefix) → id
-    let recent_lookup: HashMap<(&str, &str), &str> = recent
-        .iter()
-        .map(|v| {
-            let date_prefix = &v.created_at[..10.min(v.created_at.len())];
-            ((v.symbol.as_str(), date_prefix), v.id.as_str())
-        })
-        .collect();
+    // Pre-build lookup: recent verdict by (symbol, date_prefix) → ids
+    let mut recent_lookup: HashMap<(&str, &str), Vec<&str>> = HashMap::new();
+    for v in &recent {
+        let date_prefix = &v.created_at[..10.min(v.created_at.len())];
+        recent_lookup
+            .entry((v.symbol.as_str(), date_prefix))
+            .or_default()
+            .push(v.id.as_str());
+    }
 
     let mut candidates: Vec<DreamCandidate> = Vec::new();
 
@@ -114,7 +115,7 @@ pub async fn run_invest_pipeline(tushare_token: &str) -> Result<DreamResult, Str
             continue;
         }
 
-        if group.len() < config.min_count as usize {
+        if (group.len() as i64) < config.min_count {
             continue;
         }
 
@@ -126,8 +127,9 @@ pub async fn run_invest_pipeline(tushare_token: &str) -> Result<DreamResult, Str
             .cloned()
             .unwrap_or_default();
         let end_date = today.format("%Y%m%d").to_string();
+        let ts_code = crate::invest::verdict_review::to_ts_code(symbol);
         let Ok(bars) = client
-            .daily(symbol, &first_date.replace('-', ""), &end_date)
+            .daily(&ts_code, &first_date.replace('-', ""), &end_date)
             .await
         else {
             continue;
@@ -199,11 +201,12 @@ pub async fn run_invest_pipeline(tushare_token: &str) -> Result<DreamResult, Str
         if score >= config.min_score {
             let source_ids: Vec<String> = group
                 .iter()
-                .filter_map(|t| {
+                .flat_map(|t| {
                     let date_prefix = &t.3[..10.min(t.3.len())];
                     recent_lookup
                         .get(&(t.0.as_str(), date_prefix))
-                        .map(|id| id.to_string())
+                        .map(|ids| ids.iter().map(|id| id.to_string()).collect::<Vec<_>>())
+                        .unwrap_or_default()
                 })
                 .collect();
 

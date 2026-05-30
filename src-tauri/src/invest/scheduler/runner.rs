@@ -174,7 +174,9 @@ where
                         }
                         .into(),
                     );
-                    let _ = config::save_jobs(&jobs_mut);
+                    if let Err(e) = config::save_jobs(&jobs_mut) {
+                        log::error!("Failed to save job state: {e}");
+                    }
                 }
             }
 

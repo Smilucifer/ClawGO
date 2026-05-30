@@ -139,19 +139,19 @@
 
 <div class="space-y-4">
   <h3 class="text-lg font-semibold">
-    {isInvest ? 'Investment Dreaming' : 'User Memory Dreaming'}
+    {isInvest ? t('invest_dreaming_title_invest') : t('invest_dreaming_title_userMemory')}
   </h3>
 
   {#if loading}
-    <p class="text-muted-foreground">Loading config...</p>
+    <p class="text-muted-foreground">{t('invest_dreaming_loadingConfig')}</p>
   {:else if config}
     <!-- Config section -->
     <div class="rounded-lg border p-4 space-y-3">
-      <h4 class="text-sm font-medium">Configuration</h4>
+      <h4 class="text-sm font-medium">{t('invest_dreaming_configuration')}</h4>
 
       {#if !isInvest}
         <div class="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-          User memory dreaming is not yet implemented. This panel is a preview.
+          {t('invest_dreaming_notImplemented')}
         </div>
       {/if}
 
@@ -172,12 +172,12 @@
               : 'translate-x-1'}"
           ></span>
         </button>
-        <span class="text-sm {!isInvest ? 'text-muted-foreground' : ''}">{isInvest ? 'Invest pipeline enabled' : 'User memory enabled (coming soon)'}</span>
+        <span class="text-sm {!isInvest ? 'text-muted-foreground' : ''}">{isInvest ? t('invest_dreaming_investEnabled') : t('invest_dreaming_userMemoryEnabled')}</span>
       </div>
 
       {#if isInvest}
         <div class="flex items-center gap-2">
-          <label class="text-xs text-muted-foreground w-20">Cron</label>
+          <label class="text-xs text-muted-foreground w-20">{t('invest_dreaming_cron')}</label>
           <input
             class="flex-1 rounded border bg-background px-2 py-1 text-xs font-mono"
             bind:value={config!.investCron}
@@ -185,7 +185,7 @@
         </div>
       {:else}
         <div class="flex items-center gap-2">
-          <label class="text-xs text-muted-foreground w-20">Interval (min)</label>
+          <label class="text-xs text-muted-foreground w-20">{t('invest_dreaming_intervalMin')}</label>
           <input
             type="number"
             class="w-24 rounded border bg-background px-2 py-1 text-xs opacity-50"
@@ -196,17 +196,17 @@
       {/if}
 
       <div class="flex items-center gap-2">
-        <label class="text-xs text-muted-foreground w-20">Lookback</label>
+        <label class="text-xs text-muted-foreground w-20">{t('invest_dreaming_lookback')}</label>
         <input
           type="number"
           class="w-24 rounded border bg-background px-2 py-1 text-xs"
           bind:value={config!.lookbackDays}
         />
-        <span class="text-xs text-muted-foreground">days</span>
+        <span class="text-xs text-muted-foreground">{t('invest_dreaming_days')}</span>
       </div>
 
       <div class="flex items-center gap-2">
-        <label class="text-xs text-muted-foreground w-20">Min score</label>
+        <label class="text-xs text-muted-foreground w-20">{t('invest_dreaming_minScore')}</label>
         <input
           type="number"
           step="0.05"
@@ -216,7 +216,7 @@
       </div>
 
       <div class="flex items-center gap-2">
-        <label class="text-xs text-muted-foreground w-20">Min count</label>
+        <label class="text-xs text-muted-foreground w-20">{t('invest_dreaming_minCount')}</label>
         <input
           type="number"
           class="w-24 rounded border bg-background px-2 py-1 text-xs"
@@ -230,14 +230,14 @@
           disabled={saving}
           onclick={saveConfig}
         >
-          {saving ? 'Saving...' : 'Save Config'}
+          {saving ? t('invest_dreaming_saving') : t('invest_dreaming_saveConfig')}
         </button>
         <button
           class="rounded bg-amber-600 px-3 py-1.5 text-xs text-white hover:bg-amber-700 disabled:opacity-50"
           disabled={triggering || !isInvest}
           onclick={trigger}
         >
-          {triggering ? 'Running...' : 'Run Now'}
+          {triggering ? t('invest_dreaming_running') : t('invest_dreaming_runNow')}
         </button>
       </div>
     </div>
@@ -245,23 +245,23 @@
     <!-- Last result -->
     {#if lastResult}
       <div class="rounded-lg border p-4 space-y-2">
-        <h4 class="text-sm font-medium">Last Result</h4>
+        <h4 class="text-sm font-medium">{t('invest_dreaming_lastResult')}</h4>
         <div class="grid grid-cols-3 gap-2 text-center text-xs">
           <div class="rounded bg-green-500/10 p-2">
             <div class="text-lg font-bold text-green-500">{lastResult.insightsWritten}</div>
-            <div class="text-muted-foreground">Written</div>
+            <div class="text-muted-foreground">{t('invest_dreaming_written')}</div>
           </div>
           <div class="rounded bg-blue-500/10 p-2">
             <div class="text-lg font-bold text-blue-500">{lastResult.insightsUpdated}</div>
-            <div class="text-muted-foreground">Updated</div>
+            <div class="text-muted-foreground">{t('invest_dreaming_updated')}</div>
           </div>
           <div class="rounded bg-amber-500/10 p-2">
             <div class="text-lg font-bold text-amber-500">{lastResult.insightsArchived}</div>
-            <div class="text-muted-foreground">Archived</div>
+            <div class="text-muted-foreground">{t('invest_dreaming_archived')}</div>
           </div>
         </div>
         <div class="text-xs text-muted-foreground">
-          Total duration: {formatDuration(lastResult.pipelineDurationMs)}
+          {t('invest_dreaming_totalDuration')} {formatDuration(lastResult.pipelineDurationMs)}
         </div>
         {#if lastResult.stages.length > 0}
           <div class="space-y-1">
@@ -280,9 +280,9 @@
 
     <!-- Trace list -->
     <div class="rounded-lg border p-4 space-y-2">
-      <h4 class="text-sm font-medium">Recent Traces</h4>
+      <h4 class="text-sm font-medium">{t('invest_dreaming_recentTraces')}</h4>
       {#if traces.length === 0}
-        <p class="text-xs text-muted-foreground">No traces yet. Run the dream pipeline to see history.</p>
+        <p class="text-xs text-muted-foreground">{t('invest_dreaming_noTraces')}</p>
       {:else}
         <div class="max-h-60 space-y-2 overflow-y-auto">
           {#each traces as trace}
@@ -306,7 +306,7 @@
                   disabled={rollingBack === trace.id}
                   onclick={() => rollback(trace.id)}
                 >
-                  {rollingBack === trace.id ? 'Rolling back...' : 'Rollback'}
+                  {rollingBack === trace.id ? t('invest_dreaming_rollingBack') : t('invest_dreaming_rollback')}
                 </button>
               {/if}
             </div>
@@ -319,7 +319,7 @@
     {#if error}
       <div class="flex items-center justify-between rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
         <span>{error}</span>
-        <button class="ml-2 text-xs hover:underline" onclick={() => (error = null)}>Dismiss</button>
+        <button class="ml-2 text-xs hover:underline" onclick={() => (error = null)}>{t('invest_dreaming_dismiss')}</button>
       </div>
     {/if}
     {#if success}
