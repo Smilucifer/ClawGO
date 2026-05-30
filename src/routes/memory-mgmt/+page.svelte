@@ -16,7 +16,7 @@
 
   let memories: any[] = $state([]);
   let loading = $state(false);
-  let loadVersion = $state(0);
+  let loadVersion = 0;
 
   async function loadMemories() {
     const version = ++loadVersion;
@@ -46,7 +46,7 @@
 
   let archivedInsights: any[] = $state([]);
   let archivedLoading = $state(false);
-  let archivedLoadVersion = $state(0);
+  let archivedLoadVersion = 0;
 
   async function loadArchivedInsights() {
     const version = ++archivedLoadVersion;

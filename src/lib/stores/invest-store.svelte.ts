@@ -439,6 +439,7 @@ class InvestStore {
   }
 
   async triggerScan(): Promise<void> {
+    this.error = null;
     this.isScanning = true;
     try {
       await invoke("scan_events", {
@@ -446,6 +447,9 @@ class InvestStore {
       });
       // Refresh events and status after scan (parallel)
       await Promise.all([this.fetchEvents(), this.fetchScanStatus()]);
+    } catch (e) {
+      this.error = String(e);
+      console.error("scan failed:", e);
     } finally {
       this.isScanning = false;
     }

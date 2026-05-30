@@ -83,13 +83,18 @@
         <span>{t('invest.eventWatch.noScanData')}</span>
       {/if}
     </div>
-    <button
-      onclick={handleScan}
-      disabled={store.isScanning}
-      class="px-3 py-1 text-xs rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 disabled:opacity-50"
-    >
-      {store.isScanning ? t('invest.eventWatch.scanning') : t('invest.eventWatch.scanNow')}
-    </button>
+    <div class="flex items-center gap-2">
+      {#if store.error}
+        <span class="text-xs text-red-400 max-w-xs truncate" title={store.error}>{store.error}</span>
+      {/if}
+      <button
+        onclick={handleScan}
+        disabled={store.isScanning}
+        class="px-3 py-1 text-xs rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 disabled:opacity-50"
+      >
+        {store.isScanning ? t('invest.eventWatch.scanning') : t('invest.eventWatch.scanNow')}
+      </button>
+    </div>
   </div>
 
   <!-- Filters -->

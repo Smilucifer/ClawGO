@@ -61,6 +61,12 @@
       }
     }, 500);
   }
+
+  $effect(() => {
+    if (!investCommitteeStore.llmConfig && !investCommitteeStore.configLoading) {
+      investCommitteeStore.loadConfig();
+    }
+  });
 </script>
 
 <div class="mb-4 rounded-lg border border-border">

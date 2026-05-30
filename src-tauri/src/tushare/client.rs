@@ -9,7 +9,7 @@ use std::time::Duration;
 #[derive(Debug, Deserialize)]
 pub struct TushareResponse {
     pub code: i64,
-    pub msg: String,
+    pub msg: Option<String>,
     pub data: TushareResponseData,
 }
 
@@ -198,7 +198,7 @@ impl TushareClient {
                 serde_json::from_str(&text).map_err(|e| format!("json parse error: {e}"))?;
 
             if parsed.code != 0 {
-                return Err(format!("tushare error {}: {}", parsed.code, parsed.msg));
+                return Err(format!("tushare error {}: {}", parsed.code, parsed.msg.unwrap_or_default()));
             }
 
             return Ok(parsed);
