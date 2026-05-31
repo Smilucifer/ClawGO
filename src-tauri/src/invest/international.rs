@@ -121,6 +121,8 @@ impl InternationalClient {
     // -- low-level -----------------------------------------------------------
 
     /// Fetch raw chart JSON from Yahoo Finance v8 API.
+    ///
+    /// Retries up to 3 times with exponential back-off (1s, 2s, 4s) on 429 / 5xx.
     async fn fetch_chart_raw(
         &self,
         symbol: &str,
@@ -128,40 +130,59 @@ impl InternationalClient {
         range: &str,
     ) -> Result<serde_json::Value, String> {
         let url = format!("{YAHOO_CHART_API}/{symbol}");
-        let resp = self
-            .client
-            .get(&url)
-            .query(&[("interval", interval), ("range", range)])
-            .send()
-            .await
-            .map_err(|e| format!("Yahoo request failed for {symbol}: {e}"))?;
+        let max_retries = 3u32;
+        let mut last_err: Option<String> = None;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(format!("Yahoo HTTP {status} for {symbol}: {body}"));
-        }
+        for attempt in 0..max_retries {
+            let resp = self
+                .client
+                .get(&url)
+                .query(&[("interval", interval), ("range", range)])
+                .send()
+                .await
+                .map_err(|e| format!("Yahoo request failed for {symbol}: {e}"))?;
 
-        let text = resp
-            .text()
-            .await
-            .map_err(|e| format!("failed to read Yahoo response: {e}"))?;
+            let status = resp.status();
 
-        let parsed: YahooChartResponse =
-            serde_json::from_str(&text).map_err(|e| format!("Yahoo json parse error: {e}"))?;
-
-        if let Some(err) = &parsed.chart.error {
-            if !err.is_null() {
-                return Err(format!("Yahoo API error for {symbol}: {err}"));
+            // Retry on 429 or 5xx with exponential back-off
+            if status.as_u16() == 429 || status.is_server_error() {
+                let backoff_ms = 1000 * (1u64 << attempt);
+                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                last_err = Some(format!(
+                    "Yahoo HTTP {status} for {symbol} (attempt {}/{max_retries})",
+                    attempt + 1
+                ));
+                continue;
             }
+
+            if !status.is_success() {
+                let body = resp.text().await.unwrap_or_default();
+                return Err(format!("Yahoo HTTP {status} for {symbol}: {body}"));
+            }
+
+            let text = resp
+                .text()
+                .await
+                .map_err(|e| format!("failed to read Yahoo response: {e}"))?;
+
+            let parsed: YahooChartResponse =
+                serde_json::from_str(&text).map_err(|e| format!("Yahoo json parse error: {e}"))?;
+
+            if let Some(err) = &parsed.chart.error {
+                if !err.is_null() {
+                    return Err(format!("Yahoo API error for {symbol}: {err}"));
+                }
+            }
+
+            return parsed
+                .chart
+                .result
+                .into_iter()
+                .next()
+                .ok_or_else(|| format!("no chart result for {symbol}"));
         }
 
-        parsed
-            .chart
-            .result
-            .into_iter()
-            .next()
-            .ok_or_else(|| format!("no chart result for {symbol}"))
+        Err(last_err.unwrap_or_else(|| format!("Yahoo request failed for {symbol} after {max_retries} attempts")))
     }
 
     // -- high-level helpers --------------------------------------------------
@@ -309,90 +330,113 @@ impl InternationalClient {
         Ok(bars)
     }
 
-    /// Fetch quotes for all well-known international symbols in parallel.
+    /// Fetch quotes for all well-known international symbols sequentially.
+    ///
+    /// Requests are spaced 300ms apart to avoid triggering Yahoo's rate limiter.
     pub async fn fetch_all_quotes(&self) -> Vec<Result<YahooQuote, String>> {
-        let futures: Vec<_> = INTERNATIONAL_SYMBOLS
-            .iter()
-            .map(|(sym, _)| self.fetch_yahoo_quote(sym))
-            .collect();
-
-        // Execute concurrently using futures-util (already a dependency)
-        futures_util::future::join_all(futures).await
+        let mut results = Vec::with_capacity(INTERNATIONAL_SYMBOLS.len());
+        for (i, (sym, _)) in INTERNATIONAL_SYMBOLS.iter().enumerate() {
+            if i > 0 {
+                tokio::time::sleep(Duration::from_millis(300)).await;
+            }
+            results.push(self.fetch_yahoo_quote(sym).await);
+        }
+        results
     }
 
     /// Search for news articles via Yahoo Finance search API.
     ///
     /// `query` is the search string (e.g. "A股 央行", "中国股市").
     /// `count` is the maximum number of news items to return (default 10).
+    /// Retries up to 3 times with exponential back-off (1s, 2s, 4s) on 429 / 5xx.
     pub async fn fetch_yahoo_news(
         &self,
         query: &str,
         count: u32,
     ) -> Result<Vec<YahooNewsItem>, String> {
         let url = YAHOO_SEARCH_API;
-        let resp = self
-            .client
-            .get(url)
-            .query(&[
-                ("q", query),
-                ("quotesCount", "0"),
-                ("newsCount", &count.to_string()),
-            ])
-            .send()
-            .await
-            .map_err(|e| format!("Yahoo news search request failed: {e}"))?;
+        let max_retries = 3u32;
+        let mut last_err: Option<String> = None;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(format!("Yahoo news search HTTP {status}: {body}"));
+        for attempt in 0..max_retries {
+            let resp = self
+                .client
+                .get(url)
+                .query(&[
+                    ("q", query),
+                    ("quotesCount", "0"),
+                    ("newsCount", &count.to_string()),
+                ])
+                .send()
+                .await
+                .map_err(|e| format!("Yahoo news search request failed: {e}"))?;
+
+            let status = resp.status();
+
+            // Retry on 429 or 5xx with exponential back-off
+            if status.as_u16() == 429 || status.is_server_error() {
+                let backoff_ms = 1000 * (1u64 << attempt);
+                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                last_err = Some(format!(
+                    "Yahoo news search HTTP {status} (attempt {}/{max_retries})",
+                    attempt + 1
+                ));
+                continue;
+            }
+
+            if !status.is_success() {
+                let body = resp.text().await.unwrap_or_default();
+                return Err(format!("Yahoo news search HTTP {status}: {body}"));
+            }
+
+            let text = resp
+                .text()
+                .await
+                .map_err(|e| format!("failed to read Yahoo news response: {e}"))?;
+
+            let parsed: YahooSearchResponse = serde_json::from_str(&text)
+                .map_err(|e| format!("Yahoo news json parse error: {e}"))?;
+
+            let items = parsed
+                .news
+                .into_iter()
+                .filter_map(|item| {
+                    Some(YahooNewsItem {
+                        uuid: item.uuid.unwrap_or_default(),
+                        title: item.title.unwrap_or_default(),
+                        publisher: item.publisher.unwrap_or_default(),
+                        link: item.link.unwrap_or_default(),
+                        provider_publish_time: item.provider_publish_time.unwrap_or(0),
+                        related_tickers: item.related_tickers.unwrap_or_default(),
+                    })
+                })
+                .filter(|item| !item.title.is_empty())
+                .collect();
+
+            return Ok(items);
         }
 
-        let text = resp
-            .text()
-            .await
-            .map_err(|e| format!("failed to read Yahoo news response: {e}"))?;
-
-        let parsed: YahooSearchResponse =
-            serde_json::from_str(&text).map_err(|e| format!("Yahoo news json parse error: {e}"))?;
-
-        let items = parsed
-            .news
-            .into_iter()
-            .filter_map(|item| {
-                Some(YahooNewsItem {
-                    uuid: item.uuid.unwrap_or_default(),
-                    title: item.title.unwrap_or_default(),
-                    publisher: item.publisher.unwrap_or_default(),
-                    link: item.link.unwrap_or_default(),
-                    provider_publish_time: item.provider_publish_time.unwrap_or(0),
-                    related_tickers: item.related_tickers.unwrap_or_default(),
-                })
-            })
-            .filter(|item| !item.title.is_empty())
-            .collect();
-
-        Ok(items)
+        Err(last_err.unwrap_or_else(|| {
+            format!("Yahoo news search failed after {max_retries} attempts")
+        }))
     }
 
     /// Fetch Chinese financial news from Yahoo Finance using multiple search queries.
     /// Returns deduplicated news items sorted by publish time (newest first).
+    ///
+    /// Queries are spaced 300ms apart to avoid triggering Yahoo's rate limiter.
     pub async fn fetch_china_finance_news(&self, max_items: usize) -> Vec<YahooNewsItem> {
         let queries = ["A股 中国", "中国股市", "央行 中国", "A股 市场"];
         let per_query = ((max_items as u32) / queries.len() as u32).max(3);
 
-        let futures: Vec<_> = queries
-            .iter()
-            .map(|q| self.fetch_yahoo_news(q, per_query))
-            .collect();
-
-        let results = futures_util::future::join_all(futures).await;
-
-        // Merge all results, dedup by uuid, sort by time descending
-        let mut seen = std::collections::HashSet::new();
         let mut all: Vec<YahooNewsItem> = Vec::new();
-        for result in results {
-            if let Ok(items) = result {
+        let mut seen = std::collections::HashSet::new();
+
+        for (i, q) in queries.iter().enumerate() {
+            if i > 0 {
+                tokio::time::sleep(Duration::from_millis(300)).await;
+            }
+            if let Ok(items) = self.fetch_yahoo_news(q, per_query).await {
                 for item in items {
                     if item.uuid.is_empty() || seen.insert(item.uuid.clone()) {
                         all.push(item);
@@ -400,6 +444,7 @@ impl InternationalClient {
                 }
             }
         }
+
         all.sort_by(|a, b| b.provider_publish_time.cmp(&a.provider_publish_time));
         all.truncate(max_items);
         all
