@@ -576,6 +576,7 @@
   "invest_replay_simulate_watermark": "模拟",
   "invest_replay_simulate_disclaimer": "模拟结果仅供参考，不会进入归档。",
   "invest_replay_simulate_empty": "选择标的并点击开始模拟来运行一次委员会试运行。",
+  "invest_replay_browse_dates": "按日期浏览",
   "invest_debate_thinking": "思考中...",
   "invest_debate_waiting_llm": "等待 LLM 响应...",
   "invest_archive_symbol_label": "标的代码",

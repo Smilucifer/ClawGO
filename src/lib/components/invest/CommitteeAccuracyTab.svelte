@@ -45,6 +45,8 @@
   let loading = $state(false);
   let showDetail = $state(false);
   let error = $state<string | null>(null);
+  let reviewing = $state(false);
+  let reviewResult = $state<string | null>(null);
 
   async function loadSummary() {
     loading = true;
@@ -61,6 +63,29 @@
     showDetail = !showDetail;
     if (showDetail && detail.length === 0) {
       detail = await invoke<ReviewEntry[]>('get_verdict_review_detail', {});
+    }
+  }
+
+  async function runReview() {
+    reviewing = true;
+    reviewResult = null;
+    error = null;
+    try {
+      const settings = await invoke<{ tushare_token?: string }>('get_user_settings');
+      const tushareToken = settings.tushare_token ?? '';
+      if (!tushareToken) {
+        reviewResult = 'error';
+        error = 'Tushare token not configured';
+        return;
+      }
+      await invoke('run_verdict_review_cmd', { tushareToken });
+      reviewResult = 'success';
+      await loadSummary();
+    } catch (e) {
+      reviewResult = 'error';
+      error = String(e);
+    } finally {
+      reviewing = false;
     }
   }
 
@@ -82,6 +107,18 @@
 <div class="space-y-4">
   <div class="flex items-center justify-between">
     <h3 class="text-lg font-semibold">{t('invest_accuracy_title')}</h3>
+    <div class="flex items-center gap-2">
+      {#if reviewResult === 'success'}
+        <span class="text-xs text-green-600">Done</span>
+      {/if}
+      <button
+        class="rounded bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
+        disabled={reviewing}
+        onclick={runReview}
+      >
+        {reviewing ? '...' : t('invest_accuracy_run_review')}
+      </button>
+    </div>
   </div>
 
   {#if error}

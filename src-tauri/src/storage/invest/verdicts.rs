@@ -84,6 +84,36 @@ pub fn list_verdicts(symbol: Option<&str>, limit: Option<i64>) -> Result<Vec<Ver
     })
 }
 
+pub fn get_verdict_by_id(id: &str) -> Result<Option<Verdict>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT id, symbol, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at FROM verdicts WHERE id = ?1")
+            .map_err(|e| format!("prepare: {}", e))?;
+        let mut rows = stmt
+            .query_map(params![id], |row| {
+                Ok(Verdict {
+                    id: row.get(0)?,
+                    symbol: row.get(1)?,
+                    verdict: row.get(2)?,
+                    confidence: row.get(3)?,
+                    macro_signal: row.get(4)?,
+                    macro_strength: row.get(5)?,
+                    reasoning: row.get(6)?,
+                    model: row.get(7)?,
+                    provider: row.get(8)?,
+                    tokens_used: row.get(9)?,
+                    latency_ms: row.get(10)?,
+                    created_at: row.get(11)?,
+                })
+            })
+            .map_err(|e| format!("query: {}", e))?;
+        match rows.next() {
+            Some(row) => Ok(Some(row.map_err(|e| format!("row: {}", e))?)),
+            None => Ok(None),
+        }
+    })
+}
+
 pub fn save_pnl_snapshot(s: &PnlSnapshot) -> Result<i64, String> {
     with_conn_mut(|conn| {
         // Upsert: update existing snapshot for the same date, or insert new

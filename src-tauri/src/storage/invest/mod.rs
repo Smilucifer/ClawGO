@@ -48,6 +48,21 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
         }
     }
 
+    // Migration: add asset_type column to holdings table if missing
+    {
+        let has_asset_type: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('holdings') WHERE name='asset_type'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        if has_asset_type == 0 {
+            conn.execute_batch("ALTER TABLE holdings ADD COLUMN asset_type TEXT NOT NULL DEFAULT 'stock';")
+                .map_err(|e| format!("Failed to add asset_type column: {}", e))?;
+        }
+    }
+
     // Add UNIQUE index on (source, title) for event dedup
     conn.execute_batch(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_events_source_title ON events(source, title);"

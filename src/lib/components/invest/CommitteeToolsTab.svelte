@@ -52,7 +52,7 @@
       : 0
   );
 
-  const roleStats = $derived(() => {
+  const roleStats = $derived.by(() => {
     const map = new Map<string, { calls: number; errors: number; totalLatency: number }>();
     for (const r of store.toolCallHistory) {
       const existing = map.get(r.role) ?? { calls: 0, errors: 0, totalLatency: 0 };
@@ -178,7 +178,7 @@
       <div class="border-b bg-muted/50 px-4 py-2 text-sm font-medium">{t('invest_tools_by_role')}</div>
       <div class="p-4 grid grid-cols-4 gap-3">
         {#each ROLE_ACCESS as access}
-          {@const stats = roleStats().get(access.role)}
+          {@const stats = roleStats.get(access.role)}
           <div class="rounded border p-2 text-center">
             <div class="text-xs font-medium {roleColor(access.role)} inline-block rounded px-1.5 py-0.5 mb-1">
               {roleLabel(access.role)}

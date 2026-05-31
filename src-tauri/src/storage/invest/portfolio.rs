@@ -112,7 +112,56 @@ pub fn record_trade(t: &Trade) -> Result<(), String> {
 
 /// Replay all trades from scratch to rebuild the holdings table.
 /// This is an internal helper that must be called within an active connection.
+/// Wrapped in a transaction to ensure atomicity; notional values are preserved
+/// from existing holdings so that recalculation does not corrupt user-edited data.
 fn recalculate_holdings_inner(conn: &Connection) -> Result<(), String> {
+    // Preserve existing notional values before DELETE (Finding 2: notional=0 corruption fix)
+    let mut notional_map: HashMap<(String, String, String), f64> = HashMap::new();
+    {
+        let mut stmt = conn
+            .prepare("SELECT symbol, currency, kind, notional FROM holdings")
+            .map_err(|e| format!("prepare notional query: {}", e))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, f64>(3)?,
+                ))
+            })
+            .map_err(|e| format!("query notional: {}", e))?;
+        for row in rows {
+            let (sym, cur, kind, notional) = row.map_err(|e| format!("notional row: {}", e))?;
+            notional_map.insert((sym, cur, kind), notional);
+        }
+    }
+
+    // Wrap DELETE + INSERTs in a transaction for atomicity (Finding 3: no transaction fix)
+    conn.execute_batch("BEGIN").map_err(|e| format!("begin transaction: {}", e))?;
+
+    let result = recalculate_holdings_inner_body(conn, &notional_map);
+
+    match result {
+        Ok(()) => {
+            conn.execute_batch("COMMIT").map_err(|e| format!("commit transaction: {}", e))?;
+            Ok(())
+        }
+        Err(e) => {
+            if let Err(rb_err) = conn.execute_batch("ROLLBACK") {
+                log::warn!("rollback failed: {rb_err}");
+            }
+            Err(e)
+        }
+    }
+}
+
+/// Inner body of recalculate_holdings, separated so the transaction wrapper
+/// can handle commit/rollback around it.
+fn recalculate_holdings_inner_body(
+    conn: &Connection,
+    notional_map: &HashMap<(String, String, String), f64>,
+) -> Result<(), String> {
     // 1. Clear all existing holdings
     conn.execute("DELETE FROM holdings", [])
         .map_err(|e| format!("clear holdings: {}", e))?;
@@ -151,6 +200,7 @@ fn recalculate_holdings_inner(conn: &Connection) -> Result<(), String> {
         name: Option<String>,
         shares: f64,
         avg_cost: f64,
+        notional: f64, // preserved from existing holdings (Finding 2 fix)
         entry_date: Option<String>,
         linked_verdict_id: Option<String>,
         notes: Option<String>,
@@ -158,6 +208,12 @@ fn recalculate_holdings_inner(conn: &Connection) -> Result<(), String> {
     }
 
     let mut map: HashMap<(String, String, String), MemHolding> = HashMap::new();
+
+    // Restore preserved notional values into the in-memory map (Finding 2 fix)
+    for ((sym, cur, kind), notional) in notional_map {
+        let entry = map.entry((sym.clone(), cur.clone(), kind.clone())).or_default();
+        entry.notional = *notional;
+    }
 
     for t in &trades {
         let key = (t.symbol.clone(), t.currency.clone(), t.kind.clone());
@@ -199,6 +255,7 @@ fn recalculate_holdings_inner(conn: &Connection) -> Result<(), String> {
                     hold_entry.name = watch_entry.name;
                     hold_entry.shares = watch_entry.shares;
                     hold_entry.avg_cost = watch_entry.avg_cost;
+                    hold_entry.notional = watch_entry.notional; // preserve notional across convert
                     hold_entry.entry_date = watch_entry.entry_date;
                     hold_entry.notes = Some("converted from watchlist".to_string());
                     hold_entry.asset_type = watch_entry.asset_type;
@@ -213,6 +270,7 @@ fn recalculate_holdings_inner(conn: &Connection) -> Result<(), String> {
                     watch_entry.name = hold_entry.name;
                     watch_entry.shares = hold_entry.shares;
                     watch_entry.avg_cost = hold_entry.avg_cost;
+                    watch_entry.notional = hold_entry.notional; // preserve notional across convert
                     watch_entry.entry_date = hold_entry.entry_date;
                     watch_entry.notes = Some("converted from hold".to_string());
                     watch_entry.asset_type = hold_entry.asset_type;
@@ -232,12 +290,13 @@ fn recalculate_holdings_inner(conn: &Connection) -> Result<(), String> {
         }
         conn.execute(
             "INSERT INTO holdings (symbol, currency, kind, name, notional, avg_cost, shares, entry_date, linked_verdict_id, notes, asset_type, created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 symbol,
                 currency,
                 kind,
                 h.name,
+                h.notional,
                 h.avg_cost,
                 h.shares,
                 h.entry_date,

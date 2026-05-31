@@ -140,7 +140,7 @@ class InvestCommitteeStore {
 
   // ── Committee Run (streaming) ──────────────────────────────────────────
 
-  async runCommittee(symbols: string[], debateRounds?: number) {
+  async runCommittee(symbols: string[], debateRounds?: number, dryRun?: boolean) {
     // Guard against concurrent calls — tear down previous listener first
     const prevUnlisten = this._unlisten;
     this._unlisten = null;
@@ -178,6 +178,7 @@ class InvestCommitteeStore {
       const results = await invoke<CommitteeResult[]>('run_committee_stream', {
         symbols,
         debateRounds: debateRounds ?? null,
+        dryRun: dryRun ?? false,
       });
       this.results = results;
     } catch (e) {
@@ -225,11 +226,19 @@ class InvestCommitteeStore {
       case 'regime_step': {
         const p = progress.get(event.symbol);
         if (p) {
-          progress.set(event.symbol, {
-            ...p,
-            activeStep: -1,
-            completedSteps: p.completedSteps + 1,
-          });
+          if (event.success) {
+            progress.set(event.symbol, {
+              ...p,
+              activeStep: -1,
+              completedSteps: Math.max(p.completedSteps, 2),
+            });
+          } else {
+            progress.set(event.symbol, {
+              ...p,
+              activeStep: -1,
+              error: 'Regime computation failed',
+            });
+          }
         }
         break;
       }

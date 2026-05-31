@@ -217,9 +217,9 @@ pub async fn run_verdict_review(tushare_token: &str) -> Result<VerdictReviewSumm
             );
         }
 
-        // Load the full verdict from DB
-        let verdict = match verdicts::list_verdicts(Some(&tracked_entry.symbol), Some(1)) {
-            Ok(list) => list.into_iter().find(|v| v.id == tracked_entry.verdict_id),
+        // Load the full verdict from DB by ID
+        let verdict = match verdicts::get_verdict_by_id(&tracked_entry.verdict_id) {
+            Ok(opt) => opt,
             Err(e) => {
                 log::warn!("Failed to load verdict {}: {}", tracked_entry.verdict_id, e);
                 continue;

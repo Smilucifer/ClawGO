@@ -20,7 +20,7 @@
   );
 
   // Symbol → Chinese name lookup from holdings
-  const nameMap = $derived(() => {
+  const nameMap = $derived.by(() => {
     const map = new Map<string, string>();
     for (const h of investStore.holdings) {
       if (h.name) map.set(h.symbol, h.name);
@@ -29,7 +29,7 @@
   });
 
   function symLabel(sym: string): string {
-    return nameMap().get(sym) ?? sym;
+    return nameMap.get(sym) ?? sym;
   }
 
   async function load() {

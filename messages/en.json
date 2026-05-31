@@ -576,6 +576,7 @@
   "invest_replay_simulate_watermark": "SIMULATION",
   "invest_replay_simulate_disclaimer": "Simulation results are for reference only and will not be archived.",
   "invest_replay_simulate_empty": "Select a symbol and click Start Simulation to run a committee dry-run.",
+  "invest_replay_browse_dates": "Browse by Date",
   "invest_debate_thinking": "Thinking...",
   "invest_debate_waiting_llm": "Waiting for LLM response...",
   "invest_archive_symbol_label": "Symbol",

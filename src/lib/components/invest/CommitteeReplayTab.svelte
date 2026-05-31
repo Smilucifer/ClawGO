@@ -12,7 +12,12 @@
   let manualMode = $state(false);
   let symbol = $state('');
   let loading = $state(false);
-  let latestArchive = $state<ArchivedDecision | null>(null);
+  let archives = $state<ArchivedDecision[]>([]);
+  let selectedDate = $state<string | null>(null);
+
+  const selectedArchive = $derived(
+    archives.find((a) => a.date === selectedDate) ?? archives[0] ?? null,
+  );
 
   // Simulate mode state
   let simulateRounds = $state(2);
@@ -21,12 +26,12 @@
   // ── 7-step pipeline ────────────────────────────────────────────────────────
   const STEP_DEFS = [
     { key: 'macro', labelKey: 'invest_pipeline_macro' as const, color: '#8b5cf6', backendIdx: 0 },
-    { key: 'regime', labelKey: 'invest_pipeline_regime' as const, color: '#a78bfa', backendIdx: -1 },
-    { key: 'quant_r1', labelKey: 'invest_pipeline_quant_r1' as const, color: '#3b82f6', backendIdx: 1 },
-    { key: 'risk_r1', labelKey: 'invest_pipeline_risk_r1' as const, color: '#f97316', backendIdx: 2 },
-    { key: 'quant_r2', labelKey: 'invest_pipeline_quant_r2' as const, color: '#3b82f6', backendIdx: 3 },
-    { key: 'risk_r2', labelKey: 'invest_pipeline_risk_r2' as const, color: '#f97316', backendIdx: 4 },
-    { key: 'cio', labelKey: 'invest_pipeline_cio' as const, color: '#eab308', backendIdx: 5 },
+    { key: 'regime', labelKey: 'invest_pipeline_regime' as const, color: '#a78bfa', backendIdx: 1 },
+    { key: 'quant_r1', labelKey: 'invest_pipeline_quant_r1' as const, color: '#3b82f6', backendIdx: 2 },
+    { key: 'risk_r1', labelKey: 'invest_pipeline_risk_r1' as const, color: '#f97316', backendIdx: 3 },
+    { key: 'quant_r2', labelKey: 'invest_pipeline_quant_r2' as const, color: '#3b82f6', backendIdx: 4 },
+    { key: 'risk_r2', labelKey: 'invest_pipeline_risk_r2' as const, color: '#f97316', backendIdx: 5 },
+    { key: 'cio', labelKey: 'invest_pipeline_cio' as const, color: '#eab308', backendIdx: 6 },
   ] as const;
 
   const ROUND_OPTIONS = [
@@ -62,11 +67,11 @@
 
   function roleToBackendIdx(role: string, round: number): number {
     if (role === 'macro') return 0;
-    if (role === 'quant' && round === 1) return 1;
-    if (role === 'risk' && round === 1) return 2;
-    if (role === 'quant') return 3;
-    if (role === 'risk') return 4;
-    if (role === 'cio') return 5;
+    if (role === 'quant' && round === 1) return 2;
+    if (role === 'risk' && round === 1) return 3;
+    if (role === 'quant') return 4;
+    if (role === 'risk') return 5;
+    if (role === 'cio') return 6;
     return -1;
   }
 
@@ -108,15 +113,20 @@
     return 'bg-slate-800 text-slate-300 border-slate-600';
   }
 
-  // ── Replay: load latest archive ────────────────────────────────────────────
+  // ── Replay: load archives ──────────────────────────────────────────────
 
-  async function loadLatestArchive() {
+  async function loadArchives() {
     if (!symbol.trim()) return;
     loading = true;
-    latestArchive = null;
+    archives = [];
+    selectedDate = null;
     try {
-      const archives = await investCommitteeStore.loadArchive(symbol.trim(), 30);
-      latestArchive = archives.length > 0 ? archives[0] : null;
+      const loaded = await investCommitteeStore.loadArchive(symbol.trim(), 30);
+      archives = loaded;
+      // Default to the most recent date
+      if (loaded.length > 0) {
+        selectedDate = loaded[0].date;
+      }
     } catch (e) {
       console.error('Failed to load archive:', e);
     } finally {
@@ -127,9 +137,10 @@
   // Auto-load when symbol changes in replay mode
   $effect(() => {
     if (mode === 'replay' && symbol.trim()) {
-      loadLatestArchive();
+      loadArchives();
     } else {
-      latestArchive = null;
+      archives = [];
+      selectedDate = null;
     }
   });
 
@@ -165,7 +176,8 @@
     if (mode === newMode) return;
     mode = newMode;
     // Reset state when switching modes
-    latestArchive = null;
+    archives = [];
+    selectedDate = null;
     loading = false;
     symbol = '';
   }
@@ -249,34 +261,57 @@
         <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-blue-400"></span>
         {t('invest_replay_loading')}
       </div>
-    {:else if !latestArchive}
+    {:else if archives.length === 0}
       <div class="rounded-lg border border-[#334155] bg-[#0F172A] px-4 py-8 text-center text-sm text-slate-500">
         {t('invest_replay_no_history')}
       </div>
     {:else}
-      <!-- Verdict info card -->
-      <div class="rounded-lg border border-[#334155] bg-[#0F172A] px-4 py-3">
-        <div class="mb-2 text-xs font-medium uppercase tracking-wider text-[#06b6d4]">
-          {t('invest_replay_latest_verdict')}
+      <!-- Date selector (when multiple dates available) -->
+      {#if archives.length > 1}
+        <div class="rounded-lg border border-[#334155] bg-[#0F172A] px-4 py-2">
+          <div class="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">
+            {t('invest_replay_browse_dates')}
+          </div>
+          <div class="flex flex-wrap gap-1.5">
+            {#each archives as archive}
+              <button
+                class="rounded-md border px-2.5 py-1 text-xs font-medium transition-colors {selectedDate === archive.date
+                  ? 'border-[#06b6d4] bg-[#06b6d4]/10 text-[#06b6d4]'
+                  : 'border-[#334155] text-slate-400 hover:border-slate-500 hover:text-slate-300'}"
+                onclick={() => (selectedDate = archive.date)}
+              >
+                {archive.date}
+              </button>
+            {/each}
+          </div>
         </div>
-        <div class="flex items-center gap-3 text-sm">
-          <span class="font-medium text-white">
-            {allHoldings.find((h) => h.symbol === latestArchive!.symbol)?.name ?? latestArchive!.symbol}
-          </span>
-          <span class="font-mono text-xs text-slate-400">{latestArchive!.symbol}</span>
-          <span class="text-xs text-slate-500">{latestArchive!.date}</span>
-        </div>
-      </div>
+      {/if}
 
-      <!-- Discussion steps card -->
-      <div class="rounded-lg border border-[#334155] bg-[#0F172A] px-4 py-3">
-        <div class="mb-3 text-xs font-medium uppercase tracking-wider text-[#8b5cf6]">
-          {t('invest_replay_report_steps')}
+      <!-- Verdict info card -->
+      {#if selectedArchive}
+        <div class="rounded-lg border border-[#334155] bg-[#0F172A] px-4 py-3">
+          <div class="mb-2 text-xs font-medium uppercase tracking-wider text-[#06b6d4]">
+            {t('invest_replay_latest_verdict')}
+          </div>
+          <div class="flex items-center gap-3 text-sm">
+            <span class="font-medium text-white">
+              {allHoldings.find((h) => h.symbol === selectedArchive.symbol)?.name ?? selectedArchive.symbol}
+            </span>
+            <span class="font-mono text-xs text-slate-400">{selectedArchive.symbol}</span>
+            <span class="text-xs text-slate-500">{selectedArchive.date}</span>
+          </div>
         </div>
-        <div class="max-h-[60vh] overflow-y-auto whitespace-pre-wrap font-mono text-sm leading-relaxed text-slate-300">
-          {latestArchive.content}
+
+        <!-- Discussion steps card -->
+        <div class="rounded-lg border border-[#334155] bg-[#0F172A] px-4 py-3">
+          <div class="mb-3 text-xs font-medium uppercase tracking-wider text-[#8b5cf6]">
+            {t('invest_replay_report_steps')}
+          </div>
+          <div class="max-h-[60vh] overflow-y-auto whitespace-pre-wrap font-mono text-sm leading-relaxed text-slate-300">
+            {selectedArchive.content}
+          </div>
         </div>
-      </div>
+      {/if}
     {/if}
 
   <!-- ═══════════════════════════════════════════════════════════════════════ -->

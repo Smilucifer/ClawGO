@@ -19,65 +19,13 @@ pub struct ArchivedDecision {
 }
 
 // ---------------------------------------------------------------------------
-// archive_decision (DB persistence — existing)
-// ---------------------------------------------------------------------------
-
-/// Archive a committee decision to the local invest database.
-/// This is fire-and-forget; errors are logged but not propagated by the caller.
-pub async fn archive_decision(
-    symbol: &str,
-    verdict: &str,
-    confidence: f64,
-    macro_signal: Option<&str>,
-    macro_strength: Option<f64>,
-    reasoning: &str,
-    model: &str,
-    provider: &str,
-    tokens_used: u32,
-    latency_ms: u64,
-) -> Result<(), String> {
-    use crate::storage::invest::verdicts::{save_verdict, Verdict};
-
-    let id = format!(
-        "{}_{}",
-        symbol,
-        Local::now().format("%Y%m%d%H%M%S%.3f")
-    );
-
-    let v = Verdict {
-        id: id.clone(),
-        symbol: symbol.to_string(),
-        verdict: verdict.to_string(),
-        confidence: Some(confidence),
-        macro_signal: macro_signal.map(|s| s.to_string()),
-        macro_strength,
-        reasoning: Some(reasoning.to_string()),
-        model: Some(model.to_string()),
-        provider: Some(provider.to_string()),
-        tokens_used: Some(tokens_used as i64),
-        latency_ms: Some(latency_ms as i64),
-        created_at: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-    };
-
-    save_verdict(&v)?;
-
-    // Auto-register for daily price tracking
-    let verdict_date = Local::now().format("%Y%m%d").to_string();
-    if let Err(e) = crate::storage::invest::verdict_tracking::start_tracking(
-        &id,
-        symbol,
-        verdict,
-        &verdict_date,
-    ) {
-        log::warn!("Failed to start tracking for verdict {}: {}", id, e);
-    }
-
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
 // archive_decision_full (markdown + events.jsonl)
 // ---------------------------------------------------------------------------
+//
+// NOTE: The old `archive_decision()` function that persisted to the verdicts
+// table has been removed (Finding 11). The orchestrator now uses
+// `committees::archive_verdict()` directly. Only `archive_decision_full()`
+// remains — it writes the markdown report and events.jsonl entry.
 
 /// Get the archive root directory: `~/.claw-go/invest/committee/`
 fn archive_root() -> PathBuf {
@@ -112,8 +60,8 @@ fn validate_symbol(symbol: &str) -> Result<(), String> {
 }
 
 /// Archive a full committee decision: writes markdown report and appends to
-/// `events.jsonl`. This is the high-fidelity archive path called alongside
-/// the DB-backed [`archive_decision`].
+/// `events.jsonl`. This is the high-fidelity archive path called from the
+/// orchestrator after verdict persistence via `committees::archive_verdict()`.
 pub fn archive_decision_full(
     symbol: &str,
     result: &CommitteeResult,
@@ -131,8 +79,11 @@ pub fn archive_decision_full(
     md_file.write_all(md.as_bytes())
         .map_err(|e| format!("write md file: {e}"))?;
 
-    // ── events.jsonl ─────────────────────────────────────────────────────
+    // ── events.jsonl (daily-overwrite semantics, Finding 12 fix) ──────────
+    // Read existing entries, filter out same symbol+date, then write back
+    // filtered content + new entry. This matches the DB's daily-overwrite pattern.
     let jsonl_path = archive_root().join("events.jsonl");
+    let today_str = Local::now().format("%Y-%m-%d").to_string();
     let event = serde_json::json!({
         "ts": Local::now().format("%Y-%m-%dT%H:%M:%S%.3f").to_string(),
         "symbol": symbol,
@@ -149,17 +100,43 @@ pub fn archive_decision_full(
         "sanity_gate3": result.sanity_check.gate3_pass,
     });
 
-    let mut jsonl_file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&jsonl_path)
-        .map_err(|e| format!("open events.jsonl: {e}"))?;
-    let mut line = serde_json::to_string(&event)
+    // Read existing lines and filter out entries for the same symbol+date
+    let mut filtered_lines: Vec<String> = Vec::new();
+    if jsonl_path.exists() {
+        if let Ok(content) = fs::read_to_string(&jsonl_path) {
+            for line in content.lines() {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
+                    let entry_symbol = val.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
+                    let entry_ts = val.get("ts").and_then(|v| v.as_str()).unwrap_or("");
+                    let entry_date = entry_ts.get(..10).unwrap_or("");
+                    // Keep entries that don't match both symbol AND today's date
+                    if !(entry_symbol == symbol && entry_date == today_str) {
+                        filtered_lines.push(line.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // Append the new entry
+    let new_line = serde_json::to_string(&event)
         .map_err(|e| format!("serialize event: {e}"))?;
-    line.push('\n');
-    jsonl_file
-        .write_all(line.as_bytes())
-        .map_err(|e| format!("write events.jsonl: {e}"))?;
+    filtered_lines.push(new_line);
+
+    // Write all lines back
+    let mut jsonl_file = fs::File::create(&jsonl_path)
+        .map_err(|e| format!("create events.jsonl: {e}"))?;
+    for line in &filtered_lines {
+        jsonl_file
+            .write_all(line.as_bytes())
+            .map_err(|e| format!("write events.jsonl: {e}"))?;
+        jsonl_file
+            .write_all(b"\n")
+            .map_err(|e| format!("write newline: {e}"))?;
+    }
 
     Ok(())
 }
@@ -359,8 +336,7 @@ mod tests {
         }
     }
 
-    // NOTE: archive_decision is async, so it cannot be coerced to a fn pointer.
-    // Signature validation is done via the compiler when the orchestrator calls it.
+    // archive_decision was removed (Finding 11); only archive_decision_full remains.
 
     #[test]
     fn test_format_markdown() {

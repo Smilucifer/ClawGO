@@ -7,12 +7,12 @@
   // ── 7-step pipeline: Macro → REGIME → Quant R1 → Risk R1 → Quant R2 → Risk R2 → CIO ──
   const STEP_DEFS = [
     { key: 'macro', labelKey: 'invest_pipeline_macro' as const, color: '#8b5cf6', backendIdx: 0 },
-    { key: 'regime', labelKey: 'invest_pipeline_regime' as const, color: '#a78bfa', backendIdx: -1 },
-    { key: 'quant_r1', labelKey: 'invest_pipeline_quant_r1' as const, color: '#3b82f6', backendIdx: 1 },
-    { key: 'risk_r1', labelKey: 'invest_pipeline_risk_r1' as const, color: '#f97316', backendIdx: 2 },
-    { key: 'quant_r2', labelKey: 'invest_pipeline_quant_r2' as const, color: '#3b82f6', backendIdx: 3 },
-    { key: 'risk_r2', labelKey: 'invest_pipeline_risk_r2' as const, color: '#f97316', backendIdx: 4 },
-    { key: 'cio', labelKey: 'invest_pipeline_cio' as const, color: '#eab308', backendIdx: 5 },
+    { key: 'regime', labelKey: 'invest_pipeline_regime' as const, color: '#a78bfa', backendIdx: 1 },
+    { key: 'quant_r1', labelKey: 'invest_pipeline_quant_r1' as const, color: '#3b82f6', backendIdx: 2 },
+    { key: 'risk_r1', labelKey: 'invest_pipeline_risk_r1' as const, color: '#f97316', backendIdx: 3 },
+    { key: 'quant_r2', labelKey: 'invest_pipeline_quant_r2' as const, color: '#3b82f6', backendIdx: 4 },
+    { key: 'risk_r2', labelKey: 'invest_pipeline_risk_r2' as const, color: '#f97316', backendIdx: 5 },
+    { key: 'cio', labelKey: 'invest_pipeline_cio' as const, color: '#eab308', backendIdx: 6 },
   ] as const;
 
   let expandedSymbol = $state<string | null>(null);
@@ -73,11 +73,11 @@
 
   function roleToBackendIdx(role: string, round: number): number {
     if (role === 'macro') return 0;
-    if (role === 'quant' && round === 1) return 1;
-    if (role === 'risk' && round === 1) return 2;
-    if (role === 'quant') return 3;
-    if (role === 'risk') return 4;
-    if (role === 'cio') return 5;
+    if (role === 'quant' && round === 1) return 2;
+    if (role === 'risk' && round === 1) return 3;
+    if (role === 'quant') return 4;
+    if (role === 'risk') return 5;
+    if (role === 'cio') return 6;
     return -1;
   }
 

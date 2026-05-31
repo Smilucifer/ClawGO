@@ -751,7 +751,7 @@ pub fn load_committee_archive(
 
 #[tauri::command]
 pub fn get_role_prompts() -> Result<std::collections::HashMap<String, String>, String> {
-    use crate::invest::committee::roles::{get_prompt_dir, CommitteeRole};
+    use crate::invest::committee::roles::{get_prompt_dir, CommitteeRole, Round};
 
     let mut map = std::collections::HashMap::new();
     for role in CommitteeRole::all() {
@@ -759,8 +759,20 @@ pub fn get_role_prompts() -> Result<std::collections::HashMap<String, String>, S
             .ok()
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .unwrap_or_else(|| format!("{:?}", role));
-        // R1 prompt
-        let r1_path = get_prompt_dir().join(role.prompt_filename());
+        // R1 prompt — for Quant/Risk, read from the round-specific filename
+        // (e.g. quant_r1.txt) which matches what save_prompt() writes to,
+        // falling back to the legacy role-level filename (e.g. quant.txt).
+        let r1_path = match role {
+            CommitteeRole::Quant | CommitteeRole::Risk => {
+                let round_path = get_prompt_dir().join(Round::R1.prompt_filename(*role));
+                if round_path.exists() {
+                    round_path
+                } else {
+                    get_prompt_dir().join(role.prompt_filename())
+                }
+            }
+            _ => get_prompt_dir().join(role.prompt_filename()),
+        };
         let r1 = std::fs::read_to_string(&r1_path)
             .unwrap_or_else(|_| role.default_prompt().to_string());
         map.insert(key.clone(), r1);

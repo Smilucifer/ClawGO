@@ -454,6 +454,7 @@ class InvestStore {
   async deleteTrade(id: string): Promise<void> {
     await invoke("delete_trade", { id });
     this.trades = this.trades.filter((t) => t.id !== id);
+    await this.loadAll();
   }
 
   async updateTrade(trade: {

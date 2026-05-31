@@ -179,7 +179,7 @@
       <button class="rounded px-4 py-1.5 text-sm hover:bg-muted" onclick={onClose}>Cancel</button>
       <button
         class="rounded bg-primary px-4 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
-        disabled={loading || (mode !== 'cash' && mode !== 'add_watch' && mode !== 'edit' && (!symbol || quantity <= 0 || price <= 0)) || (mode === 'add_watch' && (!symbol || price <= 0))}
+        disabled={loading || (mode !== 'cash' && mode !== 'add_watch' && (!symbol || quantity <= 0 || price <= 0)) || (mode === 'add_watch' && (!symbol || price <= 0))}
         onclick={handleSubmit}
       >
         {loading ? '...' : mode === 'edit' ? t('invest_trade_save') : mode === 'buy' ? t('invest_confirm_buy') : mode === 'sell' ? t('invest_confirm_sell') : mode === 'add_watch' ? t('invest_add_watch') : t('invest_strategy_save')}
