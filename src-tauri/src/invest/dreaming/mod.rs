@@ -8,8 +8,6 @@ use serde::{Deserialize, Serialize};
 pub struct DreamConfig {
     pub invest_enabled: bool,
     pub invest_cron: String,
-    pub user_memory_enabled: bool,
-    pub user_memory_interval_min: i64,
     pub lookback_days: i64,
     pub min_score: f64,
     pub min_count: i64,
@@ -20,8 +18,6 @@ impl Default for DreamConfig {
         Self {
             invest_enabled: false,
             invest_cron: "0 3 * * *".into(),
-            user_memory_enabled: false,
-            user_memory_interval_min: 120,
             lookback_days: 30,
             min_score: 0.8,
             min_count: 3,

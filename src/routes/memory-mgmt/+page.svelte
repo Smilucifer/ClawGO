@@ -1,13 +1,13 @@
 <script lang="ts">
   import { t } from "$lib/i18n/index.svelte";
   import { getTransport } from "$lib/transport";
+  import { goto } from "$app/navigation";
 
-  type MemTab = "userMemory" | "extractionConfig" | "archived";
+  type MemTab = "userMemory" | "archived";
   let activeTab: MemTab = $state("userMemory");
 
   const tabs: { id: MemTab; label: string }[] = $derived([
     { id: "userMemory", label: t("memoryMgmt_tab_userMemory") },
-    { id: "extractionConfig", label: t("memoryMgmt_tab_extractionConfig") },
     { id: "archived", label: "Archived" },
   ]);
 
@@ -88,16 +88,6 @@
     }
   });
 
-  let configDirty = $state(false);
-  let extractEnabled = $state(true);
-  let chatEndpoint = $state("");
-  let chatApiKey = $state("");
-  let chatModel = $state("");
-
-  function handleApplyConfig() {
-    // TODO: save config via Tauri command (Phase 2)
-    configDirty = false;
-  }
 </script>
 
 <div class="flex h-full flex-col">
@@ -117,6 +107,17 @@
         </button>
       {/each}
     </div>
+  </div>
+
+  <div class="border-b border-border bg-muted/50 px-4 py-2">
+    <p class="text-xs text-muted-foreground">
+      提取配置（API Endpoint / Key / Model）已移至
+      <button
+        class="underline hover:text-foreground"
+        onclick={() => goto("/settings?tab=memory")}
+      >设置 > Memory Extraction</button>
+      统一管理。记忆衰减与归档开关也位于该页面。
+    </p>
   </div>
 
   <div class="flex-1 overflow-auto p-4">
@@ -157,59 +158,6 @@
           {/each}
         </div>
       {/if}
-
-    {:else if activeTab === "extractionConfig"}
-      <div class="max-w-lg">
-        <div class="mb-4">
-          <label class="flex items-center gap-2">
-            <input type="checkbox" bind:checked={extractEnabled} />
-            <span class="text-sm">Enable auto extraction</span>
-          </label>
-        </div>
-
-        <div class="mb-3">
-          <label class="text-muted-foreground mb-1 block text-xs">Chat API Endpoint</label>
-          <input
-            class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
-            bind:value={chatEndpoint}
-            oninput={() => (configDirty = true)}
-          />
-        </div>
-
-        <div class="mb-3">
-          <label class="text-muted-foreground mb-1 block text-xs">Chat API Key</label>
-          <input
-            type="password"
-            class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
-            bind:value={chatApiKey}
-            oninput={() => (configDirty = true)}
-          />
-        </div>
-
-        <div class="mb-4">
-          <label class="text-muted-foreground mb-1 block text-xs">Chat Model</label>
-          <input
-            class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
-            bind:value={chatModel}
-            oninput={() => (configDirty = true)}
-          />
-        </div>
-
-        <div class="flex items-center justify-between border-t border-border pt-3">
-          <span class="text-muted-foreground text-xs">Click apply after config changes</span>
-          <button
-            class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
-            class:bg-green-600={configDirty}
-            class:text-white={configDirty}
-            class:bg-muted={!configDirty}
-            class:text-muted-foreground={!configDirty}
-            disabled={!configDirty}
-            onclick={handleApplyConfig}
-          >
-            Apply & Reload
-          </button>
-        </div>
-      </div>
 
     {:else if activeTab === "archived"}
       {#if archivedLoading}

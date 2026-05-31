@@ -2,7 +2,7 @@ use super::with_conn;
 use super::with_conn_mut;
 use rusqlite::params;
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Verdict {
     pub id: String,

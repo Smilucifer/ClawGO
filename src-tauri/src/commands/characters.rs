@@ -143,7 +143,6 @@ pub async fn get_character_memory(
 }
 
 const ALLOWED_MEMORY_TYPES: &[&str] = &["fact", "preference", "skill", "feedback", "experience", "relationship"];
-const ALLOWED_STATUSES: &[&str] = &["pending", "approved", "rejected", "archived"];
 
 fn validate_memory_type(t: &str) -> Result<(), String> {
     if ALLOWED_MEMORY_TYPES.contains(&t) {
@@ -153,18 +152,6 @@ fn validate_memory_type(t: &str) -> Result<(), String> {
             "Invalid memory_type '{}'. Allowed: {}",
             t,
             ALLOWED_MEMORY_TYPES.join(", ")
-        ))
-    }
-}
-
-fn validate_memory_status(s: &str) -> Result<(), String> {
-    if ALLOWED_STATUSES.contains(&s) {
-        Ok(())
-    } else {
-        Err(format!(
-            "Invalid status '{}'. Allowed: {}",
-            s,
-            ALLOWED_STATUSES.join(", ")
         ))
     }
 }

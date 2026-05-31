@@ -52,9 +52,6 @@ pub async fn dispatch_job(id: &str) -> Result<String, String> {
             let result = crate::invest::dreaming::trigger_dream("invest", &tushare_token).await?;
             Ok(format!("Dream invest complete: {:?}", result))
         }
-        "dream_user" => {
-            Err("user_memory dreaming not yet implemented".into())
-        }
         "daily_report" => {
             let data_dir = crate::storage::data_dir();
             let result = crate::invest::daily_report::generate_daily_report(&data_dir)?;

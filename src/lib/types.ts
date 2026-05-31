@@ -250,6 +250,7 @@ export interface UserSettings {
   mcp_servers?: Record<string, McpServerConfig>;
   ai_characters?: AiCharacter[];
   tushare_token?: string;
+  memory_dream_enabled?: boolean;
   updated_at: string;
 }
 
@@ -1732,6 +1733,7 @@ export interface Holding {
   entryDate: string | null;
   linkedVerdictId: string | null;
   notes: string | null;
+  assetType: string | null;
   createdAt: string;
   updatedAt: string;
 }

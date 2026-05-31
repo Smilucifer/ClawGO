@@ -10,7 +10,14 @@
     sampleValue: string | null;
   }
 
+  interface LlmProviderInfo {
+    providerId: string;
+    hasKey: boolean;
+    model: string;
+  }
+
   let sources: DataSourceStatus[] = $state([]);
+  let llmProviders: LlmProviderInfo[] = $state([]);
   let loading = $state(true);
   let error = $state('');
 
@@ -22,11 +29,31 @@
     error = '';
     try {
       sources = await invoke<DataSourceStatus[]>('get_datasource_health');
+      // Fetch LLM config to show provider details
+      try {
+        const config = await invoke<{
+          providers: { providerId: string; apiKey: string; defaultModel: string }[];
+        }>('get_llm_config');
+        llmProviders = (config.providers ?? []).map((p) => ({
+          providerId: p.providerId,
+          hasKey: !!p.apiKey,
+          model: p.defaultModel,
+        }));
+      } catch {
+        llmProviders = [];
+      }
     } catch (e) {
       error = String(e);
     } finally {
       loading = false;
     }
+  }
+
+  function providerStatusText(name: string): string | null {
+    if (name !== 'LLM Config' || llmProviders.length === 0) return null;
+    const configured = llmProviders.filter((p) => p.hasKey);
+    if (configured.length === 0) return t('invest_system_ds_llm_none');
+    return configured.map((p) => p.providerId).join(', ');
   }
 
   onMount(() => {
@@ -69,7 +96,11 @@
               {src.lastSuccess ?? '-'}
             </td>
             <td class="py-1.5 text-xs">
-              {src.sampleValue ?? '-'}
+              {#if providerStatusText(src.name)}
+                <span class="text-muted-foreground">{providerStatusText(src.name)}</span>
+              {:else}
+                {src.sampleValue ?? '-'}
+              {/if}
             </td>
           </tr>
         {/each}

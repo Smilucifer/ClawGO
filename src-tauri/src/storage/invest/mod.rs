@@ -1,3 +1,4 @@
+pub mod committees;
 pub mod domain_insights;
 pub mod dream_snapshots;
 pub mod events;
@@ -9,6 +10,7 @@ pub mod scheduler;
 pub mod strategy;
 pub mod user_profile;
 pub mod verdict_reviews;
+pub mod verdict_tracking;
 pub mod verdicts;
 
 use rusqlite::Connection;
@@ -77,6 +79,9 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
     // Migration: create verdict_reviews table (use local conn, DB not yet in static)
     verdict_reviews::create_table(&conn)?;
 
+    // Migration: create verdict_tracking table (auto-tracking for hit rate)
+    verdict_tracking::create_table(&conn)?;
+
     // Migration: create dream_snapshots table (use local conn, DB not yet in static)
     dream_snapshots::create_table(&conn)?;
 
@@ -141,6 +146,7 @@ CREATE TABLE IF NOT EXISTS holdings (
     entry_date TEXT,
     linked_verdict_id TEXT,
     notes TEXT,
+    asset_type TEXT NOT NULL DEFAULT 'stock',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (symbol, currency, kind)

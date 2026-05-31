@@ -46,6 +46,15 @@ class InvestStore {
   holdCount = $derived(this.holdHoldings.length);
   watchCount = $derived(this.watchHoldings.length);
 
+  /** All holdings merged into one list: HOLD first, then WATCH, sorted by name */
+  mergedHoldings = $derived(
+    [...this.holdings].sort((a, b) => {
+      if (a.kind === "hold" && b.kind !== "hold") return -1;
+      if (b.kind === "hold" && a.kind !== "hold") return 1;
+      return (a.name ?? a.symbol).localeCompare(b.name ?? b.symbol);
+    }),
+  );
+
   holdingsMarketValue = $derived(
     this.holdHoldings.reduce((sum, h) => {
       const price = this.priceMap[h.symbol]?.close;
@@ -148,12 +157,13 @@ class InvestStore {
   }
 
   async refreshPrices(tushareToken: string): Promise<void> {
-    const holdSyms = this.holdHoldings.map((h) => h.symbol);
-    if (holdSyms.length === 0 || !tushareToken) return;
+    // Include both hold and watch holdings for price refresh
+    const syms = this.holdings.map((h) => h.symbol);
+    if (syms.length === 0 || !tushareToken) return;
 
     // Merge new prices into existing map (preserve cached prices for failed fetches)
     const updated = { ...this.priceMap };
-    for (const sym of holdSyms) {
+    for (const sym of syms) {
       try {
         const bars = await invoke<
           Array<{
@@ -208,6 +218,7 @@ class InvestStore {
     qty: number,
     price: number,
     _tushareToken: string,
+    assetType?: string,
   ): Promise<void> {
     const amount = qty * price;
     const now = new Date().toISOString();
@@ -240,6 +251,7 @@ class InvestStore {
         entryDate: existing.entryDate,
         linkedVerdictId: existing.linkedVerdictId,
         notes: existing.notes,
+        assetType: assetType ?? existing.assetType ?? "stock",
       });
     } else {
       await invoke("add_holding", {
@@ -253,6 +265,7 @@ class InvestStore {
         entryDate: now.split("T")[0],
         linkedVerdictId: null,
         notes: null,
+        assetType: assetType ?? "stock",
       });
     }
 
@@ -300,6 +313,7 @@ class InvestStore {
         entryDate: existing.entryDate,
         linkedVerdictId: existing.linkedVerdictId,
         notes: existing.notes,
+        assetType: existing.assetType ?? "stock",
       });
     }
 
@@ -330,6 +344,7 @@ class InvestStore {
     symbol: string,
     name: string,
     price: number,
+    assetType?: string,
   ): Promise<void> {
     const inWatch = this.watchHoldings.find((h) => h.symbol === symbol);
     if (inWatch) throw new Error(`${symbol} already in watchlist`);
@@ -348,6 +363,7 @@ class InvestStore {
         entryDate: new Date().toISOString().split("T")[0],
         linkedVerdictId: null,
         notes: null,
+        assetType: assetType ?? "stock",
       });
 
       await invoke("record_trade", {
@@ -392,6 +408,7 @@ class InvestStore {
         entryDate: new Date().toISOString().split("T")[0],
         linkedVerdictId: null,
         notes: "converted from watchlist",
+        assetType: watchHolding?.assetType ?? "stock",
       });
 
       await invoke("record_trade", {
@@ -423,11 +440,44 @@ class InvestStore {
           entryDate: watchHolding.entryDate ?? null,
           linkedVerdictId: watchHolding.linkedVerdictId ?? null,
           notes: watchHolding.notes ?? null,
+          assetType: watchHolding.assetType ?? "stock",
         }).catch(() => {}); // Best-effort rollback
       }
       throw e;
     }
 
+    await this.loadAll();
+  }
+
+  // ── Trade Edit/Delete ────────────────────────────────────────────────
+
+  async deleteTrade(id: string): Promise<void> {
+    await invoke("delete_trade", { id });
+    this.trades = this.trades.filter((t) => t.id !== id);
+  }
+
+  async updateTrade(trade: {
+    id: string;
+    symbol: string;
+    currency: string;
+    kind: string;
+    action: string;
+    shares: number | null;
+    price: number | null;
+    amount: number | null;
+    notes: string | null;
+  }): Promise<void> {
+    await invoke("update_trade", {
+      id: trade.id,
+      symbol: trade.symbol,
+      currency: trade.currency,
+      kind: trade.kind,
+      action: trade.action,
+      shares: trade.shares,
+      price: trade.price,
+      amount: trade.amount,
+      notes: trade.notes,
+    });
     await this.loadAll();
   }
 

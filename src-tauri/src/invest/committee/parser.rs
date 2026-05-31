@@ -219,6 +219,7 @@ fn parse_cio(text: &str, parsed: &mut ParsedFields) {
     });
     parsed.confidence = extract_f64(text, "CONFIDENCE");
     parsed.concentration_pct = extract_f64(text, "CONCENTRATION_PCT");
+    parsed.dry_powder_cny = extract_f64(text, "DRY_POWDER_CNY");
     parsed.dominant_view = extract_field(text, "DOMINANT_VIEW");
     parsed.suggested_alloc_cny = extract_f64(text, "SUGGESTED_ALLOC_CNY");
     parsed.reasoning = extract_field(text, "REASONING");
@@ -308,6 +309,15 @@ mod tests {
         assert_eq!(parsed.suggested_alloc_cny, Some(200000.0));
         assert_eq!(parsed.reasoning.as_deref(), Some("等待数据确认"));
         assert_eq!(parsed.personal_note.as_deref(), Some("等待确认"));
+    }
+
+    #[test]
+    fn test_parse_cio_concentration_and_dry_powder() {
+        let text = "VERDICT: ACCUMULATE\nCONFIDENCE: 0.75\nCONCENTRATION_PCT: 18.5\nDRY_POWDER_CNY: 350000\nDOMINANT_VIEW: quant\nSUGGESTED_ALLOC_CNY: 100000\nREASONING: 低位分批建仓\nPERSONAL_NOTE: 子弹充足\nEXECUTION_PLAN: pyramid\nRISK_PLAN: stop loss at -8%";
+        let parsed = parse_role_output(CommitteeRole::Cio, text, false);
+        assert_eq!(parsed.verdict.as_deref(), Some("ACCUMULATE"));
+        assert_eq!(parsed.concentration_pct, Some(18.5));
+        assert_eq!(parsed.dry_powder_cny, Some(350000.0));
     }
 
     #[test]

@@ -427,6 +427,8 @@ pub fn run() {
             commands::invest::delete_holding,
             commands::invest::record_trade,
             commands::invest::get_trades,
+            commands::invest::delete_trade,
+            commands::invest::update_trade,
             commands::invest::get_cash,
             commands::invest::update_cash,
             commands::invest::get_verdicts,
@@ -464,6 +466,8 @@ pub fn run() {
             commands::invest::get_cron_job_logs,
             commands::invest::trigger_cron_job,
             commands::invest::run_verdict_review_cmd,
+            commands::invest::get_tracking_status,
+            commands::invest::list_all_tracking,
             commands::invest::get_verdict_review_summary,
             commands::invest::get_verdict_review_detail,
             commands::invest::trigger_dream,
@@ -717,37 +721,44 @@ pub fn run() {
     }
 
     // Start background dream cycle task (memory consolidation).
+    // Controlled by UserSettings.memory_dream_enabled (default: true).
     let dream_data_dir = data_dir.clone();
     tauri::async_runtime::spawn(async move {
         // Initial delay to let the app finish startup
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
         loop {
-            let data_dir = dream_data_dir.clone();
-            match tokio::task::spawn_blocking(move || {
-                crate::group_chat::memory_dream::run_dream_cycle(&data_dir)
-            })
-            .await
-            {
-                Ok(Ok(crate::group_chat::memory_dream::DreamCycleResult::Completed {
-                    merged,
-                    decayed,
-                    ..
-                })) => {
-                    log::info!(
-                        "[dream] cycle completed: merged={}, decayed={}",
+            // Check if dream cycle is enabled in settings
+            let enabled = crate::storage::settings::get_user_settings().memory_dream_enabled;
+            if enabled {
+                let data_dir = dream_data_dir.clone();
+                match tokio::task::spawn_blocking(move || {
+                    crate::group_chat::memory_dream::run_dream_cycle(&data_dir)
+                })
+                .await
+                {
+                    Ok(Ok(crate::group_chat::memory_dream::DreamCycleResult::Completed {
                         merged,
-                        decayed
-                    );
+                        decayed,
+                        ..
+                    })) => {
+                        log::info!(
+                            "[dream] cycle completed: merged={}, decayed={}",
+                            merged,
+                            decayed
+                        );
+                    }
+                    Ok(Ok(crate::group_chat::memory_dream::DreamCycleResult::Skipped)) => {
+                        log::debug!("[dream] cycle skipped (too soon)");
+                    }
+                    Ok(Err(e)) => {
+                        log::warn!("[dream] cycle failed: {}", e);
+                    }
+                    Err(e) => {
+                        log::warn!("[dream] task panicked: {}", e);
+                    }
                 }
-                Ok(Ok(crate::group_chat::memory_dream::DreamCycleResult::Skipped)) => {
-                    log::debug!("[dream] cycle skipped (too soon)");
-                }
-                Ok(Err(e)) => {
-                    log::warn!("[dream] cycle failed: {}", e);
-                }
-                Err(e) => {
-                    log::warn!("[dream] task panicked: {}", e);
-                }
+            } else {
+                log::debug!("[dream] cycle skipped (disabled in settings)");
             }
             // Sleep for the dream interval before next check
             tokio::time::sleep(std::time::Duration::from_secs(

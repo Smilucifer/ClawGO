@@ -1,9 +1,14 @@
 <script lang="ts">
   import { t } from '$lib/i18n/index.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
+  import TradeDialog from './TradeDialog.svelte';
+  import type { Trade } from '$lib/types';
+
+  let { tushareToken = '' }: { tushareToken?: string } = $props();
 
   let symbolFilter = $state('');
   let directionFilter = $state<string>('all');
+  let editingTrade = $state<Trade | null>(null);
 
   const filtered = $derived(
     investStore.trades.filter((tr) => {
@@ -12,6 +17,15 @@
       return true;
     })
   );
+
+  async function handleDelete(trade: Trade) {
+    if (!confirm(t('invest_trade_delete_confirm'))) return;
+    try {
+      await investStore.deleteTrade(trade.id);
+    } catch (e) {
+      console.error('Failed to delete trade:', e);
+    }
+  }
 
   function exportCsv() {
     const header = 'Date,Stock,Direction,Quantity,Price,Amount,Notes\n';
@@ -70,6 +84,7 @@
             <th class="pb-2 pr-4">{t('invest_price')}</th>
             <th class="pb-2 pr-4">{t('invest_trade_amount')}</th>
             <th class="pb-2">{t('invest_trade_notes')}</th>
+            <th class="pb-2">{t('invest_actions')}</th>
           </tr>
         </thead>
         <tbody>
@@ -86,6 +101,18 @@
               <td class="py-2 pr-4 tabular-nums">{tr.price?.toFixed(2) ?? '-'}</td>
               <td class="py-2 pr-4 tabular-nums">{tr.amount?.toLocaleString(undefined, { minimumFractionDigits: 2 }) ?? '-'}</td>
               <td class="py-2 text-xs text-muted-foreground">{tr.notes ?? ''}</td>
+              <td class="py-2">
+                <div class="flex gap-1">
+                  <button
+                    class="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                    onclick={() => { editingTrade = tr; }}
+                  >{t('invest_edit')}</button>
+                  <button
+                    class="rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
+                    onclick={() => handleDelete(tr)}
+                  >{t('invest_delete')}</button>
+                </div>
+              </td>
             </tr>
           {/each}
         </tbody>
@@ -93,3 +120,12 @@
     </div>
   {/if}
 </div>
+
+{#if editingTrade}
+  <TradeDialog
+    mode="edit"
+    editTrade={editingTrade}
+    {tushareToken}
+    onClose={() => { editingTrade = null; }}
+  />
+{/if}

@@ -9,6 +9,7 @@
 
   const NODES = $derived([
     { role: 'macro', label: t('invest_pipeline_macro'), color: '#8b5cf6', icon: 'M' },
+    { role: 'regime', label: t('invest_pipeline_regime'), color: '#06b6d4', icon: 'Rg' },
     { role: 'quant_r1', label: t('invest_pipeline_quant_r1'), color: '#3b82f6', icon: 'Q1' },
     { role: 'risk_r1', label: t('invest_pipeline_risk_r1'), color: '#f97316', icon: 'R1' },
     { role: 'quant_r2', label: t('invest_pipeline_quant_r2'), color: '#3b82f6', icon: 'Q2' },
@@ -21,9 +22,9 @@
     if (progress.error && progress.activeStep === -1) return 'error';
     if (index === progress.activeStep) return 'active';
     if (index < progress.activeStep) return 'done';
-    const completedSteps = progress.completedRounds.length;
-    if (index < completedSteps) return 'done';
-    if (progress.done && index >= completedSteps) return 'skipped';
+    const completed = progress.completedSteps;
+    if (index < completed) return 'done';
+    if (progress.done && index >= completed) return 'skipped';
     return 'pending';
   }
 </script>

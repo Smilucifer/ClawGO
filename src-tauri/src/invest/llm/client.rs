@@ -103,8 +103,6 @@ struct StreamDelta {
     content: Option<String>,
     #[serde(default)]
     tool_calls: Option<Vec<StreamToolCallDelta>>,
-    #[serde(default)]
-    role: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

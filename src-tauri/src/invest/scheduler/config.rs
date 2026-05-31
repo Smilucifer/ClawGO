@@ -143,10 +143,6 @@ pub fn load_dream_config() -> super::super::dreaming::DreamConfig {
         config.invest_enabled = j.enabled;
         config.invest_cron = j.cron_expr.clone();
     }
-    if let Some(j) = jobs.iter().find(|j| j.id == "dream_user") {
-        config.user_memory_enabled = j.enabled;
-        config.user_memory_interval_min = j.interval_min.unwrap_or(120);
-    }
 
     // Overlay dream_config.json for pipeline params
     let path = dream_config_path();
@@ -192,10 +188,6 @@ pub fn save_dream_config(config: &super::super::dreaming::DreamConfig) -> Result
 
     // Save scheduler state
     let mut jobs = load_jobs();
-    if let Some(j) = jobs.iter_mut().find(|j| j.id == "dream_user") {
-        j.enabled = config.user_memory_enabled;
-        j.interval_min = Some(config.user_memory_interval_min);
-    }
     if let Some(j) = jobs.iter_mut().find(|j| j.id == "dream_invest") {
         j.enabled = config.invest_enabled;
         j.cron_expr = config.invest_cron.clone();

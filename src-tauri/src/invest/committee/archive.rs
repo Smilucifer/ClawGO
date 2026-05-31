@@ -45,7 +45,7 @@ pub async fn archive_decision(
     );
 
     let v = Verdict {
-        id,
+        id: id.clone(),
         symbol: symbol.to_string(),
         verdict: verdict.to_string(),
         confidence: Some(confidence),
@@ -59,7 +59,20 @@ pub async fn archive_decision(
         created_at: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
     };
 
-    save_verdict(&v)
+    save_verdict(&v)?;
+
+    // Auto-register for daily price tracking
+    let verdict_date = Local::now().format("%Y%m%d").to_string();
+    if let Err(e) = crate::storage::invest::verdict_tracking::start_tracking(
+        &id,
+        symbol,
+        verdict,
+        &verdict_date,
+    ) {
+        log::warn!("Failed to start tracking for verdict {}: {}", id, e);
+    }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

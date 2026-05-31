@@ -63,18 +63,6 @@ pub fn default_jobs() -> Vec<CronJob> {
             description: "扫描财经新闻和公告".into(),
         },
         CronJob {
-            id: "dream_user".into(),
-            name: "Dreaming (用户记忆)".into(),
-            cron_expr: String::new(),
-            interval_min: Some(120),
-            enabled: false,
-            requires_trading_day: false,
-            last_run: None,
-            next_run: None,
-            last_status: None,
-            description: "用户记忆衰减与归档".into(),
-        },
-        CronJob {
             id: "dream_invest".into(),
             name: "Dreaming (投资)".into(),
             cron_expr: "0 3 * * *".into(),

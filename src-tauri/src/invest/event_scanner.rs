@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::invest::international::InternationalClient;
 use crate::invest::llm::{InvestLlmClient, LlmConfig, Message, collect_stream};
 
 /// Severity classification from rule-based keyword filtering.
@@ -147,6 +148,11 @@ pub async fn scan_events(
         sources_scanned.push(format!("tushare_major_news:{}", src));
         match tushare.major_news(src, &one_day_ago, &today).await {
             Ok(items) => {
+                log::info!(
+                    "tushare_major_news({}) returned {} items",
+                    src,
+                    items.len()
+                );
                 for item in items {
                     let created_at = if item.datetime.is_empty() {
                         now.format("%Y-%m-%dT%H:%M:%S").to_string()
@@ -178,6 +184,11 @@ pub async fn scan_events(
         .map(|h| h.symbol.as_str())
         .collect();
 
+    log::info!(
+        "Active holdings for announcement scan: {:?}",
+        active_symbols
+    );
+
     // Fetch announcements in parallel for all active symbols
     let ann_futures: Vec<_> = active_symbols
         .iter()
@@ -195,6 +206,11 @@ pub async fn scan_events(
         sources_scanned.push(format!("tushare_anns_d:{}", symbol));
         match result {
             Ok(items) => {
+                log::info!(
+                    "tushare_anns_d({}) returned {} items",
+                    symbol,
+                    items.len()
+                );
                 for item in items {
                     let created_at = if item.ann_date.is_empty() {
                         now.format("%Y-%m-%dT%H:%M:%S").to_string()
@@ -217,14 +233,59 @@ pub async fn scan_events(
         }
     }
 
-    let fetched = raw_events.len();
+    log::info!(
+        "Tushare sources yielded {} raw events total",
+        raw_events.len()
+    );
 
-    // 3. Filter by keyword severity (drop LOW)
+    // 3. Fetch Yahoo Finance news as fallback when Tushare yields few results
+    if raw_events.len() < 5 {
+        log::info!(
+            "Tushare yielded only {} events, fetching Yahoo Finance news as fallback",
+            raw_events.len()
+        );
+        sources_scanned.push("yahoo_finance_news".to_string());
+        let yahoo_client = InternationalClient::new();
+        let yahoo_items = yahoo_client.fetch_china_finance_news(15).await;
+        if yahoo_items.is_empty() {
+            log::info!("Yahoo Finance news returned 0 items");
+        } else {
+            log::info!("Yahoo Finance news returned {} items", yahoo_items.len());
+            for item in yahoo_items {
+                let created_at = if item.provider_publish_time > 0 {
+                    chrono::DateTime::from_timestamp(item.provider_publish_time, 0)
+                        .map(|dt| dt.format("%Y-%m-%dT%H:%M:%S").to_string())
+                        .unwrap_or_else(|| now.format("%Y-%m-%dT%H:%M:%S").to_string())
+                } else {
+                    now.format("%Y-%m-%dT%H:%M:%S").to_string()
+                };
+                raw_events.push(RawEvent {
+                    source: "yahoo_finance".to_string(),
+                    event_type: "news".to_string(),
+                    title: item.title,
+                    body: format!("Publisher: {}", item.publisher),
+                    url: Some(item.link),
+                    created_at,
+                });
+            }
+        }
+    }
+
+    let fetched = raw_events.len();
+    log::info!("Total raw events before filtering: {}", fetched);
+
+    // 4. Filter by keyword severity (drop LOW)
     let filtered_events: Vec<RawEvent> = raw_events
         .into_iter()
         .filter(|ev| classify_severity(&ev.title, &ev.body).is_some())
         .collect();
     let filtered = filtered_events.len();
+
+    log::info!(
+        "After keyword filtering: {} events remain (dropped {})",
+        filtered,
+        fetched.saturating_sub(filtered)
+    );
 
     if filtered_events.is_empty() {
         return Ok(ScanResult {
@@ -235,10 +296,10 @@ pub async fn scan_events(
         });
     }
 
-    // 4. Normalize via LLM
+    // 5. Normalize via LLM
     let normalized = normalize_events(llm_client, llm_config, &filtered_events, normalizer_prompt).await;
 
-    // 5. Save to DB (dedup by source+title via INSERT OR IGNORE)
+    // 6. Save to DB (dedup by source+title via INSERT OR IGNORE)
     let mut saved = 0usize;
     for (ev, norm) in filtered_events.iter().zip(normalized.iter()) {
         // Skip events the LLM reclassified as LOW (pre-filter only keeps HIGH/MEDIUM)
@@ -283,6 +344,8 @@ pub async fn scan_events(
             }
         }
     }
+
+    log::info!("Scan complete: {} fetched, {} filtered, {} saved", fetched, filtered, saved);
 
     Ok(ScanResult {
         fetched,

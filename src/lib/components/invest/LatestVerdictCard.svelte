@@ -27,7 +27,7 @@
           {latestVerdict.verdict}
         </span>
         <span class="text-xs text-muted-foreground">
-          {(latestVerdict.confidence * 100).toFixed(0)}%
+          {latestVerdict.confidence ? (latestVerdict.confidence * 100).toFixed(0) + '%' : '-'}
         </span>
       </div>
       {#if latestVerdict.reasoning}
@@ -37,7 +37,7 @@
         <span>{latestVerdict.model ?? '-'}</span>
         <span>{latestVerdict.provider ?? '-'}</span>
         <span>{latestVerdict.tokensUsed} tok</span>
-        <span>{(latestVerdict.latencyMs / 1000).toFixed(1)}s</span>
+        <span>{latestVerdict.latencyMs ? (latestVerdict.latencyMs / 1000).toFixed(1) + 's' : '-'}</span>
       </div>
     </div>
   {:else}

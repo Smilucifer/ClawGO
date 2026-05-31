@@ -1,5 +1,6 @@
 use super::with_conn;
-use rusqlite::params;
+use rusqlite::{params, Connection};
+use std::collections::HashMap;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -14,6 +15,7 @@ pub struct Holding {
     pub entry_date: Option<String>,
     pub linked_verdict_id: Option<String>,
     pub notes: Option<String>,
+    pub asset_type: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -36,7 +38,7 @@ pub struct Trade {
 pub fn list_holdings() -> Result<Vec<Holding>, String> {
     with_conn(|conn| {
         let mut stmt = conn
-            .prepare("SELECT symbol, currency, kind, name, notional, avg_cost, shares, entry_date, linked_verdict_id, notes, created_at, updated_at FROM holdings ORDER BY symbol")
+            .prepare("SELECT symbol, currency, kind, name, notional, avg_cost, shares, entry_date, linked_verdict_id, notes, asset_type, created_at, updated_at FROM holdings ORDER BY symbol")
             .map_err(|e| format!("prepare: {}", e))?;
         let rows = stmt
             .query_map([], |row| {
@@ -51,8 +53,9 @@ pub fn list_holdings() -> Result<Vec<Holding>, String> {
                     entry_date: row.get(7)?,
                     linked_verdict_id: row.get(8)?,
                     notes: row.get(9)?,
-                    created_at: row.get(10)?,
-                    updated_at: row.get(11)?,
+                    asset_type: row.get(10)?,
+                    created_at: row.get(11)?,
+                    updated_at: row.get(12)?,
                 })
             })
             .map_err(|e| format!("query: {}", e))?;
@@ -69,11 +72,11 @@ pub fn upsert_holding(h: &Holding) -> Result<(), String> {
         let now = chrono::Utc::now().to_rfc3339();
         let created = if h.created_at.is_empty() { &now } else { &h.created_at };
         conn.execute(
-            "INSERT INTO holdings (symbol, currency, kind, name, notional, avg_cost, shares, entry_date, linked_verdict_id, notes, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            "INSERT INTO holdings (symbol, currency, kind, name, notional, avg_cost, shares, entry_date, linked_verdict_id, notes, asset_type, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT(symbol, currency, kind) DO UPDATE SET
-               name=?4, notional=?5, avg_cost=?6, shares=?7, entry_date=?8, linked_verdict_id=?9, notes=?10, updated_at=?12",
-            params![h.symbol, h.currency, h.kind, h.name, h.notional, h.avg_cost, h.shares, h.entry_date, h.linked_verdict_id, h.notes, created, now],
+               name=?4, notional=?5, avg_cost=?6, shares=?7, entry_date=?8, linked_verdict_id=?9, notes=?10, asset_type=?11, updated_at=?13",
+            params![h.symbol, h.currency, h.kind, h.name, h.notional, h.avg_cost, h.shares, h.entry_date, h.linked_verdict_id, h.notes, h.asset_type, created, now],
         )
         .map_err(|e| format!("upsert holding: {}", e))?;
         Ok(())
@@ -104,6 +107,186 @@ pub fn record_trade(t: &Trade) -> Result<(), String> {
         )
         .map_err(|e| format!("record trade: {}", e))?;
         Ok(())
+    })
+}
+
+/// Replay all trades from scratch to rebuild the holdings table.
+/// This is an internal helper that must be called within an active connection.
+fn recalculate_holdings_inner(conn: &Connection) -> Result<(), String> {
+    // 1. Clear all existing holdings
+    conn.execute("DELETE FROM holdings", [])
+        .map_err(|e| format!("clear holdings: {}", e))?;
+
+    // 2. Load all trades in chronological order
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, symbol, currency, kind, action, shares, price, amount, notes, created_at \
+             FROM trades ORDER BY created_at ASC",
+        )
+        .map_err(|e| format!("prepare trades for recalc: {}", e))?;
+
+    let trades: Vec<Trade> = stmt
+        .query_map([], |row| {
+            Ok(Trade {
+                id: row.get(0)?,
+                symbol: row.get(1)?,
+                currency: row.get(2)?,
+                kind: row.get(3)?,
+                action: row.get(4)?,
+                shares: row.get(5)?,
+                price: row.get(6)?,
+                amount: row.get(7)?,
+                notes: row.get(8)?,
+                created_at: row.get(9)?,
+            })
+        })
+        .map_err(|e| format!("query trades for recalc: {}", e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("collect trades for recalc: {}", e))?;
+
+    // 3. Replay trades into an in-memory holdings map
+    //    Key: (symbol, currency, kind)
+    #[derive(Default)]
+    struct MemHolding {
+        name: Option<String>,
+        shares: f64,
+        avg_cost: f64,
+        entry_date: Option<String>,
+        linked_verdict_id: Option<String>,
+        notes: Option<String>,
+        asset_type: Option<String>,
+    }
+
+    let mut map: HashMap<(String, String, String), MemHolding> = HashMap::new();
+
+    for t in &trades {
+        let key = (t.symbol.clone(), t.currency.clone(), t.kind.clone());
+        match t.action.as_str() {
+            "buy" => {
+                let shares = t.shares.unwrap_or(0.0);
+                let price = t.price.unwrap_or(0.0);
+                let _amount = t.amount.unwrap_or(shares * price);
+                let entry = map.entry(key).or_default();
+                if entry.shares > 0.0 && entry.avg_cost > 0.0 {
+                    let new_shares = entry.shares + shares;
+                    entry.avg_cost =
+                        (entry.avg_cost * entry.shares + price * shares) / new_shares;
+                    entry.shares = new_shares;
+                } else {
+                    entry.avg_cost = if shares > 0.0 { price } else { 0.0 };
+                    entry.shares = shares;
+                }
+            }
+            "sell" => {
+                let shares = t.shares.unwrap_or(0.0);
+                if let Some(entry) = map.get_mut(&key) {
+                    entry.shares = (entry.shares - shares).max(0.0);
+                }
+            }
+            "cost_edit" => {
+                if let Some(price) = t.price {
+                    if let Some(entry) = map.get_mut(&key) {
+                        entry.avg_cost = price;
+                    }
+                }
+            }
+            "convert_watch_to_hold" => {
+                // Remove from watch, add to hold
+                let watch_key = (t.symbol.clone(), t.currency.clone(), "watch".to_string());
+                let hold_key = (t.symbol.clone(), t.currency.clone(), "hold".to_string());
+                if let Some(watch_entry) = map.remove(&watch_key) {
+                    let hold_entry = map.entry(hold_key).or_default();
+                    hold_entry.name = watch_entry.name;
+                    hold_entry.shares = watch_entry.shares;
+                    hold_entry.avg_cost = watch_entry.avg_cost;
+                    hold_entry.entry_date = watch_entry.entry_date;
+                    hold_entry.notes = Some("converted from watchlist".to_string());
+                    hold_entry.asset_type = watch_entry.asset_type;
+                }
+            }
+            "convert_hold_to_watch" => {
+                // Remove from hold, add to watch
+                let hold_key = (t.symbol.clone(), t.currency.clone(), "hold".to_string());
+                let watch_key = (t.symbol.clone(), t.currency.clone(), "watch".to_string());
+                if let Some(hold_entry) = map.remove(&hold_key) {
+                    let watch_entry = map.entry(watch_key).or_default();
+                    watch_entry.name = hold_entry.name;
+                    watch_entry.shares = hold_entry.shares;
+                    watch_entry.avg_cost = hold_entry.avg_cost;
+                    watch_entry.entry_date = hold_entry.entry_date;
+                    watch_entry.notes = Some("converted from hold".to_string());
+                    watch_entry.asset_type = hold_entry.asset_type;
+                }
+            }
+            // cash_adjust and add_watch are trade-log-only; holdings are managed separately
+            _ => {}
+        }
+    }
+
+    // 4. Write rebuilt holdings to database
+    let now = chrono::Utc::now().to_rfc3339();
+    for ((symbol, currency, kind), h) in &map {
+        // Skip zero-share holdings
+        if h.shares <= 0.0001 {
+            continue;
+        }
+        conn.execute(
+            "INSERT INTO holdings (symbol, currency, kind, name, notional, avg_cost, shares, entry_date, linked_verdict_id, notes, asset_type, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![
+                symbol,
+                currency,
+                kind,
+                h.name,
+                h.avg_cost,
+                h.shares,
+                h.entry_date,
+                h.linked_verdict_id,
+                h.notes,
+                h.asset_type,
+                now,
+                now,
+            ],
+        )
+        .map_err(|e| format!("insert rebuilt holding: {}", e))?;
+    }
+
+    Ok(())
+}
+
+/// Replay all trades from scratch to rebuild the holdings table.
+pub fn recalculate_holdings() -> Result<(), String> {
+    with_conn(|conn| recalculate_holdings_inner(conn))
+}
+
+pub fn delete_trade(id: &str) -> Result<(), String> {
+    with_conn(|conn| {
+        let changed = conn
+            .execute("DELETE FROM trades WHERE id = ?1", params![id])
+            .map_err(|e| format!("delete trade: {}", e))?;
+        if changed == 0 {
+            Err("Trade not found".to_string())
+        } else {
+            recalculate_holdings_inner(conn)?;
+            Ok(())
+        }
+    })
+}
+
+pub fn update_trade(t: &Trade) -> Result<(), String> {
+    with_conn(|conn| {
+        let changed = conn
+            .execute(
+                "UPDATE trades SET symbol=?2, currency=?3, kind=?4, action=?5, shares=?6, price=?7, amount=?8, notes=?9 WHERE id=?1",
+                params![t.id, t.symbol, t.currency, t.kind, t.action, t.shares, t.price, t.amount, t.notes],
+            )
+            .map_err(|e| format!("update trade: {}", e))?;
+        if changed == 0 {
+            Err("Trade not found".to_string())
+        } else {
+            recalculate_holdings_inner(conn)?;
+            Ok(())
+        }
     })
 }
 

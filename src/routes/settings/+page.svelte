@@ -70,7 +70,6 @@
     debug: () => t("settings_tab_debug"),
     characters: () => t("settings_tab_characters"),
     memory: () => "Memory Extraction",
-    profile: () => t("settings_tab_profile"),
   };
 
   const tabs: { id: SettingsTab; icon: string }[] = [
@@ -119,6 +118,7 @@
   let memoryExtractionChatApiKey = $state("");
   let memoryExtractionShowKey = $state(false);
   let memoryExtractionSaveDebounce: ReturnType<typeof setTimeout> | null = null;
+  let memoryDreamEnabled = $state(true);
 
   function loadMemoryExtractionConfig() {
     try {
@@ -1165,6 +1165,7 @@
       remoteHosts = settings.remote_hosts ?? [];
       platformCredentials = settings.platform_credentials ?? [];
       msvcEnvMode = settings.windows_msvc_env_mode ?? "auto";
+      memoryDreamEnabled = settings.memory_dream_enabled ?? true;
     } catch (e) {
       dbgWarn("settings", "error", e);
     }
@@ -3588,6 +3589,32 @@
             自动记忆提取已禁用。群聊对话中的信息将不会被自动提取为用户记忆。
           </p>
         {/if}
+
+        <hr class="border-border" />
+
+        <!-- Memory Dream Cycle -->
+        <div class="space-y-2">
+          <h4 class="text-sm font-semibold">记忆衰减与归档</h4>
+          <p class="text-xs text-muted-foreground">
+            启用后，后台定期执行记忆合并（去重）和置信度衰减，低于阈值的记忆自动归档。
+          </p>
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={memoryDreamEnabled}
+              onchange={async (e) => {
+                memoryDreamEnabled = e.currentTarget.checked;
+                try {
+                  settings = await api.updateUserSettings({ memory_dream_enabled: memoryDreamEnabled } as Partial<UserSettings>);
+                } catch (err) {
+                  dbgWarn("settings", "save memory_dream_enabled failed", err);
+                }
+              }}
+              class="h-4 w-4 rounded border-input"
+            />
+            <span class="text-sm">启用记忆衰减与归档</span>
+          </label>
+        </div>
       </Card>
     {/if}
   </div>

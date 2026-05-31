@@ -29,7 +29,7 @@
 
   type InvestTab = 'dashboard' | 'committee' | 'strategy' | 'trades' | 'system';
   type CommitteeSubTab = 'live' | 'replay' | 'archive' | 'roles' | 'accuracy' | 'tools';
-  type SystemSubTab = 'cron' | 'regime' | 'events' | 'datasource' | 'pnl_history' | 'insights' | 'dreams';
+  type SystemSubTab = 'cron' | 'regime' | 'events' | 'datasource' | 'pnl_history' | 'insights' | 'dreams' | 'profile';
 
   let activeTab: InvestTab = $state('dashboard');
   let committeeSubTab: CommitteeSubTab = $state('live');
@@ -51,6 +51,7 @@
     { id: 'pnl_history', label: t('invest_system_sub_pnl_history') },
     { id: 'insights', label: t('invest_system_sub_insights') },
     { id: 'dreams', label: t('invest_system_sub_dreams') },
+    { id: 'profile', label: t('invest_system_sub_profile') },
   ]);
 
   const committeeSubTabs: { id: CommitteeSubTab; label: string }[] = $derived([
@@ -167,12 +168,8 @@
         <PnlChart />
       </div>
 
-      <div class="mt-6">
-        <UserProfileSection />
-      </div>
-
     {:else if activeTab === 'trades'}
-      <TradeLogTab />
+      <TradeLogTab {tushareToken} />
     {:else if activeTab === 'strategy'}
       <StrategyTab {tushareToken} />
     {:else if activeTab === 'committee'}
@@ -235,6 +232,8 @@
         <InsightsFeed />
       {:else if systemSubTab === 'dreams'}
         <SystemDreamsTab />
+      {:else if systemSubTab === 'profile'}
+        <UserProfileSection />
       {/if}
     {/if}
   </div>

@@ -179,23 +179,30 @@ pub async fn compute_regime_for_symbol(
 // Formatting helper
 // ---------------------------------------------------------------------------
 
-/// Format a `RegimeResult` into a human-readable context string for LLM prompts.
+/// Format a `RegimeResult` into a structured context string for LLM prompts.
+///
+/// Output format matches the QUANT_PROMPT expected structure:
+/// ```text
+/// REGIME: uptrend
+/// REASON: <why this regime was classified>
+/// INPUTS: ma20=10.20, ma60=9.80, volatility_ann=25.0%, rsi14=62.3, price_quantile_2y=72%
+/// STRATEGY_HINT: momentum
+/// ```
 pub fn format_regime_context(result: &RegimeResult) -> String {
     let m = &result.metrics;
     format!(
-        "Regime: {} ({})\n\
-         Strategy hint: {}\n\
-         Latest: {:.2} | MA20: {:.2} | MA60: {:.2}\n\
-         RSI-14: {:.1} | Volatility (ann): {:.1}% | Price quantile (2Y): {:.0}%",
+        "REGIME: {}\n\
+         REASON: {}\n\
+         INPUTS: ma20={:.2}, ma60={:.2}, volatility_ann={:.1}%, rsi14={:.1}, price_quantile_2y={:.0}%\n\
+         STRATEGY_HINT: {}",
         result.regime,
         result.reason,
-        result.strategy_hint,
-        m.latest,
         m.ma20,
         m.ma60,
-        m.rsi14,
         m.volatility_ann * 100.0,
+        m.rsi14,
         m.price_quantile_2y * 100.0,
+        result.strategy_hint,
     )
 }
 
@@ -300,8 +307,14 @@ mod tests {
             },
         };
         let ctx = format_regime_context(&result);
-        assert!(ctx.contains("uptrend"));
-        assert!(ctx.contains("RSI-14: 62.3"));
-        assert!(ctx.contains("72%"));
+        // Must match the structured format expected by QUANT_PROMPT
+        assert!(ctx.contains("REGIME: uptrend"));
+        assert!(ctx.contains("REASON: test reason"));
+        assert!(ctx.contains("STRATEGY_HINT: momentum"));
+        assert!(ctx.contains("ma20=10.20"));
+        assert!(ctx.contains("ma60=9.80"));
+        assert!(ctx.contains("rsi14=62.3"));
+        assert!(ctx.contains("volatility_ann=25.0%"));
+        assert!(ctx.contains("price_quantile_2y=72%"));
     }
 }

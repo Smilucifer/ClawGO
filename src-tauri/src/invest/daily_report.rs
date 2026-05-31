@@ -2,9 +2,9 @@ use chrono::Local;
 use std::fs;
 use std::path::Path;
 
-use crate::storage::invest::events::{self, Event};
+use crate::storage::invest::events;
 use crate::storage::invest::portfolio;
-use crate::storage::invest::verdicts::{self, PnlSnapshot, Verdict};
+use crate::storage::invest::verdicts::{self, PnlSnapshot};
 use crate::storage::invest::with_conn;
 
 #[derive(Debug, Clone, serde::Serialize)]

@@ -2,6 +2,7 @@ use chrono::{Duration as ChronoDuration, NaiveDate};
 use serde::{Deserialize, Serialize};
 
 use crate::storage::invest::verdict_reviews::{self, VerdictReviewEntry};
+use crate::storage::invest::verdict_tracking;
 use crate::storage::invest::verdicts;
 use crate::tushare::client::TushareClient;
 
@@ -169,41 +170,72 @@ fn find_bar<'a>(bars: &'a [crate::tushare::client::DailyBar], target_date: &str)
 
 /// Run the full verdict review pipeline.
 ///
-/// 1. Load all verdicts from DB
-/// 2. For each verdict, fetch daily bars around the verdict date
-/// 3. Calculate returns for each window (1d, 7d, 30d)
-/// 4. Determine hits based on verdict type and ATR-based flat threshold
-/// 5. Write reviews to verdict_reviews table
-/// 6. Aggregate and return summary
+/// This is a tracking-aware pipeline:
+/// 1. Load only verdicts that have active tracking entries
+/// 2. For each tracked verdict, check if the symbol is still in holdings
+/// 3. If sold/removed from watch → stop tracking, but still compute final review
+/// 4. Fetch daily bars, calculate returns for each window (1d, 7d, 30d)
+/// 5. Determine hits based on verdict type and ATR-based flat threshold
+/// 6. Write reviews to verdict_reviews table
+/// 7. Aggregate and return summary
 pub async fn run_verdict_review(tushare_token: &str) -> Result<VerdictReviewSummary, String> {
     let client = TushareClient::new(tushare_token.to_string());
 
-    // 1. Load all verdicts
-    let verdicts_list = verdicts::list_verdicts(None, None)?;
+    // 1. Load active tracked verdicts
+    let tracked = verdict_tracking::list_active_tracking()?;
 
-    if verdicts_list.is_empty() {
-        return Ok(VerdictReviewSummary {
-            total_verdicts: 0,
-            overall_hit_rate: 0.0,
-            directional_hit_rate: 0.0,
-            by_window: WINDOWS
-                .iter()
-                .map(|&w| WindowStats {
-                    window_days: w,
-                    sample_count: 0,
-                    hit_rate: 0.0,
-                })
-                .collect(),
-            by_verdict: vec![],
-            last_review_at: None,
-        });
+    if tracked.is_empty() {
+        // No active tracking — still aggregate from stored reviews for UI display
+        let reviews = verdict_reviews::list_reviews(None, None)?;
+        return Ok(aggregate_from_stored(&reviews));
     }
 
-    // 2-5. Process each verdict
+    // Build a set of symbols currently in holdings (hold or watch)
+    let holdings = crate::storage::invest::portfolio::list_holdings()?;
+    let held_symbols: std::collections::HashSet<String> = holdings
+        .iter()
+        .map(|h| h.symbol.clone())
+        .collect();
+
+    // 2-5. Process each tracked verdict
     let mut reviews: Vec<VerdictReviewEntry> = Vec::new();
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let mut verdicts_list: Vec<verdicts::Verdict> = Vec::new();
 
-    for v in &verdicts_list {
+    for tracked_entry in &tracked {
+        // Check if symbol is still in holdings
+        let still_held = held_symbols.contains(&tracked_entry.symbol);
+        if !still_held {
+            // Position sold or removed from watch — stop tracking
+            if let Err(e) = verdict_tracking::stop_tracking(&tracked_entry.verdict_id) {
+                log::warn!("Failed to stop tracking {}: {}", tracked_entry.verdict_id, e);
+            }
+            log::info!(
+                "Stopped tracking {} ({}) — no longer in holdings",
+                tracked_entry.verdict_id,
+                tracked_entry.symbol
+            );
+        }
+
+        // Load the full verdict from DB
+        let verdict = match verdicts::list_verdicts(Some(&tracked_entry.symbol), Some(1)) {
+            Ok(list) => list.into_iter().find(|v| v.id == tracked_entry.verdict_id),
+            Err(e) => {
+                log::warn!("Failed to load verdict {}: {}", tracked_entry.verdict_id, e);
+                continue;
+            }
+        };
+
+        let v = match verdict {
+            Some(v) => v,
+            None => {
+                log::warn!("Verdict {} not found in DB", tracked_entry.verdict_id);
+                continue;
+            }
+        };
+
+        verdicts_list.push(v.clone());
+
         let verdict_date = match extract_date(&v.created_at) {
             Some(d) => d,
             None => {
@@ -214,7 +246,7 @@ pub async fn run_verdict_review(tushare_token: &str) -> Result<VerdictReviewSumm
 
         let ts_code = to_ts_code(&v.symbol);
 
-        // Fetch bars from (verdict_date - 1) to (verdict_date + 31)
+        // Fetch bars from (verdict_date - 1) to (verdict_date + 35)
         let start_date = match date_from_offset(&verdict_date, -1) {
             Some(d) => d,
             None => continue,

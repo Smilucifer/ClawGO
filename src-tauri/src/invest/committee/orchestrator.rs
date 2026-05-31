@@ -2,7 +2,7 @@ use super::analysis::{
     check_convergence, check_sentinel, cio_sanity_check, RoundOutput, SanityCheckResult,
     SentinelOverride,
 };
-use super::archive::{archive_decision, archive_decision_full};
+use super::archive::archive_decision_full;
 use super::events::{step_index_for_role, CommitteeEvent};
 use super::parser::{parse_role_output, ParsedFields};
 use super::roles::{
@@ -13,6 +13,7 @@ use crate::invest::llm::governor::global_governor;
 use crate::invest::llm::{
     collect_stream, CollectedResponse, InvestLlmClient, LlmConfig, Message, ProviderId, ToolDef,
 };
+use crate::invest::regime;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -126,12 +127,121 @@ fn get_asset_name(symbol: &str) -> Option<String> {
     .filter(|s| !s.is_empty())
 }
 
+/// Build a structured portfolio summary from the holdings and cash tables.
+/// Returns an empty string if no holdings or cash data is available.
+fn build_portfolio_summary() -> String {
+    use crate::storage::invest::portfolio::{get_cash, list_holdings};
+
+    let holdings = match list_holdings() {
+        Ok(h) => h,
+        Err(e) => {
+            log::warn!("portfolio summary: failed to list holdings: {}", e);
+            return String::new();
+        }
+    };
+    let cash = get_cash().unwrap_or(0.0);
+
+    if holdings.is_empty() && cash <= 0.0 {
+        return String::new();
+    }
+
+    let total_notional: f64 = holdings.iter().map(|h| h.notional.abs()).sum();
+
+    let mut out = String::from("【组合持仓概览】\n");
+
+    if !holdings.is_empty() {
+        out.push_str("| 标的 | 名称 | 股数 | 均价 | 市值(CNY) | 集中度 |\n");
+        out.push_str("|------|------|------|------|----------|--------|\n");
+        for h in &holdings {
+            let name = h.name.as_deref().unwrap_or("-");
+            let shares = h
+                .shares
+                .map(|s| format!("{:.0}", s))
+                .unwrap_or_else(|| "-".to_string());
+            let avg_cost = h
+                .avg_cost
+                .map(|c| format!("{:.2}", c))
+                .unwrap_or_else(|| "-".to_string());
+            let notional = format!("{:.0}", h.notional);
+            let concentration = if total_notional > 0.0 {
+                format!("{:.1}%", h.notional.abs() / total_notional * 100.0)
+            } else {
+                "-".to_string()
+            };
+            out.push_str(&format!(
+                "| {} | {} | {} | {} | {} | {} |\n",
+                h.symbol, name, shares, avg_cost, notional, concentration
+            ));
+        }
+        out.push_str(&format!("总市值: {:.0} CNY\n", total_notional));
+    }
+
+    out.push_str(&format!("现金: {:.0} CNY", cash));
+
+    out
+}
+
 /// Default temperature for a role.
 fn default_role_temperature(role: CommitteeRole) -> f64 {
     match role {
         CommitteeRole::Cio => 0.1,
         _ => 0.7,
     }
+}
+
+/// Load all active strategies and format them as a context block for prompt
+/// injection. Returns an empty string if no strategies are configured.
+fn build_strategy_context() -> String {
+    let strategies = match crate::storage::invest::strategy::list_strategies() {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("build_strategy_context: failed to list strategies: {}", e);
+            return String::new();
+        }
+    };
+
+    if strategies.is_empty() {
+        return String::new();
+    }
+
+    let mut out = String::from("【当前投资策略配置】\n");
+
+    for (i, s) in strategies.iter().enumerate() {
+        out.push_str(&format!("\n策略 {}: {}\n", i + 1, s.name));
+
+        // Targets summary
+        if !s.targets.is_empty() {
+            out.push_str("  目标配置:\n");
+            for t in &s.targets {
+                if let Some(obj) = t.as_object() {
+                    let label = obj
+                        .get("label")
+                        .or_else(|| obj.get("name"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("未命名");
+                    let weight = obj
+                        .get("weight")
+                        .or_else(|| obj.get("target_pct"))
+                        .and_then(|v| v.as_f64())
+                        .map(|w| format!("{:.1}%", w))
+                        .unwrap_or_else(|| "N/A".to_string());
+                    out.push_str(&format!("    - {}: 权重 {}\n", label, weight));
+                }
+            }
+        }
+
+        // Constraints
+        if let Some(max_pct) = s.max_single_pct {
+            out.push_str(&format!("  单一资产上限: {:.1}%\n", max_pct));
+        }
+        if let Some(min_cash) = s.min_cash_pct {
+            out.push_str(&format!("  最低现金仓位: {:.1}%\n", min_cash));
+        }
+    }
+
+    out.push_str("\n请在裁决时遵循上述策略约束。如策略配置与当前分析存在冲突，在 PERSONAL_NOTE 中说明。\n");
+
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -221,28 +331,58 @@ async fn llm_call_with_retry(
 }
 
 // ---------------------------------------------------------------------------
+// Regime context
+// ---------------------------------------------------------------------------
+
+/// Compute the regime classification for a symbol and return a formatted
+/// context string for LLM prompt injection. Returns an error if the
+/// Tushare token is not configured or data is insufficient.
+async fn compute_regime_context(symbol: &str) -> Result<String, String> {
+    let token = crate::storage::settings::get_user_settings()
+        .tushare_token
+        .ok_or_else(|| "tushare_token not configured".to_string())?;
+    let client = crate::tushare::client::TushareClient::new(token);
+    let result = regime::compute_regime_for_symbol(&client, symbol).await?;
+    Ok(regime::format_regime_context(&result))
+}
+
+// ---------------------------------------------------------------------------
 // Context builder
 // ---------------------------------------------------------------------------
 
 /// Build the messages array for a role, injecting all prior round outputs as
-/// context, plus macro signal and emergency buffer.
+/// context, plus macro signal, regime data, emergency buffer, and portfolio
+/// summary.
 fn build_context_messages(
     round_outputs: &[RoundOutput],
     symbol: &str,
     macro_signal: &str,
     emergency_buffer_cny: f64,
+    portfolio_summary: &str,
+    regime_context: Option<&str>,
 ) -> Vec<Message> {
     if round_outputs.is_empty() {
-        return vec![Message::user(format!(
-            "请分析 {} 的投资机会。",
-            symbol
-        ))];
+        let mut user_msg = format!("请分析 {} 的投资机会。", symbol);
+        if !portfolio_summary.is_empty() {
+            user_msg.push_str(&format!("\n\n{}", portfolio_summary));
+        }
+        return vec![Message::user(user_msg)];
     }
 
     let mut context = format!(
         "【标的: {}】\nMacro SIGNAL: {}\nEmergency Buffer: {:.0} CNY\n",
         symbol, macro_signal, emergency_buffer_cny
     );
+    if !portfolio_summary.is_empty() {
+        context.push_str(&portfolio_summary);
+        context.push('\n');
+    }
+    // Inject regime data (RSI-14, price quantile, trend classification)
+    if let Some(rc) = regime_context {
+        context.push_str("\n");
+        context.push_str(rc);
+        context.push('\n');
+    }
     for output in round_outputs {
         context.push_str(&format!(
             "\n=== {} Round {} ===\n{}\n",
@@ -278,6 +418,7 @@ async fn run_with_tool_loop(
     tool_defs: Option<&[ToolDef]>,
     llm_config: &LlmConfig,
     start: std::time::Instant,
+    emitter: &Option<EventEmitter>,
 ) -> Result<(RoundOutput, u32), String> {
     let mut total_tokens: u32 = 0;
 
@@ -339,11 +480,26 @@ async fn run_with_tool_loop(
 
         // Execute each tool call and append results
         for tc in &response1.tool_calls {
-            let result = execute_tool(&tc.name, &tc.arguments.to_string(), symbol).await;
-            match result {
-                Ok(r) => messages.push(tool_result_message(&tc.id, &r)),
-                Err(e) => messages.push(tool_result_message(&tc.id, &format!("Error: {}", e))),
+            let tool_start = std::time::Instant::now();
+            let tool_result = execute_tool(&tc.name, &tc.arguments.to_string(), symbol).await;
+            let tool_latency = tool_start.elapsed().as_millis() as u64;
+            let (success, result_msg) = match &tool_result {
+                Ok(r) => (true, r.clone()),
+                Err(e) => (false, format!("Error: {}", e)),
+            };
+            if let Some(ref emit) = emitter {
+                emit(CommitteeEvent::ToolCall {
+                    symbol: symbol.to_string(),
+                    role,
+                    round,
+                    tool_name: tc.name.clone(),
+                    arguments: tc.arguments.to_string(),
+                    result: Some(result_msg.clone()),
+                    success,
+                    latency_ms: tool_latency,
+                });
             }
+            messages.push(tool_result_message(&tc.id, &result_msg));
         }
 
         // Second call — without tools — to get final text
@@ -411,6 +567,8 @@ async fn run_macro_phase(
     client: &dyn InvestLlmClient,
     symbol: &str,
     config: &CommitteeConfig,
+    portfolio_summary: &str,
+    emitter: &Option<EventEmitter>,
 ) -> Result<(RoundOutput, u32), String> {
     let role = CommitteeRole::Macro;
     let provider = resolve_provider(config, role);
@@ -427,10 +585,18 @@ async fn run_macro_phase(
     let governor = global_governor();
     let _permit = governor.acquire(provider).await;
 
-    let mut messages: Vec<Message> = vec![Message::user(format!(
-        "请分析 {} 的宏观环境和技术面，给出风险信号判断。",
-        symbol
-    ))];
+    let user_msg = if portfolio_summary.is_empty() {
+        format!(
+            "请分析 {} 的宏观环境和技术面，给出风险信号判断。",
+            symbol
+        )
+    } else {
+        format!(
+            "请分析 {} 的宏观环境和技术面，给出风险信号判断。\n\n{}",
+            symbol, portfolio_summary
+        )
+    };
+    let mut messages: Vec<Message> = vec![Message::user(user_msg)];
 
     let start = std::time::Instant::now();
 
@@ -444,6 +610,7 @@ async fn run_macro_phase(
         tool_defs.as_deref(),
         &llm_config,
         start,
+        emitter,
     )
     .await
 }
@@ -461,22 +628,34 @@ async fn run_role_phase(
     round_outputs: &[RoundOutput],
     macro_signal: &str,
     emergency_buffer_cny: f64,
+    portfolio_summary: &str,
+    regime_context: Option<&str>,
+    emitter: &Option<EventEmitter>,
 ) -> Result<RoundOutput, String> {
     let provider = resolve_provider(config, role);
     let llm_config = build_llm_config(provider, role, config.timeout_secs);
     let tool_defs = role_tool_defs(role, round);
 
     let asset_name = get_asset_name(symbol).unwrap_or_else(|| symbol.to_string());
-    let system_prompt = format!(
+    let mut system_prompt = format!(
         "{}{}",
         load_prompt_for_round(role, round, &asset_name, symbol),
         length_constraint_suffix(role)
     );
 
+    // For CIO role, inject active strategy constraints into the system prompt
+    if role == CommitteeRole::Cio {
+        let strategy_ctx = build_strategy_context();
+        if !strategy_ctx.is_empty() {
+            system_prompt.push_str("\n\n");
+            system_prompt.push_str(&strategy_ctx);
+        }
+    }
+
     let governor = global_governor();
     let _permit = governor.acquire(provider).await;
 
-    let mut messages = build_context_messages(round_outputs, symbol, macro_signal, emergency_buffer_cny);
+    let mut messages = build_context_messages(round_outputs, symbol, macro_signal, emergency_buffer_cny, portfolio_summary, regime_context);
 
     // For Round 2 rebuttal roles, append a rebuttal-specific instruction
     if round >= 2 && matches!(role, CommitteeRole::Quant | CommitteeRole::Risk) {
@@ -499,6 +678,7 @@ async fn run_role_phase(
         tool_defs.as_deref(),
         &llm_config,
         start,
+        emitter,
     )
     .await?;
 
@@ -520,6 +700,8 @@ async fn run_debate_rounds(
     macro_signal: &str,
     emergency_buffer_cny: f64,
     emitter: &Option<EventEmitter>,
+    portfolio_summary: &str,
+    regime_context: Option<&str>,
 ) -> Result<bool, String> {
     let max_rounds = config.debate_rounds;
     let mut converged = false;
@@ -548,6 +730,9 @@ async fn run_debate_rounds(
                 round_outputs,
                 macro_signal,
                 emergency_buffer_cny,
+                portfolio_summary,
+                regime_context,
+                emitter,
             )
             .await?;
             *total_tokens += output.tokens_used;
@@ -586,12 +771,16 @@ async fn run_debate_rounds(
 
 /// Run the full committee pipeline for a single symbol.
 ///
-/// Pipeline (6 steps):
+/// Pipeline (7 steps):
 /// 1. Macro (with tool-call loop) -> signal + strength
-/// 2. Debate rounds: Quant/R1 + Risk/R1, then Quant/R2 + Risk/R2, early convergence exit
-/// 3. CIO verdict
-/// 4. Post-analysis: sentinel, convergence, sanity check
-/// 5. Archive (fire-and-forget)
+/// 2. Regime computation (quantitative: RSI-14, MA, volatility, price quantile)
+/// 3. Debate rounds: Quant/R1 + Risk/R1, then Quant/R2 + Risk/R2, early convergence exit
+/// 4. CIO verdict
+/// 5. Post-analysis: sentinel, convergence, sanity check
+/// 6. Archive (fire-and-forget)
+///
+/// Portfolio data is built once as a shared context block and injected into
+/// Macro and subsequent roles — it is not a separate pipeline step.
 ///
 /// When `emitter` is `Some`, events are emitted at each pipeline step boundary
 /// for real-time frontend streaming via `"committee-event"` Tauri event channel.
@@ -600,6 +789,7 @@ pub async fn run_committee(
     symbol: &str,
     config: &CommitteeConfig,
     emitter: Option<EventEmitter>,
+    dry_run: bool,
 ) -> Result<CommitteeResult, String> {
     let start = std::time::Instant::now();
 
@@ -611,6 +801,9 @@ pub async fn run_committee(
     let config = &config_owned;
     let mut round_outputs: Vec<RoundOutput> = Vec::new();
     let mut total_tokens: u32 = 0;
+
+    // Build portfolio summary once for injection into Macro and Risk R1
+    let portfolio_summary = build_portfolio_summary();
 
     // ── Step 1: Macro phase (with tool-call loop) ──────────────────────
     {
@@ -624,7 +817,8 @@ pub async fn run_committee(
             });
         }
 
-        let (macro_output, macro_tokens) = run_macro_phase(client, symbol, config).await?;
+        let (macro_output, macro_tokens) =
+            run_macro_phase(client, symbol, config, &portfolio_summary, &emitter).await?;
         total_tokens += macro_tokens;
 
         if let Some(ref emit) = emitter {
@@ -647,7 +841,39 @@ pub async fn run_committee(
         .unwrap_or_else(|| "neutral".to_string());
     let macro_strength = round_outputs[0].parsed.strength;
 
-    // ── Step 2: Debate rounds ──────────────────────────────────────────
+    // ── Step 2: REGIME computation ─────────────────────────────────────
+    // Compute quantitative regime metrics (RSI-14, MA, volatility, price
+    // quantile) after Macro and inject into Quant/Risk/CIO context.
+    let regime_si = 1; // step_index for REGIME node
+    let regime_context: Option<String> = match compute_regime_context(symbol).await {
+        Ok(ctx) => {
+            log::info!("REGIME computed for {}: {}", symbol, ctx.lines().next().unwrap_or(""));
+            if let Some(ref emit) = emitter {
+                let preview = ctx.lines().next().unwrap_or("").to_string();
+                emit(CommitteeEvent::RegimeStep {
+                    symbol: symbol.to_string(),
+                    success: true,
+                    context_preview: preview,
+                    step_index: regime_si,
+                });
+            }
+            Some(ctx)
+        }
+        Err(e) => {
+            log::warn!("REGIME computation failed for {}: {}", symbol, e);
+            if let Some(ref emit) = emitter {
+                emit(CommitteeEvent::RegimeStep {
+                    symbol: symbol.to_string(),
+                    success: false,
+                    context_preview: format!("Error: {}", e),
+                    step_index: regime_si,
+                });
+            }
+            None
+        }
+    };
+
+    // ── Step 3: Debate rounds ──────────────────────────────────────────
     let converged = run_debate_rounds(
         client,
         symbol,
@@ -657,10 +883,12 @@ pub async fn run_committee(
         &macro_signal,
         config.emergency_buffer_cny,
         &emitter,
+        &portfolio_summary,
+        regime_context.as_deref(),
     )
     .await?;
 
-    // ── Step 3: CIO verdict ────────────────────────────────────────────
+    // ── Step 4: CIO verdict ────────────────────────────────────────────
     {
         let si = step_index_for_role(CommitteeRole::Cio, 1);
         if let Some(ref emit) = emitter {
@@ -681,6 +909,9 @@ pub async fn run_committee(
             &round_outputs,
             &macro_signal,
             config.emergency_buffer_cny,
+            &portfolio_summary,
+            regime_context.as_deref(),
+            &emitter,
         )
         .await?;
         total_tokens += cio_output.tokens_used;
@@ -698,7 +929,7 @@ pub async fn run_committee(
         round_outputs.push(cio_output);
     }
 
-    // ── Step 4: Post-analysis ──────────────────────────────────────────
+    // ── Step 5: Post-analysis ──────────────────────────────────────────
     let sentinel = check_sentinel(&round_outputs);
 
     let cio_parsed = round_outputs
@@ -726,24 +957,27 @@ pub async fn run_committee(
     let total_latency_ms = start.elapsed().as_millis() as u64;
     let reasoning = cio_parsed.raw_text.clone();
 
-    // ── Step 5: Archive (fire-and-forget) ──────────────────────────────
-    let cio_provider = resolve_provider(config, CommitteeRole::Cio);
+    // ── Step 6: Archive (fire-and-forget) ──────────────────────────────
+    // Skip archiving in dry_run mode — results are returned but not persisted.
+    // Uses daily-overwrite strategy: each symbol keeps only the latest
+    // verdict per calendar day.
+    if !dry_run {
+        let cio_provider = resolve_provider(config, CommitteeRole::Cio);
 
-    if let Err(e) = archive_decision(
-        symbol,
-        &final_verdict,
-        final_confidence,
-        Some(&macro_signal),
-        macro_strength,
-        &reasoning,
-        cio_provider.default_model(),
-        &cio_provider.to_string(),
-        total_tokens,
-        total_latency_ms,
-    )
-    .await
-    {
-        log::warn!("archive_decision failed for {}: {}", symbol, e);
+        if let Err(e) = crate::storage::invest::committees::archive_verdict(
+            symbol,
+            &final_verdict,
+            final_confidence,
+            Some(&macro_signal),
+            macro_strength,
+            &reasoning,
+            cio_provider.default_model(),
+            &cio_provider.to_string(),
+            total_tokens,
+            total_latency_ms,
+        ) {
+            log::warn!("archive_verdict failed for {}: {}", symbol, e);
+        }
     }
 
     let result = CommitteeResult {
@@ -762,8 +996,11 @@ pub async fn run_committee(
     };
 
     // Archive full report (markdown + events.jsonl) — fire-and-forget
-    if let Err(e) = archive_decision_full(symbol, &result) {
-        log::warn!("archive_decision_full failed for {}: {}", symbol, e);
+    // Skip in dry_run mode.
+    if !dry_run {
+        if let Err(e) = archive_decision_full(symbol, &result) {
+            log::warn!("archive_decision_full failed for {}: {}", symbol, e);
+        }
     }
 
     Ok(result)
@@ -780,6 +1017,7 @@ pub async fn run_committee_batch(
     client: Arc<dyn InvestLlmClient>,
     symbols: &[String],
     config: &CommitteeConfig,
+    dry_run: bool,
 ) -> Vec<Result<CommitteeResult, String>> {
     let mut handles = Vec::with_capacity(symbols.len());
 
@@ -788,7 +1026,7 @@ pub async fn run_committee_batch(
         let config = config.clone();
         let symbol = symbol.clone();
         handles.push(tokio::spawn(async move {
-            run_committee(&*client, &symbol, &config, None).await
+            run_committee(&*client, &symbol, &config, None, dry_run).await
         }));
     }
 
@@ -810,6 +1048,7 @@ pub async fn run_committee_batch_stream(
     symbols: &[String],
     config: &CommitteeConfig,
     emitter: EventEmitter,
+    dry_run: bool,
 ) -> Vec<Result<CommitteeResult, String>> {
     // Emit batch-start event
     emitter(CommitteeEvent::CommitteeStart {
@@ -825,7 +1064,7 @@ pub async fn run_committee_batch_stream(
         let symbol = symbol.clone();
         let emitter = emitter.clone();
         handles.push((symbol.clone(), tokio::spawn(async move {
-            run_committee(&*client, &symbol, &config, Some(emitter)).await
+            run_committee(&*client, &symbol, &config, Some(emitter), dry_run).await
         })));
     }
 

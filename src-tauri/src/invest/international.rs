@@ -56,6 +56,9 @@ struct YahooChartResult {
 /// Yahoo Finance v8 chart API base URL.
 const YAHOO_CHART_API: &str = "https://query1.finance.yahoo.com/v8/finance/chart";
 
+/// Yahoo Finance search API base URL (for news).
+const YAHOO_SEARCH_API: &str = "https://query1.finance.yahoo.com/v1/finance/search";
+
 /// Well-known international indicator symbols.
 pub const INTERNATIONAL_SYMBOLS: &[(&str, &str)] = &[
     ("^VIX", "VIX 恐慌指数"),
@@ -65,6 +68,36 @@ pub const INTERNATIONAL_SYMBOLS: &[(&str, &str)] = &[
     ("CL=F", "国际油价"),
     ("USDCNY=X", "USD/CNY 汇率"),
 ];
+
+/// A single news item from Yahoo Finance search API.
+#[derive(Debug, Clone, serde::Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YahooNewsItem {
+    pub uuid: String,
+    pub title: String,
+    pub publisher: String,
+    pub link: String,
+    pub provider_publish_time: i64,
+    pub related_tickers: Vec<String>,
+}
+
+// Yahoo Finance search response types (internal)
+#[derive(Debug, Deserialize)]
+struct YahooSearchResponse {
+    news: Vec<YahooSearchNewsItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct YahooSearchNewsItem {
+    uuid: Option<String>,
+    title: Option<String>,
+    publisher: Option<String>,
+    link: Option<String>,
+    #[serde(default)]
+    provider_publish_time: Option<i64>,
+    #[serde(default)]
+    related_tickers: Option<Vec<String>>,
+}
 
 // ---------------------------------------------------------------------------
 // Client
@@ -285,6 +318,91 @@ impl InternationalClient {
 
         // Execute concurrently using futures-util (already a dependency)
         futures_util::future::join_all(futures).await
+    }
+
+    /// Search for news articles via Yahoo Finance search API.
+    ///
+    /// `query` is the search string (e.g. "A股 央行", "中国股市").
+    /// `count` is the maximum number of news items to return (default 10).
+    pub async fn fetch_yahoo_news(
+        &self,
+        query: &str,
+        count: u32,
+    ) -> Result<Vec<YahooNewsItem>, String> {
+        let url = YAHOO_SEARCH_API;
+        let resp = self
+            .client
+            .get(url)
+            .query(&[
+                ("q", query),
+                ("quotesCount", "0"),
+                ("newsCount", &count.to_string()),
+            ])
+            .send()
+            .await
+            .map_err(|e| format!("Yahoo news search request failed: {e}"))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("Yahoo news search HTTP {status}: {body}"));
+        }
+
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| format!("failed to read Yahoo news response: {e}"))?;
+
+        let parsed: YahooSearchResponse =
+            serde_json::from_str(&text).map_err(|e| format!("Yahoo news json parse error: {e}"))?;
+
+        let items = parsed
+            .news
+            .into_iter()
+            .filter_map(|item| {
+                Some(YahooNewsItem {
+                    uuid: item.uuid.unwrap_or_default(),
+                    title: item.title.unwrap_or_default(),
+                    publisher: item.publisher.unwrap_or_default(),
+                    link: item.link.unwrap_or_default(),
+                    provider_publish_time: item.provider_publish_time.unwrap_or(0),
+                    related_tickers: item.related_tickers.unwrap_or_default(),
+                })
+            })
+            .filter(|item| !item.title.is_empty())
+            .collect();
+
+        Ok(items)
+    }
+
+    /// Fetch Chinese financial news from Yahoo Finance using multiple search queries.
+    /// Returns deduplicated news items sorted by publish time (newest first).
+    pub async fn fetch_china_finance_news(&self, max_items: usize) -> Vec<YahooNewsItem> {
+        let queries = ["A股 中国", "中国股市", "央行 中国", "A股 市场"];
+        let per_query = ((max_items as u32) / queries.len() as u32).max(3);
+
+        let futures: Vec<_> = queries
+            .iter()
+            .map(|q| self.fetch_yahoo_news(q, per_query))
+            .collect();
+
+        let results = futures_util::future::join_all(futures).await;
+
+        // Merge all results, dedup by uuid, sort by time descending
+        let mut seen = std::collections::HashSet::new();
+        let mut all: Vec<YahooNewsItem> = Vec::new();
+        for result in results {
+            if let Ok(items) = result {
+                for item in items {
+                    if item.uuid.is_empty() || seen.insert(item.uuid.clone()) {
+                        all.push(item);
+                    }
+                }
+            }
+        }
+        all.sort_by(|a, b| b.provider_publish_time.cmp(&a.provider_publish_time));
+        all.truncate(max_items);
+        all
     }
 }
 

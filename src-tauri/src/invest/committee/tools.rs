@@ -114,14 +114,14 @@ pub fn macro_tool_defs() -> Vec<ToolDef> {
     ]
 }
 
-/// Role-based tool definitions. Returns `None` for rounds beyond R1 (no tools
-/// in rebuttal rounds) or for roles that never use tools (CIO).
+/// Role-based tool definitions. Macro gets full tools in R1 only; Quant and
+/// Risk get tools in both R1 and R2 (R2 uses them for cross-review); CIO never
+/// gets tools.
 pub fn role_tool_defs(role: CommitteeRole, round: u8) -> Option<Vec<ToolDef>> {
-    if round > 1 {
-        return None; // R2+ has no tools
-    }
     match role {
-        CommitteeRole::Macro => Some(macro_tool_defs()),
+        CommitteeRole::Macro => {
+            if round > 1 { None } else { Some(macro_tool_defs()) }
+        }
         CommitteeRole::Quant => Some(vec![
             get_history_data_def(),
             analyze_multi_timeframe_def(),
@@ -683,6 +683,25 @@ mod tests {
     #[test]
     fn test_role_tool_defs_risk_r1() {
         let defs = role_tool_defs(CommitteeRole::Risk, 1).unwrap();
+        assert_eq!(defs.len(), 2);
+        let names: Vec<&str> = defs.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"query_dreaming_insights"));
+        assert!(names.contains(&"get_recent_committee_verdicts"));
+    }
+
+    #[test]
+    fn test_role_tool_defs_quant_r2_has_tools() {
+        let defs = role_tool_defs(CommitteeRole::Quant, 2).unwrap();
+        assert_eq!(defs.len(), 3);
+        let names: Vec<&str> = defs.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"get_history_data"));
+        assert!(names.contains(&"analyze_multi_timeframe"));
+        assert!(names.contains(&"get_recent_committee_verdicts"));
+    }
+
+    #[test]
+    fn test_role_tool_defs_risk_r2_has_tools() {
+        let defs = role_tool_defs(CommitteeRole::Risk, 2).unwrap();
         assert_eq!(defs.len(), 2);
         let names: Vec<&str> = defs.iter().map(|t| t.name.as_str()).collect();
         assert!(names.contains(&"query_dreaming_insights"));

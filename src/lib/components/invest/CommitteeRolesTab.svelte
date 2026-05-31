@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { t } from '$lib/i18n/index.svelte';
   import { investCommitteeStore } from '$lib/stores/invest-committee-store.svelte';
+  import ProviderConfigPanel from '$lib/components/invest/ProviderConfigPanel.svelte';
 
   const store = investCommitteeStore;
 
@@ -177,6 +178,7 @@
       meta: 'temp 0.7 · tools ✗',
       prompts: [
         { key: 'quant', label: t('invest_roles_prompt_r1') },
+        { key: 'quant_r2', label: t('invest_roles_prompt_r2') },
       ],
     },
     {
@@ -189,6 +191,7 @@
       meta: 'temp 0.7 · tools ✗',
       prompts: [
         { key: 'risk', label: t('invest_roles_prompt_r1') },
+        { key: 'risk_r2', label: t('invest_roles_prompt_r2') },
       ],
     },
     {
@@ -298,4 +301,13 @@
       </div>
     </div>
   {/each}
+
+  <!-- Provider Configuration -->
+  <div class="rounded-lg border border-border p-4">
+    <h3 class="mb-3 text-sm font-semibold flex items-center gap-2">
+      <span class="h-4 w-0.5 rounded-full bg-primary"></span>
+      {t('invest_committee_config')}
+    </h3>
+    <ProviderConfigPanel />
+  </div>
 </div>

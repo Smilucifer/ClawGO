@@ -7,16 +7,17 @@ use serde::Serialize;
 // ---------------------------------------------------------------------------
 
 /// Pipeline step index for a role (used by frontend PipelineFlow).
-/// Maps each role+round to its position in the 6-node pipeline:
-///   Macro(0) -> Quant/R1(1) -> Risk/R1(2) -> Quant/R2(3) -> Risk/R2(4) -> CIO(5)
+/// Maps each role+round to its position in the 7-node pipeline:
+///   Macro(0) -> Regime(1) -> Quant/R1(2) -> Risk/R1(3) -> Quant/R2(4) -> Risk/R2(5) -> CIO(6)
 pub fn step_index_for_role(role: CommitteeRole, round: u8) -> usize {
     match (role, round) {
         (CommitteeRole::Macro, _) => 0,
-        (CommitteeRole::Quant, 1) => 1,
-        (CommitteeRole::Risk, 1) => 2,
-        (CommitteeRole::Quant, _) => 3,  // R2+
-        (CommitteeRole::Risk, _) => 4,   // R2+
-        (CommitteeRole::Cio, _) => 5,
+        // Regime is a computed (non-LLM) step at index 1; not emitted as RoleStart
+        (CommitteeRole::Quant, 1) => 2,
+        (CommitteeRole::Risk, 1) => 3,
+        (CommitteeRole::Quant, _) => 4,  // R2+
+        (CommitteeRole::Risk, _) => 5,   // R2+
+        (CommitteeRole::Cio, _) => 6,
     }
 }
 
@@ -56,6 +57,26 @@ pub enum CommitteeEvent {
     Done {
         completed: usize,
         total: usize,
+    },
+    /// Regime computation step completed (quantitative metrics, not LLM).
+    #[serde(rename_all = "camelCase")]
+    RegimeStep {
+        symbol: String,
+        success: bool,
+        context_preview: String,
+        step_index: usize,
+    },
+    /// A tool was called during a role's LLM turn.
+    #[serde(rename_all = "camelCase")]
+    ToolCall {
+        symbol: String,
+        role: CommitteeRole,
+        round: u8,
+        tool_name: String,
+        arguments: String,
+        result: Option<String>,
+        success: bool,
+        latency_ms: u64,
     },
     /// A symbol's pipeline errored (non-retryable).
     Error {

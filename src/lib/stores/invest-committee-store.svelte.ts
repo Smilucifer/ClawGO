@@ -72,9 +72,23 @@ export type CommitteeEventType =
   | { type: 'committee_start'; symbols: string[]; total: number }
   | { type: 'role_start'; symbol: string; role: string; round: number; stepIndex: number }
   | { type: 'role_complete'; symbol: string; role: string; round: number; summary: RoundOutputSummary; stepIndex: number }
+  | { type: 'regime_step'; symbol: string; success: boolean; contextPreview: string; stepIndex: number }
+  | { type: 'tool_call'; symbol: string; role: string; round: number; toolName: string; arguments: string; result?: string; success: boolean; latencyMs: number }
   | { type: 'symbol_complete'; symbol: string; result: CommitteeResult }
   | { type: 'done'; completed: number; total: number }
   | { type: 'error'; symbol: string; error: string };
+
+export interface ToolCallRecord {
+  symbol: string;
+  role: string;
+  round: number;
+  toolName: string;
+  arguments: string;
+  result?: string;
+  success: boolean;
+  latencyMs: number;
+  timestamp: number;
+}
 
 export interface SymbolProgress {
   activeStep: number;       // stepIndex of currently running role (-1 if idle)
@@ -99,6 +113,7 @@ class InvestCommitteeStore {
   streaming = $state(false);
   activeSymbols = $state<string[]>([]);
   perSymbolProgress = $state<Map<string, SymbolProgress>>(new Map());
+  toolCallHistory = $state<ToolCallRecord[]>([]);
 
   rolePrompts = $state<RolePrompts>({});
   showConfigPanel = $state(false);
@@ -135,6 +150,7 @@ class InvestCommitteeStore {
     this.running = true;
     this.runError = null;
     this.results = [];
+    this.toolCallHistory = [];
     this.activeSymbols = symbols;
 
     const progress = new Map<string, SymbolProgress>();
@@ -203,6 +219,36 @@ class InvestCommitteeStore {
             completedRounds: [...p.completedRounds, event.summary],
           });
         }
+        break;
+      }
+
+      case 'regime_step': {
+        const p = progress.get(event.symbol);
+        if (p) {
+          progress.set(event.symbol, {
+            ...p,
+            activeStep: -1,
+            completedSteps: p.completedSteps + 1,
+          });
+        }
+        break;
+      }
+
+      case 'tool_call': {
+        this.toolCallHistory = [
+          ...this.toolCallHistory,
+          {
+            symbol: event.symbol,
+            role: event.role,
+            round: event.round,
+            toolName: event.toolName,
+            arguments: event.arguments,
+            result: event.result,
+            success: event.success,
+            latencyMs: event.latencyMs,
+            timestamp: Date.now(),
+          },
+        ];
         break;
       }
 

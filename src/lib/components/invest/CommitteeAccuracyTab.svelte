@@ -43,7 +43,6 @@
   let summary = $state<ReviewSummary | null>(null);
   let detail = $state<ReviewEntry[]>([]);
   let loading = $state(false);
-  let running = $state(false);
   let showDetail = $state(false);
   let error = $state<string | null>(null);
 
@@ -55,23 +54,6 @@
       error = String(e);
     } finally {
       loading = false;
-    }
-  }
-
-  async function runReview() {
-    running = true;
-    error = null;
-    try {
-      const settings = await invoke<{ tushareToken?: string }>('get_user_settings');
-      if (!settings.tushareToken) {
-        error = t('invest_accuracy_noToken');
-        return;
-      }
-      summary = await invoke<ReviewSummary>('run_verdict_review_cmd', { tushareToken: settings.tushareToken });
-    } catch (e) {
-      error = String(e);
-    } finally {
-      running = false;
     }
   }
 
@@ -100,13 +82,6 @@
 <div class="space-y-4">
   <div class="flex items-center justify-between">
     <h3 class="text-lg font-semibold">{t('invest_accuracy_title')}</h3>
-    <button
-      class="rounded bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-      disabled={running}
-      onclick={runReview}
-    >
-      {running ? '...' : t('invest_accuracy_run_review')}
-    </button>
   </div>
 
   {#if error}
@@ -119,7 +94,7 @@
     <p class="text-muted-foreground">{t('common_loading')}</p>
   {:else if !summary || summary.totalVerdicts === 0}
     <div class="flex h-32 items-center justify-center">
-      <p class="text-muted-foreground">{t('invest_accuracy_no_data')}</p>
+      <p class="text-muted-foreground">{t('invest_accuracy_auto_tracking')}</p>
     </div>
   {:else}
     <!-- KPI Cards -->

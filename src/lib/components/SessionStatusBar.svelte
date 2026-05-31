@@ -6,6 +6,7 @@
   import { dbg } from "$lib/utils/debug";
   import { getCliModels } from "$lib/stores/cli-info.svelte";
   import { t } from "$lib/i18n/index.svelte";
+  import type { MessageKey } from "$lib/i18n/types";
   import { fmtNumber } from "$lib/i18n/format";
   import { truncate, formatTokenCount, formatDuration, formatCostDisplay } from "$lib/utils/format";
 
@@ -537,7 +538,7 @@
               class="text-[10px] font-medium {contextWarningLevel === 'critical'
                 ? 'text-red-500'
                 : 'text-amber-500'}"
-              >{t(contextStrategyMessage)}</span
+              >{t(contextStrategyMessage as MessageKey)}</span
             >
           {/if}
         </span>

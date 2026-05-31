@@ -110,7 +110,7 @@ pub struct SentinelOverride {
 }
 
 // ---------------------------------------------------------------------------
-// CIO Sanity Check -- 3 Gates
+// CIO Sanity Check -- 4 Gates
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,7 +125,7 @@ pub struct SanityCheckResult {
     pub notes: Vec<String>,
 }
 
-/// Run CIO Sanity Check 3 Gates on the parsed CIO output.
+/// Run CIO Sanity Check 4 Gates on the parsed CIO output.
 pub fn cio_sanity_check(
     cio_parsed: &ParsedFields,
     round_outputs: &[RoundOutput],
@@ -443,6 +443,37 @@ mod tests {
         assert!(result.gate3_pass);
         assert!(result.gate4_pass);
         assert_eq!(result.final_verdict, "ACCUMULATE");
+    }
+
+    #[test]
+    fn test_sanity_gate3_uses_cio_dry_powder_directly() {
+        // When CIO output contains DRY_POWDER_CNY, it should be used directly
+        // instead of falling back to round_outputs.
+        let cio = ParsedFields {
+            verdict: Some("BUY".to_string()),
+            confidence: Some(0.7),
+            dry_powder_cny: Some(50000.0), // below emergency buffer
+            ..Default::default()
+        };
+        let outputs = vec![];
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0);
+        assert!(!result.gate3_pass);
+        assert_eq!(result.final_verdict, "HOLD");
+    }
+
+    #[test]
+    fn test_sanity_gate2_uses_cio_concentration_directly() {
+        // When CIO output contains CONCENTRATION_PCT, it should be used directly.
+        let cio = ParsedFields {
+            verdict: Some("ACCUMULATE".to_string()),
+            confidence: Some(0.6),
+            concentration_pct: Some(50.0), // > 40%
+            ..Default::default()
+        };
+        let outputs = vec![];
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0);
+        assert!(!result.gate2_pass);
+        assert_eq!(result.final_verdict, "TRIM");
     }
 
     #[test]

@@ -30,6 +30,7 @@ pub fn add_holding(
     entry_date: Option<String>,
     linked_verdict_id: Option<String>,
     notes: Option<String>,
+    asset_type: Option<String>,
 ) -> Result<(), String> {
     let now = chrono::Utc::now().to_rfc3339();
     let h = Holding {
@@ -43,6 +44,7 @@ pub fn add_holding(
         entry_date,
         linked_verdict_id,
         notes,
+        asset_type: asset_type.or_else(|| Some("stock".to_string())),
         created_at: now.clone(),
         updated_at: now,
     };
@@ -62,6 +64,7 @@ pub fn update_holding(
     entry_date: Option<String>,
     linked_verdict_id: Option<String>,
     notes: Option<String>,
+    asset_type: Option<String>,
 ) -> Result<(), String> {
     let now = chrono::Utc::now().to_rfc3339();
     let h = Holding {
@@ -75,6 +78,7 @@ pub fn update_holding(
         entry_date,
         linked_verdict_id,
         notes,
+        asset_type: asset_type.or_else(|| Some("stock".to_string())),
         created_at: now.clone(),
         updated_at: now,
     };
@@ -121,6 +125,39 @@ pub fn record_trade(
 #[tauri::command]
 pub fn get_trades(symbol: Option<String>, limit: Option<i64>) -> Result<Vec<Trade>, String> {
     portfolio::list_trades(symbol.as_deref(), limit)
+}
+
+#[tauri::command]
+pub fn delete_trade(id: String) -> Result<(), String> {
+    portfolio::delete_trade(&id)
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn update_trade(
+    id: String,
+    symbol: String,
+    currency: String,
+    kind: String,
+    action: String,
+    shares: Option<f64>,
+    price: Option<f64>,
+    amount: Option<f64>,
+    notes: Option<String>,
+) -> Result<(), String> {
+    let t = Trade {
+        id,
+        symbol,
+        currency,
+        kind,
+        action,
+        shares,
+        price,
+        amount,
+        notes,
+        created_at: String::new(),
+    };
+    portfolio::update_trade(&t)
 }
 
 // ── Cash ────────────────────────────────────────────────────────────────────
@@ -426,6 +463,7 @@ pub async fn migrate_legacy_portfolio() -> Result<String, String> {
                 entry_date: None,
                 linked_verdict_id: None,
                 notes: Some("migrated from legacy".to_string()),
+                asset_type: Some("stock".to_string()),
                 created_at: String::new(),
                 updated_at: String::new(),
             };
@@ -598,6 +636,7 @@ pub fn save_llm_config(config: InvestLlmConfig) -> Result<(), String> {
 pub async fn run_committee(
     symbols: Vec<String>,
     debate_rounds: Option<u8>,
+    dry_run: Option<bool>,
 ) -> Result<Vec<crate::invest::committee::orchestrator::CommitteeResult>, String> {
     let config_data = get_llm_config()?;
     let client =
@@ -616,6 +655,7 @@ pub async fn run_committee(
         client,
         &symbols,
         &committee_config,
+        dry_run.unwrap_or(false),
     )
     .await;
 
@@ -648,6 +688,7 @@ pub async fn run_committee_stream(
     app: tauri::AppHandle,
     symbols: Vec<String>,
     debate_rounds: Option<u8>,
+    dry_run: Option<bool>,
 ) -> Result<Vec<crate::invest::committee::orchestrator::CommitteeResult>, String> {
     let config_data = get_llm_config()?;
     let client =
@@ -674,6 +715,7 @@ pub async fn run_committee_stream(
         &symbols,
         &committee_config,
         emitter,
+        dry_run.unwrap_or(false),
     )
     .await;
 
@@ -709,7 +751,7 @@ pub fn load_committee_archive(
 
 #[tauri::command]
 pub fn get_role_prompts() -> Result<std::collections::HashMap<String, String>, String> {
-    use crate::invest::committee::roles::{load_prompt, CommitteeRole};
+    use crate::invest::committee::roles::{get_prompt_dir, CommitteeRole};
 
     let mut map = std::collections::HashMap::new();
     for role in CommitteeRole::all() {
@@ -717,7 +759,25 @@ pub fn get_role_prompts() -> Result<std::collections::HashMap<String, String>, S
             .ok()
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .unwrap_or_else(|| format!("{:?}", role));
-        map.insert(key, load_prompt(*role));
+        // R1 prompt
+        let r1_path = get_prompt_dir().join(role.prompt_filename());
+        let r1 = std::fs::read_to_string(&r1_path)
+            .unwrap_or_else(|_| role.default_prompt().to_string());
+        map.insert(key.clone(), r1);
+
+        // R2 prompt (quant and risk only)
+        if matches!(role, CommitteeRole::Quant | CommitteeRole::Risk) {
+            let r2_key = format!("{key}_r2");
+            let r2_filename = match role {
+                CommitteeRole::Quant => "quant_r2.txt",
+                CommitteeRole::Risk => "risk_r2.txt",
+                _ => unreachable!(),
+            };
+            let r2_path = get_prompt_dir().join(r2_filename);
+            let r2 = std::fs::read_to_string(&r2_path)
+                .unwrap_or_else(|_| role.default_r2_prompt().to_string());
+            map.insert(r2_key, r2);
+        }
     }
     Ok(map)
 }
@@ -726,14 +786,26 @@ pub fn get_role_prompts() -> Result<std::collections::HashMap<String, String>, S
 pub fn save_role_prompt(role: String, content: String, round: Option<u8>) -> Result<(), String> {
     use crate::invest::committee::roles::{save_prompt, CommitteeRole};
 
-    let role_enum: CommitteeRole = match role.as_str() {
-        "macro" => CommitteeRole::Macro,
-        "quant" => CommitteeRole::Quant,
-        "risk" => CommitteeRole::Risk,
-        "cio" => CommitteeRole::Cio,
-        other => return Err(format!("unknown role: {}", other)),
+    // Handle composite keys like "quant_r2", "risk_r2"
+    let (base_role, effective_round) = if role.ends_with("_r2") {
+        let base = role.strip_suffix("_r2").unwrap();
+        let role_enum = match base {
+            "quant" => CommitteeRole::Quant,
+            "risk" => CommitteeRole::Risk,
+            other => return Err(format!("unknown role: {}", other)),
+        };
+        (role_enum, 2u8)
+    } else {
+        let role_enum = match role.as_str() {
+            "macro" => CommitteeRole::Macro,
+            "quant" => CommitteeRole::Quant,
+            "risk" => CommitteeRole::Risk,
+            "cio" => CommitteeRole::Cio,
+            other => return Err(format!("unknown role: {}", other)),
+        };
+        (role_enum, round.unwrap_or(1))
     };
-    save_prompt(role_enum, round.unwrap_or(1), &content)
+    save_prompt(base_role, effective_round, &content)
 }
 
 // ── Event Scanner ─────────────────────────────────────────────────────────
@@ -895,6 +967,16 @@ pub async fn run_verdict_review_cmd(
     tushare_token: String,
 ) -> Result<crate::invest::verdict_review::VerdictReviewSummary, String> {
     crate::invest::verdict_review::run_verdict_review(&tushare_token).await
+}
+
+#[tauri::command]
+pub fn get_tracking_status() -> Result<Vec<crate::storage::invest::verdict_tracking::TrackedVerdict>, String> {
+    crate::storage::invest::verdict_tracking::list_active_tracking()
+}
+
+#[tauri::command]
+pub fn list_all_tracking(limit: Option<i64>) -> Result<Vec<crate::storage::invest::verdict_tracking::TrackedVerdict>, String> {
+    crate::storage::invest::verdict_tracking::list_all_tracking(limit)
 }
 
 #[tauri::command]
@@ -1066,18 +1148,83 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
         sample_value: if db_ok { Some("connected".into()) } else { Some("connection failed".into()) },
     });
 
-    // Check LLM config
-    let llm_result: Result<i64, String> = crate::storage::invest::with_conn(|conn| {
-        conn.query_row("SELECT COUNT(*) FROM strategy", [], |row| row.get::<_, i64>(0))
-            .map_err(|e| format!("strategy query: {e}"))
-    });
-    let llm_ok = matches!(llm_result, Ok(count) if count > 0);
-    sources.push(DataSourceStatus {
-        name: "LLM Config".into(),
-        ok: llm_ok,
-        last_success: if llm_ok { Some(now_str) } else { None },
-        sample_value: if llm_ok { Some("loaded".into()) } else { Some("not found".into()) },
-    });
+    // Check LLM config — read from ~/.claw-go/invest/llm_config.json
+    let llm_path = llm_config_path();
+    if llm_path.exists() {
+        match std::fs::read_to_string(&llm_path) {
+            Ok(content) => {
+                let parsed: Result<serde_json::Value, _> = serde_json::from_str(&content);
+                match parsed {
+                    Ok(data) => {
+                        // Check that at least one provider has a non-empty api_key
+                        let has_key = ["deepseek", "mimo_plan", "mimo_api"]
+                            .iter()
+                            .any(|pid| {
+                                data.get(*pid)
+                                    .and_then(|v| v.get("api_key"))
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| !s.is_empty())
+                                    .unwrap_or(false)
+                            });
+                        sources.push(DataSourceStatus {
+                            name: "LLM Config".into(),
+                            ok: has_key,
+                            last_success: if has_key { Some(now_str.clone()) } else { None },
+                            sample_value: if has_key {
+                                Some("loaded".into())
+                            } else {
+                                Some("no api_key set".into())
+                            },
+                        });
+                    }
+                    Err(e) => {
+                        sources.push(DataSourceStatus {
+                            name: "LLM Config".into(),
+                            ok: false,
+                            last_success: None,
+                            sample_value: Some(format!("parse error: {e}")),
+                        });
+                    }
+                }
+            }
+            Err(e) => {
+                sources.push(DataSourceStatus {
+                    name: "LLM Config".into(),
+                    ok: false,
+                    last_success: None,
+                    sample_value: Some(format!("read error: {e}")),
+                });
+            }
+        }
+    } else {
+        sources.push(DataSourceStatus {
+            name: "LLM Config".into(),
+            ok: false,
+            last_success: None,
+            sample_value: Some("file not found".into()),
+        });
+    }
+
+    // Check Yahoo Finance — fetch ^VIX as a connectivity probe
+    let yahoo_client = crate::invest::international::InternationalClient::new();
+    match yahoo_client.fetch_yahoo_quote("^VIX").await {
+        Ok(quote) => {
+            sources.push(DataSourceStatus {
+                name: "Yahoo Finance".into(),
+                ok: true,
+                last_success: Some(now_str.clone()),
+                sample_value: Some(format!("^VIX = {:.2}", quote.price)),
+            });
+        }
+        Err(e) => {
+            sources.push(DataSourceStatus {
+                name: "Yahoo Finance".into(),
+                ok: false,
+                last_success: None,
+                sample_value: Some(e),
+            });
+        }
+    }
 
     sources
 }
