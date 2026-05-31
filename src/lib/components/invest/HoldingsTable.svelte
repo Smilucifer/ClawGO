@@ -3,9 +3,10 @@
   import { t } from '$lib/i18n/index.svelte';
   import type { Holding } from '$lib/types';
 
-  let { onSell, onConvert, tushareToken }: {
+  let { onSell, onConvert, onAddWatch, tushareToken }: {
     onSell: (h: Holding) => void;
     onConvert: (h: Holding) => void;
+    onAddWatch: () => void;
     tushareToken: string;
   } = $props();
 
@@ -34,14 +35,15 @@
             <tr class="border-b text-left text-xs text-muted-foreground">
               <th class="pb-2 pr-4">{t('invest_trade_stock')}</th>
               <th class="pb-2 pr-4">{t('invest_quantity')}</th>
-              <th class="pb-2 pr-4">成本价</th>
-              <th class="pb-2 pr-4">现价</th>
-              <th class="pb-2 pr-4">盈亏%</th>
+              <th class="pb-2 pr-4">{t('invest_cost_price')}</th>
+              <th class="pb-2 pr-4">{t('invest_current_price')}</th>
+              <th class="pb-2 pr-4">{t('invest_pnl_pct')}</th>
               <th class="pb-2"></th>
             </tr>
           </thead>
           <tbody>
             {#each investStore.holdHoldings as h}
+              {@const pnlPct = getPnlPct(h)}
               <tr class="border-b border-border/50">
                 <td class="py-2 pr-4">
                   <span class="font-medium">{h.name ?? h.symbol}</span>
@@ -51,9 +53,9 @@
                 <td class="py-2 pr-4 tabular-nums">{h.avgCost?.toFixed(2) ?? '-'}</td>
                 <td class="py-2 pr-4 tabular-nums">{getPrice(h.symbol)?.toFixed(2) ?? '-'}</td>
                 <td class="py-2 pr-4 tabular-nums">
-                  {#if getPnlPct(h) !== null}
-                    <span class={getPnlPct(h)! >= 0 ? 'text-green-600' : 'text-red-600'}>
-                      {getPnlPct(h)!.toFixed(2)}%
+                  {#if pnlPct !== null}
+                    <span class={pnlPct >= 0 ? 'text-green-600' : 'text-red-600'}>
+                      {pnlPct.toFixed(2)}%
                     </span>
                   {:else}
                     -
@@ -73,17 +75,23 @@
     {/if}
   </div>
 
-  {#if investStore.watchHoldings.length > 0}
-    <div>
-      <h3 class="mb-2 text-sm font-medium text-muted-foreground">
+  <div>
+    <div class="mb-2 flex items-center justify-between">
+      <h3 class="text-sm font-medium text-muted-foreground">
         {t('invest_watch')} ({investStore.watchCount})
       </h3>
+      <button
+        class="rounded px-2 py-0.5 text-xs hover:bg-muted"
+        onclick={onAddWatch}
+      >+ {t('invest_add_watch')}</button>
+    </div>
+    {#if investStore.watchHoldings.length > 0}
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="border-b text-left text-xs text-muted-foreground">
               <th class="pb-2 pr-4">{t('invest_trade_stock')}</th>
-              <th class="pb-2 pr-4">现价</th>
+              <th class="pb-2 pr-4">{t('invest_current_price')}</th>
               <th class="pb-2"></th>
             </tr>
           </thead>
@@ -106,6 +114,8 @@
           </tbody>
         </table>
       </div>
-    </div>
-  {/if}
+    {:else}
+      <p class="py-4 text-center text-sm text-muted-foreground">{t('invest_no_watchlist')}</p>
+    {/if}
+  </div>
 </div>

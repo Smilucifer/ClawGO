@@ -723,20 +723,17 @@ pub fn get_role_prompts() -> Result<std::collections::HashMap<String, String>, S
 }
 
 #[tauri::command]
-pub fn save_role_prompt(role: String, content: String) -> Result<(), String> {
+pub fn save_role_prompt(role: String, content: String, round: Option<u8>) -> Result<(), String> {
     use crate::invest::committee::roles::{save_prompt, CommitteeRole};
 
     let role_enum: CommitteeRole = match role.as_str() {
         "macro" => CommitteeRole::Macro,
-        "quant_r1" => CommitteeRole::QuantR1,
-        "risk_r1" => CommitteeRole::RiskR1,
-        "wealth" => CommitteeRole::Wealth,
-        "quant_r2" => CommitteeRole::QuantR2,
-        "risk_r2" => CommitteeRole::RiskR2,
+        "quant" => CommitteeRole::Quant,
+        "risk" => CommitteeRole::Risk,
         "cio" => CommitteeRole::Cio,
         other => return Err(format!("unknown role: {}", other)),
     };
-    save_prompt(role_enum, &content)
+    save_prompt(role_enum, round.unwrap_or(1), &content)
 }
 
 // ── Event Scanner ─────────────────────────────────────────────────────────
@@ -986,62 +983,25 @@ pub struct RegimeResult {
 
 #[tauri::command]
 pub async fn get_regime_classification(ts_code: String, tushare_token: String) -> Result<RegimeResult, String> {
-    use chrono::{Local, Duration as ChronoDur};
+    use chrono::Local;
     use crate::tushare::client::TushareClient;
 
     let client = TushareClient::new(tushare_token);
-    let end = Local::now().format("%Y%m%d").to_string();
-    let start = (Local::now() - ChronoDur::days(120)).format("%Y%m%d").to_string();
+    let result = crate::invest::regime::compute_regime_for_symbol(&client, &ts_code).await?;
 
-    let bars = client.daily(&ts_code, &start, &end).await?;
-    if bars.len() < 20 {
-        return Err(format!("Not enough data for {ts_code}: {} bars (need >= 20)", bars.len()));
-    }
-
-    let closes: Vec<f64> = bars.iter().map(|b| b.close).collect();
-    let n = closes.len();
-
-    // Simple moving averages
-    let ma20: f64 = closes[n - 20..].iter().sum::<f64>() / 20.0;
-    let ma60: f64 = if n >= 60 {
-        closes[n - 60..].iter().sum::<f64>() / 60.0
-    } else {
-        closes.iter().sum::<f64>() / n as f64
-    };
-
-    let latest = *closes.last().unwrap();
-
-    // 20-day volatility (annualized)
-    if closes.iter().any(|&c| c == 0.0) {
-        return Err(format!("Zero close price detected for {ts_code}, cannot compute volatility"));
-    }
-    let returns: Vec<f64> = closes.windows(2).map(|w| (w[1] / w[0] - 1.0)).collect();
-    let recent_returns = &returns[returns.len().saturating_sub(20)..];
-    let mean_ret = recent_returns.iter().sum::<f64>() / recent_returns.len() as f64;
-    let variance = recent_returns.iter().map(|r| (r - mean_ret).powi(2)).sum::<f64>() / recent_returns.len() as f64;
-    let volatility = (variance.sqrt()) * (252.0_f64).sqrt(); // annualized
-
-    // Classification logic
-    let (regime, brief) = if latest > ma20 && ma20 > ma60 {
-        ("uptrend".into(), format!("{} is in an uptrend: price {:.2} > MA20 {:.2} > MA60 {:.2}", ts_code, latest, ma20, ma60))
-    } else if latest < ma20 && ma20 < ma60 {
-        ("downtrend".into(), format!("{} is in a downtrend: price {:.2} < MA20 {:.2} < MA60 {:.2}", ts_code, latest, ma20, ma60))
-    } else if volatility > 0.35 {
-        ("volatile".into(), format!("{} is volatile: annualized vol {:.1}%, mixed MA signals", ts_code, volatility * 100.0))
-    } else {
-        ("ranging".into(), format!("{} is range-bound: price {:.2}, MA20 {:.2}, MA60 {:.2}, vol {:.1}%", ts_code, latest, ma20, ma60, volatility * 100.0))
-    };
-
+    let m = &result.metrics;
     let mut metrics = std::collections::HashMap::new();
-    metrics.insert("latest".into(), latest);
-    metrics.insert("ma20".into(), ma20);
-    metrics.insert("ma60".into(), ma60);
-    metrics.insert("volatility_ann".into(), volatility);
+    metrics.insert("latest".into(), m.latest);
+    metrics.insert("ma20".into(), m.ma20);
+    metrics.insert("ma60".into(), m.ma60);
+    metrics.insert("rsi14".into(), m.rsi14);
+    metrics.insert("volatility_ann".into(), m.volatility_ann);
+    metrics.insert("price_quantile_2y".into(), m.price_quantile_2y);
 
     Ok(RegimeResult {
         ts_code,
-        regime,
-        brief,
+        regime: result.regime.to_string(),
+        brief: result.reason,
         metrics,
         computed_at: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
     })

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, getContext } from "svelte";
   import { page } from "$app/stores";
+  import { goto } from "$app/navigation";
   import * as api from "$lib/api";
   import { loadCliInfo, KeybindingStore } from "$lib/stores";
   import type {
@@ -39,7 +40,7 @@
   import { getTransport } from "$lib/transport";
 
   // ── Tab state ──
-  type SettingsTab = "general" | "connection" | "cli-config" | "shortcuts" | "remote" | "debug" | "characters" | "memory" | "profile";
+  type SettingsTab = "general" | "connection" | "cli-config" | "shortcuts" | "remote" | "debug" | "characters" | "memory";
   const VALID_TABS: SettingsTab[] = [
     "general",
     "connection",
@@ -49,9 +50,12 @@
     "debug",
     "characters",
     "memory",
-    "profile",
   ];
   const urlTab = $page.url.searchParams.get("tab");
+  // Redirect old profile deep-links to invest page
+  if (urlTab === "profile") {
+    goto("/invest");
+  }
   const initialTab: SettingsTab = VALID_TABS.includes(urlTab as SettingsTab)
     ? (urlTab as SettingsTab)
     : "general";
@@ -93,7 +97,6 @@
     { id: "debug", icon: "m18 16 4-4-4-4 M6 8l-4 4 4 4 M14.5 4l-5 16" },
     { id: "characters", icon: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M22 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75" },
     { id: "memory", icon: "M12 2a7 7 0 0 0-7 7c0 4.42 6.26 11.34 7 11.34s7-6.92 7-11.34A7 7 0 0 0 12 2z M12 6a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" },
-    { id: "profile", icon: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z" },
   ];
 
   let settings = $state<UserSettings | null>(null);
@@ -141,85 +144,6 @@
   function debouncedSaveMemoryExtraction() {
     if (memoryExtractionSaveDebounce) clearTimeout(memoryExtractionSaveDebounce);
     memoryExtractionSaveDebounce = setTimeout(() => saveMemoryExtractionConfig(), 500);
-  }
-
-  // ── User Profile state ──
-  let profileLoading = $state(false);
-  let profileSaved = $state(false);
-  let profileError = $state('');
-  let profileForm = $state({
-    emergencyBufferCny: 100000,
-    familyBackupAvailable: false,
-    accountPurpose: 'long_term',
-    lifestyleNotes: '',
-    displayName: undefined as string | undefined,
-    riskTolerance: undefined as string | undefined,
-    exchangeBufferCny: undefined as number | undefined,
-  });
-  const accountPurposeOptions = $derived([
-    { value: 'long_term', label: t('settings_profile_purpose_long_term') },
-    { value: 'short_term', label: t('settings_profile_purpose_short_term') },
-    { value: 'speculation', label: t('settings_profile_purpose_speculation') },
-    { value: 'dividend', label: t('settings_profile_purpose_dividend') },
-    { value: 'hedge', label: t('settings_profile_purpose_hedge') },
-  ]);
-
-  async function loadProfile() {
-    profileLoading = true;
-    try {
-      const p = await getTransport().invoke<{
-        emergencyBufferCny: number;
-        familyBackupAvailable: boolean;
-        accountPurpose: string;
-        lifestyleNotes: string;
-        displayName?: string;
-        riskTolerance?: string;
-        exchangeBufferCny?: number;
-      }>('get_user_profile');
-      profileForm = {
-        emergencyBufferCny: p.emergencyBufferCny,
-        familyBackupAvailable: p.familyBackupAvailable,
-        accountPurpose: p.accountPurpose,
-        lifestyleNotes: p.lifestyleNotes,
-        displayName: p.displayName,
-        riskTolerance: p.riskTolerance,
-        exchangeBufferCny: p.exchangeBufferCny,
-      };
-    } catch (e) {
-      console.error('[settings] load profile error:', e);
-      profileError = t('settings_profile_load_failed');
-    } finally {
-      profileLoading = false;
-    }
-  }
-
-  async function saveProfile() {
-    profileSaved = false;
-    profileError = '';
-    const buffer = profileForm.emergencyBufferCny;
-    if (!Number.isFinite(buffer) || buffer < 0) {
-      profileForm.emergencyBufferCny = 100000;
-      profileError = t('settings_profile_invalid_buffer');
-      return;
-    }
-    try {
-      await getTransport().invoke('save_user_profile', {
-        profile: {
-          emergencyBufferCny: buffer,
-          familyBackupAvailable: profileForm.familyBackupAvailable,
-          accountPurpose: profileForm.accountPurpose,
-          lifestyleNotes: profileForm.lifestyleNotes,
-          displayName: profileForm.displayName,
-          riskTolerance: profileForm.riskTolerance,
-          exchangeBufferCny: profileForm.exchangeBufferCny,
-        },
-      });
-      profileSaved = true;
-      setTimeout(() => (profileSaved = false), 3000);
-    } catch (e) {
-      console.error('[settings] save profile error:', e);
-      profileError = t('settings_profile_save_failed');
-    }
   }
 
   type ConnectionAgentTab = "claude" | "codex";
@@ -1247,7 +1171,6 @@
     void refreshConnectionCliChecks();
     void loadMsvcEnvStatus(settings?.working_directory);
     loadMemoryExtractionConfig();
-    loadProfile();
     // Load web server status + token (desktop only)
     if (getTransport().isDesktop()) {
       Promise.all([api.getWebServerStatus(), api.getWebServerToken()])
@@ -3664,90 +3587,6 @@
           <p class="text-xs text-muted-foreground">
             自动记忆提取已禁用。群聊对话中的信息将不会被自动提取为用户记忆。
           </p>
-        {/if}
-      </Card>
-    {:else if activeTab === "profile"}
-      <Card class="p-6 space-y-4">
-        <h3 class="text-sm font-semibold">{t("settings_profile_title")}</h3>
-        <p class="text-xs text-muted-foreground">{t("settings_profile_desc")}</p>
-
-        {#if profileLoading}
-          <p class="text-sm text-muted-foreground">{t("invest_loading")}</p>
-        {:else}
-          <!-- Emergency Buffer -->
-          <div class="space-y-1">
-            <label class="text-sm font-medium">{t("settings_profile_emergency_buffer")}</label>
-            <p class="text-xs text-muted-foreground">{t("settings_profile_emergency_buffer_desc")}</p>
-            <input
-              type="number"
-              class="w-64 rounded border border-border bg-background px-3 py-1.5 text-sm"
-              bind:value={profileForm.emergencyBufferCny}
-              min="0"
-              step="10000"
-            />
-          </div>
-
-          <!-- Family Backup Toggle -->
-          <label class="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={profileForm.familyBackupAvailable}
-              onchange={(e) => (profileForm.familyBackupAvailable = e.currentTarget.checked)}
-              class="h-4 w-4 rounded border-input"
-            />
-            <div>
-              <span class="text-sm">{t("settings_profile_family_backup")}</span>
-              <p class="text-xs text-muted-foreground">{t("settings_profile_family_backup_desc")}</p>
-            </div>
-          </label>
-
-          <!-- Account Purpose -->
-          <div class="space-y-1">
-            <label class="text-sm font-medium">{t("settings_profile_account_purpose")}</label>
-            <div class="flex flex-wrap gap-2">
-              {#each accountPurposeOptions as opt}
-                <button
-                  class="rounded px-3 py-1 text-sm transition-colors"
-                  class:bg-primary={profileForm.accountPurpose === opt.value}
-                  class:text-primary-foreground={profileForm.accountPurpose === opt.value}
-                  class:bg-muted={profileForm.accountPurpose !== opt.value}
-                  onclick={() => (profileForm.accountPurpose = opt.value)}
-                >
-                  {opt.label}
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          <!-- Lifestyle Notes -->
-          <div class="space-y-1">
-            <label class="text-sm font-medium">{t("settings_profile_lifestyle_notes")}</label>
-            <p class="text-xs text-muted-foreground">{t("settings_profile_lifestyle_notes_desc")}</p>
-            <textarea
-              class="w-full rounded border border-border bg-background px-3 py-1.5 text-sm"
-              rows="4"
-              bind:value={profileForm.lifestyleNotes}
-              placeholder={t("settings_profile_lifestyle_notes_placeholder")}
-            ></textarea>
-          </div>
-
-          <!-- Display Name (read-only hint) -->
-          {#if profileForm.displayName}
-            <div class="text-xs text-muted-foreground">
-              {t("settings_profile_display_name")}: {profileForm.displayName}
-            </div>
-          {/if}
-
-          <!-- Save -->
-          <div class="flex gap-2 pt-2">
-            <Button onclick={saveProfile}>{t("settings_save")}</Button>
-            {#if profileSaved}
-              <span class="self-center text-xs text-green-400">{t("settings_saved")}</span>
-            {/if}
-            {#if profileError}
-              <span class="self-center text-xs text-red-400">{profileError}</span>
-            {/if}
-          </div>
         {/if}
       </Card>
     {/if}

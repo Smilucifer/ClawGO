@@ -326,6 +326,46 @@ class InvestStore {
     await this.loadAll();
   }
 
+  async addToWatch(
+    symbol: string,
+    name: string,
+    price: number,
+  ): Promise<void> {
+    const inWatch = this.watchHoldings.find((h) => h.symbol === symbol);
+    if (inWatch) throw new Error(`${symbol} already in watchlist`);
+    const inHold = this.holdHoldings.find((h) => h.symbol === symbol);
+    if (inHold) throw new Error(`${symbol} already in holdings`);
+
+    try {
+      await invoke("add_holding", {
+        symbol,
+        currency: "CNY",
+        kind: "watch",
+        name,
+        notional: 0,
+        avgCost: price,
+        shares: null,
+        entryDate: new Date().toISOString().split("T")[0],
+        linkedVerdictId: null,
+        notes: null,
+      });
+
+      await invoke("record_trade", {
+        id: null,
+        symbol,
+        currency: "CNY",
+        kind: "watch",
+        action: "add_watch",
+        shares: null,
+        price,
+        amount: 0,
+        notes: null,
+      });
+    } finally {
+      await this.loadAll();
+    }
+  }
+
   async convertWatchToHold(
     symbol: string,
     name: string,

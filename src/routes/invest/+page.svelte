@@ -9,6 +9,9 @@
   import TradeLogTab from '$lib/components/invest/TradeLogTab.svelte';
   import StrategyTab from '$lib/components/invest/StrategyTab.svelte';
   import PnlChart from '$lib/components/invest/PnlChart.svelte';
+  import UserProfileSection from '$lib/components/invest/UserProfileSection.svelte';
+  import MacroSnapshotCard from '$lib/components/invest/MacroSnapshotCard.svelte';
+  import LatestVerdictCard from '$lib/components/invest/LatestVerdictCard.svelte';
   import CommitteeLiveTab from '$lib/components/invest/CommitteeLiveTab.svelte';
   import CommitteeReplayTab from '$lib/components/invest/CommitteeReplayTab.svelte';
   import CommitteeArchiveTab from '$lib/components/invest/CommitteeArchiveTab.svelte';
@@ -60,7 +63,7 @@
   ]);
 
   let tushareToken = $state<string>('');
-  let dialogMode = $state<'buy' | 'sell' | 'cash' | 'convert' | null>(null);
+  let dialogMode = $state<'buy' | 'sell' | 'cash' | 'convert' | 'add_watch' | null>(null);
   let dialogPrefill = $state<{ symbol?: string; name?: string; holding?: Holding } | undefined>();
   let refreshInterval = $state<ReturnType<typeof setInterval> | null>(null);
 
@@ -107,6 +110,7 @@
   function openSell(h: Holding) { dialogMode = 'sell'; dialogPrefill = { symbol: h.symbol, name: h.name ?? undefined, holding: h }; }
   function openCash() { dialogMode = 'cash'; dialogPrefill = undefined; }
   function openConvert(h: Holding) { dialogMode = 'convert'; dialogPrefill = { symbol: h.symbol, name: h.name ?? undefined }; }
+  function openAddWatch() { dialogMode = 'add_watch'; dialogPrefill = undefined; }
   function closeDialog() { dialogMode = null; dialogPrefill = undefined; }
 </script>
 
@@ -145,16 +149,26 @@
         <KpiCard label={t('invest_position_count')} value={t('invest_hold') + ' ' + investStore.holdCount + ' + ' + t('invest_watch') + ' ' + investStore.watchCount} />
       </div>
 
+      <!-- Macro snapshot + Latest verdict -->
+      <div class="mb-4 grid gap-3 sm:grid-cols-2">
+        <MacroSnapshotCard />
+        <LatestVerdictCard />
+      </div>
+
       <div class="mb-4 flex gap-2">
         <button class="rounded bg-primary px-4 py-1.5 text-sm text-primary-foreground" onclick={openBuy}>{t('invest_buy')}</button>
         <button class="rounded bg-muted px-4 py-1.5 text-sm" onclick={openCash}>{t('invest_edit_cash')}</button>
         <button class="rounded bg-muted px-4 py-1.5 text-sm" onclick={() => investStore.refreshPrices(tushareToken)}>{t('invest_refresh_prices')}</button>
       </div>
 
-      <HoldingsTable onSell={openSell} onConvert={openConvert} {tushareToken} />
+      <HoldingsTable onSell={openSell} onConvert={openConvert} onAddWatch={openAddWatch} {tushareToken} />
 
       <div class="mt-6">
         <PnlChart />
+      </div>
+
+      <div class="mt-6">
+        <UserProfileSection />
       </div>
 
     {:else if activeTab === 'trades'}

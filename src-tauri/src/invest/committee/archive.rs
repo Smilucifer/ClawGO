@@ -3,8 +3,7 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
-use super::orchestrator::{CommitteeResult, RoundOutputSummary};
-use super::analysis::{SanityCheckResult, SentinelOverride};
+use super::orchestrator::CommitteeResult;
 
 // ---------------------------------------------------------------------------
 // ArchivedDecision — query result for load_archive
@@ -323,19 +322,9 @@ mod tests {
                     parsed: ParsedFields {
                         signal: Some("risk_on".to_string()),
                         strength: Some(7.0),
-                        concentration_pct: None,
-                        dry_powder_cny: None,
-                        quant_view: None,
-                        risk_view: None,
-                        wealth_context: None,
-                        solvency_buffer_level: None,
-                        verdict: None,
-                        confidence: None,
                         truncated: false,
-                        personal_note: None,
-                        execution_plan: None,
-                        risk_plan: None,
                         raw_text: "Macro analysis text".to_string(),
+                        ..Default::default()
                     },
                     latency_ms: 1200,
                     tokens_used: 350,
@@ -349,6 +338,7 @@ mod tests {
                 gate1_pass: true,
                 gate2_pass: true,
                 gate3_pass: false,
+                gate4_pass: true,
                 final_verdict: "HOLD".to_string(),
                 final_confidence: 0.75,
                 notes: vec!["Gate 3 triggered: low dry powder".to_string()],

@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>openInvest — 持仓调整操作</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --bg-card: #16213e;
+    --bg-panel: #0f3460;
+    --text: #e0e0e0;
+    --text-muted: #8899aa;
+    --accent: #e94560;
+    --accent-green: #22c55e;
+    --accent-blue: #3b82f6;
+    --accent-purple: #a855f7;
+    --accent-orange: #f97316;
+    --border: #2a2a4a;
+    --radius: 8px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    min-height: 100vh;
+    padding: 24px 32px 48px;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+  }
+  .header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  .header h1 span { color: var(--accent); }
+  .header-actions { display: flex; gap: 10px; }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 7px 16px;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+    white-space: nowrap;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #d63a55; box-shadow: 0 2px 12px rgba(233,69,96,0.3); }
+  .btn-green { background: var(--accent-green); color: #fff; }
+  .btn-green:hover { background: #1aab50; box-shadow: 0 2px 12px rgba(34,197,94,0.25); }
+  .btn-blue { background: var(--accent-blue); color: #fff; }
+  .btn-blue:hover { background: #2f6fd9; }
+  .btn-purple { background: var(--accent-purple); color: #fff; }
+  .btn-purple:hover { background: #9333ea; }
+  .btn-outline {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+  .btn-outline:hover { border-color: var(--text-muted); color: var(--text); background: rgba(255,255,255,0.04); }
+  .btn-danger-outline {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid rgba(233,69,96,0.4);
+  }
+  .btn-danger-outline:hover { background: rgba(233,69,96,0.1); border-color: var(--accent); }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn-xs { padding: 3px 8px; font-size: 11px; border-radius: 5px; }
+
+  /* Section */
+  .section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    margin-bottom: 20px;
+  }
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .section-title {
+    font-size: 15px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge-hold { background: rgba(59,130,246,0.18); color: var(--accent-blue); }
+  .badge-watch { background: rgba(249,115,22,0.18); color: var(--accent-orange); }
+  .badge-count { background: rgba(255,255,255,0.08); color: var(--text-muted); font-size: 11px; padding: 1px 7px; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    text-align: left;
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+  }
+  tbody tr {
+    border-bottom: 1px solid rgba(42,42,74,0.5);
+    transition: background 0.12s;
+  }
+  tbody tr:hover { background: rgba(255,255,255,0.025); }
+  tbody tr:last-child { border-bottom: none; }
+  td {
+    padding: 12px;
+    font-size: 13px;
+    vertical-align: middle;
+  }
+  td.symbol {
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12px;
+    color: var(--accent-blue);
+    font-weight: 500;
+  }
+  td.name { font-weight: 500; }
+  .pnl-positive { color: var(--accent-green); font-weight: 500; }
+  .pnl-negative { color: var(--accent); font-weight: 500; }
+  td.muted { color: var(--text-muted); font-size: 12px; }
+  td.actions { white-space: nowrap; }
+  td.actions .btn + .btn { margin-left: 5px; }
+  .row-actions { display: flex; gap: 5px; flex-wrap: nowrap; }
+
+  /* Watch table specific */
+  .watch-table .col-highlight { font-weight: 600; }
+
+  /* Conversion popover (inline confirmation) */
+  .convert-popover {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-panel);
+    border: 1px solid var(--accent-orange);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    animation: fadeIn 0.2s ease;
+  }
+  .convert-popover .icon { font-size: 16px; color: var(--accent-orange); flex-shrink: 0; }
+  .convert-popover .msg { flex: 1; line-height: 1.4; }
+  .convert-popover .msg strong { color: var(--accent-orange); }
+  .convert-popover .btn + .btn { margin-left: 6px; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Modal overlay */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 80px;
+    z-index: 100;
+    backdrop-filter: blur(2px);
+  }
+  .modal {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px 28px;
+    width: 380px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    animation: modalIn 0.25s ease;
+  }
+  .modal + .modal { margin-left: 16px; }
+  @keyframes modalIn {
+    from { opacity: 0; transform: translateY(-12px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .modal-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .modal-title .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .modal-title .dot-green { background: var(--accent-green); }
+  .modal-title .dot-purple { background: var(--accent-purple); }
+  .form-group { margin-bottom: 14px; }
+  .form-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .form-group input,
+  .form-group textarea {
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .form-group input:focus,
+  .form-group textarea:focus {
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
+  }
+  .form-group input::placeholder,
+  .form-group textarea::placeholder { color: #556677; }
+  .form-group textarea { resize: vertical; min-height: 56px; }
+  .form-group .hint { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 20px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Legend */
+  .legend {
+    margin-top: 28px;
+    padding: 16px 20px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .legend-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+  }
+  .legend-items { display: flex; gap: 28px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .legend-dot-hold { background: var(--accent-blue); }
+  .legend-dot-watch { background: var(--accent-orange); }
+  .legend-item .desc { color: var(--text-muted); font-size: 12px; }
+
+  /* Operation flow annotation */
+  .flow-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    vertical-align: middle;
+  }
+  .flow-buy { background: rgba(34,197,94,0.15); color: var(--accent-green); }
+  .flow-sell { background: rgba(233,69,96,0.15); color: var(--accent); }
+  .flow-convert { background: rgba(249,115,22,0.15); color: var(--accent-orange); }
+  .flow-watch { background: rgba(168,85,247,0.15); color: var(--accent-purple); }
+
+  /* Decorative operation labels */
+  .op-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .op-label .num {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .op1 { background: rgba(34,197,94,0.1); color: var(--accent-green); }
+  .op1 .num { background: rgba(34,197,94,0.2); }
+  .op2 { background: rgba(233,69,96,0.1); color: var(--accent); }
+  .op2 .num { background: rgba(233,69,96,0.2); }
+  .op3 { background: rgba(168,85,247,0.1); color: var(--accent-purple); }
+  .op3 .num { background: rgba(168,85,247,0.2); }
+  .op4 { background: rgba(249,115,22,0.1); color: var(--accent-orange); }
+  .op4 .num { background: rgba(249,115,22,0.2); }
+
+  /* Toolbar row for operations */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .toolbar .sep {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+  }
+
+  /* Responsive tweaks */
+  @media (max-width: 900px) {
+    .modal-overlay { flex-direction: column; padding-top: 40px; }
+    .modal { width: 100%; max-width: 380px; }
+    body { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="header">
+  <h1><span>openInvest</span> &mdash; 持仓调整操作</h1>
+  <div class="header-actions">
+    <span class="op-label op1"><span class="num">1</span> 买入</span>
+    <span class="op-label op2"><span class="num">2</span> 卖出</span>
+    <span class="op-label op3"><span class="num">3</span> 加入观望</span>
+    <span class="op-label op4"><span class="num">4</span> HOLD&harr;WATCH 转换</span>
+  </div>
+</header>
+
+<!-- Holdings (HOLD) -->
+<section class="section">
+  <div class="section-header">
+    <div class="section-title">
+      <span class="badge badge-hold">HOLD</span>
+      当前持仓
+      <span class="badge-count">3</span>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-primary btn-sm">+ 买入</button>
+      <button class="btn btn-danger-outline btn-sm">全部卖出</button>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>符号</th>
+        <th>名称</th>
+        <th style="text-align:right">持仓量</th>
+        <th style="text-align:right">成本价</th>
+        <th style="text-align:right">现价</th>
+        <th style="text-align:right">盈亏</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="symbol">600519.SH</td>
+        <td class="name">贵州茅台</td>
+        <td style="text-align:right">100 股</td>
+        <td style="text-align:right">1,680.00</td>
+        <td style="text-align:right">1,890.00</td>
+        <td style="text-align:right" class="pnl-positive">+210,000 (+12.5%)</td>
+        <td class="actions">
+          <div class="row-actions">
+            <button class="btn btn-danger-outline btn-xs">卖出</button>
+            <button class="btn btn-outline btn-xs">转观望</button>
+            <button class="btn btn-outline btn-xs">编辑</button>
+            <button class="btn btn-outline btn-xs">删除</button>
+          </div>
+          <!-- Conversion popover shown under this row -->
+          <div class="convert-popover">
+            <span class="icon">&#9888;</span>
+            <span class="msg">将 <strong>600519.SH</strong> 从持仓转为观望？持仓盈亏将保留记录。</span>
+            <button class="btn btn-outline btn-xs">取消</button>
+            <button class="btn btn-primary btn-xs">确认转换</button>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td class="symbol">000001.SZ</td>
+        <td class="name">平安银行</td>
+        <td style="text-align:right">500 股</td>
+        <td style="text-align:right">12.80</td>
+        <td style="text-align:right">12.39</td>
+        <td style="text-align:right" class="pnl-negative">-2,050 (-3.2%)</td>
+        <td class="actions">
+          <div class="row-actions">
+            <button class="btn btn-danger-outline btn-xs">卖出</button>
+            <button class="btn btn-outline btn-xs">转观望</button>
+            <button class="btn btn-outline btn-xs">编辑</button>
+            <button class="btn btn-outline btn-xs">删除</button>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td class="symbol">601318.SH</td>
+        <td class="name">中国平安</td>
+        <td style="text-align:right">300 股</td>
+        <td style="text-align:right">48.20</td>
+        <td style="text-align:right">50.98</td>
+        <td style="text-align:right" class="pnl-positive">+8,340 (+5.8%)</td>
+        <td class="actions">
+          <div class="row-actions">
+            <button class="btn btn-danger-outline btn-xs">卖出</button>
+            <button class="btn btn-outline btn-xs">转观望</button>
+            <button class="btn btn-outline btn-xs">编辑</button>
+            <button class="btn btn-outline btn-xs">删除</button>
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- Watchlist -->
+<section class="section watch-table">
+  <div class="section-header">
+    <div class="section-title">
+      <span class="badge badge-watch">WATCH</span>
+      观察列表
+      <span class="badge-count">2</span>
+    </div>
+    <button class="btn btn-purple btn-sm">+ 加入观望</button>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>符号</th>
+        <th>名称</th>
+        <th style="text-align:right">关注价</th>
+        <th style="text-align:right">现价</th>
+        <th style="text-align:right">涨跌幅</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="symbol">300750.SZ</td>
+        <td class="name">宁德时代</td>
+        <td style="text-align:right">198.50</td>
+        <td style="text-align:right">214.58</td>
+        <td style="text-align:right" class="pnl-positive">+8.1%</td>
+        <td class="actions">
+          <div class="row-actions">
+            <button class="btn btn-green btn-xs">转持仓</button>
+            <button class="btn btn-outline btn-xs">移除</button>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td class="symbol">002594.SZ</td>
+        <td class="name">比亚迪</td>
+        <td style="text-align:right">286.00</td>
+        <td style="text-align:right">281.71</td>
+        <td style="text-align:right" class="pnl-negative">-1.5%</td>
+        <td class="actions">
+          <div class="row-actions">
+            <button class="btn btn-green btn-xs">转持仓</button>
+            <button class="btn btn-outline btn-xs">移除</button>
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="legend-title">持仓类型说明</div>
+  <div class="legend-items">
+    <div class="legend-item">
+      <span class="legend-dot legend-dot-hold"></span>
+      <div>
+        <strong>HOLD</strong>
+        <span class="desc">&mdash; 占用现金，真实盈亏，计入总资产</span>
+      </div>
+    </div>
+    <div class="legend-item">
+      <span class="legend-dot legend-dot-watch"></span>
+      <div>
+        <strong>WATCH</strong>
+        <span class="desc">&mdash; 不占用现金，虚拟盈亏，追踪命中率</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal overlay: Buy + Sell + Add Watch dialogs side by side -->
+<div class="modal-overlay">
+  <!-- Buy Dialog -->
+  <div class="modal">
+    <div class="modal-title">
+      <span class="dot dot-green"></span>
+      买入
+      <span class="flow-badge flow-buy">操作 1</span>
+    </div>
+    <div class="form-group">
+      <label>股票代码</label>
+      <input type="text" placeholder="例：600519.SH" value="000858.SZ">
+    </div>
+    <div class="form-group">
+      <label>买入价格</label>
+      <input type="text" placeholder="0.00">
+    </div>
+    <div class="form-group">
+      <label>买入数量</label>
+      <input type="text" placeholder="股数">
+    </div>
+    <div class="form-group">
+      <label>备注</label>
+      <textarea placeholder="买入理由、策略备注..."></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline">取消</button>
+      <button class="btn btn-green">确认买入</button>
+    </div>
+  </div>
+
+  <!-- Sell Dialog -->
+  <div class="modal">
+    <div class="modal-title">
+      <span class="dot dot-green" style="background:var(--accent)"></span>
+      卖出
+      <span class="flow-badge flow-sell">操作 2</span>
+    </div>
+    <div class="form-group">
+      <label>股票代码</label>
+      <input type="text" placeholder="例：600519.SH" value="600519.SH">
+    </div>
+    <div class="form-group">
+      <label>卖出价格</label>
+      <input type="text" placeholder="0.00">
+    </div>
+    <div class="form-group">
+      <label>卖出数量</label>
+      <input type="text" placeholder="股数">
+      <div class="hint">全部卖出时数量自动填满</div>
+    </div>
+    <div class="form-group">
+      <label>备注</label>
+      <textarea placeholder="卖出理由、策略备注..."></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline">取消</button>
+      <button class="btn btn-primary">确认卖出</button>
+    </div>
+  </div>
+
+  <!-- Add Watch Dialog -->
+  <div class="modal">
+    <div class="modal-title">
+      <span class="dot dot-purple"></span>
+      加入观望
+      <span class="flow-badge flow-watch">操作 3</span>
+    </div>
+    <div class="form-group">
+      <label>股票代码</label>
+      <input type="text" placeholder="例：300750.SZ" value="601012.SH">
+    </div>
+    <div class="form-group">
+      <label>关注价格</label>
+      <input type="text" placeholder="0.00">
+      <div class="hint">当价格触及关注价时，系统将发出提醒</div>
+    </div>
+    <div class="form-group">
+      <label>观望原因</label>
+      <textarea placeholder="为什么关注这只股票？"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline">取消</button>
+      <button class="btn btn-purple">确认加入</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

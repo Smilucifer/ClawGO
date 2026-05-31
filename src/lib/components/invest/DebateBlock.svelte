@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '$lib/i18n/index.svelte';
   import type { RoundOutputSummary } from '$lib/stores/invest-committee-store.svelte';
 
   let { round, blockState = 'done', isStreaming = false }: {
@@ -11,11 +12,8 @@
 
   const ROLE_COLORS: Record<string, string> = {
     macro: '#8b5cf6',
-    quant_r1: '#3b82f6',
-    risk_r1: '#f97316',
-    wealth: '#22c55e',
-    quant_r2: '#3b82f6',
-    risk_r2: '#f97316',
+    quant: '#3b82f6',
+    risk: '#f97316',
     cio: '#eab308',
   };
 
@@ -38,7 +36,7 @@
     {#if isStreaming}
       <span class="flex items-center gap-1 text-xs text-muted-foreground">
         <span class="spinner"></span>
-        思考中...
+        {t('invest_debate_thinking')}
       </span>
     {/if}
 
@@ -64,7 +62,7 @@
     {#if blockState === 'active'}
       <div class="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
         <span class="spinner"></span>
-        等待 LLM 响应...
+        {t('invest_debate_waiting_llm')}
       </div>
     {:else if round.parsed.rawText}
       <div class="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap text-sm text-foreground/90">

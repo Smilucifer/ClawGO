@@ -1,5 +1,41 @@
 # Changelog / 更新日志
 
+## Phase 10+ (2026-05-31)
+
+### v4.0.0+ — openInvest 修复任务 + 代码审查
+
+**P0 Bug 修复（Wave 1, 4 项）:**
+1. 记忆管理页面切入即卡死（`$effect` 无限循环）
+2. Tushare 搜索 null 解析（`stock_basic` 返回空 items）
+3. LLM 配置"暂无配置"（`loadConfig` 初始化失败）
+4. 立即扫描无反应（Event Watch scan 错误处理）
+
+**Demo HTML（Wave 2, 3 项）:**
+5. Pipeline Flow 动画 demo
+6. Committee Roles 两栏布局 demo
+7. Dashboard 持仓管理 demo
+
+**P1 大改（Wave 3, 6 项）:**
+8. Dashboard 持仓 — 新增"加入观望"操作（`addToWatch` + `TradeDialog` add_watch 模式）
+9. Profile 从 Settings 迁移到 invest Dashboard 底部（`UserProfileSection` 组件）
+10. 侧边栏 Settings 移至最后（index 8）
+11. 直播"运行全部持仓"按钮 + "包含 WATCH" checkbox
+12. Replay 下拉选持仓 + 试运行不留档
+13. 角色配置 Tab 重写 — 两栏布局 + 4 角色卡片（QUANT/RISK 双轮 prompt）
+
+**P2/P3（Wave 4, 5 项）:**
+14. CommitteeLive 多资产并发总览表（symbol/状态/进度/裁决）
+15. Dashboard 宏观快照 + 最新裁决摘要卡片
+16. Memory Extraction i18n + 中文化（9 处硬编码中文）
+17. /memory 默认选中 MEMORY.md
+18. 文件路径可点击链接（`FilePathLinks` 组件）
+
+**代码审查修复（15 项）:**
+- **CRITICAL**: `add_watch` 搜索 UI 门控修复（功能完全不可用）
+- **HIGH**: ProviderConfigPanel `$effect` 无限重试守卫、`addToWatch` try/finally 部分失败保护
+- **MEDIUM**: holdHoldings 重复检查、状态派生一致性、wealth 角色恢复、Replay 手动输入、管线步数常量、allHoldings 去重
+- **LOW**: Settings profile 深链接重定向、HoldingsTable getPnlPct 缓存、Tushare 错误信息保留
+
 ## Phase 10+ (2026-05-28)
 
 ### v3.0.0 — 记忆系统重构: 用户中心 + SQLite FTS5

@@ -5,8 +5,10 @@ use super::analysis::{
 use super::archive::{archive_decision, archive_decision_full};
 use super::events::{step_index_for_role, CommitteeEvent};
 use super::parser::{parse_role_output, ParsedFields};
-use super::roles::{hard_truncate, length_constraint_suffix, load_prompt, CommitteeRole};
-use super::tools::{execute_tool, macro_tool_defs, tool_result_message};
+use super::roles::{
+    hard_truncate, length_constraint_suffix, load_prompt_for_round, CommitteeRole,
+};
+use super::tools::{execute_tool, role_tool_defs, tool_result_message};
 use crate::invest::llm::governor::global_governor;
 use crate::invest::llm::{
     collect_stream, CollectedResponse, InvestLlmClient, LlmConfig, Message, ProviderId, ToolDef,
@@ -24,7 +26,7 @@ pub type EventEmitter = Arc<dyn Fn(CommitteeEvent) + Send + Sync>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitteeConfig {
-    /// Number of debate rounds (default 2 = QuantR1/R1 + QuantR2/R2).
+    /// Number of debate rounds (default 2 = Quant/R1+R2 + Risk/R1+R2).
     pub debate_rounds: u8,
     /// Minimum dry powder (CNY) required to avoid Gate 3 downgrade.
     pub emergency_buffer_cny: f64,
@@ -89,7 +91,7 @@ pub struct CommitteeResult {
     pub macro_strength: Option<f64>,
     /// CIO raw reasoning text (preserved for archiving).
     pub reasoning: String,
-    /// All role outputs (Macro, QuantR1, RiskR1, Wealth, QuantR2, RiskR2, CIO).
+    /// All role outputs (Macro, Quant(R1/R2), Risk(R1/R2), CIO).
     pub rounds: Vec<RoundOutputSummary>,
     pub total_tokens: u32,
     pub total_latency_ms: u64,
@@ -105,6 +107,23 @@ pub struct CommitteeResult {
 /// Default provider for a role (all DeepSeek for now).
 fn default_role_provider(_role: CommitteeRole) -> ProviderId {
     ProviderId::DeepSeek
+}
+
+/// Look up the human-readable asset name from the holdings table for a given
+/// symbol. Returns `None` if the symbol is not found or if the DB query fails.
+fn get_asset_name(symbol: &str) -> Option<String> {
+    use crate::storage::invest::with_conn;
+    with_conn(|conn| {
+        conn.query_row(
+            "SELECT name FROM holdings WHERE symbol = ?1 AND name IS NOT NULL LIMIT 1",
+            [symbol],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .map_err(|e| format!("get_asset_name query: {e}"))
+    })
+    .ok()
+    .flatten()
+    .filter(|s| !s.is_empty())
 }
 
 /// Default temperature for a role.
@@ -240,50 +259,46 @@ fn build_context_messages(
 }
 
 // ---------------------------------------------------------------------------
-// Macro phase (with tool-call loop)
+// Shared tool-call loop (used by Macro, Quant, Risk)
 // ---------------------------------------------------------------------------
 
-async fn run_macro_phase(
+/// Run an LLM turn with an optional tool-call loop.
+///
+/// When `tool_defs` is `Some`, the first LLM call is made with tools. If the
+/// model requests tool calls, they are executed and a second call (without
+/// tools) produces the final text. When `tool_defs` is `None`, a single call
+/// is made without tools.
+async fn run_with_tool_loop(
     client: &dyn InvestLlmClient,
     symbol: &str,
-    config: &CommitteeConfig,
+    role: CommitteeRole,
+    round: u8,
+    system_prompt: &str,
+    messages: &mut Vec<Message>,
+    tool_defs: Option<&[ToolDef]>,
+    llm_config: &LlmConfig,
+    start: std::time::Instant,
 ) -> Result<(RoundOutput, u32), String> {
-    let role = CommitteeRole::Macro;
-    let provider = resolve_provider(config, role);
-    let llm_config = build_llm_config(provider, role, config.timeout_secs);
-
-    let system_prompt = format!("{}{}", load_prompt(role), length_constraint_suffix(role));
-    let tool_defs = macro_tool_defs();
-
-    let governor = global_governor();
-    let _permit = governor.acquire(provider).await;
-
-    let mut messages: Vec<Message> = vec![Message::user(format!(
-        "请分析 {} 的宏观环境和技术面，给出风险信号判断。",
-        symbol
-    ))];
-
-    let start = std::time::Instant::now();
     let mut total_tokens: u32 = 0;
 
-    // First call — with tools
+    // First call — with or without tools depending on tool_defs
     let response1 = match llm_call_with_retry(
         client,
-        &system_prompt,
-        &messages,
-        Some(&tool_defs),
-        &llm_config,
+        system_prompt,
+        messages,
+        tool_defs,
+        llm_config,
     )
     .await
     {
         Ok(r) => r,
         Err(e) => {
-            log::warn!("Macro first-pass LLM call failed: {}", e);
+            log::warn!("LLM first-pass call failed for {:?} R{}: {}", role, round, e);
             let latency_ms = start.elapsed().as_millis() as u64;
             return Ok((
                 RoundOutput {
                     role,
-                    round: 1,
+                    round,
                     parsed: ParsedFields {
                         raw_text: "[WORKER_UNAVAILABLE]".to_string(),
                         ..Default::default()
@@ -297,7 +312,7 @@ async fn run_macro_phase(
     };
     total_tokens += response1.usage.total_tokens;
 
-    if !response1.tool_calls.is_empty() {
+    if !response1.tool_calls.is_empty() && tool_defs.is_some() {
         // Build assistant message carrying tool-call metadata (OpenAI format)
         let tool_calls_json: Vec<serde_json::Value> = response1
             .tool_calls
@@ -333,15 +348,15 @@ async fn run_macro_phase(
 
         // Second call — without tools — to get final text
         let response2 =
-            match llm_call_with_retry(client, &system_prompt, &messages, None, &llm_config).await {
+            match llm_call_with_retry(client, system_prompt, messages, None, llm_config).await {
                 Ok(r) => r,
                 Err(e) => {
-                    log::warn!("Macro second-pass LLM call failed: {}", e);
+                    log::warn!("LLM second-pass call failed for {:?} R{}: {}", role, round, e);
                     let latency_ms = start.elapsed().as_millis() as u64;
                     return Ok((
                         RoundOutput {
                             role,
-                            round: 1,
+                            round,
                             parsed: ParsedFields {
                                 raw_text: "[WORKER_UNAVAILABLE]".to_string(),
                                 ..Default::default()
@@ -362,7 +377,7 @@ async fn run_macro_phase(
         Ok((
             RoundOutput {
                 role,
-                round: 1,
+                round,
                 parsed,
                 latency_ms,
                 tokens_used: total_tokens,
@@ -370,7 +385,7 @@ async fn run_macro_phase(
             total_tokens,
         ))
     } else {
-        // No tool calls — use first-pass content directly
+        // No tool calls or no tools provided — use first-pass content directly
         let (text, truncated) = hard_truncate(&response1.content, role, 0);
         let parsed = parse_role_output(role, &text, truncated);
         let latency_ms = start.elapsed().as_millis() as u64;
@@ -378,7 +393,7 @@ async fn run_macro_phase(
         Ok((
             RoundOutput {
                 role,
-                round: 1,
+                round,
                 parsed,
                 latency_ms,
                 tokens_used: total_tokens,
@@ -389,13 +404,59 @@ async fn run_macro_phase(
 }
 
 // ---------------------------------------------------------------------------
-// Generic role phase (Quant, Risk, Wealth, CIO — no tool calls)
+// Macro phase
+// ---------------------------------------------------------------------------
+
+async fn run_macro_phase(
+    client: &dyn InvestLlmClient,
+    symbol: &str,
+    config: &CommitteeConfig,
+) -> Result<(RoundOutput, u32), String> {
+    let role = CommitteeRole::Macro;
+    let provider = resolve_provider(config, role);
+    let llm_config = build_llm_config(provider, role, config.timeout_secs);
+
+    let asset_name = get_asset_name(symbol).unwrap_or_else(|| symbol.to_string());
+    let system_prompt = format!(
+        "{}{}",
+        load_prompt_for_round(role, 1, &asset_name, symbol),
+        length_constraint_suffix(role)
+    );
+    let tool_defs = role_tool_defs(role, 1);
+
+    let governor = global_governor();
+    let _permit = governor.acquire(provider).await;
+
+    let mut messages: Vec<Message> = vec![Message::user(format!(
+        "请分析 {} 的宏观环境和技术面，给出风险信号判断。",
+        symbol
+    ))];
+
+    let start = std::time::Instant::now();
+
+    run_with_tool_loop(
+        client,
+        symbol,
+        role,
+        1,
+        &system_prompt,
+        &mut messages,
+        tool_defs.as_deref(),
+        &llm_config,
+        start,
+    )
+    .await
+}
+
+// ---------------------------------------------------------------------------
+// Generic role phase (Quant, Risk, CIO)
 // ---------------------------------------------------------------------------
 
 async fn run_role_phase(
     client: &dyn InvestLlmClient,
     symbol: &str,
     role: CommitteeRole,
+    round: u8,
     config: &CommitteeConfig,
     round_outputs: &[RoundOutput],
     macro_signal: &str,
@@ -403,21 +464,22 @@ async fn run_role_phase(
 ) -> Result<RoundOutput, String> {
     let provider = resolve_provider(config, role);
     let llm_config = build_llm_config(provider, role, config.timeout_secs);
+    let tool_defs = role_tool_defs(role, round);
 
-    let system_prompt = format!("{}{}", load_prompt(role), length_constraint_suffix(role));
+    let asset_name = get_asset_name(symbol).unwrap_or_else(|| symbol.to_string());
+    let system_prompt = format!(
+        "{}{}",
+        load_prompt_for_round(role, round, &asset_name, symbol),
+        length_constraint_suffix(role)
+    );
 
     let governor = global_governor();
     let _permit = governor.acquire(provider).await;
 
-    let round = match role {
-        CommitteeRole::QuantR2 | CommitteeRole::RiskR2 => 2,
-        _ => 1,
-    };
-
     let mut messages = build_context_messages(round_outputs, symbol, macro_signal, emergency_buffer_cny);
 
     // For Round 2 rebuttal roles, append a rebuttal-specific instruction
-    if matches!(role, CommitteeRole::QuantR2 | CommitteeRole::RiskR2) {
+    if round >= 2 && matches!(role, CommitteeRole::Quant | CommitteeRole::Risk) {
         if let Some(last) = messages.last_mut() {
             last.content.push_str(
                 "\n\n这是反驳轮（Round 2），请基于之前的分析给出你的反驳或确认。",
@@ -427,37 +489,20 @@ async fn run_role_phase(
 
     let start = std::time::Instant::now();
 
-    let response = match llm_call_with_retry(client, &system_prompt, &messages, None, &llm_config)
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            log::warn!("LLM call failed for {:?}: {}", role, e);
-            let latency_ms = start.elapsed().as_millis() as u64;
-            return Ok(RoundOutput {
-                role,
-                round,
-                parsed: ParsedFields {
-                    raw_text: "[WORKER_UNAVAILABLE]".to_string(),
-                    ..Default::default()
-                },
-                latency_ms,
-                tokens_used: 0,
-            });
-        }
-    };
-
-    let (text, truncated) = hard_truncate(&response.content, role, 0);
-    let parsed = parse_role_output(role, &text, truncated);
-    let latency_ms = start.elapsed().as_millis() as u64;
-
-    Ok(RoundOutput {
+    let (output, _tokens) = run_with_tool_loop(
+        client,
+        symbol,
         role,
         round,
-        parsed,
-        latency_ms,
-        tokens_used: response.usage.total_tokens,
-    })
+        &system_prompt,
+        &mut messages,
+        tool_defs.as_deref(),
+        &llm_config,
+        start,
+    )
+    .await?;
+
+    Ok(output)
 }
 
 // ---------------------------------------------------------------------------
@@ -480,11 +525,8 @@ async fn run_debate_rounds(
     let mut converged = false;
 
     for round in 1..=max_rounds {
-        let roles = if round == 1 {
-            vec![CommitteeRole::QuantR1, CommitteeRole::RiskR1]
-        } else {
-            vec![CommitteeRole::QuantR2, CommitteeRole::RiskR2]
-        };
+        // Both Quant and Risk participate in each round
+        let roles = vec![CommitteeRole::Quant, CommitteeRole::Risk];
 
         for role in roles {
             let si = step_index_for_role(role, round);
@@ -497,7 +539,17 @@ async fn run_debate_rounds(
                 });
             }
 
-            let output = run_role_phase(client, symbol, role, config, round_outputs, macro_signal, emergency_buffer_cny).await?;
+            let output = run_role_phase(
+                client,
+                symbol,
+                role,
+                round,
+                config,
+                round_outputs,
+                macro_signal,
+                emergency_buffer_cny,
+            )
+            .await?;
             *total_tokens += output.tokens_used;
 
             if let Some(ref emit) = emitter {
@@ -534,13 +586,12 @@ async fn run_debate_rounds(
 
 /// Run the full committee pipeline for a single symbol.
 ///
-/// Pipeline:
-/// 1. Macro (with tool-call loop) → signal + strength
-/// 2. Debate rounds: QuantR1/R1 + QuantR2/R2, early convergence exit
-/// 3. Wealth context
-/// 4. CIO verdict
-/// 5. Post-analysis: sentinel, convergence, sanity check
-/// 6. Archive (fire-and-forget)
+/// Pipeline (6 steps):
+/// 1. Macro (with tool-call loop) -> signal + strength
+/// 2. Debate rounds: Quant/R1 + Risk/R1, then Quant/R2 + Risk/R2, early convergence exit
+/// 3. CIO verdict
+/// 4. Post-analysis: sentinel, convergence, sanity check
+/// 5. Archive (fire-and-forget)
 ///
 /// When `emitter` is `Some`, events are emitted at each pipeline step boundary
 /// for real-time frontend streaming via `"committee-event"` Tauri event channel.
@@ -597,39 +648,19 @@ pub async fn run_committee(
     let macro_strength = round_outputs[0].parsed.strength;
 
     // ── Step 2: Debate rounds ──────────────────────────────────────────
-    let converged =
-        run_debate_rounds(client, symbol, config, &mut round_outputs, &mut total_tokens, &macro_signal, config.emergency_buffer_cny, &emitter).await?;
+    let converged = run_debate_rounds(
+        client,
+        symbol,
+        config,
+        &mut round_outputs,
+        &mut total_tokens,
+        &macro_signal,
+        config.emergency_buffer_cny,
+        &emitter,
+    )
+    .await?;
 
-    // ── Step 3: Wealth context ─────────────────────────────────────────
-    {
-        let si = step_index_for_role(CommitteeRole::Wealth, 1);
-        if let Some(ref emit) = emitter {
-            emit(CommitteeEvent::RoleStart {
-                symbol: symbol.to_string(),
-                role: CommitteeRole::Wealth,
-                round: 1,
-                step_index: si,
-            });
-        }
-
-        let wealth_output =
-            run_role_phase(client, symbol, CommitteeRole::Wealth, config, &round_outputs, &macro_signal, config.emergency_buffer_cny).await?;
-        total_tokens += wealth_output.tokens_used;
-
-        if let Some(ref emit) = emitter {
-            emit(CommitteeEvent::RoleComplete {
-                symbol: symbol.to_string(),
-                role: CommitteeRole::Wealth,
-                round: 1,
-                summary: RoundOutputSummary::from(&wealth_output),
-                step_index: si,
-            });
-        }
-
-        round_outputs.push(wealth_output);
-    }
-
-    // ── Step 4: CIO verdict ────────────────────────────────────────────
+    // ── Step 3: CIO verdict ────────────────────────────────────────────
     {
         let si = step_index_for_role(CommitteeRole::Cio, 1);
         if let Some(ref emit) = emitter {
@@ -641,8 +672,17 @@ pub async fn run_committee(
             });
         }
 
-        let cio_output =
-            run_role_phase(client, symbol, CommitteeRole::Cio, config, &round_outputs, &macro_signal, config.emergency_buffer_cny).await?;
+        let cio_output = run_role_phase(
+            client,
+            symbol,
+            CommitteeRole::Cio,
+            1,
+            config,
+            &round_outputs,
+            &macro_signal,
+            config.emergency_buffer_cny,
+        )
+        .await?;
         total_tokens += cio_output.tokens_used;
 
         if let Some(ref emit) = emitter {
@@ -658,7 +698,7 @@ pub async fn run_committee(
         round_outputs.push(cio_output);
     }
 
-    // ── Step 5: Post-analysis ──────────────────────────────────────────
+    // ── Step 4: Post-analysis ──────────────────────────────────────────
     let sentinel = check_sentinel(&round_outputs);
 
     let cio_parsed = round_outputs
@@ -686,7 +726,7 @@ pub async fn run_committee(
     let total_latency_ms = start.elapsed().as_millis() as u64;
     let reasoning = cio_parsed.raw_text.clone();
 
-    // ── Step 6: Archive (fire-and-forget) ──────────────────────────────
+    // ── Step 5: Archive (fire-and-forget) ──────────────────────────────
     let cio_provider = resolve_provider(config, CommitteeRole::Cio);
 
     if let Err(e) = archive_decision(

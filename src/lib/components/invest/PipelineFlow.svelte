@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '$lib/i18n/index.svelte';
   import type { SymbolProgress } from '$lib/stores/invest-committee-store.svelte';
 
   let { progress, compact = false }: {
@@ -6,24 +7,23 @@
     compact?: boolean;
   } = $props();
 
-  const NODES = [
-    { role: 'macro', label: '宏观', color: '#8b5cf6', icon: 'M' },
-    { role: 'quant_r1', label: '量化R1', color: '#3b82f6', icon: 'Q1' },
-    { role: 'risk_r1', label: '风控R1', color: '#f97316', icon: 'R1' },
-    { role: 'wealth', label: '财富', color: '#22c55e', icon: 'W' },
-    { role: 'quant_r2', label: '量化R2', color: '#3b82f6', icon: 'Q2' },
-    { role: 'risk_r2', label: '风控R2', color: '#f97316', icon: 'R2' },
+  const NODES = $derived([
+    { role: 'macro', label: t('invest_pipeline_macro'), color: '#8b5cf6', icon: 'M' },
+    { role: 'quant_r1', label: t('invest_pipeline_quant_r1'), color: '#3b82f6', icon: 'Q1' },
+    { role: 'risk_r1', label: t('invest_pipeline_risk_r1'), color: '#f97316', icon: 'R1' },
+    { role: 'quant_r2', label: t('invest_pipeline_quant_r2'), color: '#3b82f6', icon: 'Q2' },
+    { role: 'risk_r2', label: t('invest_pipeline_risk_r2'), color: '#f97316', icon: 'R2' },
     { role: 'cio', label: 'CIO', color: '#eab308', icon: 'C' },
-  ];
+  ]);
 
-  function nodeState(index: number): 'pending' | 'active' | 'done' | 'error' {
+  function nodeState(index: number): 'pending' | 'active' | 'done' | 'error' | 'skipped' {
     if (!progress) return 'pending';
     if (progress.error && progress.activeStep === -1) return 'error';
     if (index === progress.activeStep) return 'active';
-    if (index < progress.activeStep || progress.done) return 'done';
-    // Check completedRounds to determine which steps are done
+    if (index < progress.activeStep) return 'done';
     const completedSteps = progress.completedRounds.length;
     if (index < completedSteps) return 'done';
+    if (progress.done && index >= completedSteps) return 'skipped';
     return 'pending';
   }
 </script>
@@ -48,11 +48,12 @@
         class:active={state === 'active'}
         class:done={state === 'done'}
         class:error={state === 'error'}
+        class:skipped={state === 'skipped'}
         style="--node-color: {node.color};"
         title={node.label}
       >
         <span class="node-icon">
-          {#if state === 'done'}✓{:else if state === 'error'}✗{:else}{node.icon}{/if}
+          {#if state === 'done'}✓{:else if state === 'error'}✗{:else if state === 'skipped'}—{:else}{node.icon}{/if}
         </span>
         {#if !compact}
           <span class="node-label">{node.label}</span>
@@ -149,6 +150,13 @@
     border-color: hsl(0, 84%, 60%);
     background: hsl(0, 84%, 95%);
     color: hsl(0, 84%, 50%);
+  }
+
+  .node.skipped {
+    border-style: dashed;
+    border-color: var(--border);
+    opacity: 0.4;
+    color: var(--muted-foreground);
   }
 
   :global(.dark) .node.error {

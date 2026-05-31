@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '$lib/i18n/index.svelte';
   import { investCommitteeStore } from '$lib/stores/invest-committee-store.svelte';
   import type { ArchivedDecision } from '$lib/stores/invest-committee-store.svelte';
 
@@ -32,7 +33,7 @@
         <input
           type="text"
           class="w-full rounded border border-border bg-background px-3 py-1.5 text-sm"
-          placeholder="股票代码"
+          placeholder={t('invest_replay_symbol')}
           bind:value={symbol}
         />
       </div>
@@ -41,7 +42,7 @@
         disabled={loading || !symbol.trim()}
         onclick={load}
       >
-        {loading ? '...' : '查询'}
+        {loading ? '...' : t('invest_archive_query')}
       </button>
     </div>
 
@@ -61,7 +62,7 @@
       </div>
     {:else}
       <div class="py-4 text-center text-xs text-muted-foreground">
-        输入代码查询归档
+        {t('invest_archive_empty')}
       </div>
     {/if}
   </div>
@@ -80,7 +81,7 @@
       </div>
     {:else}
       <div class="flex h-full items-center justify-center text-sm text-muted-foreground">
-        选择左侧记录查看详情
+        {t('invest_archive_select')}
       </div>
     {/if}
   </div>

@@ -1,7 +1,10 @@
 pub mod domain_insights;
 pub mod dream_snapshots;
 pub mod events;
+pub mod macro_cache;
 pub mod portfolio;
+#[allow(unused)]
+pub mod round_cache;
 pub mod scheduler;
 pub mod strategy;
 pub mod user_profile;
@@ -76,6 +79,9 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
 
     // Migration: create dream_snapshots table (use local conn, DB not yet in static)
     dream_snapshots::create_table(&conn)?;
+
+    // Migration: create macro_cache table (use local conn, DB not yet in static)
+    macro_cache::create_table(&conn)?;
 
     // FTS5 virtual table for domain_insights full-text search
     conn.execute_batch(

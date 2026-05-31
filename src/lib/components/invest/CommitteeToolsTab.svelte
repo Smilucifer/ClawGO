@@ -4,7 +4,7 @@
 
 <div class="flex h-48 items-center justify-center">
   <div class="text-center text-muted-foreground">
-    <p class="text-lg font-medium">Tool 调用监控</p>
-    <p class="mt-1 text-sm">Phase 4 开发中 — 将展示宏观分析师的工具调用详情</p>
+    <p class="text-lg font-medium">{t('invest_tools_title')}</p>
+    <p class="mt-1 text-sm">{t('invest_tools_desc')}</p>
   </div>
 </div>

@@ -98,5 +98,17 @@ pub fn default_jobs() -> Vec<CronJob> {
             last_status: None,
             description: "生成每日投资报告并存档".into(),
         },
+        CronJob {
+            id: "macro_refresh".into(),
+            name: "宏观指标缓存刷新".into(),
+            cron_expr: "*/15 8-22 * * 1-5".into(),
+            interval_min: None,
+            enabled: true,
+            requires_trading_day: true,
+            last_run: None,
+            next_run: None,
+            last_status: None,
+            description: "每15分钟刷新12个宏观指标到macro_cache表".into(),
+        },
     ]
 }

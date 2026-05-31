@@ -77,6 +77,41 @@ pub struct Announcement {
     pub url: String,
 }
 
+/// A single HSGT money flow entry (沪深港通资金流向).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoneyflowHsgt {
+    pub trade_date: String,
+    pub north_money: f64,
+    pub south_money: f64,
+    pub net_money: f64,
+}
+
+/// A single margin trading detail entry (融资融券交易明细).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarginDetail {
+    pub trade_date: String,
+    pub rzye: f64,
+    pub rzmre: f64,
+    pub rzche: f64,
+}
+
+/// A single SHIBOR entry (上海银行间同业拆放利率).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Shibor {
+    pub date: String,
+    pub on: f64,
+    pub w1: f64,
+    pub m1: f64,
+    pub m3: f64,
+}
+
+/// A single China government bond yield entry (中国国债收益率).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CnBondYield {
+    pub ts_code: String,
+    pub yield_10y: f64,
+}
+
 // ---------------------------------------------------------------------------
 // Row helpers — extract typed values from a positional row slice
 // ---------------------------------------------------------------------------
@@ -130,6 +165,7 @@ pub fn get_i64(row: &[serde_json::Value], idx: usize) -> Option<i64> {
 // ---------------------------------------------------------------------------
 
 /// HTTP client for the Tushare Pro API.
+#[derive(Clone)]
 pub struct TushareClient {
     token: String,
     client: reqwest::Client,
@@ -198,7 +234,7 @@ impl TushareClient {
                 serde_json::from_str(&text).map_err(|e| format!("json parse error: {e}"))?;
 
             if parsed.code != 0 {
-                return Err(format!("tushare error {}: {}", parsed.code, parsed.msg.unwrap_or_default()));
+                return Err(format!("tushare error {}: {}", parsed.code, parsed.msg.unwrap_or_else(|| "(no message)".into())));
             }
 
             return Ok(parsed);
@@ -461,6 +497,154 @@ impl TushareClient {
                     .unwrap_or_default(),
                 url: url_idx
                     .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+            });
+        }
+        Ok(items)
+    }
+
+    /// Fetch HSGT money flow (沪深港通资金流向) within a date range.
+    pub async fn moneyflow_hsgt(
+        &self,
+        start_date: &str,
+        end_date: &str,
+    ) -> Result<Vec<MoneyflowHsgt>, String> {
+        let params = serde_json::json!({
+            "start_date": start_date,
+            "end_date": end_date,
+        });
+        let resp = self.call_api("moneyflow_hsgt", params, "").await?;
+
+        let fields = &resp.data.fields;
+        let trade_date_idx = fields.iter().position(|f| f == "trade_date");
+        let north_money_idx = fields.iter().position(|f| f == "north_money");
+        let south_money_idx = fields.iter().position(|f| f == "south_money");
+        let net_money_idx = fields.iter().position(|f| f == "net_money");
+
+        let mut items = Vec::with_capacity(resp.data.items.len());
+        for row in &resp.data.items {
+            items.push(MoneyflowHsgt {
+                trade_date: trade_date_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+                north_money: north_money_idx
+                    .and_then(|i| get_f64(row, i))
+                    .unwrap_or_default(),
+                south_money: south_money_idx
+                    .and_then(|i| get_f64(row, i))
+                    .unwrap_or_default(),
+                net_money: net_money_idx
+                    .and_then(|i| get_f64(row, i))
+                    .unwrap_or_default(),
+            });
+        }
+        Ok(items)
+    }
+
+    /// Fetch margin trading detail (融资融券交易明细) within a date range.
+    pub async fn margin_detail(
+        &self,
+        start_date: &str,
+        end_date: &str,
+    ) -> Result<Vec<MarginDetail>, String> {
+        let params = serde_json::json!({
+            "start_date": start_date,
+            "end_date": end_date,
+        });
+        let resp = self.call_api("margin_detail", params, "").await?;
+
+        let fields = &resp.data.fields;
+        let trade_date_idx = fields.iter().position(|f| f == "trade_date");
+        let rzye_idx = fields.iter().position(|f| f == "rzye");
+        let rzmre_idx = fields.iter().position(|f| f == "rzmre");
+        let rzche_idx = fields.iter().position(|f| f == "rzche");
+
+        let mut items = Vec::with_capacity(resp.data.items.len());
+        for row in &resp.data.items {
+            items.push(MarginDetail {
+                trade_date: trade_date_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+                rzye: rzye_idx
+                    .and_then(|i| get_f64(row, i))
+                    .unwrap_or_default(),
+                rzmre: rzmre_idx
+                    .and_then(|i| get_f64(row, i))
+                    .unwrap_or_default(),
+                rzche: rzche_idx
+                    .and_then(|i| get_f64(row, i))
+                    .unwrap_or_default(),
+            });
+        }
+        Ok(items)
+    }
+
+    /// Fetch SHIBOR rates (上海银行间同业拆放利率) within a date range.
+    pub async fn shibor(
+        &self,
+        start_date: &str,
+        end_date: &str,
+    ) -> Result<Vec<Shibor>, String> {
+        let params = serde_json::json!({
+            "start_date": start_date,
+            "end_date": end_date,
+        });
+        let resp = self.call_api("shibor", params, "").await?;
+
+        let fields = &resp.data.fields;
+        let date_idx = fields.iter().position(|f| f == "date");
+        let on_idx = fields.iter().position(|f| f == "on");
+        let w1_idx = fields.iter().position(|f| f == "w1");
+        let m1_idx = fields.iter().position(|f| f == "m1");
+        let m3_idx = fields.iter().position(|f| f == "m3");
+
+        let mut items = Vec::with_capacity(resp.data.items.len());
+        for row in &resp.data.items {
+            items.push(Shibor {
+                date: date_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+                on: on_idx
+                    .and_then(|i| get_f64(row, i))
+                    .unwrap_or_default(),
+                w1: w1_idx
+                    .and_then(|i| get_f64(row, i))
+                    .unwrap_or_default(),
+                m1: m1_idx
+                    .and_then(|i| get_f64(row, i))
+                    .unwrap_or_default(),
+                m3: m3_idx
+                    .and_then(|i| get_f64(row, i))
+                    .unwrap_or_default(),
+            });
+        }
+        Ok(items)
+    }
+
+    /// Fetch China government bond yields (中国国债收益率) within a date range.
+    pub async fn cn_bond_yield(
+        &self,
+        start_date: &str,
+        end_date: &str,
+    ) -> Result<Vec<CnBondYield>, String> {
+        let params = serde_json::json!({
+            "start_date": start_date,
+            "end_date": end_date,
+        });
+        let resp = self.call_api("cn_bond_yield", params, "").await?;
+
+        let fields = &resp.data.fields;
+        let ts_code_idx = fields.iter().position(|f| f == "ts_code");
+        let yield_10y_idx = fields.iter().position(|f| f == "yield_10y");
+
+        let mut items = Vec::with_capacity(resp.data.items.len());
+        for row in &resp.data.items {
+            items.push(CnBondYield {
+                ts_code: ts_code_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+                yield_10y: yield_10y_idx
+                    .and_then(|i| get_f64(row, i))
                     .unwrap_or_default(),
             });
         }

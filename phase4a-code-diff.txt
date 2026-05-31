@@ -1,0 +1,3624 @@
+diff --git a/src-tauri/src/commands/invest.rs b/src-tauri/src/commands/invest.rs
+index 993044d..d1968d3 100644
+--- a/src-tauri/src/commands/invest.rs
++++ b/src-tauri/src/commands/invest.rs
+@@ -7,6 +7,9 @@ use crate::storage::invest::{
+ };
+ use tauri::Emitter;
+ 
++/// Maximum number of detail entries returned by `get_verdict_review_detail`.
++const MAX_DETAIL_ENTRIES: i64 = 200;
++
+ // ── Holdings ────────────────────────────────────────────────────────────────
+ 
+ #[tauri::command]
+@@ -811,3 +814,134 @@ pub struct ScanStatus {
+     pub untriggered_high: usize,
+     pub last_event_at: Option<String>,
+ }
++
++// ── Domain Insights ────────────────────────────────────────────────────
++
++#[tauri::command]
++pub fn list_insights(
++    status: Option<String>,
++    insight_type: Option<String>,
++    symbol: Option<String>,
++    limit: Option<i64>,
++) -> Result<Vec<crate::storage::invest::domain_insights::DomainInsight>, String> {
++    crate::storage::invest::domain_insights::list_insights(
++        status.as_deref(),
++        insight_type.as_deref(),
++        symbol.as_deref(),
++        limit,
++    )
++}
++
++#[tauri::command]
++pub fn archive_insight(id: String) -> Result<(), String> {
++    crate::storage::invest::domain_insights::archive_insight(&id)
++}
++
++#[tauri::command]
++pub fn unarchive_insight(id: String) -> Result<(), String> {
++    crate::storage::invest::domain_insights::unarchive_insight(&id)
++}
++
++#[tauri::command]
++pub fn search_domain_insights(
++    query: String,
++    limit: Option<i64>,
++) -> Result<Vec<crate::storage::invest::domain_insights::DomainInsight>, String> {
++    crate::storage::invest::domain_insights::search_insights(&query, limit)
++}
++
++// ── Scheduler commands ──────────────────────────────────────────────
++
++#[tauri::command]
++pub fn list_cron_jobs() -> Result<Vec<crate::invest::scheduler::CronJob>, String> {
++    Ok(crate::invest::scheduler::config::load_jobs())
++}
++
++#[tauri::command]
++pub fn toggle_cron_job(id: String, enabled: bool) -> Result<(), String> {
++    crate::invest::scheduler::config::toggle_job(&id, enabled)
++}
++
++#[tauri::command]
++pub fn update_cron_schedule(id: String, cron_expr: String) -> Result<(), String> {
++    crate::invest::scheduler::config::update_cron(&id, &cron_expr)
++}
++
++#[tauri::command]
++pub fn get_cron_job_logs(
++    task_name: String,
++    limit: Option<i64>,
++) -> Result<Vec<crate::storage::invest::scheduler::SchedulerLog>, String> {
++    crate::storage::invest::scheduler::get_task_logs(&task_name, limit)
++}
++
++#[tauri::command]
++pub async fn trigger_cron_job(id: String) -> Result<String, String> {
++    use crate::storage::invest::scheduler::{log_task_end, log_task_start};
++
++    let log_id = log_task_start(&id)?;
++    let result = crate::invest::scheduler::runner::dispatch_job(&id).await;
++
++    let status = if result.is_ok() { "ok" } else { "error" };
++    let msg = match &result {
++        Ok(m) => Some(m.as_str()),
++        Err(e) => Some(e.as_str()),
++    };
++    let _ = log_task_end(log_id, status, msg);
++    result
++}
++
++// ── Verdict Review commands ──────────────────────────────────────────
++
++#[tauri::command]
++pub async fn run_verdict_review_cmd(
++    tushare_token: String,
++) -> Result<crate::invest::verdict_review::VerdictReviewSummary, String> {
++    crate::invest::verdict_review::run_verdict_review(&tushare_token).await
++}
++
++#[tauri::command]
++pub fn get_verdict_review_summary(
++) -> Result<crate::invest::verdict_review::VerdictReviewSummary, String> {
++    use crate::storage::invest::verdict_reviews;
++    let reviews = verdict_reviews::list_reviews(None, None)?;
++    Ok(crate::invest::verdict_review::aggregate_from_stored(&reviews))
++}
++
++#[tauri::command]
++pub fn get_verdict_review_detail(
++    symbol: Option<String>,
++) -> Result<Vec<crate::storage::invest::verdict_reviews::VerdictReviewEntry>, String> {
++    crate::storage::invest::verdict_reviews::list_reviews(symbol.as_deref(), Some(MAX_DETAIL_ENTRIES))
++}
++
++// ── Dreaming commands ────────────────────────────────────────────────
++
++#[tauri::command]
++pub async fn trigger_dream(mode: String) -> Result<crate::invest::dreaming::DreamResult, String> {
++    let settings = crate::storage::settings::get_user_settings();
++    let tushare_token = settings
++        .tushare_token
++        .ok_or("No Tushare token configured")?;
++    crate::invest::dreaming::trigger_dream(&mode, &tushare_token).await
++}
++
++#[tauri::command]
++pub fn get_dream_config() -> Result<crate::invest::dreaming::DreamConfig, String> {
++    Ok(crate::invest::scheduler::config::load_dream_config())
++}
++
++#[tauri::command]
++pub fn save_dream_config(config: crate::invest::dreaming::DreamConfig) -> Result<(), String> {
++    crate::invest::scheduler::config::save_dream_config(&config)
++}
++
++#[tauri::command]
++pub fn list_dream_traces(dream_type: Option<String>, limit: Option<i64>) -> Result<Vec<crate::storage::invest::dream_snapshots::DreamSnapshot>, String> {
++    crate::storage::invest::dream_snapshots::list_snapshots(dream_type.as_deref(), limit)
++}
++
++#[tauri::command]
++pub fn rollback_dream(snapshot_id: i64) -> Result<(), String> {
++    crate::invest::dreaming::snapshot::rollback_snapshot(snapshot_id)
++}
+diff --git a/src-tauri/src/invest/dreaming/mod.rs b/src-tauri/src/invest/dreaming/mod.rs
+new file mode 100644
+index 0000000..c98ea81
+--- /dev/null
++++ b/src-tauri/src/invest/dreaming/mod.rs
+@@ -0,0 +1,57 @@
++pub mod pipeline;
++pub mod snapshot;
++
++use serde::{Deserialize, Serialize};
++
++#[derive(Debug, Clone, Serialize, Deserialize)]
++#[serde(rename_all = "camelCase")]
++pub struct DreamConfig {
++    pub invest_enabled: bool,
++    pub invest_cron: String,
++    pub user_memory_enabled: bool,
++    pub user_memory_interval_min: i64,
++    pub lookback_days: i64,
++    pub min_score: f64,
++    pub min_count: i64,
++}
++
++impl Default for DreamConfig {
++    fn default() -> Self {
++        Self {
++            invest_enabled: false,
++            invest_cron: "0 3 * * *".into(),
++            user_memory_enabled: false,
++            user_memory_interval_min: 120,
++            lookback_days: 30,
++            min_score: 0.8,
++            min_count: 3,
++        }
++    }
++}
++
++#[derive(Debug, Clone, Serialize, Deserialize)]
++#[serde(rename_all = "camelCase")]
++pub struct DreamResult {
++    pub insights_written: usize,
++    pub insights_updated: usize,
++    pub insights_archived: usize,
++    pub pipeline_duration_ms: i64,
++    pub stages: Vec<StageResult>,
++}
++
++#[derive(Debug, Clone, Serialize, Deserialize)]
++#[serde(rename_all = "camelCase")]
++pub struct StageResult {
++    pub stage: String,
++    pub duration_ms: i64,
++    pub items_processed: usize,
++    pub items_output: usize,
++}
++
++/// Trigger the invest dreaming pipeline.
++pub async fn trigger_dream(mode: &str, tushare_token: &str) -> Result<DreamResult, String> {
++    match mode {
++        "invest" => pipeline::run_invest_pipeline(tushare_token).await,
++        _ => Err(format!("Unknown dream mode: {mode}")),
++    }
++}
+diff --git a/src-tauri/src/invest/dreaming/pipeline.rs b/src-tauri/src/invest/dreaming/pipeline.rs
+new file mode 100644
+index 0000000..58a9f20
+--- /dev/null
++++ b/src-tauri/src/invest/dreaming/pipeline.rs
+@@ -0,0 +1,304 @@
++use super::{DreamResult, StageResult};
++use crate::storage::invest::domain_insights::{self, DomainInsight};
++use crate::storage::invest::verdicts;
++use crate::tushare::TushareClient;
++use std::collections::HashMap;
++use std::time::Instant;
++
++#[derive(Debug)]
++struct DreamCandidate {
++    symbol: String,
++    verdict: String,
++    regime: String,
++    hit_rate_1d: f64,
++    hit_rate_7d: f64,
++    hit_rate_30d: f64,
++    count: usize,
++    avg_return_1d: f64,
++    avg_return_7d: f64,
++    avg_return_30d: f64,
++    source_ids: Vec<String>,
++}
++
++fn compute_hit_rate(returns: &[f64], is_bullish: bool) -> f64 {
++    if returns.is_empty() {
++        return 0.0;
++    }
++    let hits = returns
++        .iter()
++        .filter(|r| if is_bullish { **r > 0.0 } else { **r < 0.0 })
++        .count();
++    hits as f64 / returns.len() as f64
++}
++
++fn avg_or_zero(returns: &[f64]) -> f64 {
++    if returns.is_empty() {
++        0.0
++    } else {
++        returns.iter().sum::<f64>() / returns.len() as f64
++    }
++}
++
++pub async fn run_invest_pipeline(tushare_token: &str) -> Result<DreamResult, String> {
++    let pipeline_start = Instant::now();
++    let client = TushareClient::new(tushare_token.to_string());
++    let config = crate::invest::scheduler::config::load_dream_config();
++
++    // Snapshot before (for rollback)
++    let before_json = domain_insights::get_active_insights_json()?;
++
++    // ── Light Sleep: Extract tuples from recent verdicts ───────────────
++    let light_start = Instant::now();
++    let verdicts = verdicts::list_verdicts(None, Some(200))?;
++    let today = chrono::Local::now().naive_local().date();
++    let cutoff = today - chrono::Duration::days(config.lookback_days);
++
++    let recent: Vec<_> = verdicts
++        .iter()
++        .filter(|v| {
++            // created_at is "YYYY-MM-DD HH:MM:SS"; take first 10 chars and parse
++            let date_part = &v.created_at[..10.min(v.created_at.len())];
++            let Ok(dt) = chrono::NaiveDate::parse_from_str(date_part, "%Y-%m-%d") else {
++                return false;
++            };
++            dt >= cutoff
++        })
++        .collect();
++
++    let tuples: Vec<(String, String, String, String, String)> = recent
++        .iter()
++        .map(|v| {
++            let regime = v
++                .macro_signal
++                .clone()
++                .unwrap_or_else(|| "unknown".into());
++            (
++                v.symbol.clone(),
++                v.verdict.clone(),
++                v.confidence.unwrap_or(0.5).to_string(),
++                v.created_at[..10.min(v.created_at.len())].to_string(),
++                regime,
++            )
++        })
++        .collect();
++
++    let light_dur = light_start.elapsed().as_millis() as i64;
++
++    // ── REM Sleep: Aggregate hit rates ───────────────────────────────
++    let rem_start = Instant::now();
++
++    // Group tuples by (symbol, verdict, regime)
++    let mut groups: HashMap<(String, String, String), Vec<&(String, String, String, String, String)>> =
++        HashMap::new();
++    for t in &tuples {
++        let key = (t.0.clone(), t.1.clone(), t.4.clone());
++        groups.entry(key).or_default().push(t);
++    }
++
++    // Pre-build lookup: recent verdict by (symbol, date_prefix) → id
++    let recent_lookup: HashMap<(&str, &str), &str> = recent
++        .iter()
++        .map(|v| {
++            let date_prefix = &v.created_at[..10.min(v.created_at.len())];
++            ((v.symbol.as_str(), date_prefix), v.id.as_str())
++        })
++        .collect();
++
++    let mut candidates: Vec<DreamCandidate> = Vec::new();
++
++    for ((symbol, verdict, regime), group) in &groups {
++        // Only process directional verdicts (skip HOLD, NEUTRAL, etc.)
++        let is_bullish = matches!(verdict.as_str(), "BUY" | "ACCUMULATE");
++        let is_bearish = matches!(verdict.as_str(), "SELL" | "TRIM");
++        if !is_bullish && !is_bearish {
++            continue;
++        }
++
++        if group.len() < config.min_count as usize {
++            continue;
++        }
++
++        // Fetch prices for this symbol
++        let first_date = group
++            .iter()
++            .map(|t| &t.3)
++            .min()
++            .cloned()
++            .unwrap_or_default();
++        let end_date = today.format("%Y%m%d").to_string();
++        let Ok(bars) = client
++            .daily(symbol, &first_date.replace('-', ""), &end_date)
++            .await
++        else {
++            continue;
++        };
++        if bars.is_empty() {
++            continue;
++        }
++
++        // Build date→index lookup for O(1) bar access
++        let bar_index: HashMap<&str, usize> = bars
++            .iter()
++            .enumerate()
++            .map(|(i, b)| (b.trade_date.as_str(), i))
++            .collect();
++
++        let mut returns_1d = Vec::new();
++        let mut returns_7d = Vec::new();
++        let mut returns_30d = Vec::new();
++
++        for t in group {
++            let date_str = t.3.replace('-', "");
++            let Some(&idx) = bar_index.get(date_str.as_str()) else {
++                continue;
++            };
++            let price = bars[idx].close;
++            if price == 0.0 {
++                continue;
++            }
++
++            for (days, returns) in [
++                (1, &mut returns_1d),
++                (7, &mut returns_7d),
++                (30, &mut returns_30d),
++            ] {
++                let Ok(target_date) =
++                    chrono::NaiveDate::parse_from_str(&date_str, "%Y%m%d")
++                else {
++                    continue;
++                };
++                let target = (target_date + chrono::Duration::days(days))
++                    .format("%Y%m%d")
++                    .to_string();
++                // Binary-ish: bar_index is a HashMap, so O(1) lookup for exact date;
++                // for "next bar >= target", fall back to sorted scan
++                if let Some(&aidx) = bar_index.get(target.as_str()) {
++                    returns.push((bars[aidx].close - price) / price);
++                } else {
++                    // Find first bar with trade_date >= target
++                    if let Some(abar) = bars.iter().find(|b| b.trade_date >= target) {
++                        returns.push((abar.close - price) / price);
++                    }
++                }
++            }
++        }
++
++        // Compute hit rate per window
++        let hit_rate_1d = compute_hit_rate(&returns_1d, is_bullish);
++        let hit_rate_7d = compute_hit_rate(&returns_7d, is_bullish);
++        let hit_rate_30d = compute_hit_rate(&returns_30d, is_bullish);
++
++        let total = returns_30d.len();
++        if total == 0 {
++            continue;
++        }
++
++        // Score uses 30d hit rate (primary signal) + sample size
++        let score = hit_rate_30d * 0.7 + (total.min(10) as f64 / 10.0) * 0.3;
++
++        if score >= config.min_score {
++            let source_ids: Vec<String> = group
++                .iter()
++                .filter_map(|t| {
++                    let date_prefix = &t.3[..10.min(t.3.len())];
++                    recent_lookup
++                        .get(&(t.0.as_str(), date_prefix))
++                        .map(|id| id.to_string())
++                })
++                .collect();
++
++            candidates.push(DreamCandidate {
++                symbol: symbol.clone(),
++                verdict: verdict.clone(),
++                regime: regime.clone(),
++                hit_rate_1d,
++                hit_rate_7d,
++                hit_rate_30d,
++                count: total,
++                avg_return_1d: avg_or_zero(&returns_1d),
++                avg_return_7d: avg_or_zero(&returns_7d),
++                avg_return_30d: avg_or_zero(&returns_30d),
++                source_ids,
++            });
++        }
++    }
++    let rem_dur = rem_start.elapsed().as_millis() as i64;
++
++    // ── Deep Sleep: Write insights to domain_insights ────────────────
++    let deep_start = Instant::now();
++    let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
++    let mut written = 0usize;
++
++    for c in &candidates {
++        let content = format!(
++            "{} {} in {}: hit rates 1d/7d/30d: {:.0}%/{:.0}%/{:.0}% over {} samples (avg ret: {:.1}%/{:.1}%/{:.1}%)",
++            c.symbol,
++            c.verdict,
++            c.regime,
++            c.hit_rate_1d * 100.0,
++            c.hit_rate_7d * 100.0,
++            c.hit_rate_30d * 100.0,
++            c.count,
++            c.avg_return_1d * 100.0,
++            c.avg_return_7d * 100.0,
++            c.avg_return_30d * 100.0,
++        );
++        let insight = DomainInsight {
++            id: format!("dream_{}_{}_{}", c.symbol, c.verdict, c.regime)
++                .replace(' ', "_"),
++            insight_type: "pattern".into(),
++            symbol: Some(c.symbol.clone()),
++            content,
++            confidence: Some(c.hit_rate_30d),
++            source_verdict_ids: Some(c.source_ids.join(",")),
++            status: "active".into(),
++            created_at: now.clone(),
++            updated_at: now.clone(),
++        };
++        domain_insights::upsert_insight(&insight)?;
++        written += 1;
++    }
++
++    let after_json = domain_insights::get_active_insights_json()?;
++
++    // Snapshot (for rollback)
++    if let Err(e) = super::snapshot::save_snapshot(
++        "invest",
++        "pipeline",
++        &before_json,
++        &after_json,
++        &format!("{written} insights written, {} candidates found", candidates.len()),
++    ) {
++        log::warn!("Dream snapshot failed: {e}");
++    }
++
++    let deep_dur = deep_start.elapsed().as_millis() as i64;
++    let total_dur = pipeline_start.elapsed().as_millis() as i64;
++
++    Ok(DreamResult {
++        insights_written: written,
++        insights_updated: 0,
++        insights_archived: 0,
++        pipeline_duration_ms: total_dur,
++        stages: vec![
++            StageResult {
++                stage: "light".into(),
++                duration_ms: light_dur,
++                items_processed: recent.len(),
++                items_output: tuples.len(),
++            },
++            StageResult {
++                stage: "rem".into(),
++                duration_ms: rem_dur,
++                items_processed: groups.len(),
++                items_output: candidates.len(),
++            },
++            StageResult {
++                stage: "deep".into(),
++                duration_ms: deep_dur,
++                items_processed: candidates.len(),
++                items_output: written,
++            },
++        ],
++    })
++}
+diff --git a/src-tauri/src/invest/dreaming/snapshot.rs b/src-tauri/src/invest/dreaming/snapshot.rs
+new file mode 100644
+index 0000000..86bb04c
+--- /dev/null
++++ b/src-tauri/src/invest/dreaming/snapshot.rs
+@@ -0,0 +1,40 @@
++use crate::storage::invest::dream_snapshots;
++
++/// Save a dream snapshot record. Single atomic INSERT with all fields.
++pub fn save_snapshot(
++    dream_type: &str,
++    trigger_type: &str,
++    before_json: &str,
++    after_json: &str,
++    summary: &str,
++) -> Result<i64, String> {
++    dream_snapshots::insert_complete(dream_type, trigger_type, before_json, after_json, summary)
++}
++
++/// Rollback a dream snapshot: restore domain_insights to before state.
++pub fn rollback_snapshot(snapshot_id: i64) -> Result<(), String> {
++    let snapshot = dream_snapshots::get_by_id(snapshot_id)?
++        .ok_or("Snapshot not found")?;
++
++    if !snapshot.rollback_ready {
++        return Err("Snapshot is not rollback-ready".into());
++    }
++
++    // Verify current state matches after_json (if available)
++    if let Some(after) = &snapshot.after_json {
++        let current = crate::storage::invest::domain_insights::get_active_insights_json()?;
++        if &current != after {
++            // State has been modified since this dream — invalidate
++            dream_snapshots::mark_rolled_back(snapshot_id)?;
++            return Err(
++                "Current domain_insights state has changed since this dream. Rollback aborted."
++                    .into(),
++            );
++        }
++    }
++
++    // Restore
++    crate::storage::invest::domain_insights::restore_insight_snapshot(&snapshot.before_json)?;
++    dream_snapshots::mark_rolled_back(snapshot_id)?;
++    Ok(())
++}
+diff --git a/src-tauri/src/invest/mod.rs b/src-tauri/src/invest/mod.rs
+index 44406bc..ea7b339 100644
+--- a/src-tauri/src/invest/mod.rs
++++ b/src-tauri/src/invest/mod.rs
+@@ -1,3 +1,6 @@
++pub mod dreaming;
+ pub mod llm;
+ pub mod committee;
+ pub mod event_scanner;
++pub mod scheduler;
++pub mod verdict_review;
+diff --git a/src-tauri/src/invest/scheduler/config.rs b/src-tauri/src/invest/scheduler/config.rs
+new file mode 100644
+index 0000000..a8be5b0
+--- /dev/null
++++ b/src-tauri/src/invest/scheduler/config.rs
+@@ -0,0 +1,206 @@
++use super::CronJob;
++use std::path::PathBuf;
++use std::str::FromStr;
++
++#[derive(Debug, serde::Serialize, serde::Deserialize)]
++#[serde(rename_all = "camelCase")]
++struct SchedulerConfig {
++    jobs: Vec<JobOverride>,
++}
++
++#[derive(Debug, serde::Serialize, serde::Deserialize)]
++#[serde(rename_all = "camelCase")]
++struct JobOverride {
++    id: String,
++    #[serde(default)]
++    cron_expr: Option<String>,
++    #[serde(default)]
++    interval_min: Option<i64>,
++    #[serde(default)]
++    enabled: Option<bool>,
++    #[serde(default)]
++    requires_trading_day: Option<bool>,
++}
++
++fn config_path() -> PathBuf {
++    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
++    home.join(".claw-go").join("invest").join("scheduler.json")
++}
++
++/// Load jobs: start from defaults, overlay user overrides from scheduler.json.
++pub fn load_jobs() -> Vec<CronJob> {
++    let mut jobs = super::default_jobs();
++    let path = config_path();
++    if !path.exists() {
++        return jobs;
++    }
++    let Ok(content) = std::fs::read_to_string(&path) else {
++        return jobs;
++    };
++    let Ok(config) = serde_json::from_str::<SchedulerConfig>(&content) else {
++        return jobs;
++    };
++    for ov in config.jobs {
++        if let Some(job) = jobs.iter_mut().find(|j| j.id == ov.id) {
++            if let Some(c) = ov.cron_expr {
++                job.cron_expr = c;
++            }
++            if let Some(i) = ov.interval_min {
++                job.interval_min = Some(i);
++            }
++            if let Some(e) = ov.enabled {
++                job.enabled = e;
++            }
++            if let Some(r) = ov.requires_trading_day {
++                job.requires_trading_day = r;
++            }
++        }
++    }
++    jobs
++}
++
++/// Save user overrides (only changed fields) to scheduler.json.
++pub fn save_jobs(jobs: &[CronJob]) -> Result<(), String> {
++    let defaults = super::default_jobs();
++    let overrides: Vec<JobOverride> = jobs
++        .iter()
++        .filter_map(|job| {
++            let def = defaults.iter().find(|d| d.id == job.id);
++            let changed = def.map_or(true, |d| {
++                d.cron_expr != job.cron_expr
++                    || d.interval_min != job.interval_min
++                    || d.enabled != job.enabled
++                    || d.requires_trading_day != job.requires_trading_day
++            });
++            if changed {
++                Some(JobOverride {
++                    id: job.id.clone(),
++                    cron_expr: Some(job.cron_expr.clone()),
++                    interval_min: job.interval_min,
++                    enabled: Some(job.enabled),
++                    requires_trading_day: Some(job.requires_trading_day),
++                })
++            } else {
++                None
++            }
++        })
++        .collect();
++    let config = SchedulerConfig { jobs: overrides };
++    let json = serde_json::to_string_pretty(&config).map_err(|e| format!("{e}"))?;
++    let path = config_path();
++    if let Some(parent) = path.parent() {
++        std::fs::create_dir_all(parent).map_err(|e| format!("{e}"))?;
++    }
++    std::fs::write(&path, json).map_err(|e| format!("{e}"))
++}
++
++/// Toggle a single job's enabled state and persist.
++pub fn toggle_job(id: &str, enabled: bool) -> Result<(), String> {
++    let mut jobs = load_jobs();
++    let job = jobs
++        .iter_mut()
++        .find(|j| j.id == id)
++        .ok_or_else(|| format!("Job '{}' not found", id))?;
++    job.enabled = enabled;
++    save_jobs(&jobs)
++}
++
++/// Update a single job's cron expression and persist.
++pub fn update_cron(id: &str, cron_expr: &str) -> Result<(), String> {
++    // Validate cron expression
++    cron::Schedule::from_str(cron_expr).map_err(|e| format!("Invalid cron: {e}"))?;
++    let mut jobs = load_jobs();
++    let job = jobs
++        .iter_mut()
++        .find(|j| j.id == id)
++        .ok_or_else(|| format!("Job '{}' not found", id))?;
++    job.cron_expr = cron_expr.to_string();
++    save_jobs(&jobs)
++}
++
++/// Load dream-specific config (lookback_days, min_score, min_count) from dream_config.json,
++/// merged with scheduler job state (enabled, cron/interval).
++pub fn load_dream_config() -> super::super::dreaming::DreamConfig {
++    let mut config = super::super::dreaming::DreamConfig::default();
++
++    // Overlay scheduler job state
++    let jobs = load_jobs();
++    if let Some(j) = jobs.iter().find(|j| j.id == "dream_invest") {
++        config.invest_enabled = j.enabled;
++        config.invest_cron = j.cron_expr.clone();
++    }
++    if let Some(j) = jobs.iter().find(|j| j.id == "dream_user") {
++        config.user_memory_enabled = j.enabled;
++        config.user_memory_interval_min = j.interval_min.unwrap_or(120);
++    }
++
++    // Overlay dream_config.json for pipeline params
++    let path = dream_config_path();
++    if path.exists() {
++        if let Ok(content) = std::fs::read_to_string(&path) {
++            if let Ok(override_cfg) = serde_json::from_str::<DreamConfigOverride>(&content) {
++                if let Some(v) = override_cfg.lookback_days {
++                    config.lookback_days = v;
++                }
++                if let Some(v) = override_cfg.min_score {
++                    config.min_score = v;
++                }
++                if let Some(v) = override_cfg.min_count {
++                    config.min_count = v;
++                }
++            }
++        }
++    }
++
++    config
++}
++
++/// Save dream config: pipeline params to dream_config.json, scheduler state via save_jobs.
++pub fn save_dream_config(config: &super::super::dreaming::DreamConfig) -> Result<(), String> {
++    // Validate cron expression
++    if !config.invest_cron.is_empty() {
++        cron::Schedule::from_str(&config.invest_cron)
++            .map_err(|e| format!("Invalid cron expression: {e}"))?;
++    }
++
++    // Save pipeline params to dream_config.json
++    let override_cfg = DreamConfigOverride {
++        lookback_days: Some(config.lookback_days),
++        min_score: Some(config.min_score),
++        min_count: Some(config.min_count),
++    };
++    let json = serde_json::to_string_pretty(&override_cfg).map_err(|e| format!("{e}"))?;
++    let path = dream_config_path();
++    if let Some(parent) = path.parent() {
++        std::fs::create_dir_all(parent).map_err(|e| format!("{e}"))?;
++    }
++    std::fs::write(&path, json).map_err(|e| format!("write dream_config.json: {e}"))?;
++
++    // Save scheduler state
++    let mut jobs = load_jobs();
++    if let Some(j) = jobs.iter_mut().find(|j| j.id == "dream_user") {
++        j.enabled = config.user_memory_enabled;
++        j.interval_min = Some(config.user_memory_interval_min);
++    }
++    if let Some(j) = jobs.iter_mut().find(|j| j.id == "dream_invest") {
++        j.enabled = config.invest_enabled;
++        j.cron_expr = config.invest_cron.clone();
++    }
++    save_jobs(&jobs)
++}
++
++fn dream_config_path() -> PathBuf {
++    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
++    home.join(".claw-go").join("invest").join("dream_config.json")
++}
++
++#[derive(Debug, serde::Serialize, serde::Deserialize)]
++#[serde(rename_all = "camelCase")]
++struct DreamConfigOverride {
++    #[serde(default)]
++    lookback_days: Option<i64>,
++    #[serde(default)]
++    min_score: Option<f64>,
++    #[serde(default)]
++    min_count: Option<i64>,
++}
+diff --git a/src-tauri/src/invest/scheduler/mod.rs b/src-tauri/src/invest/scheduler/mod.rs
+new file mode 100644
+index 0000000..23bad6a
+--- /dev/null
++++ b/src-tauri/src/invest/scheduler/mod.rs
+@@ -0,0 +1,90 @@
++pub mod config;
++pub mod runner;
++
++use serde::{Deserialize, Serialize};
++
++#[derive(Debug, Clone, Serialize, Deserialize)]
++#[serde(rename_all = "camelCase")]
++pub struct CronJob {
++    pub id: String,
++    pub name: String,
++    pub cron_expr: String,
++    #[serde(default)]
++    pub interval_min: Option<i64>,
++    pub enabled: bool,
++    #[serde(default)]
++    pub requires_trading_day: bool,
++    #[serde(default)]
++    pub last_run: Option<String>,
++    #[serde(default)]
++    pub next_run: Option<String>,
++    #[serde(default)]
++    pub last_status: Option<String>,
++    #[serde(default)]
++    pub description: String,
++}
++
++pub fn default_jobs() -> Vec<CronJob> {
++    vec![
++        CronJob {
++            id: "pnl_snapshot".into(),
++            name: "PnL 快照".into(),
++            cron_expr: "30 9,11 * * 1-5".into(),
++            interval_min: None,
++            enabled: true,
++            requires_trading_day: true,
++            last_run: None,
++            next_run: None,
++            last_status: None,
++            description: "定时记录持仓市值快照".into(),
++        },
++        CronJob {
++            id: "verdict_review".into(),
++            name: "Verdict Review".into(),
++            cron_expr: "0 17 * * 1-5".into(),
++            interval_min: None,
++            enabled: true,
++            requires_trading_day: true,
++            last_run: None,
++            next_run: None,
++            last_status: None,
++            description: "回溯验证裁决命中率".into(),
++        },
++        CronJob {
++            id: "event_scan".into(),
++            name: "Event Watch 扫描".into(),
++            cron_expr: "*/30 8-22 * * 1-5".into(),
++            interval_min: None,
++            enabled: true,
++            requires_trading_day: false,
++            last_run: None,
++            next_run: None,
++            last_status: None,
++            description: "扫描财经新闻和公告".into(),
++        },
++        CronJob {
++            id: "dream_user".into(),
++            name: "Dreaming (用户记忆)".into(),
++            cron_expr: String::new(),
++            interval_min: Some(120),
++            enabled: false,
++            requires_trading_day: false,
++            last_run: None,
++            next_run: None,
++            last_status: None,
++            description: "用户记忆衰减与归档".into(),
++        },
++        CronJob {
++            id: "dream_invest".into(),
++            name: "Dreaming (投资)".into(),
++            cron_expr: "0 3 * * *".into(),
++            interval_min: None,
++            enabled: false,
++            requires_trading_day: true,
++            last_run: None,
++            next_run: None,
++            last_status: None,
++            description: "投资洞察管线: Light→REM→Deep".into(),
++        },
++    ]
++}
+diff --git a/src-tauri/src/invest/scheduler/runner.rs b/src-tauri/src/invest/scheduler/runner.rs
+new file mode 100644
+index 0000000..2b20bf7
+--- /dev/null
++++ b/src-tauri/src/invest/scheduler/runner.rs
+@@ -0,0 +1,184 @@
++use super::config;
++use crate::storage::invest::scheduler::{is_trading_day, log_task_end, log_task_start};
++use chrono::TimeZone;
++use std::str::FromStr;
++use std::sync::atomic::{AtomicBool, Ordering};
++use std::sync::Arc;
++use tokio::time::{sleep, Duration};
++
++static RUNNING: AtomicBool = AtomicBool::new(false);
++
++/// Shared dispatch for scheduler jobs. Called from both the background runner
++/// loop and the manual `trigger_cron_job` Tauri command.
++pub async fn dispatch_job(id: &str) -> Result<String, String> {
++    match id {
++        "pnl_snapshot" => {
++            let result = crate::run_pnl_snapshot().await?;
++            Ok(result)
++        }
++        "event_scan" => {
++            let (tushare, llm_client, llm_config) =
++                crate::commands::invest::build_scan_clients()?;
++            let result = crate::invest::event_scanner::scan_events(
++                &tushare,
++                &llm_client,
++                &llm_config,
++                None,
++            )
++            .await?;
++            Ok(format!(
++                "Scanned: {} fetched, {} saved",
++                result.fetched, result.saved
++            ))
++        }
++        "verdict_review" => {
++            let settings = crate::storage::settings::get_user_settings();
++            let tushare_token = settings
++                .tushare_token
++                .ok_or("no tushare_token configured for verdict_review")?;
++            let summary = crate::invest::verdict_review::run_verdict_review(&tushare_token).await?;
++            Ok(format!(
++                "Verdict review complete: {} verdicts, {:.1}% hit rate",
++                summary.total_verdicts,
++                summary.overall_hit_rate * 100.0
++            ))
++        }
++        "dream_invest" => {
++            let settings = crate::storage::settings::get_user_settings();
++            let tushare_token = settings
++                .tushare_token
++                .ok_or("no tushare_token configured for dream_invest")?;
++            let result = crate::invest::dreaming::trigger_dream("invest", &tushare_token).await?;
++            Ok(format!("Dream invest complete: {:?}", result))
++        }
++        "dream_user" => {
++            Err("user_memory dreaming not yet implemented".into())
++        }
++        _ => Err(format!("Unknown job: {}", id)),
++    }
++}
++
++/// Start the scheduler loop. Call once from lib.rs setup.
++/// The `dispatch` callback maps job_id to the async function to execute.
++pub fn start<F, Fut>(dispatch: F)
++where
++    F: Fn(String) -> Fut + Send + Sync + 'static,
++    Fut: std::future::Future<Output = Result<String, String>> + Send + 'static,
++{
++    if RUNNING.swap(true, Ordering::SeqCst) {
++        return; // already running
++    }
++    let dispatch = Arc::new(dispatch);
++    tauri::async_runtime::spawn(async move {
++        // Initial delay to let app finish setup
++        sleep(Duration::from_secs(10)).await;
++        loop {
++            let jobs = config::load_jobs();
++            let today = chrono::Local::now().format("%Y-%m-%d").to_string();
++
++            for job in jobs {
++                if !job.enabled {
++                    continue;
++                }
++
++                // Check if it's time to fire
++                let should_fire = if let Some(interval) = job.interval_min {
++                    // Interval-based: next_fire = last_run + interval
++                    match &job.last_run {
++                        Some(last) => {
++                            let Ok(last_dt) = chrono::NaiveDateTime::parse_from_str(
++                                last, "%Y-%m-%dT%H:%M:%S",
++                            ) else {
++                                continue;
++                            };
++                            let next = last_dt + chrono::Duration::minutes(interval);
++                            chrono::Local::now().naive_local() >= next
++                        }
++                        None => true, // never run -> fire now
++                    }
++                } else {
++                    // Cron-based
++                    let Ok(schedule) = cron::Schedule::from_str(&job.cron_expr) else {
++                        continue;
++                    };
++                    let after = match &job.last_run {
++                        Some(last) => chrono::NaiveDateTime::parse_from_str(
++                            last,
++                            "%Y-%m-%dT%H:%M:%S",
++                        )
++                        .ok(),
++                        None => None,
++                    };
++                    match after {
++                        Some(after) => {
++                            // Convert naive back to local for cron schedule comparison
++                            let after_local = chrono::Local
++                                .from_local_datetime(&after)
++                                .single();
++                            match after_local {
++                                Some(after_local) => {
++                                    if let Some(next) = schedule.after(&after_local).next() {
++                                        chrono::Local::now() >= next
++                                    } else {
++                                        false
++                                    }
++                                }
++                                None => true, // ambiguous/invalid local time -> fire
++                            }
++                        }
++                        None => true, // never run -> fire now
++                    }
++                };
++
++                if !should_fire {
++                    continue;
++                }
++
++                // Trading day guard
++                if job.requires_trading_day && !is_trading_day(&today).unwrap_or(false) {
++                    if let Ok(id) = log_task_start(&job.id) {
++                        let _ = log_task_end(id, "skipped", Some("non-trading day"));
++                    }
++                    continue;
++                }
++
++                // Execute
++                let log_id = log_task_start(&job.id).ok();
++                let result = (dispatch)(job.id.clone()).await;
++
++                match &result {
++                    Ok(msg) => {
++                        if let Some(id) = log_id {
++                            let _ = log_task_end(id, "ok", Some(msg));
++                        }
++                    }
++                    Err(err) => {
++                        if let Some(id) = log_id {
++                            let _ = log_task_end(id, "error", Some(err));
++                        }
++                    }
++                }
++
++                // Update last_run in config
++                let now = chrono::Local::now()
++                    .format("%Y-%m-%dT%H:%M:%S")
++                    .to_string();
++                let mut jobs_mut = config::load_jobs();
++                if let Some(j) = jobs_mut.iter_mut().find(|j| j.id == job.id) {
++                    j.last_run = Some(now);
++                    j.last_status = Some(
++                        if result.is_ok() {
++                            "ok"
++                        } else {
++                            "error"
++                        }
++                        .into(),
++                    );
++                    let _ = config::save_jobs(&jobs_mut);
++                }
++            }
++
++            sleep(Duration::from_secs(60)).await;
++        }
++    });
++}
+diff --git a/src-tauri/src/invest/verdict_review.rs b/src-tauri/src/invest/verdict_review.rs
+new file mode 100644
+index 0000000..b0259e8
+--- /dev/null
++++ b/src-tauri/src/invest/verdict_review.rs
+@@ -0,0 +1,699 @@
++use chrono::{Duration as ChronoDuration, NaiveDate};
++use serde::{Deserialize, Serialize};
++
++use crate::storage::invest::verdict_reviews::{self, VerdictReviewEntry};
++use crate::storage::invest::verdicts;
++use crate::tushare::client::TushareClient;
++
++// ---------------------------------------------------------------------------
++// Constants
++// ---------------------------------------------------------------------------
++
++/// ATR multiplier for the flat-zone threshold.
++const K_FLAT: f64 = 1.0;
++
++/// Maximum flat threshold (8%).
++const MAX_FLAT_THRESHOLD: f64 = 0.08;
++
++/// Review windows in days.
++const WINDOWS: &[i64] = &[1, 7, 30];
++
++// ---------------------------------------------------------------------------
++// Types
++// ---------------------------------------------------------------------------
++
++/// Aggregate summary of verdict review results.
++#[derive(Debug, Clone, Serialize, Deserialize)]
++#[serde(rename_all = "camelCase")]
++pub struct VerdictReviewSummary {
++    pub total_verdicts: usize,
++    pub overall_hit_rate: f64,
++    pub directional_hit_rate: f64,
++    pub by_window: Vec<WindowStats>,
++    pub by_verdict: Vec<VerdictStats>,
++    pub last_review_at: Option<String>,
++}
++
++/// Per-window hit rate statistics.
++#[derive(Debug, Clone, Serialize, Deserialize)]
++#[serde(rename_all = "camelCase")]
++pub struct WindowStats {
++    pub window_days: i64,
++    pub sample_count: usize,
++    pub hit_rate: f64,
++}
++
++/// Per-verdict-type hit rate statistics.
++#[derive(Debug, Clone, Serialize, Deserialize)]
++#[serde(rename_all = "camelCase")]
++pub struct VerdictStats {
++    pub verdict_type: String,
++    pub sample_count: usize,
++    pub avg_confidence: Option<f64>,
++    pub hit_rate_1d: Option<f64>,
++    pub hit_rate_7d: Option<f64>,
++    pub hit_rate_30d: Option<f64>,
++}
++
++// ---------------------------------------------------------------------------
++// Core logic
++// ---------------------------------------------------------------------------
++
++/// Calculate the flat-zone threshold: K_FLAT * atr_pct * sqrt(days), capped at 8%.
++///
++/// `atr_pct` is ATR14 / price as a fraction (e.g. 0.03 for 3%).
++pub fn flat_threshold(atr_pct: f64, days: i64) -> f64 {
++    let raw = K_FLAT * atr_pct * (days as f64).sqrt();
++    raw.min(MAX_FLAT_THRESHOLD)
++}
++
++/// Determine if a verdict was "hit" given the actual return.
++///
++/// Directional logic:
++/// - BUY / ACCUMULATE: hit if return > 0 (raw comparison, no threshold)
++/// - SELL / TRIM: hit if return < 0 (raw comparison, no threshold)
++/// - HOLD: hit if abs(return) < threshold (stayed within flat zone)
++pub fn is_hit(verdict_type: &str, return_pct: f64, threshold: f64) -> bool {
++    match verdict_type {
++        "BUY" | "ACCUMULATE" => return_pct > 0.0,
++        "SELL" | "TRIM" => return_pct < 0.0,
++        "HOLD" => return_pct.abs() < threshold,
++        // Unknown verdict types: conservative — treat as not hit
++        _ => false,
++    }
++}
++
++/// Convert a symbol in plain 6-digit format (e.g. "600519") to Tushare ts_code
++/// format (e.g. "600519.SH"). If already in ts_code format, returns as-is.
++pub fn to_ts_code(symbol: &str) -> String {
++    if symbol.contains('.') {
++        return symbol.to_string();
++    }
++    let suffix = match symbol.chars().next() {
++        Some('6') | Some('9') => ".SH",
++        Some('0') | Some('3') => ".SZ",
++        Some('4') | Some('8') => ".BJ",
++        _ => {
++            log::warn!("Unknown stock prefix for '{}', defaulting to .SH", symbol);
++            ".SH"
++        }
++    };
++    format!("{}{}", symbol, suffix)
++}
++
++/// Extract the date string from a verdict's created_at field.
++/// created_at is in ISO format like "2026-05-29 14:30:00" or "2026-05-29T14:30:00".
++/// Returns YYYYMMDD format for Tushare, or None if parsing fails.
++pub fn extract_date(created_at: &str) -> Option<String> {
++    // Take first 10 chars (YYYY-MM-DD), remove hyphens
++    let date_part = created_at.get(..10)?;
++    let yyyymmdd: String = date_part.chars().filter(|c| *c != '-').collect();
++    if yyyymmdd.len() == 8 {
++        Some(yyyymmdd)
++    } else {
++        None
++    }
++}
++
++/// Calculate ATR14 / price as a percentage (fraction).
++///
++/// ATR14 = average of True Range over the last 14 bars.
++/// True Range = max(high - low, abs(high - prev_close), abs(low - prev_close)).
++pub fn calc_atr_pct(bars: &[crate::tushare::client::DailyBar], price: f64) -> f64 {
++    if bars.len() < 2 || price <= 0.0 {
++        return 0.02; // default 2% if insufficient data
++    }
++
++    let n = bars.len();
++    let window = 14.min(n - 1);
++    let start = n - window;
++
++    let mut tr_sum = 0.0;
++    for i in start..n {
++        let high = bars[i].high;
++        let low = bars[i].low;
++        let prev_close = if i > 0 { bars[i - 1].close } else { bars[i].pre_close };
++
++        let tr = (high - low)
++            .max((high - prev_close).abs())
++            .max((low - prev_close).abs());
++        tr_sum += tr;
++    }
++
++    let atr = tr_sum / window as f64;
++    atr / price
++}
++
++/// Add calendar days to a YYYYMMDD date string, returning a new YYYYMMDD string.
++pub fn date_from_offset(date: &str, days: i64) -> Option<String> {
++    let naive = NaiveDate::parse_from_str(date, "%Y%m%d").ok()?;
++    let offset = naive + ChronoDuration::days(days);
++    Some(offset.format("%Y%m%d").to_string())
++}
++
++/// Find the bar with a matching trade_date, or the nearest bar after the given date.
++fn find_bar<'a>(bars: &'a [crate::tushare::client::DailyBar], target_date: &str) -> Option<&'a crate::tushare::client::DailyBar> {
++    // First try exact match
++    if let Some(bar) = bars.iter().find(|b| b.trade_date == target_date) {
++        return Some(bar);
++    }
++    // Find the nearest bar after the target date
++    bars.iter()
++        .filter(|b| b.trade_date.as_str() >= target_date)
++        .min_by_key(|b| b.trade_date.clone())
++}
++
++// ---------------------------------------------------------------------------
++// Pipeline
++// ---------------------------------------------------------------------------
++
++/// Run the full verdict review pipeline.
++///
++/// 1. Load all verdicts from DB
++/// 2. For each verdict, fetch daily bars around the verdict date
++/// 3. Calculate returns for each window (1d, 7d, 30d)
++/// 4. Determine hits based on verdict type and ATR-based flat threshold
++/// 5. Write reviews to verdict_reviews table
++/// 6. Aggregate and return summary
++pub async fn run_verdict_review(tushare_token: &str) -> Result<VerdictReviewSummary, String> {
++    let client = TushareClient::new(tushare_token.to_string());
++
++    // 1. Load all verdicts
++    let verdicts_list = verdicts::list_verdicts(None, None)?;
++
++    if verdicts_list.is_empty() {
++        return Ok(VerdictReviewSummary {
++            total_verdicts: 0,
++            overall_hit_rate: 0.0,
++            directional_hit_rate: 0.0,
++            by_window: WINDOWS
++                .iter()
++                .map(|&w| WindowStats {
++                    window_days: w,
++                    sample_count: 0,
++                    hit_rate: 0.0,
++                })
++                .collect(),
++            by_verdict: vec![],
++            last_review_at: None,
++        });
++    }
++
++    // 2-5. Process each verdict
++    let mut reviews: Vec<VerdictReviewEntry> = Vec::new();
++    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
++
++    for v in &verdicts_list {
++        let verdict_date = match extract_date(&v.created_at) {
++            Some(d) => d,
++            None => {
++                log::warn!("Skipping verdict {}: unable to parse created_at '{}'", v.id, v.created_at);
++                continue;
++            }
++        };
++
++        let ts_code = to_ts_code(&v.symbol);
++
++        // Fetch bars from (verdict_date - 1) to (verdict_date + 31)
++        let start_date = match date_from_offset(&verdict_date, -1) {
++            Some(d) => d,
++            None => continue,
++        };
++        let end_date = match date_from_offset(&verdict_date, 35) {
++            Some(d) => d,
++            None => continue,
++        };
++
++        let bars = match client.daily(&ts_code, &start_date, &end_date).await {
++            Ok(b) => b,
++            Err(e) => {
++                log::warn!("Failed to fetch daily bars for {} ({}): {}", v.symbol, ts_code, e);
++                continue;
++            }
++        };
++
++        if bars.is_empty() {
++            log::warn!("No daily bars returned for {} ({}) around {}", v.symbol, ts_code, verdict_date);
++            continue;
++        }
++
++        // Find the verdict date bar → price_at_verdict (use close price)
++        let price_at_verdict = match find_bar(&bars, &verdict_date) {
++            Some(bar) => bar.close,
++            None => {
++                log::warn!("No bar found for {} on or after {}", v.symbol, verdict_date);
++                continue;
++            }
++        };
++
++        if price_at_verdict <= 0.0 {
++            log::warn!("Invalid price_at_verdict={} for {}", price_at_verdict, v.symbol);
++            continue;
++        }
++
++        // Calculate ATR14%
++        let atr_pct = calc_atr_pct(&bars, price_at_verdict);
++
++        // For each window, find the price and calculate return
++        for &window_days in WINDOWS {
++            let target_date = match date_from_offset(&verdict_date, window_days) {
++                Some(d) => d,
++                None => continue,
++            };
++
++            let price_after = find_bar(&bars, &target_date).map(|b| b.close);
++
++            let threshold = flat_threshold(atr_pct, window_days);
++
++            let (return_pct, hit) = match price_after {
++                Some(pa) if pa > 0.0 => {
++                    let ret = (pa - price_at_verdict) / price_at_verdict;
++                    let h = is_hit(&v.verdict, ret, threshold);
++                    (Some(ret), h)
++                }
++                _ => (None, false),
++            };
++
++            let entry = VerdictReviewEntry {
++                id: 0, // auto-increment
++                verdict_id: v.id.clone(),
++                symbol: v.symbol.clone(),
++                verdict_type: v.verdict.clone(),
++                verdict_date: verdict_date.clone(),
++                window_days,
++                price_at_verdict: Some(price_at_verdict),
++                price_after,
++                return_pct,
++                hit,
++                flat_threshold: Some(threshold),
++                created_at: now.clone(),
++            };
++
++            if let Err(e) = verdict_reviews::upsert_review(&entry) {
++                log::warn!("Failed to upsert review for {} window {}: {}", v.id, window_days, e);
++            } else {
++                reviews.push(entry);
++            }
++        }
++    }
++
++    // 6. Aggregate
++    let summary = aggregate(&reviews, &verdicts_list);
++    Ok(summary)
++}
++
++// ---------------------------------------------------------------------------
++// Aggregation
++// ---------------------------------------------------------------------------
++
++/// Aggregate summary from stored `VerdictReviewEntry` rows (loaded from DB).
++///
++/// Uses 30-day focused semantics for the overall and directional hit rates,
++/// which matches what the UI displays.
++pub fn aggregate_from_stored(reviews: &[VerdictReviewEntry]) -> VerdictReviewSummary {
++    if reviews.is_empty() {
++        return VerdictReviewSummary {
++            total_verdicts: 0,
++            overall_hit_rate: 0.0,
++            directional_hit_rate: 0.0,
++            by_window: vec![],
++            by_verdict: vec![],
++            last_review_at: None,
++        };
++    }
++
++    // Overall hit rate (30-day focused)
++    let total_30d = reviews.iter().filter(|r| r.window_days == 30).count();
++    let hits_30d = reviews.iter().filter(|r| r.window_days == 30 && r.hit).count();
++    let overall_hit_rate = if total_30d > 0 {
++        hits_30d as f64 / total_30d as f64
++    } else {
++        0.0
++    };
++
++    // Directional hit rate (30-day, exclude HOLD)
++    let dir_total = reviews
++        .iter()
++        .filter(|r| r.verdict_type != "HOLD" && r.window_days == 30)
++        .count();
++    let dir_hits = reviews
++        .iter()
++        .filter(|r| r.verdict_type != "HOLD" && r.window_days == 30 && r.hit)
++        .count();
++    let directional_hit_rate = if dir_total > 0 {
++        dir_hits as f64 / dir_total as f64
++    } else {
++        0.0
++    };
++
++    // By window
++    let mut by_window: Vec<WindowStats> = WINDOWS
++        .iter()
++        .map(|&w| {
++            let window_reviews: Vec<&VerdictReviewEntry> =
++                reviews.iter().filter(|r| r.window_days == w).collect();
++            let sample_count = window_reviews.len();
++            let hits = window_reviews.iter().filter(|r| r.hit).count();
++            WindowStats {
++                window_days: w,
++                sample_count,
++                hit_rate: if sample_count > 0 {
++                    hits as f64 / sample_count as f64
++                } else {
++                    0.0
++                },
++            }
++        })
++        .collect();
++    by_window.sort_by_key(|w| w.window_days);
++
++    // By verdict type
++    let mut verdict_types: Vec<String> = {
++        let mut types: Vec<String> = reviews.iter().map(|r| r.verdict_type.clone()).collect();
++        types.sort();
++        types.dedup();
++        types
++    };
++    verdict_types.sort();
++
++    let by_verdict: Vec<VerdictStats> = verdict_types
++        .iter()
++        .map(|vt| {
++            let vtype_reviews: Vec<&VerdictReviewEntry> =
++                reviews.iter().filter(|r| &r.verdict_type == vt).collect();
++            let sample_count = vtype_reviews.len();
++
++            let hit_rate_for_window = |window: i64| -> Option<f64> {
++                let wr: Vec<&&VerdictReviewEntry> = vtype_reviews
++                    .iter()
++                    .filter(|r| r.window_days == window)
++                    .collect();
++                if wr.is_empty() {
++                    None
++                } else {
++                    let hits = wr.iter().filter(|r| r.hit).count();
++                    Some(hits as f64 / wr.len() as f64)
++                }
++            };
++
++            VerdictStats {
++                verdict_type: vt.clone(),
++                sample_count,
++                avg_confidence: None,
++                hit_rate_1d: hit_rate_for_window(1),
++                hit_rate_7d: hit_rate_for_window(7),
++                hit_rate_30d: hit_rate_for_window(30),
++            }
++        })
++        .collect();
++
++    let total_verdicts = reviews
++        .iter()
++        .map(|r| &r.verdict_id)
++        .collect::<std::collections::HashSet<_>>()
++        .len();
++    let last_review_at = reviews.iter().map(|r| r.created_at.clone()).max();
++
++    VerdictReviewSummary {
++        total_verdicts,
++        overall_hit_rate,
++        directional_hit_rate,
++        by_window,
++        by_verdict,
++        last_review_at,
++    }
++}
++
++/// Compute summary statistics from review data and verdicts.
++fn aggregate(reviews: &[VerdictReviewEntry], verdicts_list: &[verdicts::Verdict]) -> VerdictReviewSummary {
++    let total_verdicts = verdicts_list.len();
++
++    // Overall hit rate (30-day focused, matching aggregate_from_stored)
++    let total_30d = reviews.iter().filter(|r| r.window_days == 30).count();
++    let hits_30d = reviews.iter().filter(|r| r.window_days == 30 && r.hit).count();
++    let overall_hit_rate = if total_30d > 0 {
++        hits_30d as f64 / total_30d as f64
++    } else {
++        0.0
++    };
++
++    // Directional hit rate (30-day, exclude HOLD)
++    let dir_total = reviews
++        .iter()
++        .filter(|r| r.verdict_type != "HOLD" && r.window_days == 30)
++        .count();
++    let dir_hits = reviews
++        .iter()
++        .filter(|r| r.verdict_type != "HOLD" && r.window_days == 30 && r.hit)
++        .count();
++    let directional_hit_rate = if dir_total > 0 {
++        dir_hits as f64 / dir_total as f64
++    } else {
++        0.0
++    };
++
++    // By window
++    let by_window: Vec<WindowStats> = WINDOWS
++        .iter()
++        .map(|&w| {
++            let window_reviews: Vec<&VerdictReviewEntry> = reviews.iter().filter(|r| r.window_days == w).collect();
++            let window_hits = window_reviews.iter().filter(|r| r.hit).count();
++            let sample_count = window_reviews.len();
++            let hit_rate = if sample_count > 0 {
++                window_hits as f64 / sample_count as f64
++            } else {
++                0.0
++            };
++            WindowStats {
++                window_days: w,
++                sample_count,
++                hit_rate,
++            }
++        })
++        .collect();
++
++    // By verdict type
++    let verdict_types: Vec<String> = {
++        let mut types: Vec<String> = reviews.iter().map(|r| r.verdict_type.clone()).collect();
++        types.sort();
++        types.dedup();
++        types
++    };
++
++    let by_verdict: Vec<VerdictStats> = verdict_types
++        .iter()
++        .map(|vt| {
++            let vtype_reviews: Vec<&VerdictReviewEntry> = reviews.iter().filter(|r| &r.verdict_type == vt).collect();
++            let sample_count = vtype_reviews.len();
++
++            // Average confidence from the original verdicts
++            let matching_verdicts: Vec<&verdicts::Verdict> = verdicts_list
++                .iter()
++                .filter(|v| &v.verdict == vt)
++                .collect();
++            let avg_confidence = if !matching_verdicts.is_empty() {
++                let sum: f64 = matching_verdicts
++                    .iter()
++                    .filter_map(|v| v.confidence)
++                    .sum();
++                let count = matching_verdicts.iter().filter(|v| v.confidence.is_some()).count();
++                if count > 0 {
++                    Some(sum / count as f64)
++                } else {
++                    None
++                }
++            } else {
++                None
++            };
++
++            let hit_rate_for_window = |window: i64| -> Option<f64> {
++                let wr: Vec<&&VerdictReviewEntry> = vtype_reviews
++                    .iter()
++                    .filter(|r| r.window_days == window)
++                    .collect();
++                if wr.is_empty() {
++                    None
++                } else {
++                    let hits = wr.iter().filter(|r| r.hit).count();
++                    Some(hits as f64 / wr.len() as f64)
++                }
++            };
++
++            VerdictStats {
++                verdict_type: vt.clone(),
++                sample_count,
++                avg_confidence,
++                hit_rate_1d: hit_rate_for_window(1),
++                hit_rate_7d: hit_rate_for_window(7),
++                hit_rate_30d: hit_rate_for_window(30),
++            }
++        })
++        .collect();
++
++    let last_review_at = reviews.iter().map(|r| r.created_at.clone()).max();
++
++    VerdictReviewSummary {
++        total_verdicts,
++        overall_hit_rate,
++        directional_hit_rate,
++        by_window,
++        by_verdict,
++        last_review_at,
++    }
++}
++
++// ---------------------------------------------------------------------------
++// Tests
++// ---------------------------------------------------------------------------
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn test_flat_threshold_basic() {
++        // 3% ATR, 7 days: 1.0 * 0.03 * sqrt(7) ≈ 1.0 * 0.03 * 2.646 ≈ 0.0794
++        let result = flat_threshold(0.03, 7);
++        assert!((result - 0.0794).abs() < 0.001);
++    }
++
++    #[test]
++    fn test_flat_threshold_cap() {
++        // Very high ATR should be capped at 8%
++        let result = flat_threshold(0.5, 30);
++        assert!((result - MAX_FLAT_THRESHOLD).abs() < f64::EPSILON);
++    }
++
++    #[test]
++    fn test_flat_threshold_one_day() {
++        // 1 day: sqrt(1) = 1, so threshold = K_FLAT * atr_pct
++        let result = flat_threshold(0.04, 1);
++        assert!((result - 0.04).abs() < 0.001); // 1.0 * 0.04 = 0.04
++    }
++
++    #[test]
++    fn test_is_hit_buy() {
++        // BUY: hit if return > 0 (raw comparison, no threshold)
++        assert!(is_hit("BUY", 0.05, 0.03));
++        assert!(is_hit("BUY", 0.01, 0.03)); // any positive return is a hit
++        assert!(!is_hit("BUY", -0.05, 0.03));
++        assert!(!is_hit("BUY", 0.0, 0.03)); // exactly zero is not a hit
++    }
++
++    #[test]
++    fn test_is_hit_sell() {
++        // SELL: hit if return < 0 (raw comparison, no threshold)
++        assert!(is_hit("SELL", -0.05, 0.03));
++        assert!(is_hit("SELL", -0.01, 0.03)); // any negative return is a hit
++        assert!(!is_hit("SELL", 0.05, 0.03));
++        assert!(!is_hit("SELL", 0.0, 0.03)); // exactly zero is not a hit
++    }
++
++    #[test]
++    fn test_is_hit_hold() {
++        // HOLD: hit if abs(return) < threshold (strict less-than)
++        assert!(is_hit("HOLD", 0.01, 0.03));
++        assert!(is_hit("HOLD", -0.01, 0.03));
++        assert!(!is_hit("HOLD", 0.05, 0.03));
++        assert!(!is_hit("HOLD", 0.03, 0.03)); // exactly at threshold is not a hit
++    }
++
++    #[test]
++    fn test_is_hit_accumulate() {
++        // ACCUMULATE: same as BUY (raw comparison)
++        assert!(is_hit("ACCUMULATE", 0.05, 0.03));
++        assert!(is_hit("ACCUMULATE", 0.01, 0.03)); // any positive return
++    }
++
++    #[test]
++    fn test_is_hit_trim() {
++        // TRIM: same as SELL (raw comparison)
++        assert!(is_hit("TRIM", -0.05, 0.03));
++        assert!(is_hit("TRIM", -0.01, 0.03)); // any negative return
++    }
++
++    #[test]
++    fn test_is_hit_unknown_verdict() {
++        assert!(!is_hit("UNKNOWN", 0.05, 0.03));
++    }
++
++    #[test]
++    fn test_to_ts_code_plain_sh() {
++        assert_eq!(to_ts_code("600519"), "600519.SH");
++    }
++
++    #[test]
++    fn test_to_ts_code_plain_sz() {
++        assert_eq!(to_ts_code("000001"), "000001.SZ");
++    }
++
++    #[test]
++    fn test_to_ts_code_plain_chinext() {
++        assert_eq!(to_ts_code("300750"), "300750.SZ");
++    }
++
++    #[test]
++    fn test_to_ts_code_already_ts() {
++        assert_eq!(to_ts_code("600519.SH"), "600519.SH");
++    }
++
++    #[test]
++    fn test_to_ts_code_star_market() {
++        assert_eq!(to_ts_code("688001"), "688001.SH");
++    }
++
++    #[test]
++    fn test_to_ts_code_bse_4() {
++        assert_eq!(to_ts_code("430047"), "430047.BJ");
++    }
++
++    #[test]
++    fn test_to_ts_code_bse_8() {
++        assert_eq!(to_ts_code("830799"), "830799.BJ");
++    }
++
++    #[test]
++    fn test_extract_date_standard() {
++        assert_eq!(extract_date("2026-05-29 14:30:00"), Some("20260529".to_string()));
++    }
++
++    #[test]
++    fn test_extract_date_iso() {
++        assert_eq!(extract_date("2026-05-29T14:30:00"), Some("20260529".to_string()));
++    }
++
++    #[test]
++    fn test_extract_date_short() {
++        assert_eq!(extract_date("2026-05-29"), Some("20260529".to_string()));
++    }
++
++    #[test]
++    fn test_extract_date_invalid() {
++        assert_eq!(extract_date("invalid"), None);
++    }
++
++    #[test]
++    fn test_date_from_offset() {
++        assert_eq!(date_from_offset("20260529", 1), Some("20260530".to_string()));
++        assert_eq!(date_from_offset("20260529", 7), Some("20260605".to_string()));
++        assert_eq!(date_from_offset("20260529", -1), Some("20260528".to_string()));
++    }
++
++    #[test]
++    fn test_date_from_offset_month_boundary() {
++        // May 31 + 1 day = June 1
++        assert_eq!(date_from_offset("20260531", 1), Some("20260601".to_string()));
++    }
++
++    #[test]
++    fn test_calc_atr_pct_insufficient_data() {
++        let bars = vec![];
++        assert_eq!(calc_atr_pct(&bars, 100.0), 0.02); // default
++    }
++
++    #[test]
++    fn test_calc_atr_pct_zero_price() {
++        let bars = vec![];
++        assert_eq!(calc_atr_pct(&bars, 0.0), 0.02); // default
++    }
++}
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index 16dabd9..869c4b5 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -71,7 +71,7 @@ impl ShutdownGate {
+ }
+ 
+ /// Run a PnL snapshot: get current holdings, calculate total value, save snapshot.
+-async fn run_pnl_snapshot() -> Result<String, String> {
++pub async fn run_pnl_snapshot() -> Result<String, String> {
+     use crate::storage::invest::{portfolio, verdicts};
+ 
+     let settings = crate::storage::settings::get_user_settings();
+@@ -458,6 +458,23 @@ pub fn run() {
+             commands::invest::save_role_prompt,
+             commands::invest::scan_events,
+             commands::invest::get_scan_status,
++            commands::invest::list_cron_jobs,
++            commands::invest::toggle_cron_job,
++            commands::invest::update_cron_schedule,
++            commands::invest::get_cron_job_logs,
++            commands::invest::trigger_cron_job,
++            commands::invest::run_verdict_review_cmd,
++            commands::invest::get_verdict_review_summary,
++            commands::invest::get_verdict_review_detail,
++            commands::invest::trigger_dream,
++            commands::invest::get_dream_config,
++            commands::invest::save_dream_config,
++            commands::invest::list_dream_traces,
++            commands::invest::rollback_dream,
++            commands::invest::list_insights,
++            commands::invest::archive_insight,
++            commands::invest::unarchive_insight,
++            commands::invest::search_domain_insights,
+         ])
+         .setup(move |app| {
+             // Set up broadcast emitter (requires AppHandle, so must be in setup)
+@@ -485,6 +502,11 @@ pub fn run() {
+             let cancel = app.state::<CancellationToken>().inner().clone();
+             hooks::team_watcher::start_team_watcher(app.handle().clone(), cancel);
+ 
++            // Start invest scheduler runner (background cron loop)
++            invest::scheduler::runner::start(|job_id| async move {
++                invest::scheduler::runner::dispatch_job(&job_id).await
++            });
++
+             // System tray — hide-to-tray on close, left-click to show
+             // Non-fatal: if tray library is unavailable (e.g. some Linux desktops),
+             // the app still works but window close = quit instead of hide-to-tray.
+diff --git a/src-tauri/src/storage/invest/domain_insights.rs b/src-tauri/src/storage/invest/domain_insights.rs
+new file mode 100644
+index 0000000..0133f0a
+--- /dev/null
++++ b/src-tauri/src/storage/invest/domain_insights.rs
+@@ -0,0 +1,247 @@
++use crate::storage::invest::{with_conn, with_conn_mut};
++
++#[derive(Debug, serde::Serialize, serde::Deserialize)]
++#[serde(rename_all = "camelCase")]
++pub struct DomainInsight {
++    pub id: String,
++    pub insight_type: String,
++    pub symbol: Option<String>,
++    pub content: String,
++    pub confidence: Option<f64>,
++    pub source_verdict_ids: Option<String>,
++    pub status: String,
++    pub created_at: String,
++    pub updated_at: String,
++}
++
++/// Upsert a domain insight. On conflict (same id), updates content, confidence,
++/// source_verdict_ids, and updated_at.
++pub fn upsert_insight(insight: &DomainInsight) -> Result<(), String> {
++    with_conn_mut(|conn| {
++        conn.execute(
++            "INSERT INTO domain_insights (id, insight_type, symbol, content, confidence, source_verdict_ids, status, created_at, updated_at)
++             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
++             ON CONFLICT(id) DO UPDATE SET
++               content = excluded.content,
++               confidence = excluded.confidence,
++               source_verdict_ids = excluded.source_verdict_ids,
++               status = excluded.status,
++               updated_at = excluded.updated_at",
++            rusqlite::params![
++                insight.id,
++                insight.insight_type,
++                insight.symbol,
++                insight.content,
++                insight.confidence,
++                insight.source_verdict_ids,
++                insight.status,
++                insight.created_at,
++                insight.updated_at,
++            ],
++        )
++        .map_err(|e| format!("upsert insight: {e}"))?;
++        Ok(())
++    })
++}
++
++/// List domain insights with optional filters.
++pub fn list_insights(
++    status: Option<&str>,
++    insight_type: Option<&str>,
++    symbol: Option<&str>,
++    limit: Option<i64>,
++) -> Result<Vec<DomainInsight>, String> {
++    let limit = limit.unwrap_or(50);
++    with_conn(|conn| {
++        let mut sql = String::from(
++            "SELECT id, insight_type, symbol, content, confidence, source_verdict_ids, status, created_at, updated_at
++             FROM domain_insights WHERE 1=1",
++        );
++        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
++        let mut idx = 1;
++
++        if let Some(s) = status {
++            sql.push_str(&format!(" AND status = ?{idx}"));
++            params.push(Box::new(s.to_string()));
++            idx += 1;
++        }
++        if let Some(t) = insight_type {
++            sql.push_str(&format!(" AND insight_type = ?{idx}"));
++            params.push(Box::new(t.to_string()));
++            idx += 1;
++        }
++        if let Some(sym) = symbol {
++            sql.push_str(&format!(" AND symbol = ?{idx}"));
++            params.push(Box::new(sym.to_string()));
++            idx += 1;
++        }
++        sql.push_str(&format!(" ORDER BY updated_at DESC LIMIT ?{idx}"));
++        params.push(Box::new(limit));
++
++        let mut stmt = conn
++            .prepare(&sql)
++            .map_err(|e| format!("prepare insights query: {e}"))?;
++        let rows = stmt
++            .query_map(rusqlite::params_from_iter(params.iter()), row_to_insight)
++            .map_err(|e| format!("query insights: {e}"))?;
++        let mut result = Vec::new();
++        for r in rows {
++            result.push(r.map_err(|e| format!("read insight row: {e}"))?);
++        }
++        Ok(result)
++    })
++}
++
++/// Export all active insights as a JSON array string. Used for dream snapshots
++/// (before/after comparison).
++pub fn get_active_insights_json() -> Result<String, String> {
++    with_conn(|conn| {
++        let mut stmt = conn
++            .prepare(
++                "SELECT json_group_array(
++                    json(id, insight_type, symbol, content, confidence, source_verdict_ids, status, created_at, updated_at)
++                 )
++                 FROM domain_insights WHERE status = 'active'",
++            )
++            .map_err(|e| format!("prepare active insights json: {e}"))?;
++        let json: String = stmt
++            .query_row([], |row| row.get(0))
++            .map_err(|e| format!("query active insights json: {e}"))?;
++        Ok(json)
++    })
++}
++
++fn row_to_insight(row: &rusqlite::Row) -> rusqlite::Result<DomainInsight> {
++    Ok(DomainInsight {
++        id: row.get(0)?,
++        insight_type: row.get(1)?,
++        symbol: row.get(2)?,
++        content: row.get(3)?,
++        confidence: row.get(4)?,
++        source_verdict_ids: row.get(5)?,
++        status: row.get(6)?,
++        created_at: row.get(7)?,
++        updated_at: row.get(8)?,
++    })
++}
++
++/// Set an insight's status to 'archived'.
++pub fn archive_insight(id: &str) -> Result<(), String> {
++    with_conn_mut(|conn| {
++        let updated = conn
++            .execute(
++                "UPDATE domain_insights SET status = 'archived', updated_at = datetime('now') WHERE id = ?1 AND status = 'active'",
++                [id],
++            )
++            .map_err(|e| format!("archive insight: {e}"))?;
++        if updated == 0 {
++            return Err(format!("Insight '{}' not found or not active", id));
++        }
++        Ok(())
++    })
++}
++
++/// Set an insight's status back to 'active' (unarchive).
++pub fn unarchive_insight(id: &str) -> Result<(), String> {
++    with_conn_mut(|conn| {
++        let updated = conn
++            .execute(
++                "UPDATE domain_insights SET status = 'active', updated_at = datetime('now') WHERE id = ?1 AND status = 'archived'",
++                [id],
++            )
++            .map_err(|e| format!("unarchive insight: {e}"))?;
++        if updated == 0 {
++            return Err(format!("Insight '{}' not found or not archived", id));
++        }
++        Ok(())
++    })
++}
++
++/// Sanitize a user query for FTS5 MATCH — escapes or strips special operators.
++fn sanitize_fts_query(query: &str) -> String {
++    query
++        .split_whitespace()
++        .map(|w| {
++            let clean = w.trim_matches(|c: char| c == '"' || c == '*' || c == '(' || c == ')');
++            if clean.is_empty() {
++                String::new()
++            } else {
++                format!("\"{}\"", clean)
++            }
++        })
++        .filter(|s| !s.is_empty())
++        .collect::<Vec<_>>()
++        .join(" ")
++}
++
++/// Full-text search on domain_insights using FTS5. Returns results ranked by BM25.
++pub fn search_insights(query: &str, limit: Option<i64>) -> Result<Vec<DomainInsight>, String> {
++    if query.trim().is_empty() {
++        return Ok(Vec::new());
++    }
++    let safe_query = sanitize_fts_query(query);
++    if safe_query.is_empty() {
++        return Ok(Vec::new());
++    }
++    let limit = limit.unwrap_or(50);
++    with_conn(|conn| {
++        let params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
++            Box::new(safe_query),
++            Box::new(limit),
++        ];
++        let sql =
++            "SELECT d.id, d.insight_type, d.symbol, d.content, d.confidence, d.source_verdict_ids, d.status, d.created_at, d.updated_at
++             FROM domain_insights d
++             JOIN domain_insights_fts fts ON d.rowid = fts.rowid
++             WHERE domain_insights_fts MATCH ?1
++             ORDER BY bm25(fts)
++             LIMIT ?2";
++        let mut stmt = conn.prepare(sql).map_err(|e| format!("prepare fts search: {e}"))?;
++        let rows = stmt
++            .query_map(rusqlite::params_from_iter(params.iter()), row_to_insight)
++            .map_err(|e| format!("query fts: {e}"))?;
++        let mut result = Vec::new();
++        for r in rows {
++            result.push(r.map_err(|e| format!("read fts row: {e}"))?);
++        }
++        Ok(result)
++    })
++}
++
++/// Restore active insights from a JSON snapshot. Deletes all current active
++/// insights and replaces them with the snapshot contents.
++/// Wrapped in a transaction so DELETE+INSERT is atomic.
++pub fn restore_insight_snapshot(json: &str) -> Result<(), String> {
++    with_conn_mut(|conn| {
++        conn.execute_batch("BEGIN IMMEDIATE;")
++            .map_err(|e| format!("begin transaction: {e}"))?;
++        let result = (|| -> Result<(), String> {
++            conn.execute("DELETE FROM domain_insights WHERE status = 'active'", [])
++                .map_err(|e| format!("clear active insights: {e}"))?;
++            conn.execute(
++                "INSERT INTO domain_insights (id, insight_type, symbol, content, confidence, source_verdict_ids, status, created_at, updated_at)
++                 SELECT
++                    json_extract(value, '$[0]'),
++                    json_extract(value, '$[1]'),
++                    json_extract(value, '$[2]'),
++                    json_extract(value, '$[3]'),
++                    CAST(json_extract(value, '$[4]') AS REAL),
++                    json_extract(value, '$[5]'),
++                    json_extract(value, '$[6]'),
++                    json_extract(value, '$[7]'),
++                    json_extract(value, '$[8]')
++                 FROM json_each(?1)",
++                [json],
++            )
++            .map_err(|e| format!("restore insights snapshot: {e}"))?;
++            Ok(())
++        })();
++        if result.is_ok() {
++            conn.execute_batch("COMMIT;")
++                .map_err(|e| format!("commit transaction: {e}"))?;
++        } else {
++            conn.execute_batch("ROLLBACK;").ok();
++        }
++        result
++    })
++}
+diff --git a/src-tauri/src/storage/invest/dream_snapshots.rs b/src-tauri/src/storage/invest/dream_snapshots.rs
+new file mode 100644
+index 0000000..28ff7cc
+--- /dev/null
++++ b/src-tauri/src/storage/invest/dream_snapshots.rs
+@@ -0,0 +1,151 @@
++use crate::storage::invest::{with_conn, with_conn_mut};
++use rusqlite::Connection;
++
++const CREATE_TABLE_SQL: &str = "
++CREATE TABLE IF NOT EXISTS dream_snapshots (
++    id              INTEGER PRIMARY KEY AUTOINCREMENT,
++    dream_type      TEXT NOT NULL,
++    trigger_type    TEXT NOT NULL,
++    before_json     TEXT NOT NULL,
++    after_json      TEXT,
++    status          TEXT NOT NULL DEFAULT 'pending',
++    summary         TEXT,
++    rollback_ready  INTEGER NOT NULL DEFAULT 0,
++    created_at      TEXT NOT NULL
++);
++CREATE INDEX IF NOT EXISTS idx_ds_type ON dream_snapshots(dream_type);
++CREATE INDEX IF NOT EXISTS idx_ds_status ON dream_snapshots(status);";
++
++#[derive(Debug, serde::Serialize, serde::Deserialize)]
++#[serde(rename_all = "camelCase")]
++pub struct DreamSnapshot {
++    pub id: i64,
++    pub dream_type: String,
++    pub trigger_type: String,
++    pub before_json: String,
++    pub after_json: Option<String>,
++    pub status: String,
++    pub summary: Option<String>,
++    pub rollback_ready: bool,
++    pub created_at: String,
++}
++
++/// Create table using a local connection (for use during init_db before static DB is set).
++pub fn create_table(conn: &Connection) -> Result<(), String> {
++    conn.execute_batch(CREATE_TABLE_SQL)
++        .map_err(|e| format!("create dream_snapshots table: {e}"))
++}
++
++/// Create table using the static DB connection (for use after init_db).
++pub fn create_table_if_not_exists() -> Result<(), String> {
++    with_conn_mut(|conn| {
++        conn.execute_batch(CREATE_TABLE_SQL)
++            .map_err(|e| format!("create dream_snapshots table: {e}"))
++    })
++}
++
++/// Insert a fully-completed snapshot in a single atomic INSERT.
++/// Used by save_snapshot where all fields are known upfront.
++pub fn insert_complete(
++    dream_type: &str,
++    trigger_type: &str,
++    before_json: &str,
++    after_json: &str,
++    summary: &str,
++) -> Result<i64, String> {
++    with_conn_mut(|conn| {
++        conn.execute(
++            "INSERT INTO dream_snapshots (dream_type, trigger_type, before_json, after_json, status, summary, rollback_ready, created_at)
++             VALUES (?1, ?2, ?3, ?4, 'completed', ?5, 1, datetime('now'))",
++            rusqlite::params![dream_type, trigger_type, before_json, after_json, summary],
++        )
++        .map_err(|e| format!("insert complete snapshot: {e}"))?;
++        Ok(conn.last_insert_rowid())
++    })
++}
++
++/// Get a single snapshot by ID.
++pub fn get_by_id(id: i64) -> Result<Option<DreamSnapshot>, String> {
++    with_conn(|conn| {
++        let mut stmt = conn
++            .prepare(
++                "SELECT id, dream_type, trigger_type, before_json, after_json, status, summary, rollback_ready, created_at
++                 FROM dream_snapshots WHERE id = ?1",
++            )
++            .map_err(|e| format!("prepare get_by_id: {e}"))?;
++        let mut rows = stmt
++            .query_map([id], |row| {
++                Ok(DreamSnapshot {
++                    id: row.get(0)?,
++                    dream_type: row.get(1)?,
++                    trigger_type: row.get(2)?,
++                    before_json: row.get(3)?,
++                    after_json: row.get(4)?,
++                    status: row.get(5)?,
++                    summary: row.get(6)?,
++                    rollback_ready: row.get::<_, i32>(7)? != 0,
++                    created_at: row.get(8)?,
++                })
++            })
++            .map_err(|e| format!("query get_by_id: {e}"))?;
++        rows.next()
++            .transpose()
++            .map_err(|e| format!("read get_by_id row: {e}"))
++    })
++}
++
++pub fn list_snapshots(
++    dream_type: Option<&str>,
++    limit: Option<i64>,
++) -> Result<Vec<DreamSnapshot>, String> {
++    with_conn(|conn| {
++        let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match dream_type {
++            Some(t) => (
++                "SELECT id, dream_type, trigger_type, before_json, after_json, status, summary, rollback_ready, created_at
++                 FROM dream_snapshots WHERE dream_type = ?1 ORDER BY created_at DESC LIMIT ?2"
++                    .into(),
++                vec![Box::new(t.to_string()), Box::new(limit.unwrap_or(20))],
++            ),
++            None => (
++                "SELECT id, dream_type, trigger_type, before_json, after_json, status, summary, rollback_ready, created_at
++                 FROM dream_snapshots ORDER BY created_at DESC LIMIT ?1"
++                    .into(),
++                vec![Box::new(limit.unwrap_or(20))],
++            ),
++        };
++        let mut stmt = conn
++            .prepare(&sql)
++            .map_err(|e| format!("prepare dream_snapshots query: {e}"))?;
++        let rows = stmt
++            .query_map(rusqlite::params_from_iter(params.iter()), |row| {
++                Ok(DreamSnapshot {
++                    id: row.get(0)?,
++                    dream_type: row.get(1)?,
++                    trigger_type: row.get(2)?,
++                    before_json: row.get(3)?,
++                    after_json: row.get(4)?,
++                    status: row.get(5)?,
++                    summary: row.get(6)?,
++                    rollback_ready: row.get::<_, i32>(7)? != 0,
++                    created_at: row.get(8)?,
++                })
++            })
++            .map_err(|e| format!("query dream_snapshots: {e}"))?;
++        let mut result = Vec::new();
++        for r in rows {
++            result.push(r.map_err(|e| format!("read dream_snapshot row: {e}"))?);
++        }
++        Ok(result)
++    })
++}
++
++pub fn mark_rolled_back(id: i64) -> Result<(), String> {
++    with_conn_mut(|conn| {
++        conn.execute(
++            "UPDATE dream_snapshots SET status = 'rolled_back', rollback_ready = 0 WHERE id = ?1",
++            [id],
++        )
++        .map_err(|e| format!("mark rolled back: {e}"))?;
++        Ok(())
++    })
++}
+diff --git a/src-tauri/src/storage/invest/mod.rs b/src-tauri/src/storage/invest/mod.rs
+index 57abd4c..aa8aecd 100644
+--- a/src-tauri/src/storage/invest/mod.rs
++++ b/src-tauri/src/storage/invest/mod.rs
+@@ -1,7 +1,10 @@
++pub mod domain_insights;
++pub mod dream_snapshots;
+ pub mod events;
+ pub mod portfolio;
+ pub mod scheduler;
+ pub mod strategy;
++pub mod verdict_reviews;
+ pub mod verdicts;
+ 
+ use rusqlite::Connection;
+@@ -67,6 +70,34 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
+         COMMIT;"
+     ).map_err(|e| format!("migrate trades table: {}", e))?;
+ 
++    // Migration: create verdict_reviews table (use local conn, DB not yet in static)
++    verdict_reviews::create_table(&conn)?;
++
++    // Migration: create dream_snapshots table (use local conn, DB not yet in static)
++    dream_snapshots::create_table(&conn)?;
++
++    // FTS5 virtual table for domain_insights full-text search
++    conn.execute_batch(
++        "CREATE VIRTUAL TABLE IF NOT EXISTS domain_insights_fts USING fts5(content, symbol, tokenize='unicode61');"
++    ).map_err(|e| format!("create domain_insights_fts: {e}"))?;
++
++    // Triggers to keep FTS in sync with domain_insights
++    conn.execute_batch(
++        "DROP TRIGGER IF EXISTS domain_insights_ai;
++         DROP TRIGGER IF EXISTS domain_insights_ad;
++         DROP TRIGGER IF EXISTS domain_insights_au;
++         CREATE TRIGGER domain_insights_ai AFTER INSERT ON domain_insights BEGIN
++             INSERT INTO domain_insights_fts(rowid, content, symbol) VALUES (new.rowid, new.content, new.symbol);
++         END;
++         CREATE TRIGGER domain_insights_ad AFTER DELETE ON domain_insights BEGIN
++             INSERT INTO domain_insights_fts(domain_insights_fts, rowid, content, symbol) VALUES ('delete', old.rowid, old.content, old.symbol);
++         END;
++         CREATE TRIGGER domain_insights_au AFTER UPDATE ON domain_insights BEGIN
++             INSERT INTO domain_insights_fts(domain_insights_fts, rowid, content, symbol) VALUES ('delete', old.rowid, old.content, old.symbol);
++             INSERT INTO domain_insights_fts(rowid, content, symbol) VALUES (new.rowid, new.content, new.symbol);
++         END;"
++    ).map_err(|e| format!("create domain_insights_fts triggers: {e}"))?;
++
+     let mut guard = DB.lock().map_err(|e| format!("lock db: {}", e))?;
+     *guard = Some(conn);
+     log::info!("invest.db initialized at {:?}", db_path);
+diff --git a/src-tauri/src/storage/invest/scheduler.rs b/src-tauri/src/storage/invest/scheduler.rs
+index 4a6f194..88689c5 100644
+--- a/src-tauri/src/storage/invest/scheduler.rs
++++ b/src-tauri/src/storage/invest/scheduler.rs
+@@ -74,6 +74,10 @@ pub fn list_scheduler_logs(task_name: Option<&str>, limit: Option<i64>) -> Resul
+     })
+ }
+ 
++pub fn get_task_logs(task: &str, limit: Option<i64>) -> Result<Vec<SchedulerLog>, String> {
++    list_scheduler_logs(Some(task), limit)
++}
++
+ pub fn is_trading_day(date: &str) -> Result<bool, String> {
+     with_conn(|conn| {
+         let result = conn.query_row(
+diff --git a/src-tauri/src/storage/invest/verdict_reviews.rs b/src-tauri/src/storage/invest/verdict_reviews.rs
+new file mode 100644
+index 0000000..4cc8bf6
+--- /dev/null
++++ b/src-tauri/src/storage/invest/verdict_reviews.rs
+@@ -0,0 +1,137 @@
++use super::with_conn;
++use super::with_conn_mut;
++use rusqlite::{params, Connection};
++
++#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
++#[serde(rename_all = "camelCase")]
++pub struct VerdictReviewEntry {
++    pub id: i64,
++    pub verdict_id: String,
++    pub symbol: String,
++    pub verdict_type: String,
++    pub verdict_date: String,
++    pub window_days: i64,
++    pub price_at_verdict: Option<f64>,
++    pub price_after: Option<f64>,
++    pub return_pct: Option<f64>,
++    pub hit: bool,
++    pub flat_threshold: Option<f64>,
++    pub created_at: String,
++}
++
++const CREATE_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS verdict_reviews (
++    id              INTEGER PRIMARY KEY AUTOINCREMENT,
++    verdict_id      TEXT NOT NULL,
++    symbol          TEXT NOT NULL,
++    verdict_type    TEXT NOT NULL,
++    verdict_date    TEXT NOT NULL,
++    window_days     INTEGER NOT NULL,
++    price_at_verdict REAL,
++    price_after     REAL,
++    return_pct      REAL,
++    hit             INTEGER NOT NULL,
++    flat_threshold  REAL,
++    created_at      TEXT NOT NULL,
++    UNIQUE(verdict_id, window_days)
++);
++CREATE INDEX IF NOT EXISTS idx_vr_verdict ON verdict_reviews(verdict_id);
++CREATE INDEX IF NOT EXISTS idx_vr_symbol ON verdict_reviews(symbol);
++CREATE INDEX IF NOT EXISTS idx_vr_date ON verdict_reviews(verdict_date);";
++
++/// Create the verdict_reviews table using a provided connection.
++/// Used during init_db when the static DB is not yet available.
++pub fn create_table(conn: &Connection) -> Result<(), String> {
++    conn.execute_batch(CREATE_TABLE_SQL)
++        .map_err(|e| format!("create verdict_reviews table: {}", e))?;
++    Ok(())
++}
++
++/// Create the verdict_reviews table using the global connection.
++pub fn create_table_if_not_exists() -> Result<(), String> {
++    with_conn(|conn| {
++        conn.execute_batch(CREATE_TABLE_SQL)
++            .map_err(|e| format!("create verdict_reviews table: {}", e))?;
++        Ok(())
++    })
++}
++
++pub fn upsert_review(entry: &VerdictReviewEntry) -> Result<(), String> {
++    with_conn_mut(|conn| {
++        conn.execute(
++            "INSERT INTO verdict_reviews (verdict_id, symbol, verdict_type, verdict_date, window_days, price_at_verdict, price_after, return_pct, hit, flat_threshold, created_at)
++             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
++             ON CONFLICT(verdict_id, window_days) DO UPDATE SET
++                price_at_verdict = excluded.price_at_verdict,
++                price_after = excluded.price_after,
++                return_pct = excluded.return_pct,
++                hit = excluded.hit,
++                flat_threshold = excluded.flat_threshold,
++                created_at = excluded.created_at",
++            params![
++                entry.verdict_id,
++                entry.symbol,
++                entry.verdict_type,
++                entry.verdict_date,
++                entry.window_days,
++                entry.price_at_verdict,
++                entry.price_after,
++                entry.return_pct,
++                entry.hit as i64,
++                entry.flat_threshold,
++                entry.created_at,
++            ],
++        )
++        .map_err(|e| format!("upsert verdict review: {}", e))?;
++        Ok(())
++    })
++}
++
++pub fn list_reviews(symbol: Option<&str>, limit: Option<i64>) -> Result<Vec<VerdictReviewEntry>, String> {
++    with_conn(|conn| {
++        let limit_val = limit.unwrap_or(100);
++        let (sql, query_params): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = match symbol {
++            Some(s) => (
++                "SELECT id, verdict_id, symbol, verdict_type, verdict_date, window_days, price_at_verdict, price_after, return_pct, hit, flat_threshold, created_at
++                 FROM verdict_reviews WHERE symbol = ?1 ORDER BY verdict_date DESC, window_days ASC LIMIT ?2",
++                vec![Box::new(s.to_string()), Box::new(limit_val)],
++            ),
++            None => (
++                "SELECT id, verdict_id, symbol, verdict_type, verdict_date, window_days, price_at_verdict, price_after, return_pct, hit, flat_threshold, created_at
++                 FROM verdict_reviews ORDER BY verdict_date DESC, window_days ASC LIMIT ?1",
++                vec![Box::new(limit_val)],
++            ),
++        };
++        let mut stmt = conn.prepare(sql).map_err(|e| format!("prepare: {}", e))?;
++        let rows = stmt
++            .query_map(rusqlite::params_from_iter(query_params.iter()), |row| {
++                Ok(VerdictReviewEntry {
++                    id: row.get(0)?,
++                    verdict_id: row.get(1)?,
++                    symbol: row.get(2)?,
++                    verdict_type: row.get(3)?,
++                    verdict_date: row.get(4)?,
++                    window_days: row.get(5)?,
++                    price_at_verdict: row.get(6)?,
++                    price_after: row.get(7)?,
++                    return_pct: row.get(8)?,
++                    hit: row.get::<_, i64>(9)? != 0,
++                    flat_threshold: row.get(10)?,
++                    created_at: row.get(11)?,
++                })
++            })
++            .map_err(|e| format!("query: {}", e))?;
++        let mut items = Vec::new();
++        for row in rows {
++            items.push(row.map_err(|e| format!("row: {}", e))?);
++        }
++        Ok(items)
++    })
++}
++
++pub fn clear_reviews() -> Result<(), String> {
++    with_conn_mut(|conn| {
++        conn.execute("DELETE FROM verdict_reviews", [])
++            .map_err(|e| format!("clear verdict reviews: {}", e))?;
++        Ok(())
++    })
++}
+diff --git a/src/lib/components/invest/CommitteeAccuracyTab.svelte b/src/lib/components/invest/CommitteeAccuracyTab.svelte
+index 23214f0..534f8d4 100644
+--- a/src/lib/components/invest/CommitteeAccuracyTab.svelte
++++ b/src/lib/components/invest/CommitteeAccuracyTab.svelte
+@@ -1,10 +1,236 @@
+ <script lang="ts">
+   import { t } from '$lib/i18n/index.svelte';
++  import { getTransport } from '$lib/transport';
++
++  const invoke = <T,>(cmd: string, args?: Record<string, unknown>) =>
++    getTransport().invoke<T>(cmd, args);
++
++  interface WindowStats {
++    windowDays: number;
++    sampleCount: number;
++    hitRate: number;
++  }
++  interface VerdictStats {
++    verdictType: string;
++    sampleCount: number;
++    avgConfidence: number;
++    hitRate1d: number;
++    hitRate7d: number;
++    hitRate30d: number;
++  }
++  interface ReviewSummary {
++    totalVerdicts: number;
++    overallHitRate: number;
++    directionalHitRate: number;
++    byWindow: WindowStats[];
++    byVerdict: VerdictStats[];
++    lastReviewAt?: string;
++  }
++  interface ReviewEntry {
++    id: number;
++    verdictId: string;
++    symbol: string;
++    verdictType: string;
++    verdictDate: string;
++    windowDays: number;
++    priceAtVerdict?: number;
++    priceAfter?: number;
++    returnPct?: number;
++    hit: boolean;
++    flatThreshold?: number;
++  }
++
++  let summary = $state<ReviewSummary | null>(null);
++  let detail = $state<ReviewEntry[]>([]);
++  let loading = $state(false);
++  let running = $state(false);
++  let showDetail = $state(false);
++  let error = $state<string | null>(null);
++
++  async function loadSummary() {
++    loading = true;
++    try {
++      summary = await invoke<ReviewSummary>('get_verdict_review_summary');
++    } catch (e) {
++      error = String(e);
++    } finally {
++      loading = false;
++    }
++  }
++
++  async function runReview() {
++    running = true;
++    error = null;
++    try {
++      const settings = await invoke<{ tushareToken?: string }>('get_user_settings');
++      if (!settings.tushareToken) {
++        error = t('invest_accuracy_noToken');
++        return;
++      }
++      summary = await invoke<ReviewSummary>('run_verdict_review_cmd', { tushareToken: settings.tushareToken });
++    } catch (e) {
++      error = String(e);
++    } finally {
++      running = false;
++    }
++  }
++
++  async function loadDetail() {
++    showDetail = !showDetail;
++    if (showDetail && detail.length === 0) {
++      detail = await invoke<ReviewEntry[]>('get_verdict_review_detail', {});
++    }
++  }
++
++  function pct(n: number): string {
++    return (n * 100).toFixed(1) + '%';
++  }
++
++  function hitColor(rate: number): string {
++    if (rate >= 0.6) return 'text-green-500';
++    if (rate >= 0.4) return 'text-yellow-500';
++    return 'text-red-500';
++  }
++
++  $effect(() => { loadSummary(); });
+ </script>
+ 
+-<div class="flex h-48 items-center justify-center">
+-  <div class="text-center text-muted-foreground">
+-    <p class="text-lg font-medium">命中率追踪</p>
+-    <p class="mt-1 text-sm">Phase 4 开发中 — 将对比决策结果与实际价格走势</p>
++<div class="space-y-4">
++  <div class="flex items-center justify-between">
++    <h3 class="text-lg font-semibold">{t('invest_accuracy_title')}</h3>
++    <button
++      class="rounded bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
++      disabled={running}
++      onclick={runReview}
++    >
++      {running ? '...' : t('invest_accuracy_run_review')}
++    </button>
+   </div>
++
++  {#if error}
++    <div class="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
++      {error}
++    </div>
++  {/if}
++
++  {#if loading}
++    <p class="text-muted-foreground">{t('common_loading')}</p>
++  {:else if !summary || summary.totalVerdicts === 0}
++    <div class="flex h-32 items-center justify-center">
++      <p class="text-muted-foreground">{t('invest_accuracy_no_data')}</p>
++    </div>
++  {:else}
++    <!-- KPI Cards -->
++    <div class="grid grid-cols-3 gap-4">
++      <div class="rounded-lg border p-4 text-center">
++        <div class="text-2xl font-bold">{summary.totalVerdicts}</div>
++        <div class="text-xs text-muted-foreground">{t('invest_accuracy_total_verdicts')}</div>
++      </div>
++      <div class="rounded-lg border p-4 text-center">
++        <div class="text-2xl font-bold {hitColor(summary.overallHitRate)}">{pct(summary.overallHitRate)}</div>
++        <div class="text-xs text-muted-foreground">{t('invest_accuracy_overall_hit_rate')}</div>
++      </div>
++      <div class="rounded-lg border p-4 text-center border-primary/30">
++        <div class="text-2xl font-bold {hitColor(summary.directionalHitRate)}">{pct(summary.directionalHitRate)}</div>
++        <div class="text-xs text-muted-foreground">{t('invest_accuracy_directional_hit_rate')}</div>
++      </div>
++    </div>
++
++    <!-- Honesty banner -->
++    {#if summary.directionalHitRate < 0.5}
++      <div class="rounded border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
++        {t('invest_accuracy_honesty_banner')}
++      </div>
++    {/if}
++
++    <!-- By Window -->
++    <div class="rounded-lg border">
++      <div class="border-b bg-muted/50 px-4 py-2 text-sm font-medium">{t('invest_accuracy_by_window')}</div>
++      <div class="p-4 space-y-3">
++        {#each [...summary.byWindow].sort((a, b) => a.windowDays - b.windowDays) as w}
++          <div class="flex items-center gap-3">
++            <span class="w-12 text-sm font-medium">{w.windowDays}d</span>
++            <div class="flex-1">
++              <div class="h-3 rounded-full bg-muted overflow-hidden">
++                <div class="h-full rounded-full bg-primary transition-all" style="width: {w.hitRate * 100}%"></div>
++              </div>
++            </div>
++            <span class="w-16 text-right text-sm font-mono {hitColor(w.hitRate)}">{pct(w.hitRate)}</span>
++            <span class="w-16 text-right text-xs text-muted-foreground">{w.sampleCount} {t('invest_accuracy_samples')}</span>
++          </div>
++        {/each}
++      </div>
++    </div>
++
++    <!-- By Verdict Type -->
++    <div class="rounded-lg border">
++      <div class="border-b bg-muted/50 px-4 py-2 text-sm font-medium">{t('invest_accuracy_by_verdict')}</div>
++      <table class="w-full text-sm">
++        <thead>
++          <tr class="border-b text-left text-xs text-muted-foreground">
++            <th class="px-4 py-2">{t('invest_accuracy_type')}</th>
++            <th class="px-4 py-2 text-right">{t('invest_accuracy_count')}</th>
++            <th class="px-4 py-2 text-right">1d</th>
++            <th class="px-4 py-2 text-right">7d</th>
++            <th class="px-4 py-2 text-right">30d</th>
++          </tr>
++        </thead>
++        <tbody>
++          {#each [...summary.byVerdict].sort((a, b) => b.sampleCount - a.sampleCount) as v}
++            <tr class="border-b last:border-0">
++              <td class="px-4 py-2 font-medium">{v.verdictType}</td>
++              <td class="px-4 py-2 text-right">{v.sampleCount}</td>
++              <td class="px-4 py-2 text-right {hitColor(v.hitRate1d)}">{pct(v.hitRate1d)}</td>
++              <td class="px-4 py-2 text-right {hitColor(v.hitRate7d)}">{pct(v.hitRate7d)}</td>
++              <td class="px-4 py-2 text-right {hitColor(v.hitRate30d)}">{pct(v.hitRate30d)}</td>
++            </tr>
++          {/each}
++        </tbody>
++      </table>
++    </div>
++
++    <!-- Detail toggle -->
++    <button class="text-sm text-muted-foreground hover:text-foreground" onclick={loadDetail}>
++      {showDetail ? t('invest_accuracy_hide') : t('invest_accuracy_show')} {t('invest_accuracy_detail')} ({detail.length} {t('invest_accuracy_entries')})
++    </button>
++
++    {#if showDetail && detail.length > 0}
++      <div class="max-h-80 overflow-y-auto rounded-lg border">
++        <table class="w-full text-xs">
++          <thead>
++            <tr class="border-b bg-muted/50 text-left">
++              <th class="px-3 py-2">{t('invest_accuracy_symbol')}</th>
++              <th class="px-3 py-2">{t('invest_accuracy_date')}</th>
++              <th class="px-3 py-2">{t('invest_accuracy_verdict')}</th>
++              <th class="px-3 py-2 text-right">{t('invest_accuracy_window')}</th>
++              <th class="px-3 py-2 text-right">{t('invest_accuracy_returnPct')}</th>
++              <th class="px-3 py-2 text-center">{t('invest_accuracy_hit')}</th>
++            </tr>
++          </thead>
++          <tbody>
++            {#each detail as d}
++              <tr class="border-b last:border-0">
++                <td class="px-3 py-2 font-mono">{d.symbol}</td>
++                <td class="px-3 py-2">{d.verdictDate}</td>
++                <td class="px-3 py-2">{d.verdictType}</td>
++                <td class="px-3 py-2 text-right">{d.windowDays}d</td>
++                <td class="px-3 py-2 text-right {(d.returnPct ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'}">
++                  {d.returnPct != null ? pct(d.returnPct) : '-'}
++                </td>
++                <td class="px-3 py-2 text-center">
++                  <span class="inline-block w-5 rounded text-center {d.hit ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
++                    {d.hit ? '✓' : '✗'}
++                  </span>
++                </td>
++              </tr>
++            {/each}
++          </tbody>
++        </table>
++      </div>
++    {/if}
++
++    {#if summary.lastReviewAt}
++      <p class="text-xs text-muted-foreground">{t('invest_accuracy_lastReview')} {new Date(summary.lastReviewAt).toLocaleString()}</p>
++    {/if}
++  {/if}
+ </div>
+diff --git a/src/lib/components/invest/DreamingConfigPanel.svelte b/src/lib/components/invest/DreamingConfigPanel.svelte
+new file mode 100644
+index 0000000..1a772c8
+--- /dev/null
++++ b/src/lib/components/invest/DreamingConfigPanel.svelte
+@@ -0,0 +1,331 @@
++<script lang="ts">
++  import { t } from '$lib/i18n/index.svelte';
++  import { getTransport } from '$lib/transport';
++
++  const invoke = <T,>(cmd: string, args?: Record<string, unknown>) =>
++    getTransport().invoke<T>(cmd, args);
++
++  /** Either 'invest' or 'user_memory' — determines which dream mode to control. */
++  let { path = 'invest' }: { path?: 'invest' | 'user_memory' } = $props();
++
++  interface DreamConfig {
++    investEnabled: boolean;
++    investCron: string;
++    userMemoryEnabled: boolean;
++    userMemoryIntervalMin: number;
++    lookbackDays: number;
++    minScore: number;
++    minCount: number;
++  }
++
++  interface StageResult {
++    stage: string;
++    durationMs: number;
++    itemsProcessed: number;
++    itemsOutput: number;
++  }
++
++  interface DreamResult {
++    insightsWritten: number;
++    insightsUpdated: number;
++    insightsArchived: number;
++    pipelineDurationMs: number;
++    stages: StageResult[];
++  }
++
++  interface DreamSnapshot {
++    id: number;
++    dreamType: string;
++    triggerType: string;
++    beforeJson: string;
++    afterJson?: string;
++    status: string;
++    summary?: string;
++    rollbackReady: boolean;
++    createdAt: string;
++  }
++
++  let config = $state<DreamConfig | null>(null);
++  let traces = $state<DreamSnapshot[]>([]);
++  let loading = $state(false);
++  let saving = $state(false);
++  let triggering = $state(false);
++  let rollingBack = $state<number | null>(null);
++  let lastResult = $state<DreamResult | null>(null);
++  let error = $state<string | null>(null);
++  let success = $state<string | null>(null);
++
++  const isInvest = $derived(path === 'invest');
++
++  async function loadConfig() {
++    loading = true;
++    try {
++      config = await invoke<DreamConfig>('get_dream_config');
++      traces = await invoke<DreamSnapshot[]>('list_dream_traces', { dreamType: path, limit: 10 });
++    } catch (e) {
++      error = `Failed to load config: ${e}`;
++    } finally {
++      loading = false;
++    }
++  }
++
++  async function saveConfig() {
++    if (!config) return;
++    saving = true;
++    error = null;
++    try {
++      await invoke('save_dream_config', { config });
++      success = 'Config saved';
++      setTimeout(() => (success = null), 2000);
++    } catch (e) {
++      error = `Failed to save: ${e}`;
++    } finally {
++      saving = false;
++    }
++  }
++
++  async function trigger() {
++    triggering = true;
++    error = null;
++    lastResult = null;
++    try {
++      lastResult = await invoke<DreamResult>('trigger_dream', { mode: path });
++      // Dispatch browser notification if permission granted
++      if (Notification.permission === 'granted') {
++        new Notification(
++          t('invest_insights_pipeline_notification', { count: String(lastResult.insightsWritten) }),
++        );
++      }
++      // Reload traces after a successful run
++      traces = await invoke<DreamSnapshot[]>('list_dream_traces', { dreamType: path, limit: 10 });
++    } catch (e) {
++      error = `Dream failed: ${e}`;
++    } finally {
++      triggering = false;
++    }
++  }
++
++  async function rollback(snapshotId: number) {
++    rollingBack = snapshotId;
++    error = null;
++    try {
++      await invoke('rollback_dream', { snapshotId });
++      traces = await invoke<DreamSnapshot[]>('list_dream_traces', { dreamType: path, limit: 10 });
++      success = 'Rolled back successfully';
++      setTimeout(() => (success = null), 2000);
++    } catch (e) {
++      error = `Rollback failed: ${e}`;
++    } finally {
++      rollingBack = null;
++    }
++  }
++
++  function formatDuration(ms: number): string {
++    if (ms < 1000) return `${ms}ms`;
++    return `${(ms / 1000).toFixed(1)}s`;
++  }
++
++  function statusColor(status: string): string {
++    if (status === 'completed') return 'text-green-500';
++    if (status === 'rolled_back') return 'text-amber-500';
++    if (status === 'failed') return 'text-red-500';
++    return 'text-muted-foreground';
++  }
++
++  $effect(() => {
++    loadConfig();
++  });
++</script>
++
++<div class="space-y-4">
++  <h3 class="text-lg font-semibold">
++    {isInvest ? 'Investment Dreaming' : 'User Memory Dreaming'}
++  </h3>
++
++  {#if loading}
++    <p class="text-muted-foreground">Loading config...</p>
++  {:else if config}
++    <!-- Config section -->
++    <div class="rounded-lg border p-4 space-y-3">
++      <h4 class="text-sm font-medium">Configuration</h4>
++
++      {#if !isInvest}
++        <div class="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">
++          User memory dreaming is not yet implemented. This panel is a preview.
++        </div>
++      {/if}
++
++      <div class="flex items-center gap-3">
++        <button
++          class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors {(isInvest ? config.investEnabled : config.userMemoryEnabled) ? 'bg-primary' : 'bg-muted'} {!isInvest ? 'opacity-50 cursor-not-allowed' : ''}"
++          aria-label="Toggle enabled"
++          disabled={!isInvest}
++          onclick={() => {
++            if (isInvest) {
++              config!.investEnabled = !config!.investEnabled;
++            }
++          }}
++        >
++          <span
++            class="inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform {(isInvest ? config.investEnabled : config.userMemoryEnabled)
++              ? 'translate-x-4'
++              : 'translate-x-1'}"
++          ></span>
++        </button>
++        <span class="text-sm {!isInvest ? 'text-muted-foreground' : ''}">{isInvest ? 'Invest pipeline enabled' : 'User memory enabled (coming soon)'}</span>
++      </div>
++
++      {#if isInvest}
++        <div class="flex items-center gap-2">
++          <label class="text-xs text-muted-foreground w-20">Cron</label>
++          <input
++            class="flex-1 rounded border bg-background px-2 py-1 text-xs font-mono"
++            bind:value={config!.investCron}
++          />
++        </div>
++      {:else}
++        <div class="flex items-center gap-2">
++          <label class="text-xs text-muted-foreground w-20">Interval (min)</label>
++          <input
++            type="number"
++            class="w-24 rounded border bg-background px-2 py-1 text-xs opacity-50"
++            disabled
++            bind:value={config!.userMemoryIntervalMin}
++          />
++        </div>
++      {/if}
++
++      <div class="flex items-center gap-2">
++        <label class="text-xs text-muted-foreground w-20">Lookback</label>
++        <input
++          type="number"
++          class="w-24 rounded border bg-background px-2 py-1 text-xs"
++          bind:value={config!.lookbackDays}
++        />
++        <span class="text-xs text-muted-foreground">days</span>
++      </div>
++
++      <div class="flex items-center gap-2">
++        <label class="text-xs text-muted-foreground w-20">Min score</label>
++        <input
++          type="number"
++          step="0.05"
++          class="w-24 rounded border bg-background px-2 py-1 text-xs"
++          bind:value={config!.minScore}
++        />
++      </div>
++
++      <div class="flex items-center gap-2">
++        <label class="text-xs text-muted-foreground w-20">Min count</label>
++        <input
++          type="number"
++          class="w-24 rounded border bg-background px-2 py-1 text-xs"
++          bind:value={config!.minCount}
++        />
++      </div>
++
++      <div class="flex gap-2 pt-1">
++        <button
++          class="rounded bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
++          disabled={saving}
++          onclick={saveConfig}
++        >
++          {saving ? 'Saving...' : 'Save Config'}
++        </button>
++        <button
++          class="rounded bg-amber-600 px-3 py-1.5 text-xs text-white hover:bg-amber-700 disabled:opacity-50"
++          disabled={triggering || !isInvest}
++          onclick={trigger}
++        >
++          {triggering ? 'Running...' : 'Run Now'}
++        </button>
++      </div>
++    </div>
++
++    <!-- Last result -->
++    {#if lastResult}
++      <div class="rounded-lg border p-4 space-y-2">
++        <h4 class="text-sm font-medium">Last Result</h4>
++        <div class="grid grid-cols-3 gap-2 text-center text-xs">
++          <div class="rounded bg-green-500/10 p-2">
++            <div class="text-lg font-bold text-green-500">{lastResult.insightsWritten}</div>
++            <div class="text-muted-foreground">Written</div>
++          </div>
++          <div class="rounded bg-blue-500/10 p-2">
++            <div class="text-lg font-bold text-blue-500">{lastResult.insightsUpdated}</div>
++            <div class="text-muted-foreground">Updated</div>
++          </div>
++          <div class="rounded bg-amber-500/10 p-2">
++            <div class="text-lg font-bold text-amber-500">{lastResult.insightsArchived}</div>
++            <div class="text-muted-foreground">Archived</div>
++          </div>
++        </div>
++        <div class="text-xs text-muted-foreground">
++          Total duration: {formatDuration(lastResult.pipelineDurationMs)}
++        </div>
++        {#if lastResult.stages.length > 0}
++          <div class="space-y-1">
++            {#each lastResult.stages as stage}
++              <div class="flex items-center justify-between text-xs">
++                <span class="font-medium">{stage.stage}</span>
++                <span class="text-muted-foreground">
++                  {stage.itemsProcessed} in / {stage.itemsOutput} out ({formatDuration(stage.durationMs)})
++                </span>
++              </div>
++            {/each}
++          </div>
++        {/if}
++      </div>
++    {/if}
++
++    <!-- Trace list -->
++    <div class="rounded-lg border p-4 space-y-2">
++      <h4 class="text-sm font-medium">Recent Traces</h4>
++      {#if traces.length === 0}
++        <p class="text-xs text-muted-foreground">No traces yet. Run the dream pipeline to see history.</p>
++      {:else}
++        <div class="max-h-60 space-y-2 overflow-y-auto">
++          {#each traces as trace}
++            <div class="flex items-center justify-between rounded border px-3 py-2 text-xs">
++              <div class="flex-1 min-w-0">
++                <div class="flex items-center gap-2">
++                  <span class={statusColor(trace.status)}>{trace.status}</span>
++                  <span class="text-muted-foreground">#{trace.id}</span>
++                  <span class="text-muted-foreground">{trace.triggerType}</span>
++                </div>
++                {#if trace.summary}
++                  <div class="mt-0.5 truncate text-muted-foreground">{trace.summary}</div>
++                {/if}
++                <div class="text-muted-foreground">
++                  {new Date(trace.createdAt).toLocaleString()}
++                </div>
++              </div>
++              {#if trace.rollbackReady && trace.status === 'completed'}
++                <button
++                  class="ml-2 rounded border px-2 py-1 text-xs hover:bg-destructive/10 text-destructive disabled:opacity-50"
++                  disabled={rollingBack === trace.id}
++                  onclick={() => rollback(trace.id)}
++                >
++                  {rollingBack === trace.id ? 'Rolling back...' : 'Rollback'}
++                </button>
++              {/if}
++            </div>
++          {/each}
++        </div>
++      {/if}
++    </div>
++
++    <!-- Messages -->
++    {#if error}
++      <div class="flex items-center justify-between rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
++        <span>{error}</span>
++        <button class="ml-2 text-xs hover:underline" onclick={() => (error = null)}>Dismiss</button>
++      </div>
++    {/if}
++    {#if success}
++      <div class="rounded-md border border-green-500/50 bg-green-500/10 px-3 py-2 text-sm text-green-500">
++        {success}
++      </div>
++    {/if}
++  {/if}
++</div>
+diff --git a/src/lib/components/invest/InsightsFeed.svelte b/src/lib/components/invest/InsightsFeed.svelte
+new file mode 100644
+index 0000000..a13caf4
+--- /dev/null
++++ b/src/lib/components/invest/InsightsFeed.svelte
+@@ -0,0 +1,176 @@
++<script lang="ts">
++  import { t } from '$lib/i18n/index.svelte';
++  import { getTransport } from '$lib/transport';
++  import type { DomainInsight } from '$lib/types';
++
++  const invoke = <T,>(cmd: string, args?: Record<string, unknown>) =>
++    getTransport().invoke<T>(cmd, args);
++
++  let insights = $state<DomainInsight[]>([]);
++  let loading = $state(false);
++  let searchQuery = $state('');
++  let statusFilter = $state<'active' | 'archived'>('active');
++  let error = $state<string | null>(null);
++
++  async function loadInsights() {
++    loading = true;
++    error = null;
++    try {
++      insights = await invoke<DomainInsight[]>('list_insights', {
++        status: statusFilter,
++        symbol: null,
++        limit: 50,
++      });
++    } catch (e) {
++      error = String(e);
++    } finally {
++      loading = false;
++    }
++  }
++
++  async function archiveInsight(id: string) {
++    try {
++      await invoke('archive_insight', { id });
++      insights = insights.filter((i) => i.id !== id);
++    } catch (e) {
++      error = String(e);
++    }
++  }
++
++  async function unarchiveInsight(id: string) {
++    try {
++      await invoke('unarchive_insight', { id });
++      await loadInsights();
++    } catch (e) {
++      error = String(e);
++    }
++  }
++
++  const filteredInsights = $derived(
++    searchQuery
++      ? insights.filter(
++          (i) =>
++            i.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
++            (i.symbol && i.symbol.toLowerCase().includes(searchQuery.toLowerCase())) ||
++            i.insightType.toLowerCase().includes(searchQuery.toLowerCase()),
++        )
++      : insights,
++  );
++
++  function confidenceColor(c: number | null): string {
++    if (c == null) return 'text-muted-foreground';
++    if (c >= 0.8) return 'text-green-500';
++    if (c >= 0.5) return 'text-amber-500';
++    return 'text-red-400';
++  }
++
++  function typeBadge(type: string): string {
++    const map: Record<string, string> = {
++      pattern: 'bg-blue-500/10 text-blue-400',
++      regime: 'bg-purple-500/10 text-purple-400',
++      sector: 'bg-emerald-500/10 text-emerald-400',
++      risk: 'bg-red-500/10 text-red-400',
++      opportunity: 'bg-amber-500/10 text-amber-400',
++    };
++    return map[type] || 'bg-muted text-muted-foreground';
++  }
++
++  $effect(() => {
++    loadInsights();
++  });
++</script>
++
++<div class="space-y-4">
++  <div class="flex items-center justify-between">
++    <h3 class="text-lg font-semibold">{t('invest_insights_title')}</h3>
++    <button
++      class="rounded bg-muted px-3 py-1.5 text-xs hover:bg-muted/80"
++      onclick={loadInsights}
++    >
++      {t('common_refresh')}
++    </button>
++  </div>
++
++  <!-- Filters -->
++  <div class="flex items-center gap-3">
++    <div class="flex gap-1 rounded-md border p-0.5">
++      <button
++        class="rounded px-2.5 py-1 text-xs transition-colors {statusFilter === 'active'
++          ? 'bg-primary text-primary-foreground'
++          : 'text-muted-foreground hover:text-foreground'}"
++        onclick={() => { statusFilter = 'active'; loadInsights(); }}
++      >
++        {t('invest_insights_active')}
++      </button>
++      <button
++        class="rounded px-2.5 py-1 text-xs transition-colors {statusFilter === 'archived'
++          ? 'bg-primary text-primary-foreground'
++          : 'text-muted-foreground hover:text-foreground'}"
++        onclick={() => { statusFilter = 'archived'; loadInsights(); }}
++      >
++        {t('invest_insights_archived')}
++      </button>
++    </div>
++    <input
++      type="text"
++      class="rounded-md border bg-background px-3 py-1.5 text-sm"
++      placeholder={t('invest_insights_search')}
++      bind:value={searchQuery}
++    />
++  </div>
++
++  {#if error}
++    <div class="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
++      {error}
++    </div>
++  {/if}
++
++  {#if loading}
++    <p class="text-sm text-muted-foreground">{t('invest_scheduler_loading')}</p>
++  {:else if filteredInsights.length === 0}
++    <p class="text-sm text-muted-foreground">{t('invest_insights_empty')}</p>
++  {:else}
++    <div class="space-y-2">
++      {#each filteredInsights as insight}
++        <div class="rounded-lg border p-4 space-y-2">
++          <div class="flex items-start justify-between gap-3">
++            <div class="flex items-center gap-2">
++              <span class="rounded px-2 py-0.5 text-xs font-medium {typeBadge(insight.insightType)}">
++                {insight.insightType}
++              </span>
++              {#if insight.symbol}
++                <span class="text-xs font-mono text-muted-foreground">{insight.symbol}</span>
++              {/if}
++            </div>
++            <div class="flex items-center gap-2">
++              {#if insight.confidence != null}
++                <span class="text-xs {confidenceColor(insight.confidence)}">
++                  {(insight.confidence * 100).toFixed(0)}%
++                </span>
++              {/if}
++              {#if statusFilter === 'active'}
++                <button
++                  class="text-xs text-muted-foreground hover:text-foreground"
++                  onclick={() => archiveInsight(insight.id)}
++                >
++                  {t('invest_accuracy_hide')}
++                </button>
++              {:else}
++                <button
++                  class="text-xs text-muted-foreground hover:text-foreground"
++                  onclick={() => unarchiveInsight(insight.id)}
++                >
++                  {t('invest_accuracy_show')}
++                </button>
++              {/if}
++            </div>
++          </div>
++          <p class="text-sm leading-relaxed">{insight.content}</p>
++          <div class="text-xs text-muted-foreground">
++            {new Date(insight.createdAt).toLocaleString()}
++          </div>
++        </div>
++      {/each}
++    </div>
++  {/if}
++</div>
+diff --git a/src/lib/components/invest/SchedulerTab.svelte b/src/lib/components/invest/SchedulerTab.svelte
+new file mode 100644
+index 0000000..75fc002
+--- /dev/null
++++ b/src/lib/components/invest/SchedulerTab.svelte
+@@ -0,0 +1,237 @@
++<script lang="ts">
++  import { t } from '$lib/i18n/index.svelte';
++  import { getTransport } from '$lib/transport';
++
++  const invoke = <T,>(cmd: string, args?: Record<string, unknown>) =>
++    getTransport().invoke<T>(cmd, args);
++
++  interface CronJob {
++    id: string;
++    name: string;
++    cronExpr: string;
++    intervalMin?: number;
++    enabled: boolean;
++    requiresTradingDay: boolean;
++    lastRun?: string;
++    nextRun?: string;
++    lastStatus?: string;
++    description: string;
++  }
++
++  interface SchedulerLog {
++    id: number;
++    taskName: string;
++    status: string;
++    message?: string;
++    startedAt: string;
++    finishedAt?: string;
++    durationMs?: number;
++  }
++
++  let jobs: CronJob[] = $state([]);
++  let logs: SchedulerLog[] = $state([]);
++  let loading = $state(false);
++  let expandedJob = $state<string | null>(null);
++  let editingJob = $state<string | null>(null);
++  let editCronValue = $state('');
++  let triggering = $state<string | null>(null);
++  let error = $state<string | null>(null);
++
++  async function loadJobs() {
++    loading = true;
++    try {
++      jobs = await invoke<CronJob[]>('list_cron_jobs');
++    } finally {
++      loading = false;
++    }
++  }
++
++  async function loadLogs(jobId: string) {
++    expandedJob = expandedJob === jobId ? null : jobId;
++    if (expandedJob) {
++      logs = await invoke<SchedulerLog[]>('get_cron_job_logs', { taskName: jobId, limit: 20 });
++    }
++  }
++
++  async function toggle(job: CronJob) {
++    error = null;
++    try {
++      await invoke('toggle_cron_job', { id: job.id, enabled: !job.enabled });
++      await loadJobs();
++    } catch (e) {
++      error = `Failed to toggle job: ${e}`;
++    }
++  }
++
++  async function runNow(jobId: string) {
++    error = null;
++    triggering = jobId;
++    try {
++      await invoke('trigger_cron_job', { id: jobId });
++      await loadJobs();
++    } catch (e) {
++      error = `Job failed: ${e}`;
++    } finally {
++      triggering = null;
++    }
++  }
++
++  async function saveCron(jobId: string) {
++    error = null;
++    try {
++      await invoke('update_cron_schedule', { id: jobId, cronExpr: editCronValue });
++      editingJob = null;
++      await loadJobs();
++    } catch (e) {
++      error = `Failed to save schedule: ${e}`;
++    }
++  }
++
++  function humanCron(expr: string): string {
++    const map: Record<string, string> = {
++      '30 9,11 * * 1-5': 'Weekdays 9:30, 11:00',
++      '0 13,15 * * 1-5': 'Weekdays 13:00, 15:00',
++      '0 17 * * 1-5': 'Weekdays 17:00',
++      '*/30 8-22 * * 1-5': 'Weekdays every 30min (8-22h)',
++      '0 3 * * *': 'Daily 03:00',
++    };
++    return map[expr] || expr;
++  }
++
++  function statusColor(status?: string): string {
++    if (status === 'ok') return 'text-green-500';
++    if (status === 'error') return 'text-red-500';
++    if (status === 'skipped') return 'text-muted-foreground';
++    return 'text-muted-foreground';
++  }
++
++  $effect(() => {
++    loadJobs();
++  });
++</script>
++
++<div class="space-y-4">
++  <h3 class="text-lg font-semibold">{t('invest_scheduler_title')}</h3>
++
++  {#if loading}
++    <p class="text-muted-foreground">{t('invest_scheduler_loading')}</p>
++  {:else}
++    {#if error}
++      <div class="flex items-center justify-between rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
++        <span>{error}</span>
++        <button class="ml-2 text-xs hover:underline" onclick={() => (error = null)}>Dismiss</button>
++      </div>
++    {/if}
++    <div class="rounded-lg border">
++      <table class="w-full text-sm">
++        <thead>
++          <tr class="border-b bg-muted/50 text-left">
++            <th class="p-3">{t('invest_scheduler_job_name')}</th>
++            <th class="p-3">{t('invest_scheduler_cron_expr')}</th>
++            <th class="p-3 text-center">Status</th>
++            <th class="p-3">{t('invest_scheduler_last_run')}</th>
++            <th class="p-3 text-right">Actions</th>
++          </tr>
++        </thead>
++        <tbody>
++          {#each jobs as job}
++            <tr class="border-b last:border-0">
++              <td class="p-3">
++                <div class="font-medium">{job.name}</div>
++                <div class="text-xs text-muted-foreground">{job.description}</div>
++              </td>
++              <td class="p-3">
++                {#if editingJob === job.id}
++                  <div class="flex items-center gap-2">
++                    <input
++                      class="w-40 rounded border bg-background px-2 py-1 text-xs"
++                      bind:value={editCronValue}
++                    />
++                    <button
++                      class="text-xs text-primary"
++                      onclick={() => saveCron(job.id)}
++                    >{t('invest_scheduler_save')}</button>
++                    <button
++                      class="text-xs text-muted-foreground"
++                      onclick={() => (editingJob = null)}
++                    >{t('invest_scheduler_cancel')}</button>
++                  </div>
++                {:else}
++                  <span class="text-xs font-mono">{humanCron(job.cronExpr)}</span>
++                  {#if job.intervalMin}
++                    <span class="ml-1 text-xs text-muted-foreground">(every {job.intervalMin}min)</span>
++                  {/if}
++                  <button
++                    class="ml-2 text-xs text-muted-foreground hover:text-foreground"
++                    onclick={() => {
++                      editingJob = job.id;
++                      editCronValue = job.cronExpr;
++                    }}
++                  >{t('invest_scheduler_edit')}</button>
++                {/if}
++              </td>
++              <td class="p-3 text-center">
++                <button
++                  class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors {job.enabled ? 'bg-primary' : 'bg-muted'}"
++                  aria-label={job.enabled ? 'Disable' : 'Enable'}
++                  onclick={() => toggle(job)}
++                >
++                  <span
++                    class="inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform {job.enabled
++                      ? 'translate-x-4'
++                      : 'translate-x-1'}"
++                  ></span>
++                </button>
++              </td>
++              <td class="p-3">
++                {#if job.lastRun}
++                  <div class="text-xs">{new Date(job.lastRun).toLocaleString()}</div>
++                  <div class="text-xs {statusColor(job.lastStatus)}">{job.lastStatus || '-'}</div>
++                {:else}
++                  <span class="text-xs text-muted-foreground">-</span>
++                {/if}
++              </td>
++              <td class="p-3 text-right">
++                <div class="flex items-center justify-end gap-2">
++                  <button
++                    class="rounded px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
++                    disabled={triggering === job.id}
++                    onclick={() => runNow(job.id)}
++                  >
++                    {triggering === job.id ? '...' : t('invest_scheduler_run_now')}
++                  </button>
++                  <button
++                    class="rounded px-2 py-1 text-xs hover:bg-muted"
++                    onclick={() => loadLogs(job.id)}
++                  >
++                    {t('invest_scheduler_view_logs')}
++                  </button>
++                </div>
++              </td>
++            </tr>
++          {/each}
++        </tbody>
++      </table>
++    </div>
++
++    {#if expandedJob}
++      <div class="rounded-lg border p-4">
++        <h4 class="mb-2 text-sm font-medium">Logs: {expandedJob}</h4>
++        {#if logs.length === 0}
++          <p class="text-xs text-muted-foreground">No logs yet</p>
++        {:else}
++          <div class="max-h-60 space-y-1 overflow-y-auto">
++            {#each logs as log}
++              <div class="flex items-center gap-3 text-xs">
++                <span class="text-muted-foreground">{new Date(log.startedAt).toLocaleString()}</span>
++                <span class={statusColor(log.status)}>{log.status}</span>
++                <span class="text-muted-foreground">{log.durationMs ? `${log.durationMs}ms` : ''}</span>
++                <span class="truncate">{log.message || ''}</span>
++              </div>
++            {/each}
++          </div>
++        {/if}
++      </div>
++    {/if}
++  {/if}
++</div>
+diff --git a/src/lib/types.ts b/src/lib/types.ts
+index 1101141..5e26b80 100644
+--- a/src/lib/types.ts
++++ b/src/lib/types.ts
+@@ -1832,3 +1832,17 @@ export interface EventFilter {
+   severity: "all" | "high" | "medium" | "low";
+   search: string;
+ }
++
++// ── Invest types (Phase 4a: Domain Insights) ──
++
++export interface DomainInsight {
++  id: string;
++  insightType: string;
++  symbol: string | null;
++  content: string;
++  confidence: number | null;
++  sourceVerdictIds: string | null;
++  status: string;
++  createdAt: string;
++  updatedAt: string;
++}
+diff --git a/src/routes/invest/+page.svelte b/src/routes/invest/+page.svelte
+index 6e77e4b..51a2ec0 100644
+--- a/src/routes/invest/+page.svelte
++++ b/src/routes/invest/+page.svelte
+@@ -16,9 +16,11 @@
+   import CommitteeAccuracyTab from '$lib/components/invest/CommitteeAccuracyTab.svelte';
+   import CommitteeToolsTab from '$lib/components/invest/CommitteeToolsTab.svelte';
+   import EventWatchTab from '$lib/components/invest/EventWatchTab.svelte';
++  import SchedulerTab from '$lib/components/invest/SchedulerTab.svelte';
++  import InsightsFeed from '$lib/components/invest/InsightsFeed.svelte';
+   import type { Holding } from '$lib/types';
+ 
+-  type InvestTab = 'dashboard' | 'committee' | 'strategy' | 'trades' | 'events' | 'scheduler';
++  type InvestTab = 'dashboard' | 'committee' | 'strategy' | 'trades' | 'events' | 'scheduler' | 'insights';
+   type CommitteeSubTab = 'live' | 'replay' | 'archive' | 'roles' | 'accuracy' | 'tools';
+ 
+   let activeTab: InvestTab = $state('dashboard');
+@@ -31,6 +33,7 @@
+     { id: 'trades', label: t('invest_trade_log') },
+     { id: 'events', label: t('invest_tab_events') },
+     { id: 'scheduler', label: t('invest_tab_scheduler') },
++    { id: 'insights', label: t('invest_insights_tab') },
+   ]);
+ 
+   const committeeSubTabs: { id: CommitteeSubTab; label: string }[] = $derived([
+@@ -177,7 +180,9 @@
+     {:else if activeTab === 'events'}
+       <EventWatchTab onNavigateToCommittee={() => { activeTab = 'committee'; committeeSubTab = 'live'; }} />
+     {:else if activeTab === 'scheduler'}
+-      <div class="text-muted-foreground">Scheduled Tasks — coming in Phase 4</div>
++      <SchedulerTab />
++    {:else if activeTab === 'insights'}
++      <InsightsFeed />
+     {/if}
+   </div>
+ </div>
+diff --git a/src/routes/memory-mgmt/+page.svelte b/src/routes/memory-mgmt/+page.svelte
+index ef095df..9064a95 100644
+--- a/src/routes/memory-mgmt/+page.svelte
++++ b/src/routes/memory-mgmt/+page.svelte
+@@ -2,12 +2,13 @@
+   import { t } from "$lib/i18n/index.svelte";
+   import { getTransport } from "$lib/transport";
+ 
+-  type MemTab = "userMemory" | "extractionConfig";
++  type MemTab = "userMemory" | "extractionConfig" | "archived";
+   let activeTab: MemTab = $state("userMemory");
+ 
+   const tabs: { id: MemTab; label: string }[] = $derived([
+     { id: "userMemory", label: t("memoryMgmt_tab_userMemory") },
+     { id: "extractionConfig", label: t("memoryMgmt_tab_extractionConfig") },
++    { id: "archived", label: "Archived" },
+   ]);
+ 
+   let scopeFilter: string | null = $state(null);
+@@ -41,6 +42,52 @@
+     loadMemories();
+   });
+ 
++  // ── Archived insights ──────────────────────────────────────────────
++
++  let archivedInsights: any[] = $state([]);
++  let archivedLoading = $state(false);
++  let archivedLoadVersion = $state(0);
++
++  async function loadArchivedInsights() {
++    const version = ++archivedLoadVersion;
++    archivedLoading = true;
++    try {
++      const result = await getTransport().invoke<any[]>("list_insights", {
++        status: "archived",
++        limit: 50,
++      });
++      if (version === archivedLoadVersion) {
++        archivedInsights = result;
++      }
++    } catch (e) {
++      console.error("Failed to load archived insights:", e);
++    } finally {
++      if (version === archivedLoadVersion) {
++        archivedLoading = false;
++      }
++    }
++  }
++
++  let restoringId: string | null = $state(null);
++
++  async function restoreInsight(id: string) {
++    restoringId = id;
++    try {
++      await getTransport().invoke("unarchive_insight", { id });
++      await loadArchivedInsights();
++    } catch (e) {
++      console.error("Failed to restore insight:", e);
++    } finally {
++      restoringId = null;
++    }
++  }
++
++  $effect(() => {
++    if (activeTab === "archived") {
++      loadArchivedInsights();
++    }
++  });
++
+   let configDirty = $state(false);
+   let extractEnabled = $state(true);
+   let chatEndpoint = $state("");
+@@ -163,6 +210,37 @@
+           </button>
+         </div>
+       </div>
++
++    {:else if activeTab === "archived"}
++      {#if archivedLoading}
++        <div class="text-muted-foreground text-sm">Loading...</div>
++      {:else if archivedInsights.length === 0}
++        <div class="text-muted-foreground text-sm">No archived insights</div>
++      {:else}
++        <div class="flex flex-col gap-2">
++          {#each archivedInsights as insight}
++            <div class="rounded-md border border-border p-3">
++              <div class="mb-1 flex items-center gap-2">
++                <span class="rounded bg-muted px-1.5 py-0.5 text-xs">{insight.insightType}</span>
++                {#if insight.symbol}
++                  <span class="rounded bg-muted px-1.5 py-0.5 text-xs">{insight.symbol}</span>
++                {/if}
++                <span class="text-muted-foreground text-xs">{insight.updatedAt}</span>
++              </div>
++              <div class="text-sm">{insight.content}</div>
++              <div class="mt-2">
++                <button
++                  class="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
++                  disabled={restoringId === insight.id}
++                  onclick={() => restoreInsight(insight.id)}
++                >
++                  {restoringId === insight.id ? "Restoring..." : "Restore"}
++                </button>
++              </div>
++            </div>
++          {/each}
++        </div>
++      {/if}
+     {/if}
+   </div>
+ </div>

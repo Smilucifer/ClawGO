@@ -13,6 +13,7 @@
     copyToClipboard,
   } from "$lib/utils/tool-rendering";
   import MarkdownContent from "$lib/components/MarkdownContent.svelte";
+  import FilePathLinks from "$lib/components/FilePathLinks.svelte";
   import TeamToolDetail from "$lib/components/TeamToolDetail.svelte";
   import hljs from "highlight.js";
   import { structuredPatch } from "diff";
@@ -598,7 +599,7 @@
     <!-- Read: syntax-highlighted code with line numbers or image -->
     {#if filePath}
       <div class="tool-file-header flex items-center justify-between rounded-t">
-        <span class="truncate">{filePath}</span>
+        <span class="truncate"><FilePathLinks text={filePath} /></span>
         <div class="flex items-center gap-2 shrink-0">
           {#if readLineInfo}
             <span class="text-[10px] text-muted-foreground/60">{readLineInfo}</span>
@@ -668,7 +669,7 @@
   {:else if tool.tool_name === "Edit" || tool.tool_name === "edit_file"}
     <!-- Edit: diff view — structured patch (preferred) or old/new fallback -->
     {#if filePath}
-      <div class="tool-file-header rounded-t">{filePath}</div>
+      <div class="tool-file-header rounded-t"><FilePathLinks text={filePath} /></div>
     {/if}
     {#if editHasPatches}
       <!-- Structured unified diff from tool_use_result (adjust line numbers if needed) -->
@@ -751,7 +752,7 @@
   {:else if tool.tool_name === "Write" || tool.tool_name === "write_file"}
     <!-- Write: structuredPatch diff (overwrite) or content preview (new file) -->
     {#if filePath}
-      <div class="tool-file-header rounded-t">{filePath}</div>
+      <div class="tool-file-header rounded-t"><FilePathLinks text={filePath} /></div>
     {/if}
     <!-- Plan file (.claude/plans/*.md): render content as markdown instead of diff/code.
          This intentionally takes priority over writeHasPatches — plan files are meant to be
