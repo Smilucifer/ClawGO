@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v5.0.2, 2026-05-31). Yahoo Finance 429 限流修复完成。See `docs/changelog.md`.
+**Current phase:** Phase 10+ (v5.0.4, 2026-06-01). Yahoo Finance 429 二次修复+扫描增强+add_watch+fund_basic。See `docs/changelog.md`.
 
 ## Standard workflow
 
@@ -365,6 +365,7 @@ Key phases and their status:
 | 10+ (v5.0.2) | Yahoo Finance 429 限流修复: fetch_chart_raw/fetch_yahoo_news 重试 3 次+指数退避, fetch_all_quotes/fetch_china_finance_news 串行化+300ms 间隔 | [done] |
 | 10+ (v5.0.2) | 代码审查修复: 15 项修复 — 数据完整性(initial_balance 写入/family_support 迁移集中/provider config 对称), UI 正确性(bars 排序/account purpose 迁移/loading 状态/model_override 透传), 死代码清理(parse_provider_id 去重/row_to_verdict 提取/ETF 过滤/DB 错误日志/saveTimer 清理) | [done] |
 | 10+ (v5.0.3) | 委员会中文化+REGIME 展示+Parser 双语+Profile 双注入: Gate notes/归档报告中文化, RegimeStep 事件扩展+前端 REGIME 卡片, Parser 双语支持(any 系列函数), 6 个 Prompt 模板字段名中文化, Profile Risk R1+CIO 双注入, 风险指标预计算(CONCENTRATION_PCT/PNL_PCT/DRY_POWDER_CNY), PortfolioData 消除重复 DB 查询, 6 项审查修复 | [done] |
+| 10+ (v5.0.4) | Yahoo Finance 429 二次修复+扫描增强+add_watch+fund_basic: macro_refresh 并发改串行, 请求间隔统一 500ms 常量, ScanResult errors 字段+前端日志, Yahoo 兜底阈值常量化, log+push 去重, ScanResult TS 接口, add_watch action 迁移, fund_basic 客户端过滤 | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

@@ -33,6 +33,10 @@ pub struct RawEvent {
     pub created_at: String,
 }
 
+/// Minimum Tushare events before skipping Yahoo Finance fallback.
+/// Below this threshold the yield is too sparse for reliable keyword filtering.
+const YAHOO_FALLBACK_MIN_EVENTS: usize = 3;
+
 // ── Rule-based keyword filtering ──
 
 const HIGH_KEYWORDS: &[&str] = &[
@@ -125,6 +129,8 @@ pub struct ScanResult {
     pub filtered: usize,
     pub saved: usize,
     pub sources_scanned: Vec<String>,
+    /// Errors encountered during scan (Tushare / Yahoo failures).
+    pub errors: Vec<String>,
 }
 
 /// Run a full event scan: fetch from Tushare, filter by keywords, normalize via LLM, save to DB.
@@ -142,6 +148,7 @@ pub async fn scan_events(
 
     let mut raw_events: Vec<RawEvent> = Vec::new();
     let mut sources_scanned: Vec<String> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
 
     // 1. Fetch major_news (sina + cls)
     for src in &["sina", "cls"] {
@@ -170,7 +177,9 @@ pub async fn scan_events(
                 }
             }
             Err(e) => {
-                log::warn!("Failed to fetch major_news ({}): {}", src, e);
+                let msg = format!("tushare_major_news({}): {}", src, e);
+                log::warn!("{}", msg);
+                errors.push(msg);
             }
         }
     }
@@ -228,7 +237,9 @@ pub async fn scan_events(
                 }
             }
             Err(e) => {
-                log::warn!("Failed to fetch announcements for {}: {}", symbol, e);
+                let msg = format!("tushare_anns_d({}): {}", symbol, e);
+                log::warn!("{}", msg);
+                errors.push(msg);
             }
         }
     }
@@ -239,7 +250,7 @@ pub async fn scan_events(
     );
 
     // 3. Fetch Yahoo Finance news as fallback when Tushare yields few results
-    if raw_events.len() < 5 {
+    if raw_events.len() < YAHOO_FALLBACK_MIN_EVENTS {
         log::info!(
             "Tushare yielded only {} events, fetching Yahoo Finance news as fallback",
             raw_events.len()
@@ -249,6 +260,7 @@ pub async fn scan_events(
         let yahoo_items = yahoo_client.fetch_china_finance_news(15).await;
         if yahoo_items.is_empty() {
             log::info!("Yahoo Finance news returned 0 items");
+            errors.push("yahoo_finance: returned 0 items (possible 429 rate limit)".into());
         } else {
             log::info!("Yahoo Finance news returned {} items", yahoo_items.len());
             for item in yahoo_items {
@@ -293,6 +305,7 @@ pub async fn scan_events(
             filtered: 0,
             saved: 0,
             sources_scanned,
+            errors,
         });
     }
 
@@ -352,6 +365,7 @@ pub async fn scan_events(
         filtered,
         saved,
         sources_scanned,
+        errors,
     })
 }
 

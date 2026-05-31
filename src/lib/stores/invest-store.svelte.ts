@@ -8,6 +8,7 @@ import type {
   PriceQuote,
   InvestEvent,
   ScanStatus,
+  ScanResult,
   EventFilter,
 } from "$lib/types";
 
@@ -550,9 +551,12 @@ class InvestStore {
     this.error = null;
     this.isScanning = true;
     try {
-      await invoke("scan_events", {
+      const result = await invoke<ScanResult>("scan_events", {
         normalizerPrompt: null,
       });
+      if (result.errors && result.errors.length > 0) {
+        console.warn("scan warnings:", result.errors);
+      }
       // Refresh events and status after scan (parallel)
       await Promise.all([this.fetchEvents(), this.fetchScanStatus()]);
     } catch (e) {

@@ -1,5 +1,33 @@
 # Changelog / 更新日志
 
+## Phase 10+ (2026-06-01)
+
+### v5.0.4 — Yahoo Finance 429 二次修复 + 扫描增强 + add_watch + fund_basic
+
+**4 项修复 + 4 项代码审查改进 (2026-06-01):**
+
+**修复 (4 项):**
+1. **macro_refresh 并发改串行**: `fetch_international()` 从 `join_all` 同时发 6 个 Yahoo 请求改为串行执行，消除 429 根因
+2. **Yahoo 请求间隔统一 500ms**: `fetch_all_quotes`/`fetch_china_finance_news`/`fetch_international` 三处间隔统一为 `YAHOO_REQUEST_INTERVAL_MS` 常量
+3. **扫描错误报告增强**: `ScanResult` 新增 `errors` 字段，记录 Tushare/Yahoo 失败原因，前端 `console.warn` 输出
+4. **Yahoo 兜底阈值**: 从 `< 5` 改为 `< 3`（`YAHOO_FALLBACK_MIN_EVENTS` 常量），减少不必要的 Yahoo 调用
+
+**代码审查改进 (4 项):**
+1. **YAHOO_REQUEST_INTERVAL_MS 常量**: 提取 500ms 魔法数字为 `international.rs` 公开常量，3 处引用统一
+2. **YAHOO_FALLBACK_MIN_EVENTS 常量**: 提取 `< 3` 魔法数字为命名常量 + doc comment
+3. **log+push 去重**: `event_scanner.rs` 中 `log::warn!` + `errors.push(format!(…))` 合并为单次 `format!`
+4. **ScanResult TypeScript 接口**: 从内联类型提取为 `types.ts` 中的 `ScanResult` 接口
+
+**附带修复 (来自之前未提交的改动):**
+5. **add_watch action 迁移**: `trades` 表 CHECK 约束新增 `add_watch` 值，DB 迁移脚本
+6. **fund_basic 客户端过滤**: Tushare `fund_basic` API 忽略 `name` 参数，改为客户端模糊匹配
+
+**涉及文件:**
+- 后端: `international.rs` / `macro_refresh.rs` / `event_scanner.rs` / `storage/invest/mod.rs` / `tushare/client.rs`
+- 前端: `invest-store.svelte.ts` / `types.ts`
+
+---
+
 ## Phase 10+ (2026-05-31)
 
 ### v5.0.3 — 委员会中文化 + REGIME 展示 + Parser 双语 + Profile 双注入

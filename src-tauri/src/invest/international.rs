@@ -59,6 +59,9 @@ const YAHOO_CHART_API: &str = "https://query1.finance.yahoo.com/v8/finance/chart
 /// Yahoo Finance search API base URL (for news).
 const YAHOO_SEARCH_API: &str = "https://query1.finance.yahoo.com/v1/finance/search";
 
+/// Delay between consecutive Yahoo Finance API requests to avoid 429 rate limiting.
+pub const YAHOO_REQUEST_INTERVAL_MS: u64 = 500;
+
 /// Well-known international indicator symbols.
 pub const INTERNATIONAL_SYMBOLS: &[(&str, &str)] = &[
     ("^VIX", "VIX 恐慌指数"),
@@ -332,12 +335,12 @@ impl InternationalClient {
 
     /// Fetch quotes for all well-known international symbols sequentially.
     ///
-    /// Requests are spaced 300ms apart to avoid triggering Yahoo's rate limiter.
+    /// Requests are spaced 500ms apart to avoid triggering Yahoo's rate limiter.
     pub async fn fetch_all_quotes(&self) -> Vec<Result<YahooQuote, String>> {
         let mut results = Vec::with_capacity(INTERNATIONAL_SYMBOLS.len());
         for (i, (sym, _)) in INTERNATIONAL_SYMBOLS.iter().enumerate() {
             if i > 0 {
-                tokio::time::sleep(Duration::from_millis(300)).await;
+                tokio::time::sleep(Duration::from_millis(YAHOO_REQUEST_INTERVAL_MS)).await;
             }
             results.push(self.fetch_yahoo_quote(sym).await);
         }
@@ -424,7 +427,7 @@ impl InternationalClient {
     /// Fetch Chinese financial news from Yahoo Finance using multiple search queries.
     /// Returns deduplicated news items sorted by publish time (newest first).
     ///
-    /// Queries are spaced 300ms apart to avoid triggering Yahoo's rate limiter.
+    /// Queries are spaced 500ms apart to avoid triggering Yahoo's rate limiter.
     pub async fn fetch_china_finance_news(&self, max_items: usize) -> Vec<YahooNewsItem> {
         let queries = ["A股 中国", "中国股市", "央行 中国", "A股 市场"];
         let per_query = ((max_items as u32) / queries.len() as u32).max(3);
@@ -434,7 +437,7 @@ impl InternationalClient {
 
         for (i, q) in queries.iter().enumerate() {
             if i > 0 {
-                tokio::time::sleep(Duration::from_millis(300)).await;
+                tokio::time::sleep(Duration::from_millis(YAHOO_REQUEST_INTERVAL_MS)).await;
             }
             if let Ok(items) = self.fetch_yahoo_news(q, per_query).await {
                 for item in items {

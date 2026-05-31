@@ -1830,6 +1830,14 @@ export interface ScanStatus {
   lastEventAt: string | null;
 }
 
+export interface ScanResult {
+  fetched: number;
+  filtered: number;
+  saved: number;
+  sourcesScanned: string[];
+  errors: string[];
+}
+
 export interface EventFilter {
   timeWindow: "24h" | "48h" | "7d";
   severity: "all" | "high" | "medium" | "low";

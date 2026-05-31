@@ -235,6 +235,8 @@ async fn fetch_cgb_10y(
 // ---------------------------------------------------------------------------
 
 /// Fetch VIX, TNX, DXY, Gold, Oil, USDCNY from Yahoo Finance.
+///
+/// Requests are sequential with 500ms spacing to avoid Yahoo's rate limiter (429).
 async fn fetch_international() -> MacroResult {
     let client = crate::invest::international::InternationalClient::new();
 
@@ -247,36 +249,28 @@ async fn fetch_international() -> MacroResult {
         ("USDCNY=X", "usdcny"),
     ];
 
-    let futures: Vec<_> = symbols
-        .iter()
-        .map(|(yahoo_sym, indicator)| {
-            let client = &client;
-            let yahoo_sym = yahoo_sym.to_string();
-            let indicator = indicator.to_string();
-            async move {
-                match client.fetch_yahoo_quote(&yahoo_sym).await {
-                    Ok(quote) => Ok((
-                        indicator,
-                        Some(quote.price),
-                        Some(serde_json::json!({
-                            "change_pct": quote.change_pct,
-                            "previous_close": quote.previous_close,
-                        }).to_string()),
-                    )),
-                    Err(e) => Err(format!("yahoo {yahoo_sym}: {e}")),
-                }
-            }
-        })
-        .collect();
-
-    let results = futures_util::future::join_all(futures).await;
-
     let mut entries = Vec::new();
-    for result in results {
-        match result {
-            Ok(entry) => entries.push(entry),
+    for (i, (yahoo_sym, indicator)) in symbols.iter().enumerate() {
+        if i > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(
+                crate::invest::international::YAHOO_REQUEST_INTERVAL_MS,
+            ))
+            .await;
+        }
+        match client.fetch_yahoo_quote(yahoo_sym).await {
+            Ok(quote) => entries.push((
+                indicator.to_string(),
+                Some(quote.price),
+                Some(
+                    serde_json::json!({
+                        "change_pct": quote.change_pct,
+                        "previous_close": quote.previous_close,
+                    })
+                    .to_string(),
+                ),
+            )),
             Err(e) => {
-                log::warn!("macro_refresh: {e}");
+                log::warn!("macro_refresh: yahoo {yahoo_sym}: {e}");
             }
         }
     }

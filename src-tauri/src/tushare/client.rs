@@ -363,13 +363,12 @@ impl TushareClient {
 
     /// Search ETFs by optional name (模糊匹配). Filters to listed ETFs only.
     pub async fn fund_basic(&self, name: Option<&str>) -> Result<Vec<FundBasic>, String> {
-        let mut params = serde_json::json!({
+        let params = serde_json::json!({
             "fund_type": "E",  // ETF only
             "status": "L",     // Listed only
         });
-        if let Some(n) = name {
-            params["name"] = serde_json::json!(n);
-        }
+        // Note: Tushare fund_basic API ignores the `name` param, so we fetch
+        // all listed ETFs and filter client-side.
 
         let resp = self.call_api("fund_basic", params, "ts_code,name").await?;
         let fields = &resp.data.fields;
@@ -377,16 +376,24 @@ impl TushareClient {
         let ts_code_idx = fields.iter().position(|f| f == "ts_code");
         let name_idx = fields.iter().position(|f| f == "name");
 
+        let query = name.map(|n| n.to_lowercase());
         let mut funds = Vec::with_capacity(resp.data.items.len());
 
         for row in &resp.data.items {
+            let fund_name = name_idx
+                .and_then(|i| get_str(row, i))
+                .unwrap_or_default();
+            // Client-side filter: skip if name doesn't match query
+            if let Some(ref q) = query {
+                if !fund_name.to_lowercase().contains(q) {
+                    continue;
+                }
+            }
             funds.push(FundBasic {
                 ts_code: ts_code_idx
                     .and_then(|i| get_str(row, i))
                     .unwrap_or_default(),
-                name: name_idx
-                    .and_then(|i| get_str(row, i))
-                    .unwrap_or_default(),
+                name: fund_name,
             });
         }
 

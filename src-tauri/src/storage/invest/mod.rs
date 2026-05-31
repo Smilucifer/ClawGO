@@ -78,7 +78,7 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
             symbol TEXT NOT NULL,
             currency TEXT NOT NULL DEFAULT 'CNY',
             kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
-            action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_watch_to_hold', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust')),
+            action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_watch_to_hold', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust', 'add_watch')),
             shares REAL,
             price REAL,
             amount REAL,
@@ -90,6 +90,27 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
         ALTER TABLE trades_new RENAME TO trades;
         COMMIT;"
     ).map_err(|e| format!("migrate trades table: {}", e))?;
+
+    // Migration: add 'add_watch' action to trades CHECK constraint.
+    conn.execute_batch(
+        "BEGIN;
+        CREATE TABLE IF NOT EXISTS trades_new (
+            id TEXT PRIMARY KEY,
+            symbol TEXT NOT NULL,
+            currency TEXT NOT NULL DEFAULT 'CNY',
+            kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
+            action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_watch_to_hold', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust', 'add_watch')),
+            shares REAL,
+            price REAL,
+            amount REAL,
+            notes TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT OR IGNORE INTO trades_new SELECT * FROM trades;
+        DROP TABLE IF EXISTS trades;
+        ALTER TABLE trades_new RENAME TO trades;
+        COMMIT;"
+    ).map_err(|e| format!("migrate trades add_watch action: {}", e))?;
 
     // Migration: create verdict_reviews table (use local conn, DB not yet in static)
     verdict_reviews::create_table(&conn)?;
@@ -214,7 +235,7 @@ CREATE TABLE IF NOT EXISTS trades (
     symbol TEXT NOT NULL,
     currency TEXT NOT NULL DEFAULT 'CNY',
     kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
-    action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_watch_to_hold', 'convert_hold_to_watch', 'cost_edit')),
+    action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_watch_to_hold', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust', 'add_watch')),
     shares REAL,
     price REAL,
     amount REAL,
