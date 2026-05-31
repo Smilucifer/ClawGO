@@ -360,6 +360,7 @@ Key phases and their status:
 | 10+ (v3.3.0) | openInvest Phase 3a+3b+3c+4a: LLM 委员会编排, SSE streaming, 角色配置, Insights Feed, Pipeline Notifications, Event Watch(Tushare 新闻+LLM 归一化), Scheduler 6 jobs, Verdict Review, Dreaming 3 阶段管道, FTS5 domain_insights, Archived 视图 | [done] |
 | 10+ (v3.4.0) | openInvest Phase 4b: 系统二级页 7 Tab(Regime/Datasource/PnL/Dreams+3 复用), 用户档案(/settings/profile), 每日报告定时任务, 9 项审查修复 | [done] |
 | 10+ (v4.0.0+) | openInvest Fix Tasks: 4 P0 bug, 3 demo HTML, 6 P1 大改(加入观望/Profile 迁移/侧边栏顺序/运行全部/Replay 增强/角色配置重写), 5 P2/P3(多资产总览/Dashboard 卡片/i18n/MEMORY.md 默认/FilePathLinks), 15 项代码审查修复 | [done] |
+| 10+ (v5.0.0) | openInvest Phase 5: 委员会 LLM 工具+Prompt 全面升级 — 角色精简(7→4 enum, Round R1/R2), Regime 模块(RSI-14/价格分位数), Tushare 宏观接口(4 方法), Yahoo Finance 客户端(6 国际指标), macro_cache 存储层(12 指标), 调度+cron+工具重写(双数据源/MA120), 工具分角色开放(role_tool_defs), 6 个新 Prompt, Parser+Analysis 更新(10 新字段/Gate 4), 15 项代码审查修复 | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

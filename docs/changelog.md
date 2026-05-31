@@ -2,6 +2,64 @@
 
 ## Phase 10+ (2026-05-31)
 
+### v5.0.0 — openInvest Phase 5: 委员会 LLM 工具 + Prompt 全面升级
+
+**架构变更（9 Phase, 15 项审查修复）:**
+
+**Phase 0 — 角色精简:**
+- CommitteeRole enum 从 7 变体简化为 4: Macro/Quant/Risk/Cio
+- 新增 Round enum (R1/R2)，load_prompt_for_round 支持轮次+占位符渲染
+- 管线从 7 步改为 6 步（去掉 Wealth），PipelineFlow/前端同步更新
+- round_cache 存储层（跨次查询工具用）
+
+**Phase 1 — Regime 计算模块:**
+- 独立 regime.rs，从 commands/invest.rs 提取
+- 新增 RSI-14 Wilder 计算、价格分位数（500 日窗口）
+- REGIME 注入 Quant R1 user message
+
+**Phase 2 — Tushare 宏观接口:**
+- 新增 moneyflow_hsgt/margin_detail/shibor/cn_bond_yield 4 个方法
+
+**Phase 3 — Yahoo Finance 客户端:**
+- 新建 international.rs，6 个国际指标（VIX/TNX/DXY/Gold/Oil/USDCNY）
+- fetch_yahoo_history 支持任意 Yahoo 符号历史日线
+
+**Phase 4 — macro_cache 存储层:**
+- 12 个宏观指标 UPSERT 表，is_stale 检查
+
+**Phase 5 — 调度+工具重写:**
+- macro_refresh cron job（交易日每 15 分钟）
+- exec_macro_snapshot 从 macro_cache 读取，过期 fallback 实时拉取
+- exec_history_data 双数据源（Tushare A 股 + Yahoo 国际）
+- exec_multi_timeframe 增强：RSI-14、价格分位数、MA120
+
+**Phase 6 — 工具分角色开放:**
+- role_tool_defs(role, round) 按角色返回工具集
+- run_with_tool_loop 共享函数，R1 有工具 R2 无工具
+
+**Phase 7 — Prompt 替换:**
+- 6 个新 prompt：Macro/Quant R1/Quant R2/Risk R1/Risk R2/CIO
+- REGIME 硬保护规则、portfolio 注入、反幻觉约束
+
+**Phase 8 — Parser + Analysis:**
+- ParsedFields 新增 10 个字段（regime/key_data/pnl_pct 等）
+- CIO Gate 4：零仓位 HOLD 降 confidence、低集中度 HOLD 降 confidence
+
+**15 项代码审查修复:**
+- **CRITICAL**: prompt save/load 路径统一（quant_r1.txt 而非 quant.txt）、is_stale() NaiveDateTime 解析
+- **HIGH**: asset_name 查询 holdings 表、i18n 重复键删除
+- **MEDIUM**: Gate 1 neutral 处理、PipelineFlow skipped 状态、字节越界防护、重复逻辑提取
+- **LOW**: HV20 数据不足检查、$effect cleanup、括号优先级、前端类型同步
+
+**新建文件:**
+- `src-tauri/src/invest/regime.rs` — Regime 计算模块
+- `src-tauri/src/invest/international.rs` — Yahoo Finance 客户端
+- `src-tauri/src/invest/macro_refresh.rs` — 宏观数据刷新调度
+- `src-tauri/src/storage/invest/macro_cache.rs` — 宏观指标缓存表
+- `src-tauri/src/storage/invest/round_cache.rs` — 轮次输出缓存
+
+---
+
 ### v4.0.0+ — openInvest 修复任务 + 代码审查
 
 **P0 Bug 修复（Wave 1, 4 项）:**
