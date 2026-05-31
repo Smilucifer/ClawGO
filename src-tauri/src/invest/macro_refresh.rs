@@ -73,13 +73,12 @@ async fn fetch_csi300(
     start_date: String,
     end_date: String,
 ) -> MacroResult {
-    let mut bars = client
+    let bars = client
         .daily("000300.SH", &start_date, &end_date)
         .await
         .map_err(|e| format!("csi300 daily: {e}"))?;
 
-    // daily() returns ascending; reverse to newest-first
-    bars.reverse();
+    // daily() returns descending (newest first); bars[0] is the latest bar
 
     if bars.is_empty() {
         return Err("csi300: no data".into());

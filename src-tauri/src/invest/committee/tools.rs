@@ -205,12 +205,14 @@ async fn exec_history_data_tushare(symbol: &str, days: usize) -> Result<String, 
         (chrono::Local::now() - chrono::Duration::days(days as i64 * 2)).format("%Y%m%d").to_string();
 
     let bars = client.daily(symbol, &start_date, &end_date).await?;
-    let bars: Vec<_> = bars.into_iter().rev().take(days).collect();
+    // daily() returns descending (newest first); take the most recent N bars
+    let bars: Vec<_> = bars.into_iter().take(days).collect();
 
     if bars.is_empty() {
         return Ok(format!("没有找到 {} 的历史数据", symbol));
     }
 
+    // bars[0] is the newest, bars[last] is the oldest
     let latest = &bars[0];
     let oldest = &bars[bars.len() - 1];
     let pct_change = if oldest.close > 0.0 {
@@ -221,9 +223,14 @@ async fn exec_history_data_tushare(symbol: &str, days: usize) -> Result<String, 
 
     let avg_vol: f64 = bars.iter().map(|b| b.vol).sum::<f64>() / bars.len() as f64;
 
+    // Show the 5 most recent bars in chronological order (oldest→newest)
     let recent_5: String = bars
         .iter()
+        .rev()
         .take(5)
+        .collect::<Vec<_>>()
+        .iter()
+        .rev()
         .map(|b| format!("{}:{:.2}", &b.trade_date[4..], b.close))
         .collect::<Vec<_>>()
         .join(" → ");
@@ -314,9 +321,8 @@ async fn exec_multi_timeframe(symbol: &str) -> Result<String, String> {
     let start_date =
         (chrono::Local::now() - chrono::Duration::days(750)).format("%Y%m%d").to_string();
 
-    let mut bars = client.daily(symbol, &start_date, &end_date).await?;
-    // daily() returns ascending (oldest first); reverse to descending (newest first)
-    bars.reverse();
+    let bars = client.daily(symbol, &start_date, &end_date).await?;
+    // daily() returns descending (newest first); bars[0] is the latest bar
     if bars.len() < 5 {
         return Ok(format!("{} 数据不足，无法进行多时间框架分析", symbol));
     }

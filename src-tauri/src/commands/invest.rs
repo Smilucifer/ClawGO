@@ -168,6 +168,16 @@ pub fn get_cash() -> Result<f64, String> {
 }
 
 #[tauri::command]
+pub fn get_initial_cash() -> Result<f64, String> {
+    portfolio::get_initial_cash()
+}
+
+#[tauri::command]
+pub fn set_initial_cash(amount: f64) -> Result<(), String> {
+    portfolio::set_initial_cash(amount)
+}
+
+#[tauri::command]
 pub fn update_cash(available: f64) -> Result<(), String> {
     portfolio::set_cash(available)
 }
@@ -184,6 +194,7 @@ pub fn get_verdicts(symbol: Option<String>, limit: Option<i64>) -> Result<Vec<Ve
 pub fn save_verdict(
     id: Option<String>,
     symbol: String,
+    name: Option<String>,
     verdict: String,
     confidence: Option<f64>,
     macro_signal: Option<String>,
@@ -199,6 +210,7 @@ pub fn save_verdict(
     let v = Verdict {
         id: vid,
         symbol,
+        name,
         verdict,
         confidence,
         macro_signal,
@@ -240,6 +252,11 @@ pub fn save_pnl_snapshot(
         created_at: String::new(),
     };
     verdicts::save_pnl_snapshot(&s)
+}
+
+#[tauri::command]
+pub fn delete_pnl_snapshot(id: i64) -> Result<(), String> {
+    verdicts::delete_pnl_snapshot(id)
 }
 
 // ── Events ──────────────────────────────────────────────────────────────────
@@ -377,6 +394,15 @@ pub async fn search_stocks(
 }
 
 #[tauri::command]
+pub async fn search_etfs(
+    name: String,
+    token: String,
+) -> Result<Vec<crate::tushare::client::FundBasic>, String> {
+    let client = crate::tushare::TushareClient::new(token);
+    client.fund_basic(Some(&name)).await
+}
+
+#[tauri::command]
 pub async fn get_latest_price(
     ts_code: String,
     token: String,
@@ -493,6 +519,8 @@ pub struct InvestLlmProviderConfig {
 #[serde(rename_all = "camelCase")]
 pub struct InvestLlmConfig {
     pub providers: Vec<InvestLlmProviderConfig>,
+    /// The currently selected provider ID (e.g. "deepseek", "mimo-plan", "mimo-api").
+    pub selected_provider: String,
     pub debate_rounds: u8,
     pub emergency_buffer_cny: f64,
     pub timeout_secs: u64,
@@ -525,6 +553,7 @@ fn default_llm_config() -> InvestLlmConfig {
                 default_model: "mimo-v2.5-pro".to_string(),
             },
         ],
+        selected_provider: "deepseek".to_string(),
         debate_rounds: 4,
         emergency_buffer_cny: 100_000.0,
         timeout_secs: 120,
@@ -542,34 +571,44 @@ pub fn get_llm_config() -> Result<InvestLlmConfig, String> {
     let data: serde_json::Value =
         serde_json::from_str(&content).map_err(|e| format!("parse llm_config: {}", e))?;
 
+    // Known non-provider keys in the config JSON
+    const META_KEYS: &[&str] = &["selected_provider", "debate_rounds", "emergency_buffer_cny", "timeout_secs"];
+
     let mut providers = Vec::new();
-    for pid in &["deepseek", "mimo_plan", "mimo_api"] {
-        let obj = data.get(*pid).cloned().unwrap_or(serde_json::Value::Null);
-        let display_id = match *pid {
-            "deepseek" => "deepseek",
-            "mimo_plan" => "mimo-plan",
-            "mimo_api" => "mimo-api",
-            _ => pid,
-        };
-        providers.push(InvestLlmProviderConfig {
-            provider_id: display_id.to_string(),
-            api_key: obj["api_key"]
-                .as_str()
-                .unwrap_or("")
-                .to_string(),
-            base_url: obj["base_url"]
-                .as_str()
-                .unwrap_or("")
-                .to_string(),
-            default_model: obj["default_model"]
-                .as_str()
-                .unwrap_or("")
-                .to_string(),
-        });
+    if let Some(obj) = data.as_object() {
+        for (key, val) in obj {
+            if META_KEYS.contains(&key.as_str()) {
+                continue;
+            }
+            // Only process keys that look like provider configs (objects with api_key)
+            if val.get("api_key").is_some() || val.get("base_url").is_some() {
+                // Internal keys use underscores (mimo_plan), display IDs use hyphens (mimo-plan)
+                let display_id = key.replace('_', "-");
+                providers.push(InvestLlmProviderConfig {
+                    provider_id: display_id,
+                    api_key: val["api_key"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string(),
+                    base_url: val["base_url"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string(),
+                    default_model: val["default_model"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string(),
+                });
+            }
+        }
     }
 
     Ok(InvestLlmConfig {
         providers,
+        selected_provider: data["selected_provider"]
+            .as_str()
+            .unwrap_or("deepseek")
+            .to_string(),
         debate_rounds: data["debate_rounds"].as_u64().unwrap_or(4) as u8,
         emergency_buffer_cny: data["emergency_buffer_cny"]
             .as_f64()
@@ -613,6 +652,11 @@ pub fn save_llm_config(config: InvestLlmConfig) -> Result<(), String> {
     }
 
     data.insert(
+        "selected_provider".into(),
+        serde_json::Value::String(config.selected_provider.clone()),
+    );
+
+    data.insert(
         "debate_rounds".into(),
         serde_json::Value::Number(config.debate_rounds.into()),
     );
@@ -632,6 +676,43 @@ pub fn save_llm_config(config: InvestLlmConfig) -> Result<(), String> {
 
 // ── Committee ───────────────────────────────────────────────────────────────
 
+/// Parse the selected_provider string into a ProviderId enum.
+/// Returns DeepSeek as fallback for unknown IDs.
+fn parse_provider_id(id: &str) -> crate::invest::llm::types::ProviderId {
+    try_parse_provider_id(id).unwrap_or(crate::invest::llm::types::ProviderId::DeepSeek)
+}
+
+/// Parse a provider ID string, returning Err for unrecognized IDs.
+fn try_parse_provider_id(id: &str) -> Result<crate::invest::llm::types::ProviderId, String> {
+    match id {
+        "deepseek" => Ok(crate::invest::llm::types::ProviderId::DeepSeek),
+        "mimo-plan" => Ok(crate::invest::llm::types::ProviderId::MiMoPlan),
+        "mimo-api" => Ok(crate::invest::llm::types::ProviderId::MiMoApi),
+        _ => Err(format!("unknown provider: {}", id)),
+    }
+}
+
+/// Build a CommitteeConfig from the saved InvestLlmConfig, applying the
+/// selected provider to all roles.
+fn build_committee_config(config_data: &InvestLlmConfig, debate_rounds: Option<u8>) -> crate::invest::committee::orchestrator::CommitteeConfig {
+    let provider = parse_provider_id(&config_data.selected_provider);
+    let mut committee_config = crate::invest::committee::orchestrator::CommitteeConfig::default();
+    committee_config.debate_rounds = debate_rounds.unwrap_or(config_data.debate_rounds);
+    committee_config.emergency_buffer_cny = config_data.emergency_buffer_cny;
+    committee_config.timeout_secs = config_data.timeout_secs;
+    // Pass user-configured model for the selected provider
+    if let Some(p) = config_data.providers.iter().find(|p| p.provider_id == config_data.selected_provider) {
+        if !p.default_model.is_empty() {
+            committee_config.model_override = Some(p.default_model.clone());
+        }
+    }
+    // Apply selected provider to all roles
+    for role in crate::invest::committee::roles::CommitteeRole::all() {
+        committee_config.role_providers.insert(*role, provider);
+    }
+    committee_config
+}
+
 #[tauri::command]
 pub async fn run_committee(
     symbols: Vec<String>,
@@ -644,12 +725,7 @@ pub async fn run_committee(
     let client: std::sync::Arc<dyn crate::invest::llm::types::InvestLlmClient> =
         std::sync::Arc::new(client);
 
-    let mut committee_config =
-        crate::invest::committee::orchestrator::CommitteeConfig::default();
-    // Explicit override > user config > default
-    committee_config.debate_rounds = debate_rounds.unwrap_or(config_data.debate_rounds);
-    committee_config.emergency_buffer_cny = config_data.emergency_buffer_cny;
-    committee_config.timeout_secs = config_data.timeout_secs;
+    let committee_config = build_committee_config(&config_data, debate_rounds);
 
     let results = crate::invest::committee::orchestrator::run_committee_batch(
         client,
@@ -696,11 +772,7 @@ pub async fn run_committee_stream(
     let client: std::sync::Arc<dyn crate::invest::llm::types::InvestLlmClient> =
         std::sync::Arc::new(client);
 
-    let mut committee_config =
-        crate::invest::committee::orchestrator::CommitteeConfig::default();
-    committee_config.debate_rounds = debate_rounds.unwrap_or(config_data.debate_rounds);
-    committee_config.emergency_buffer_cny = config_data.emergency_buffer_cny;
-    committee_config.timeout_secs = config_data.timeout_secs;
+    let committee_config = build_committee_config(&config_data, debate_rounds);
 
     // Build emitter closure that forwards events to the Tauri event channel
     let emitter: crate::invest::committee::orchestrator::EventEmitter = {
@@ -842,12 +914,7 @@ pub fn build_scan_clients() -> Result<(crate::tushare::TushareClient, crate::inv
         .find(|p| !p.api_key.is_empty())
         .ok_or("no LLM provider with an API key configured")?;
 
-    let provider_id = match provider_cfg.provider_id.as_str() {
-        "deepseek" => crate::invest::llm::types::ProviderId::DeepSeek,
-        "mimo-plan" => crate::invest::llm::types::ProviderId::MiMoPlan,
-        "mimo-api" => crate::invest::llm::types::ProviderId::MiMoApi,
-        other => return Err(format!("unknown provider: {}", other)),
-    };
+    let provider_id = try_parse_provider_id(&provider_cfg.provider_id)?;
 
     let llm_config = crate::invest::llm::types::LlmConfig {
         provider: provider_id,

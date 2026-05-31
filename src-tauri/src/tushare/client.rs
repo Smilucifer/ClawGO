@@ -49,6 +49,14 @@ pub struct StockBasic {
     pub list_date: String,
 }
 
+/// Fund basic info (基金列表, includes ETFs).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FundBasic {
+    pub ts_code: String,
+    pub name: String,
+}
+
 /// Trade calendar entry (交易日历).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TradeCal {
@@ -351,6 +359,38 @@ impl TushareClient {
         }
 
         Ok(stocks)
+    }
+
+    /// Search ETFs by optional name (模糊匹配). Filters to listed ETFs only.
+    pub async fn fund_basic(&self, name: Option<&str>) -> Result<Vec<FundBasic>, String> {
+        let mut params = serde_json::json!({
+            "fund_type": "E",  // ETF only
+            "status": "L",     // Listed only
+        });
+        if let Some(n) = name {
+            params["name"] = serde_json::json!(n);
+        }
+
+        let resp = self.call_api("fund_basic", params, "ts_code,name").await?;
+        let fields = &resp.data.fields;
+
+        let ts_code_idx = fields.iter().position(|f| f == "ts_code");
+        let name_idx = fields.iter().position(|f| f == "name");
+
+        let mut funds = Vec::with_capacity(resp.data.items.len());
+
+        for row in &resp.data.items {
+            funds.push(FundBasic {
+                ts_code: ts_code_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+                name: name_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+            });
+        }
+
+        Ok(funds)
     }
 
     /// Get the latest close price for a given stock.

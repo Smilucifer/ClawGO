@@ -1,26 +1,11 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { t } from '$lib/i18n/index.svelte';
-  import { getTransport } from '$lib/transport';
-  import type { PnlSnapshot } from '$lib/types';
+  import { investStore } from '$lib/stores/invest-store.svelte';
 
-  let snapshots: PnlSnapshot[] = $state([]);
-  let loading = $state(true);
   let error = $state('');
 
-  const invoke = <T,>(cmd: string, args?: Record<string, unknown>) =>
-    getTransport().invoke<T>(cmd, args);
-
-  onMount(async () => {
-    try {
-      snapshots = await invoke<PnlSnapshot[]>('get_pnl_snapshots', { limit: 80 });
-    } catch (e) {
-      console.error('[SystemPnlHistoryTab] load error:', e);
-      error = String(e);
-    } finally {
-      loading = false;
-    }
-  });
+  const snapshots = $derived(investStore.pnlSnapshots);
+  const loading = $derived(investStore.loading);
 
   function formatDate(d: string): string {
     return d.length > 10 ? d.slice(0, 10) : d;
@@ -36,6 +21,16 @@
     if (v == null || !Number.isFinite(v)) return '-';
     const prefix = v >= 0 ? '+' : '';
     return `${prefix}${v.toFixed(2)}%`;
+  }
+
+  async function handleDelete(id: number) {
+    if (!confirm(t('invest_system_pnl_delete_confirm'))) return;
+    try {
+      await investStore.deletePnlSnapshot(id);
+    } catch (e) {
+      console.error('Failed to delete PnL snapshot:', e);
+      error = String(e);
+    }
   }
 </script>
 
@@ -58,7 +53,8 @@
             <th class="pb-2 pr-3 text-right">{t('invest_system_pnl_cash')}</th>
             <th class="pb-2 pr-3 text-right">{t('invest_system_pnl_holdings')}</th>
             <th class="pb-2 pr-3 text-right">{t('invest_system_pnl_daily')}</th>
-            <th class="pb-2 text-right">{t('invest_system_pnl_daily_pct')}</th>
+            <th class="pb-2 pr-3 text-right">{t('invest_system_pnl_daily_pct')}</th>
+            <th class="pb-2">{t('invest_actions')}</th>
           </tr>
         </thead>
         <tbody>
@@ -71,8 +67,14 @@
               <td class="py-1.5 pr-3 text-right" class:text-green-400={(snap.dailyPnl ?? 0) > 0} class:text-red-400={(snap.dailyPnl ?? 0) < 0}>
                 {fmtPnl(snap.dailyPnl)}
               </td>
-              <td class="py-1.5 text-right" class:text-green-400={(snap.dailyPnlPct ?? 0) > 0} class:text-red-400={(snap.dailyPnlPct ?? 0) < 0}>
+              <td class="py-1.5 pr-3 text-right" class:text-green-400={(snap.dailyPnlPct ?? 0) > 0} class:text-red-400={(snap.dailyPnlPct ?? 0) < 0}>
                 {fmtPct(snap.dailyPnlPct)}
+              </td>
+              <td class="py-1.5">
+                <button
+                  class="rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
+                  onclick={() => handleDelete(snap.id)}
+                >{t('invest_delete')}</button>
               </td>
             </tr>
           {/each}

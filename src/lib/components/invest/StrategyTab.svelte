@@ -88,7 +88,7 @@
           <button class="rounded bg-muted px-2 py-0.5 text-xs" onclick={addTarget}>{t('invest_strategy_add_target')}</button>
         </div>
         {#if editTargets.length === 0}
-          <p class="text-xs text-muted-foreground">No targets added yet.</p>
+          <p class="text-xs text-muted-foreground">{t('invest_strategy_no_targets')}</p>
         {:else}
           {#each editTargets as target, idx}
             <div class="mb-2 flex items-center gap-2">
@@ -115,7 +115,7 @@
         <button class="rounded bg-primary px-4 py-1.5 text-sm text-primary-foreground" onclick={save}>
           {t('invest_strategy_save')}
         </button>
-        <button class="rounded bg-muted px-4 py-1.5 text-sm" onclick={() => (editing = false)}>Cancel</button>
+        <button class="rounded bg-muted px-4 py-1.5 text-sm" onclick={() => (editing = false)}>{t('invest_cancel')}</button>
         {#if editingId}
           <button class="ml-auto rounded px-4 py-1.5 text-sm text-destructive hover:bg-muted" onclick={() => deleteStrategy(editingId!)}>
             {t('invest_strategy_delete')}
@@ -131,7 +131,7 @@
         <div class="rounded-lg border p-4">
           <div class="flex items-center justify-between">
             <p class="font-medium">{s.name}</p>
-            <button class="rounded px-2 py-0.5 text-xs hover:bg-muted" onclick={() => startEdit(s)}>Edit</button>
+            <button class="rounded px-2 py-0.5 text-xs hover:bg-muted" onclick={() => startEdit(s)}>{t('invest_edit')}</button>
           </div>
           <p class="mt-1 text-xs text-muted-foreground">
             {t('invest_strategy_max_single')}: {s.maxSinglePct ?? '-'}% |

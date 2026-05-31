@@ -11,6 +11,17 @@
         ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
         : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
   );
+
+  function verdictLabel(verdict: string): string {
+    const map: Record<string, string> = {
+      'BUY': t('invest_verdict_buy'),
+      'ACCUMULATE': t('invest_verdict_accumulate'),
+      'HOLD': t('invest_verdict_hold'),
+      'TRIM': t('invest_verdict_trim'),
+      'SELL': t('invest_verdict_sell'),
+    };
+    return map[verdict] || verdict;
+  }
 </script>
 
 <div class="rounded-lg border border-border p-4">
@@ -22,9 +33,9 @@
   {#if latestVerdict}
     <div class="space-y-2">
       <div class="flex items-center gap-2">
-        <span class="text-sm font-semibold">{latestVerdict.symbol}</span>
+        <span class="text-sm font-semibold">{latestVerdict.name || latestVerdict.symbol}</span>
         <span class="inline-block rounded px-2 py-0.5 text-xs font-bold {verdictColor}">
-          {latestVerdict.verdict}
+          {verdictLabel(latestVerdict.verdict)}
         </span>
         <span class="text-xs text-muted-foreground">
           {latestVerdict.confidence ? (latestVerdict.confidence * 100).toFixed(0) + '%' : '-'}

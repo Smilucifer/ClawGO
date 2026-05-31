@@ -13,21 +13,37 @@
 
   const config = $derived(investCommitteeStore.llmConfig);
 
-  function handleApiKeyInput(e: Event, provider: InvestLlmProviderConfig) {
-    const target = e.target as HTMLInputElement;
-    provider.apiKey = target.value;
+  const selectedProvider = $derived(
+    config?.providers.find((p) => p.providerId === (config?.selectedProvider ?? 'deepseek'))
+      ?? config?.providers[0]
+      ?? null
+  );
+
+  function handleProviderChange(e: Event) {
+    const target = e.target as HTMLSelectElement;
+    if (!config) return;
+    config.selectedProvider = target.value;
     scheduleSave();
   }
 
-  function handleBaseUrlInput(e: Event, provider: InvestLlmProviderConfig) {
+  function handleApiKeyInput(e: Event) {
     const target = e.target as HTMLInputElement;
-    provider.baseUrl = target.value;
+    if (!selectedProvider) return;
+    selectedProvider.apiKey = target.value;
     scheduleSave();
   }
 
-  function handleModelInput(e: Event, provider: InvestLlmProviderConfig) {
+  function handleBaseUrlInput(e: Event) {
     const target = e.target as HTMLInputElement;
-    provider.defaultModel = target.value;
+    if (!selectedProvider) return;
+    selectedProvider.baseUrl = target.value;
+    scheduleSave();
+  }
+
+  function handleModelInput(e: Event) {
+    const target = e.target as HTMLInputElement;
+    if (!selectedProvider) return;
+    selectedProvider.defaultModel = target.value;
     scheduleSave();
   }
 
@@ -69,11 +85,13 @@
     if (!investCommitteeStore.llmConfig && !investCommitteeStore.configLoading && !configLoadAttempted) {
       configLoadAttempted = true;
       investCommitteeStore.loadConfig().then(() => {
-        // Reset on success so a future refresh can retry
         if (mounted && investCommitteeStore.llmConfig) configLoadAttempted = false;
       });
     }
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+      if (saveTimer) clearTimeout(saveTimer);
+    };
   });
 </script>
 
@@ -96,45 +114,59 @@
       {#if investCommitteeStore.configLoading}
         <div class="text-sm text-muted-foreground">Loading...</div>
       {:else if config}
-        <!-- Provider grid -->
-        <div class="grid gap-3 sm:grid-cols-3">
-          {#each config.providers as provider (provider.providerId)}
-            <div class="rounded border border-border p-3">
-              <div class="mb-2 text-xs font-medium uppercase text-muted-foreground">
-                {provider.providerId}
-              </div>
-              <label class="mb-1 block text-xs text-muted-foreground">
-                {t('invest_committee_api_key')}
-              </label>
-              <input
-                type="password"
-                class="mb-2 w-full rounded border border-border bg-background px-2 py-1 text-sm"
-                value={provider.apiKey}
-                oninput={(e) => handleApiKeyInput(e, provider)}
-              />
-
-              <label class="mb-1 block text-xs text-muted-foreground">
-                {t('invest_committee_base_url')}
-              </label>
-              <input
-                type="text"
-                class="mb-2 w-full rounded border border-border bg-background px-2 py-1 text-sm"
-                value={provider.baseUrl}
-                oninput={(e) => handleBaseUrlInput(e, provider)}
-              />
-
-              <label class="mb-1 block text-xs text-muted-foreground">
-                {t('invest_committee_model')}
-              </label>
-              <input
-                type="text"
-                class="w-full rounded border border-border bg-background px-2 py-1 text-sm"
-                value={provider.defaultModel}
-                oninput={(e) => handleModelInput(e, provider)}
-              />
-            </div>
-          {/each}
+        <!-- Provider selector -->
+        <div class="mb-3">
+          <label class="mb-1 block text-xs text-muted-foreground">
+            {t('invest_committee_provider')}
+          </label>
+          <select
+            class="w-full rounded border border-border bg-background px-2 py-1.5 text-sm"
+            value={config.selectedProvider}
+            onchange={handleProviderChange}
+          >
+            {#each config.providers as provider (provider.providerId)}
+              <option value={provider.providerId}>{provider.providerId}</option>
+            {/each}
+          </select>
         </div>
+
+        <!-- Selected provider settings -->
+        {#if selectedProvider}
+          <div class="rounded border border-border p-3">
+            <div class="mb-2 text-xs font-medium uppercase text-muted-foreground">
+              {selectedProvider.providerId}
+            </div>
+            <label class="mb-1 block text-xs text-muted-foreground">
+              {t('invest_committee_api_key')}
+            </label>
+            <input
+              type="password"
+              class="mb-2 w-full rounded border border-border bg-background px-2 py-1 text-sm"
+              value={selectedProvider.apiKey}
+              oninput={handleApiKeyInput}
+            />
+
+            <label class="mb-1 block text-xs text-muted-foreground">
+              {t('invest_committee_base_url')}
+            </label>
+            <input
+              type="text"
+              class="mb-2 w-full rounded border border-border bg-background px-2 py-1 text-sm"
+              value={selectedProvider.baseUrl}
+              oninput={handleBaseUrlInput}
+            />
+
+            <label class="mb-1 block text-xs text-muted-foreground">
+              {t('invest_committee_model')}
+            </label>
+            <input
+              type="text"
+              class="w-full rounded border border-border bg-background px-2 py-1 text-sm"
+              value={selectedProvider.defaultModel}
+              oninput={handleModelInput}
+            />
+          </div>
+        {/if}
 
         <!-- Global settings -->
         <div class="mt-3 flex flex-wrap items-center gap-4">

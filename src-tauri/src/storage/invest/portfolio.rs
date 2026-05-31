@@ -399,14 +399,54 @@ pub fn get_cash() -> Result<f64, String> {
     })
 }
 
+/// Get the initial cash balance (starting capital). Returns 0 if not set.
+pub fn get_initial_cash() -> Result<f64, String> {
+    with_conn(|conn| {
+        let result = conn.query_row(
+            "SELECT COALESCE(initial_balance, 0.0) FROM cash WHERE id = 1",
+            [],
+            |row| row.get::<_, f64>(0),
+        );
+        match result {
+            Ok(v) => Ok(v),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(0.0),
+            Err(e) => Err(format!("get initial cash: {}", e)),
+        }
+    })
+}
+
 pub fn set_cash(amount: f64) -> Result<(), String> {
     with_conn(|conn| {
         let now = chrono::Utc::now().to_rfc3339();
+        // On first insert, also set initial_balance to the starting amount
         conn.execute(
-            "INSERT INTO cash (id, available, updated_at) VALUES (1, ?1, ?2) ON CONFLICT(id) DO UPDATE SET available=?1, updated_at=?2",
+            "INSERT INTO cash (id, available, initial_balance, updated_at) VALUES (1, ?1, ?1, ?2) \
+             ON CONFLICT(id) DO UPDATE SET available=?1, updated_at=?2",
             params![amount, now],
         )
         .map_err(|e| format!("set cash: {}", e))?;
+        Ok(())
+    })
+}
+
+/// Set the initial cash balance (starting capital). Used for return calculation.
+pub fn set_initial_cash(amount: f64) -> Result<(), String> {
+    with_conn(|conn| {
+        let changed = conn
+            .execute(
+                "UPDATE cash SET initial_balance = ?1 WHERE id = 1",
+                params![amount],
+            )
+            .map_err(|e| format!("set initial cash: {}", e))?;
+        if changed == 0 {
+            // No cash row yet — create it
+            let now = chrono::Utc::now().to_rfc3339();
+            conn.execute(
+                "INSERT INTO cash (id, available, initial_balance, updated_at) VALUES (1, 0, ?1, ?2)",
+                params![amount, now],
+            )
+            .map_err(|e| format!("set initial cash (insert): {}", e))?;
+        }
         Ok(())
     })
 }

@@ -161,7 +161,7 @@
                 {/each}
               </div>
             {:else}
-              <span class="text-xs text-muted-foreground italic">No tools</span>
+              <span class="text-xs text-muted-foreground italic">{t('invest_tools_none')}</span>
             {/if}
             {#if access.r2Note}
               <div class="mt-1 text-xs text-muted-foreground">{access.r2Note}</div>

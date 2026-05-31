@@ -125,6 +125,48 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
          END;"
     ).map_err(|e| format!("create domain_insights_fts triggers: {e}"))?;
 
+    // Migration: add name column to verdicts table if missing
+    {
+        let has_name: i32 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('verdicts') WHERE name='name'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+        if has_name == 0 {
+            conn.execute_batch("ALTER TABLE verdicts ADD COLUMN name TEXT;")
+                .map_err(|e| format!("Failed to add name column to verdicts: {}", e))?;
+        }
+    }
+
+    // Migration: add initial_balance column to cash table if missing
+    {
+        let has_initial: i32 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('cash') WHERE name='initial_balance'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+        if has_initial == 0 {
+            conn.execute_batch("ALTER TABLE cash ADD COLUMN initial_balance REAL;")
+                .map_err(|e| format!("Failed to add initial_balance column: {}", e))?;
+        }
+    }
+
+    // Migration: add family_support column to user_profile table if missing
+    {
+        let has_col: i32 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('user_profile') WHERE name='family_support'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+        if has_col == 0 {
+            conn.execute_batch("ALTER TABLE user_profile ADD COLUMN family_support TEXT;")
+                .map_err(|e| format!("Failed to add family_support column: {}", e))?;
+        }
+    }
+
     let mut guard = DB.lock().map_err(|e| format!("lock db: {}", e))?;
     *guard = Some(conn);
     log::info!("invest.db initialized at {:?}", db_path);

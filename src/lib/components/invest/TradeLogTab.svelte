@@ -61,9 +61,9 @@
       bind:value={symbolFilter}
     />
     <select class="rounded border bg-background px-2 py-1 text-sm" bind:value={directionFilter}>
-      <option value="all">All</option>
-      <option value="buy">Buy</option>
-      <option value="sell">Sell</option>
+      <option value="all">{t('invest_trade_filter_all')}</option>
+      <option value="buy">{t('invest_trade_filter_buy')}</option>
+      <option value="sell">{t('invest_trade_filter_sell')}</option>
     </select>
     <button class="ml-auto rounded bg-muted px-3 py-1 text-sm" onclick={exportCsv}>
       {t('invest_export_csv')}

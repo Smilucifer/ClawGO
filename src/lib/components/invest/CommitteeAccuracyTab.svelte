@@ -109,7 +109,7 @@
     <h3 class="text-lg font-semibold">{t('invest_accuracy_title')}</h3>
     <div class="flex items-center gap-2">
       {#if reviewResult === 'success'}
-        <span class="text-xs text-green-600">Done</span>
+        <span class="text-xs text-green-600">{t('invest_done')}</span>
       {/if}
       <button
         class="rounded bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"

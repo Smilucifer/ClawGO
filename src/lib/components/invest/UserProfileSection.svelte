@@ -9,19 +9,28 @@
   let profileForm = $state({
     emergencyBufferCny: 100000,
     familyBackupAvailable: false,
-    accountPurpose: 'long_term',
+    accountPurpose: 'default',
     lifestyleNotes: '',
     displayName: undefined as string | undefined,
     riskTolerance: undefined as string | undefined,
     exchangeBufferCny: undefined as number | undefined,
+    familySupport: undefined as string | undefined,
   });
 
   const accountPurposeOptions = $derived([
+    { value: 'default', label: t('settings_profile_purpose_default') },
+    { value: 'pocket_money', label: t('settings_profile_purpose_pocket_money') },
     { value: 'long_term', label: t('settings_profile_purpose_long_term') },
-    { value: 'short_term', label: t('settings_profile_purpose_short_term') },
-    { value: 'speculation', label: t('settings_profile_purpose_speculation') },
-    { value: 'dividend', label: t('settings_profile_purpose_dividend') },
-    { value: 'hedge', label: t('settings_profile_purpose_hedge') },
+    { value: 'retirement', label: t('settings_profile_purpose_retirement') },
+    { value: 'education', label: t('settings_profile_purpose_education') },
+    { value: 'other', label: t('settings_profile_purpose_other') },
+  ]);
+
+  const familySupportOptions = $derived([
+    { value: 'none', label: t('settings_profile_family_support_none') },
+    { value: 'occasional', label: t('settings_profile_family_support_occasional') },
+    { value: 'partial', label: t('settings_profile_family_support_partial') },
+    { value: 'full', label: t('settings_profile_family_support_full') },
   ]);
 
   onMount(() => {
@@ -39,15 +48,29 @@
         displayName?: string;
         riskTolerance?: string;
         exchangeBufferCny?: number;
+        familySupport?: string;
       }>('get_user_profile');
+      // Normalize legacy account purpose values to current set
+      const PURPOSE_MAP: Record<string, string> = {
+        short_term: 'pocket_money',
+        speculation: 'pocket_money',
+        dividend: 'long_term',
+        hedge: 'long_term',
+      };
+      const validPurposes = ['default', 'pocket_money', 'long_term', 'retirement', 'education', 'other'];
+      const normalizedPurpose = validPurposes.includes(p.accountPurpose)
+        ? p.accountPurpose
+        : (PURPOSE_MAP[p.accountPurpose] ?? 'default');
+
       profileForm = {
         emergencyBufferCny: p.emergencyBufferCny,
         familyBackupAvailable: p.familyBackupAvailable,
-        accountPurpose: p.accountPurpose,
+        accountPurpose: normalizedPurpose,
         lifestyleNotes: p.lifestyleNotes,
         displayName: p.displayName,
         riskTolerance: p.riskTolerance,
         exchangeBufferCny: p.exchangeBufferCny,
+        familySupport: p.familySupport,
       };
     } catch (e) {
       console.error('[profile] load error:', e);
@@ -76,6 +99,7 @@
           displayName: profileForm.displayName,
           riskTolerance: profileForm.riskTolerance,
           exchangeBufferCny: profileForm.exchangeBufferCny,
+          familySupport: profileForm.familySupport,
         },
       });
       profileSaved = true;
@@ -124,19 +148,34 @@
     <!-- Account Purpose -->
     <div class="space-y-1">
       <label class="text-sm font-medium">{t('settings_profile_account_purpose')}</label>
-      <div class="flex flex-wrap gap-2">
+      <p class="text-xs text-muted-foreground">{t('settings_profile_account_purpose_desc')}</p>
+      <select
+        class="w-full rounded border border-border bg-background px-3 py-1.5 text-sm"
+        bind:value={profileForm.accountPurpose}
+      >
         {#each accountPurposeOptions as opt}
-          <button
-            class="rounded px-3 py-1 text-sm transition-colors"
-            class:bg-primary={profileForm.accountPurpose === opt.value}
-            class:text-primary-foreground={profileForm.accountPurpose === opt.value}
-            class:bg-muted={profileForm.accountPurpose !== opt.value}
-            onclick={() => (profileForm.accountPurpose = opt.value)}
-          >
-            {opt.label}
-          </button>
+          <option value={opt.value}>{opt.label}</option>
         {/each}
-      </div>
+      </select>
+      {#if profileForm.accountPurpose !== 'default'}
+        <p class="text-xs text-muted-foreground/70 mt-1">
+          {t(`settings_profile_purpose_${profileForm.accountPurpose}_desc` as any)}
+        </p>
+      {/if}
+    </div>
+
+    <!-- Family Support -->
+    <div class="space-y-1">
+      <label class="text-sm font-medium">{t('settings_profile_family_support')}</label>
+      <p class="text-xs text-muted-foreground">{t('settings_profile_family_support_desc')}</p>
+      <select
+        class="w-full rounded border border-border bg-background px-3 py-1.5 text-sm"
+        bind:value={profileForm.familySupport}
+      >
+        {#each familySupportOptions as opt}
+          <option value={opt.value}>{opt.label}</option>
+        {/each}
+      </select>
     </div>
 
     <!-- Lifestyle Notes -->

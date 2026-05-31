@@ -27,7 +27,12 @@
   async function doSearch() {
     if (!searchQuery || !tushareToken) return;
     try {
-      searchResults = await investStore.searchStocks(searchQuery, tushareToken);
+      if (assetType === 'etf') {
+        const etfs = await investStore.searchEtfs(searchQuery, tushareToken);
+        searchResults = etfs.map((f) => ({ tsCode: f.tsCode, name: f.name }));
+      } else {
+        searchResults = await investStore.searchStocks(searchQuery, tushareToken);
+      }
     } catch (e) {
       error = String(e);
     }
@@ -176,7 +181,7 @@
     {/if}
 
     <div class="flex justify-end gap-2">
-      <button class="rounded px-4 py-1.5 text-sm hover:bg-muted" onclick={onClose}>Cancel</button>
+      <button class="rounded px-4 py-1.5 text-sm hover:bg-muted" onclick={onClose}>{t('invest_cancel')}</button>
       <button
         class="rounded bg-primary px-4 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
         disabled={loading || (mode !== 'cash' && mode !== 'add_watch' && (!symbol || quantity <= 0 || price <= 0)) || (mode === 'add_watch' && (!symbol || price <= 0))}

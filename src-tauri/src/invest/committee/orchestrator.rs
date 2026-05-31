@@ -35,6 +35,9 @@ pub struct CommitteeConfig {
     pub timeout_secs: u64,
     /// Per-role provider override. Roles not present use the default.
     pub role_providers: HashMap<CommitteeRole, ProviderId>,
+    /// User-configured model override (if set, overrides provider defaults).
+    #[serde(default)]
+    pub model_override: Option<String>,
 }
 
 impl Default for CommitteeConfig {
@@ -48,6 +51,7 @@ impl Default for CommitteeConfig {
             emergency_buffer_cny: 100_000.0,
             timeout_secs: 120,
             role_providers,
+            model_override: None,
         }
     }
 }
@@ -244,6 +248,50 @@ fn build_strategy_context() -> String {
     out
 }
 
+/// Load user profile and format as a context block for CIO prompt injection.
+/// Includes account purpose, family support, and lifestyle notes.
+/// Returns an empty string if no meaningful profile data is configured.
+fn build_user_profile_context() -> String {
+    let profile = match crate::storage::invest::user_profile::get_profile() {
+        Ok(Some(p)) => p,
+        Ok(None) => return String::new(),
+        Err(e) => {
+            log::warn!("build_user_profile_context: failed to load profile: {e}");
+            return String::new();
+        }
+    };
+
+    let purpose_label = match profile.account_purpose.as_str() {
+        "default" => "默认（无特定目标约束）",
+        "pocket_money" => "零花钱账户（小额闲钱，灵活进出，亏损不影响生活）",
+        "long_term" => "长期投资账户（3-5年以上周期，能承受较大波动）",
+        "retirement" => "退休金（安全性优先，严格控制回撤，偏好蓝筹高股息）",
+        "education" => "教育金（有明确用款时间，稳健与成长平衡）",
+        "other" => "其他",
+        _ => "未设置",
+    };
+
+    let support_label = match profile.family_support.as_deref() {
+        Some("none") | None => "无家族经济支持",
+        Some("occasional") => "偶尔有家族经济支持",
+        Some("partial") => "有部分家族经济支持",
+        Some("full") => "有全面家族经济支持",
+        _ => "未设置",
+    };
+
+    let mut out = String::from("【用户投资档案】\n");
+    out.push_str(&format!("账户用途: {}\n", purpose_label));
+    out.push_str(&format!("家族支持: {}\n", support_label));
+
+    if !profile.lifestyle_notes.is_empty() {
+        out.push_str(&format!("用户备注: {}\n", profile.lifestyle_notes));
+    }
+
+    out.push_str("\n请根据上述用户档案调整裁决的激进程度和仓位建议。例如：退休金账户应更保守，零花钱账户可更灵活，无家族支持时需更注重安全边际。\n");
+
+    out
+}
+
 // ---------------------------------------------------------------------------
 // LLM call helpers
 // ---------------------------------------------------------------------------
@@ -253,10 +301,14 @@ fn build_llm_config(
     provider: ProviderId,
     role: CommitteeRole,
     timeout_secs: u64,
+    model_override: Option<&str>,
 ) -> LlmConfig {
     LlmConfig {
         provider,
-        model: provider.default_model().to_string(),
+        model: model_override
+            .filter(|m| !m.is_empty())
+            .unwrap_or_else(|| provider.default_model())
+            .to_string(),
         temperature: default_role_temperature(role),
         max_tokens: 4096,
         timeout_secs,
@@ -572,7 +624,7 @@ async fn run_macro_phase(
 ) -> Result<(RoundOutput, u32), String> {
     let role = CommitteeRole::Macro;
     let provider = resolve_provider(config, role);
-    let llm_config = build_llm_config(provider, role, config.timeout_secs);
+    let llm_config = build_llm_config(provider, role, config.timeout_secs, config.model_override.as_deref());
 
     let asset_name = get_asset_name(symbol).unwrap_or_else(|| symbol.to_string());
     let system_prompt = format!(
@@ -633,7 +685,7 @@ async fn run_role_phase(
     emitter: &Option<EventEmitter>,
 ) -> Result<RoundOutput, String> {
     let provider = resolve_provider(config, role);
-    let llm_config = build_llm_config(provider, role, config.timeout_secs);
+    let llm_config = build_llm_config(provider, role, config.timeout_secs, config.model_override.as_deref());
     let tool_defs = role_tool_defs(role, round);
 
     let asset_name = get_asset_name(symbol).unwrap_or_else(|| symbol.to_string());
@@ -643,12 +695,17 @@ async fn run_role_phase(
         length_constraint_suffix(role)
     );
 
-    // For CIO role, inject active strategy constraints into the system prompt
+    // For CIO role, inject active strategy constraints and user profile into the system prompt
     if role == CommitteeRole::Cio {
         let strategy_ctx = build_strategy_context();
         if !strategy_ctx.is_empty() {
             system_prompt.push_str("\n\n");
             system_prompt.push_str(&strategy_ctx);
+        }
+        let profile_ctx = build_user_profile_context();
+        if !profile_ctx.is_empty() {
+            system_prompt.push_str("\n\n");
+            system_prompt.push_str(&profile_ctx);
         }
     }
 
@@ -963,9 +1020,11 @@ pub async fn run_committee(
     // verdict per calendar day.
     if !dry_run {
         let cio_provider = resolve_provider(config, CommitteeRole::Cio);
+        let asset_name = get_asset_name(symbol);
 
         if let Err(e) = crate::storage::invest::committees::archive_verdict(
             symbol,
+            asset_name.as_deref(),
             &final_verdict,
             final_confidence,
             Some(&macro_signal),

@@ -4,6 +4,7 @@ use rusqlite::params;
 use super::with_conn;
 use super::with_conn_mut;
 use super::verdicts::Verdict;
+use super::verdicts::row_to_verdict;
 
 // ---------------------------------------------------------------------------
 // archive_verdict — daily-overwrite archiving
@@ -20,6 +21,7 @@ use super::verdicts::Verdict;
 /// orchestrator after a successful (non-dry-run) pipeline.
 pub fn archive_verdict(
     symbol: &str,
+    name: Option<&str>,
     verdict: &str,
     confidence: f64,
     macro_signal: Option<&str>,
@@ -62,11 +64,12 @@ pub fn archive_verdict(
 
         // 3. Insert the new verdict
         tx.execute(
-            "INSERT INTO verdicts (id, symbol, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "INSERT INTO verdicts (id, symbol, name, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 id,
                 symbol,
+                name,
                 verdict,
                 confidence,
                 macro_signal,
@@ -112,28 +115,13 @@ pub fn get_latest_verdict(symbol: &str) -> Result<Option<Verdict>, String> {
     with_conn(|conn| {
         let mut stmt = conn
             .prepare(
-                "SELECT id, symbol, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at
+                "SELECT id, symbol, name, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at
                  FROM verdicts WHERE symbol = ?1 ORDER BY created_at DESC LIMIT 1",
             )
             .map_err(|e| format!("prepare: {e}"))?;
 
         let mut rows = stmt
-            .query_map(params![symbol], |row| {
-                Ok(Verdict {
-                    id: row.get(0)?,
-                    symbol: row.get(1)?,
-                    verdict: row.get(2)?,
-                    confidence: row.get(3)?,
-                    macro_signal: row.get(4)?,
-                    macro_strength: row.get(5)?,
-                    reasoning: row.get(6)?,
-                    model: row.get(7)?,
-                    provider: row.get(8)?,
-                    tokens_used: row.get(9)?,
-                    latency_ms: row.get(10)?,
-                    created_at: row.get(11)?,
-                })
-            })
+            .query_map(params![symbol], row_to_verdict)
             .map_err(|e| format!("query: {e}"))?;
 
         match rows.next() {
@@ -151,28 +139,13 @@ pub fn get_daily_verdicts(date: &str) -> Result<Vec<Verdict>, String> {
     with_conn(|conn| {
         let mut stmt = conn
             .prepare(
-                "SELECT id, symbol, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at
+                "SELECT id, symbol, name, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at
                  FROM verdicts WHERE date(created_at) = ?1 ORDER BY symbol ASC",
             )
             .map_err(|e| format!("prepare: {e}"))?;
 
         let rows = stmt
-            .query_map(params![date], |row| {
-                Ok(Verdict {
-                    id: row.get(0)?,
-                    symbol: row.get(1)?,
-                    verdict: row.get(2)?,
-                    confidence: row.get(3)?,
-                    macro_signal: row.get(4)?,
-                    macro_strength: row.get(5)?,
-                    reasoning: row.get(6)?,
-                    model: row.get(7)?,
-                    provider: row.get(8)?,
-                    tokens_used: row.get(9)?,
-                    latency_ms: row.get(10)?,
-                    created_at: row.get(11)?,
-                })
-            })
+            .query_map(params![date], row_to_verdict)
             .map_err(|e| format!("query: {e}"))?;
 
         let mut items = Vec::new();
@@ -190,7 +163,7 @@ pub fn list_verdict_history(symbol: &str, days: i64) -> Result<Vec<Verdict>, Str
     with_conn(|conn| {
         let mut stmt = conn
             .prepare(
-                "SELECT id, symbol, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at
+                "SELECT id, symbol, name, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at
                  FROM verdicts WHERE symbol = ?1 AND created_at >= date('now', ?2)
                  ORDER BY created_at DESC",
             )
@@ -198,22 +171,7 @@ pub fn list_verdict_history(symbol: &str, days: i64) -> Result<Vec<Verdict>, Str
 
         let offset = format!("-{} days", days);
         let rows = stmt
-            .query_map(params![symbol, offset], |row| {
-                Ok(Verdict {
-                    id: row.get(0)?,
-                    symbol: row.get(1)?,
-                    verdict: row.get(2)?,
-                    confidence: row.get(3)?,
-                    macro_signal: row.get(4)?,
-                    macro_strength: row.get(5)?,
-                    reasoning: row.get(6)?,
-                    model: row.get(7)?,
-                    provider: row.get(8)?,
-                    tokens_used: row.get(9)?,
-                    latency_ms: row.get(10)?,
-                    created_at: row.get(11)?,
-                })
-            })
+            .query_map(params![symbol, offset], row_to_verdict)
             .map_err(|e| format!("query: {e}"))?;
 
         let mut items = Vec::new();

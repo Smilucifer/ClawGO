@@ -15,6 +15,7 @@ export interface InvestLlmProviderConfig {
 
 export interface InvestLlmConfig {
   providers: InvestLlmProviderConfig[];
+  selectedProvider: string;
   debateRounds: number;
   emergencyBufferCny: number;
   timeoutSecs: number;

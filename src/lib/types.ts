@@ -1764,6 +1764,7 @@ export interface PnlSnapshot {
 export interface Verdict {
   id: string;
   symbol: string;
+  name: string | null;
   verdict: string;
   confidence: number | null;
   macroSignal: string | null;
@@ -1859,6 +1860,7 @@ export interface UserProfile {
   displayName?: string;
   riskTolerance?: string;
   exchangeBufferCny?: number;
+  familySupport?: string;
 }
 
 export interface DailyReportRecord {

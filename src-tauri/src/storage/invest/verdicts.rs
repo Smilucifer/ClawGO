@@ -7,6 +7,7 @@ use rusqlite::params;
 pub struct Verdict {
     pub id: String,
     pub symbol: String,
+    pub name: Option<String>,
     pub verdict: String,
     pub confidence: Option<f64>,
     pub macro_signal: Option<String>,
@@ -17,6 +18,27 @@ pub struct Verdict {
     pub tokens_used: Option<i64>,
     pub latency_ms: Option<i64>,
     pub created_at: String,
+}
+
+/// Extract a Verdict from a SQL row. Column order must match the SELECT clause:
+/// id, symbol, name, verdict, confidence, macro_signal, macro_strength, reasoning,
+/// model, provider, tokens_used, latency_ms, created_at
+pub fn row_to_verdict(row: &rusqlite::Row) -> Result<Verdict, rusqlite::Error> {
+    Ok(Verdict {
+        id: row.get(0)?,
+        symbol: row.get(1)?,
+        name: row.get(2)?,
+        verdict: row.get(3)?,
+        confidence: row.get(4)?,
+        macro_signal: row.get(5)?,
+        macro_strength: row.get(6)?,
+        reasoning: row.get(7)?,
+        model: row.get(8)?,
+        provider: row.get(9)?,
+        tokens_used: row.get(10)?,
+        latency_ms: row.get(11)?,
+        created_at: row.get(12)?,
+    })
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -35,9 +57,9 @@ pub struct PnlSnapshot {
 pub fn save_verdict(v: &Verdict) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute(
-            "INSERT OR REPLACE INTO verdicts (id, symbol, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-            params![v.id, v.symbol, v.verdict, v.confidence, v.macro_signal, v.macro_strength, v.reasoning, v.model, v.provider, v.tokens_used, v.latency_ms, v.created_at],
+            "INSERT OR REPLACE INTO verdicts (id, symbol, name, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            params![v.id, v.symbol, v.name, v.verdict, v.confidence, v.macro_signal, v.macro_strength, v.reasoning, v.model, v.provider, v.tokens_used, v.latency_ms, v.created_at],
         )
         .map_err(|e| format!("save verdict: {}", e))?;
         Ok(())
@@ -49,32 +71,17 @@ pub fn list_verdicts(symbol: Option<&str>, limit: Option<i64>) -> Result<Vec<Ver
         let limit_val = limit.unwrap_or(50);
         let (sql, query_params): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = match symbol {
             Some(s) => (
-                "SELECT id, symbol, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at FROM verdicts WHERE symbol = ?1 ORDER BY created_at DESC LIMIT ?2",
+                "SELECT id, symbol, name, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at FROM verdicts WHERE symbol = ?1 ORDER BY created_at DESC LIMIT ?2",
                 vec![Box::new(s.to_string()), Box::new(limit_val)],
             ),
             None => (
-                "SELECT id, symbol, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at FROM verdicts ORDER BY created_at DESC LIMIT ?1",
+                "SELECT id, symbol, name, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at FROM verdicts ORDER BY created_at DESC LIMIT ?1",
                 vec![Box::new(limit_val)],
             ),
         };
         let mut stmt = conn.prepare(sql).map_err(|e| format!("prepare: {}", e))?;
         let rows = stmt
-            .query_map(rusqlite::params_from_iter(query_params.iter()), |row| {
-                Ok(Verdict {
-                    id: row.get(0)?,
-                    symbol: row.get(1)?,
-                    verdict: row.get(2)?,
-                    confidence: row.get(3)?,
-                    macro_signal: row.get(4)?,
-                    macro_strength: row.get(5)?,
-                    reasoning: row.get(6)?,
-                    model: row.get(7)?,
-                    provider: row.get(8)?,
-                    tokens_used: row.get(9)?,
-                    latency_ms: row.get(10)?,
-                    created_at: row.get(11)?,
-                })
-            })
+            .query_map(rusqlite::params_from_iter(query_params.iter()), row_to_verdict)
             .map_err(|e| format!("query: {}", e))?;
         let mut items = Vec::new();
         for row in rows {
@@ -87,25 +94,10 @@ pub fn list_verdicts(symbol: Option<&str>, limit: Option<i64>) -> Result<Vec<Ver
 pub fn get_verdict_by_id(id: &str) -> Result<Option<Verdict>, String> {
     with_conn(|conn| {
         let mut stmt = conn
-            .prepare("SELECT id, symbol, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at FROM verdicts WHERE id = ?1")
+            .prepare("SELECT id, symbol, name, verdict, confidence, macro_signal, macro_strength, reasoning, model, provider, tokens_used, latency_ms, created_at FROM verdicts WHERE id = ?1")
             .map_err(|e| format!("prepare: {}", e))?;
         let mut rows = stmt
-            .query_map(params![id], |row| {
-                Ok(Verdict {
-                    id: row.get(0)?,
-                    symbol: row.get(1)?,
-                    verdict: row.get(2)?,
-                    confidence: row.get(3)?,
-                    macro_signal: row.get(4)?,
-                    macro_strength: row.get(5)?,
-                    reasoning: row.get(6)?,
-                    model: row.get(7)?,
-                    provider: row.get(8)?,
-                    tokens_used: row.get(9)?,
-                    latency_ms: row.get(10)?,
-                    created_at: row.get(11)?,
-                })
-            })
+            .query_map(params![id], row_to_verdict)
             .map_err(|e| format!("query: {}", e))?;
         match rows.next() {
             Some(row) => Ok(Some(row.map_err(|e| format!("row: {}", e))?)),
@@ -158,5 +150,18 @@ pub fn list_pnl_snapshots(limit: Option<i64>) -> Result<Vec<PnlSnapshot>, String
             items.push(row.map_err(|e| format!("row: {}", e))?);
         }
         Ok(items)
+    })
+}
+
+pub fn delete_pnl_snapshot(id: i64) -> Result<(), String> {
+    with_conn_mut(|conn| {
+        let changed = conn
+            .execute("DELETE FROM pnl_snapshots WHERE id = ?1", params![id])
+            .map_err(|e| format!("delete pnl snapshot: {}", e))?;
+        if changed == 0 {
+            Err("PnL snapshot not found".to_string())
+        } else {
+            Ok(())
+        }
     })
 }

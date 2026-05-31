@@ -2,6 +2,30 @@
 
 ## Phase 10+ (2026-05-31)
 
+### v5.0.2 — 代码审查修复: 数据完整性 + 正确性 + 死代码清理
+
+**15 项代码审查修复 (2026-05-31):**
+
+**修复 (10 项):**
+1. **exec_history_data_tushare bars 排序反转**: daily() 返回降序但 `.rev()` 导致取到最旧数据，pct_change 符号反转、recent_5 显示错误
+2. **旧版 account purpose 值迁移**: short_term/speculation/dividend/hedge 加载时标准化为新版值，避免显示/数据不一致和 i18n key 缺失
+3. **initial_balance 列只读不写**: set_cash 首次 INSERT 时写入 initial_balance，新增 set_initial_cash 命令
+4. **family_support 迁移集中化**: 从 get_profile/save_profile 内联移至 init_db() 集中管理，错误正确传播
+5. **save_llm_config/get_llm_config 不对称**: 未知 provider 配置丢失；get_llm_config 改为遍历 JSON 所有 provider key
+6. **build_committee_config 未传递 model**: CommitteeConfig 新增 model_override，build_llm_config 优先使用用户配置
+7. **parse_provider_id 内联重复**: 提取 try_parse_provider_id() 统一使用
+8. **build_user_profile_context 吞没 DB 错误**: 增加 log::warn! 日志
+9. **fund_basic 未过滤基金类型和状态**: 增加 fund_type=E 和 status=L，只返回上市 ETF
+10. **SystemPnlHistoryTab loading 状态竞态**: 移除本地 state，直接使用 store.loading
+
+**优化 (5 项):**
+11. **Verdict 行映射重复**: 提取 row_to_verdict() 辅助函数，消除 7 处重复代码
+12. **UserProfile TypeScript 接口补全**: 新增 familySupport 字段
+13. **ProviderConfigPanel saveTimer 泄漏**: 组件卸载时清理定时器
+14. **invest-store loadAll 错误吞没**: .catch 增加 console.warn 日志
+
+---
+
 ### v5.0.2 — Yahoo Finance 429 限流修复
 
 **Yahoo Finance 客户端重试 + 限流 (2026-05-31):**

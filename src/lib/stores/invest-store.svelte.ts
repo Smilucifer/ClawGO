@@ -22,6 +22,7 @@ class InvestStore {
   pnlSnapshots = $state<PnlSnapshot[]>([]);
   verdicts = $state<Verdict[]>([]);
   cash = $state<number>(0);
+  initialCash = $state<number>(0);
   strategies = $state<Strategy[]>([]);
 
   loading = $state<boolean>(false);
@@ -73,9 +74,11 @@ class InvestStore {
   );
 
   totalReturnPct = $derived(
-    this.totalCostBasis > 0
-      ? ((this.totalAssets - this.totalCostBasis) / this.totalCostBasis) * 100
-      : 0,
+    this.initialCash > 0
+      ? ((this.totalAssets - this.initialCash) / this.initialCash) * 100
+      : this.totalCostBasis > 0
+        ? ((this.totalAssets - this.totalCostBasis) / this.totalCostBasis) * 100
+        : 0,
   );
 
   // ── Event Watch Derived ─────────────────────────────────────────────
@@ -134,20 +137,22 @@ class InvestStore {
     this.loading = true;
     this.error = null;
     try {
-      const [holdings, trades, snapshots, verdicts, cash, strategies] =
+      const [holdings, trades, snapshots, verdicts, cash, initialCash, strategies] =
         await Promise.all([
           invoke<Holding[]>("get_holdings"),
           invoke<Trade[]>("get_trades", { symbol: null, limit: 200 }),
           invoke<PnlSnapshot[]>("get_pnl_snapshots", { limit: 80 }),
           invoke<Verdict[]>("get_verdicts", { symbol: null, limit: 50 }),
           invoke<number>("get_cash"),
-          invoke<Strategy[]>("list_strategies").catch(() => []),
+          invoke<number>("get_initial_cash").catch((e) => { console.warn('[invest] get_initial_cash:', e); return 0; }),
+          invoke<Strategy[]>("list_strategies").catch((e) => { console.warn('[invest] list_strategies:', e); return []; }),
         ]);
       this.holdings = holdings;
       this.trades = trades;
       this.pnlSnapshots = snapshots;
       this.verdicts = verdicts;
       this.cash = cash;
+      this.initialCash = initialCash;
       this.strategies = strategies;
     } catch (e) {
       this.error = String(e);
@@ -204,6 +209,13 @@ class InvestStore {
     tushareToken: string,
   ): Promise<Array<{ tsCode: string; name: string; symbol: string; industry: string }>> {
     return invoke("search_stocks", { name, token: tushareToken });
+  }
+
+  async searchEtfs(
+    name: string,
+    tushareToken: string,
+  ): Promise<Array<{ tsCode: string; name: string }>> {
+    return invoke("search_etfs", { name, token: tushareToken });
   }
 
   async getLatestPrice(tsCode: string, tushareToken: string): Promise<number> {
@@ -455,6 +467,11 @@ class InvestStore {
     await invoke("delete_trade", { id });
     this.trades = this.trades.filter((t) => t.id !== id);
     await this.loadAll();
+  }
+
+  async deletePnlSnapshot(id: number): Promise<void> {
+    await invoke("delete_pnl_snapshot", { id });
+    this.pnlSnapshots = this.pnlSnapshots.filter((s) => s.id !== id);
   }
 
   async updateTrade(trade: {
