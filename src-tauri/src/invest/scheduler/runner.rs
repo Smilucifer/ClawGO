@@ -1,5 +1,6 @@
 use super::config;
 use crate::storage::invest::scheduler::{is_trading_day, log_task_end, log_task_start};
+use crate::tushare::client::TushareClient;
 use chrono::TimeZone;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -58,6 +59,14 @@ pub async fn dispatch_job(id: &str) -> Result<String, String> {
             let data_dir = crate::storage::data_dir();
             let result = crate::invest::daily_report::generate_daily_report(&data_dir)?;
             Ok(result)
+        }
+        "macro_refresh" => {
+            let settings = crate::storage::settings::get_user_settings();
+            let tushare_token = settings
+                .tushare_token
+                .ok_or("no tushare_token configured for macro_refresh")?;
+            let client = TushareClient::new(tushare_token);
+            crate::invest::macro_refresh::refresh_macro_cache(&client).await
         }
         _ => Err(format!("Unknown job: {}", id)),
     }

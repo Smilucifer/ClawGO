@@ -33,6 +33,7 @@ export interface SanityCheckResult {
   gate1Pass: boolean;
   gate2Pass: boolean;
   gate3Pass: boolean;
+  gate4Pass: boolean;
   finalVerdict: string;
   finalConfidence: number;
   notes: string[];

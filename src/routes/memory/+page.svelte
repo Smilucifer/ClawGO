@@ -110,10 +110,11 @@
     try {
       const candidates = await api.listMemoryFiles(projectCwd || undefined);
       if (seq !== autoSelectSeq) return; // stale — discard
-      // Prefer first existing project file
+      // Prefer MEMORY.md, then first existing project file
+      const memoryMd = candidates.find((f) => f.exists && f.name === "MEMORY.md");
       const existing = candidates.find((f) => f.exists && f.scope === "project");
       const fallback = candidates.find((f) => f.exists) ?? candidates[0];
-      const pick = existing ?? fallback;
+      const pick = memoryMd ?? existing ?? fallback;
       if (pick) {
         selectedFile = pick.path;
         // Sync sidebar highlight — but only when not in customFile mode,

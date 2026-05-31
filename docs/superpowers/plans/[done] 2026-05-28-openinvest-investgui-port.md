@@ -1,6 +1,6 @@
 # openInvest + invest-gui → ClawGO 功能移植计划
 
-> 状态:[done] Phase 1 + Phase 2 + Phase 3a + Phase 3b + Phase 3c + Phase 4a + Phase 4b 全部完成。RFC D1-D11 全部决议已确认(2026-05-29)。
+> 状态:[done] Phase 1 + Phase 2 + Phase 3a + Phase 3b + Phase 3c + Phase 4a + Phase 4b + Phase 4b Fix Tasks 全部完成。RFC D1-D11 全部决议已确认(2026-05-29)。
 > 创建:2026-05-28
 > 更新:
 > - 2026-05-29(v1) — 整合完整研究结果:5 角色 system prompt、编排算法、Dreaming 对比、Provider 体系
@@ -1100,6 +1100,40 @@ Dream 执行流程：
 7. 新增 `invest_loading` i18n key
 8. `SystemDreamsTab` 展开时隐藏 truncated shortTerm
 9. `accountPurposeOptions` → `$derived` i18n 响应式
+
+### Phase 4b Fix Tasks: 11 项功能修复 + 15 项代码审查 (已完成, 2026-05-31)
+
+**Wave 1 — P0 Bug 修复（4 项）:**
+- [x] 记忆管理页面切入即卡死（`memory/+page.svelte` 的 `$effect` 无限循环）
+- [x] Tushare 搜索 null 解析（`stock_basic` 返回空 items 时崩溃）
+- [x] LLM 配置"暂无配置"（`ProviderConfigPanel` 初始化失败）
+- [x] 立即扫描无反应（Event Watch scan 错误处理）
+
+**Wave 2 — Demo HTML（3 项）:**
+- [x] Pipeline Flow 动画 demo
+- [x] Committee Roles 两栏布局 demo
+- [x] Dashboard 持仓管理 demo
+
+**Wave 3 — P1 大改（6 项）:**
+- [x] **Dashboard 加入观望** — `addToWatch()` 方法 + `TradeDialog` add_watch 模式 + HoldingsTable WATCH 区常驻
+- [x] **Profile 迁移** — 从 Settings 迁到 invest Dashboard 底部（`UserProfileSection` 组件）
+- [x] **侧边栏顺序** — Settings 移至最后（index 8），invest 排在 memory 之前
+- [x] **运行全部持仓** — CommitteeLiveTab"运行全部持仓"按钮 + "包含 WATCH" checkbox
+- [x] **Replay 增强** — select 下拉选持仓 + 试运行按钮 + 手动输入切换
+- [x] **角色配置重写** — 两栏布局（verdict options + REGIME rules + CIO Sanity Check）+ 5 角色卡片（QUANT/RISK 双轮 prompt）
+
+**Wave 4 — P2/P3（5 项）:**
+- [x] **多资产并发总览** — overview table（symbol/状态/进度/裁决）+ PIPELINE_STEPS 常量
+- [x] **Dashboard 新卡片** — MacroSnapshotCard（regime 信号）+ LatestVerdictCard（最新裁决）
+- [x] **i18n 中文化** — 9 处硬编码中文替换为 t() 调用（~120 新 i18n keys）
+- [x] **MEMORY.md 默认** — autoSelectFirst 优先选中 MEMORY.md
+- [x] **文件路径可点击** — ToolDetailView 使用 FilePathLinks 组件
+
+**代码审查修复（15 项, 9 angles 并行扫描）:**
+- **CRITICAL (1)**: `add_watch` 搜索 UI 被 `{#if mode === 'buy'}` 门控 → 扩展为 `mode === 'buy' || mode === 'add_watch'`
+- **HIGH (2)**: ProviderConfigPanel `$effect` 无限重试 → 新增 `configLoadAttempted` 守卫; `addToWatch` 无 try/catch → try/finally 保证 `loadAll()` 执行
+- **MEDIUM (6)**: holdHoldings 重复检查; tab selector 状态一致性 (`done && !error`); wealth 角色卡片恢复; Replay 手动输入模式; `PIPELINE_STEPS` 常量; allHoldings `$derived.by` 去重
+- **LOW (6)**: Settings `?tab=profile` 重定向; HoldingsTable `{@const}` 缓存; PipelineFlow `$derived` 可接受; Tushare `unwrap_or_else` 错误信息; `{@html}` XSS 仅开发者控制 i18n 安全
 
 ---
 

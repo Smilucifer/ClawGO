@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>投资委员会 — 角色配置</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --bg-card: #16213e;
+    --bg-panel: #0f3460;
+    --bg-input: #111a30;
+    --text: #e0e0e0;
+    --text-muted: #8899aa;
+    --text-dim: #5a6a7a;
+    --accent: #e94560;
+    --accent-green: #22c55e;
+    --accent-blue: #3b82f6;
+    --accent-purple: #a855f7;
+    --accent-orange: #f97316;
+    --accent-yellow: #fbbf24;
+    --border: #2a2a4a;
+    --border-light: #333a55;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── Tab bar ── */
+  .tab-bar {
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    overflow-x: auto;
+  }
+  .tab-bar .tab-page-title {
+    padding: 16px 20px 14px 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-right: 1px solid var(--border);
+    margin-right: 8px;
+  }
+  .tab-bar .tab-page-title .icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent-purple), var(--accent-blue));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+  .tab {
+    padding: 14px 18px;
+    font-size: 13px;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: color 0.2s, border-color 0.2s;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    font-weight: 500;
+  }
+  .tab:hover {
+    color: var(--text);
+  }
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  /* ── Main ── */
+  .main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 24px 80px;
+  }
+
+  /* ── Two-panel layout ── */
+  .panels {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 24px;
+  }
+  .panel-left {
+    flex: 0 0 45%;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .panel-right {
+    flex: 0 0 calc(55% - 20px);
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* ── Card ── */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .card-title {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text);
+  }
+  .card-title::before {
+    content: '';
+    width: 3px;
+    height: 16px;
+    border-radius: 2px;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+  .card-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: -10px;
+    margin-bottom: 14px;
+    line-height: 1.5;
+  }
+
+  /* ── Verdict list ── */
+  .verdict-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .verdict-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .verdict-label {
+    font-weight: 700;
+    font-family: var(--mono);
+    font-size: 12px;
+    min-width: 100px;
+    color: var(--accent);
+    white-space: nowrap;
+    padding-top: 1px;
+  }
+  .verdict-desc {
+    color: var(--text-muted);
+  }
+
+  /* ── Regime section ── */
+  .regime-body {
+    display: flex;
+    gap: 16px;
+    margin-top: 8px;
+  }
+  .regime-thresholds {
+    flex: 0 0 55%;
+  }
+  .regime-priorities {
+    flex: 0 0 calc(45% - 16px);
+  }
+  .regime-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    font-family: var(--mono);
+  }
+  .regime-table td {
+    padding: 5px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .regime-table td:first-child {
+    color: var(--accent-blue);
+    white-space: nowrap;
+  }
+  .regime-table td:last-child {
+    color: var(--accent-yellow);
+    text-align: right;
+  }
+  .priority-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .priority-list li {
+    font-size: 12px;
+    line-height: 1.5;
+    display: flex;
+    gap: 6px;
+  }
+  .priority-num {
+    font-weight: 700;
+    color: var(--accent);
+    min-width: 14px;
+  }
+  .priority-name {
+    font-weight: 600;
+    color: var(--text);
+  }
+  .priority-detail {
+    color: var(--text-muted);
+  }
+
+  /* ── Sanity rules ── */
+  .sanity-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .sanity-list li {
+    font-size: 12px;
+    line-height: 1.6;
+    padding-left: 14px;
+    position: relative;
+    color: var(--text-muted);
+  }
+  .sanity-list li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 7px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent-orange);
+  }
+  .sanity-list li strong {
+    color: var(--text);
+  }
+  .sanity-list li code {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--bg-input);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: var(--accent-yellow);
+  }
+
+  /* ── Role cards (bottom) ── */
+  .role-section-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 28px 0 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+  }
+  .role-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 14px;
+    overflow: hidden;
+    border-left: 3px solid var(--border);
+  }
+  .role-card.macro { border-left-color: var(--accent-purple); }
+  .role-card.quant { border-left-color: var(--accent-blue); }
+  .role-card.risk { border-left-color: var(--accent-orange); }
+  .role-card.cio { border-left-color: var(--accent-green); }
+
+  .role-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+  }
+  .role-badge {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+    color: #fff;
+  }
+  .role-badge.macro { background: var(--accent-purple); }
+  .role-badge.quant { background: var(--accent-blue); }
+  .role-badge.risk { background: var(--accent-orange); }
+  .role-badge.cio { background: var(--accent-green); }
+
+  .role-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .role-name-line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .role-name-cn {
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .role-name-en {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .role-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .role-meta {
+    font-size: 12px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* ── Role body ── */
+  .role-body {
+    padding: 0 20px 16px;
+  }
+  .hard-rules-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .hard-rules {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 14px;
+  }
+  .hard-rules li {
+    font-size: 12px;
+    line-height: 1.5;
+    padding-left: 14px;
+    position: relative;
+    color: var(--text-muted);
+  }
+  .hard-rules li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 7px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--text-dim);
+  }
+  .hard-rules li strong {
+    color: var(--text);
+  }
+
+  /* ── Collapsible prompt (details/summary) ── */
+  details.prompt-section {
+    margin-bottom: 6px;
+  }
+  details.prompt-section summary {
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 6px 0;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  details.prompt-section summary::-webkit-details-marker {
+    display: none;
+  }
+  details.prompt-section summary::before {
+    content: '\25B6';
+    font-size: 9px;
+    color: var(--text-dim);
+    transition: transform 0.2s;
+    display: inline-block;
+  }
+  details.prompt-section[open] summary::before {
+    transform: rotate(90deg);
+  }
+  details.prompt-section summary:hover {
+    color: var(--text);
+  }
+  .prompt-wordcount {
+    color: var(--text-dim);
+    font-weight: 400;
+  }
+  .prompt-body {
+    margin-top: 4px;
+    padding: 10px 12px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text-muted);
+    line-height: 1.5;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .panels {
+      flex-direction: column;
+    }
+    .panel-left, .panel-right {
+      flex: 1 1 auto;
+    }
+    .regime-body {
+      flex-direction: column;
+    }
+    .regime-thresholds, .regime-priorities {
+      flex: 1 1 auto;
+    }
+    .tab-bar {
+      padding: 0 12px;
+    }
+    .tab {
+      padding: 12px 12px;
+      font-size: 12px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Tab Bar ── -->
+<div class="tab-bar">
+  <div class="tab-page-title">
+    <div class="icon">&#9878;</div>
+    投资委员会
+  </div>
+  <div class="tab">触发/直播</div>
+  <div class="tab">决议归档</div>
+  <div class="tab">决策回放</div>
+  <div class="tab active">4 角色+规则</div>
+  <div class="tab">历史命中率</div>
+  <div class="tab">LLM 用量</div>
+  <div class="tab">Tool 调用</div>
+</div>
+
+<div class="main">
+
+  <!-- ── Two-panel layout ── -->
+  <div class="panels">
+
+    <!-- ── Left panel ── -->
+    <div class="panel-left">
+
+      <!-- Verdict options -->
+      <div class="card">
+        <div class="card-title">5 个 verdict 选项</div>
+        <ul class="verdict-list">
+          <li class="verdict-item">
+            <span class="verdict-label">BUY</span>
+            <span class="verdict-desc">一次建满（仅强 bullish + Risk ok）</span>
+          </li>
+          <li class="verdict-item">
+            <span class="verdict-label">ACCUMULATE</span>
+            <span class="verdict-desc">逆势分批</span>
+          </li>
+          <li class="verdict-item">
+            <span class="verdict-label">HOLD</span>
+            <span class="verdict-desc">维持现状</span>
+          </li>
+          <li class="verdict-item">
+            <span class="verdict-label">TRIM</span>
+            <span class="verdict-desc">部分减仓</span>
+          </li>
+          <li class="verdict-item">
+            <span class="verdict-label">SELL</span>
+            <span class="verdict-desc">全部清仓</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- REGIME hard rules -->
+      <div class="card">
+        <div class="card-title">REGIME 硬规则</div>
+        <div class="card-subtitle">市场 regime 是「确定性算出」的硬约束（不是 LLM 判断）。Quant agent 必须遵守，防止震荡市底部错减 bearish。</div>
+        <div class="regime-body">
+          <div class="regime-thresholds">
+            <table class="regime-table">
+              <tr><td>trend_ma_spread_pct</td><td>= 3</td></tr>
+              <tr><td>crash_atr_pct_min</td><td>= 5</td></tr>
+              <tr><td>crash_drawdown_30d_pct</td><td>= 20</td></tr>
+              <tr><td>crash_deep_drawdown_30d_pct</td><td>= 30</td></tr>
+              <tr><td>recovery_rebound_pct</td><td>= 10</td></tr>
+              <tr><td>recovery_quantile_max</td><td>= 0.5</td></tr>
+              <tr><td>low_quantile_threshold</td><td>= 0.2</td></tr>
+              <tr><td>high_quantile_threshold</td><td>= 0.8</td></tr>
+            </table>
+          </div>
+          <div class="regime-priorities">
+            <div class="hard-rules-label">优先级 + 类型</div>
+            <ol class="priority-list">
+              <li>
+                <span class="priority-num">1.</span>
+                <span>
+                  <span class="priority-name">crash</span>
+                  <span class="priority-detail">&mdash; ATR% &ge; 5% &rarr; 任何方向都强制 neutral</span>
+                </span>
+              </li>
+              <li>
+                <span class="priority-num">2.</span>
+                <span>
+                  <span class="priority-name">uptrend</span>
+                  <span class="priority-detail">&mdash; MA20 vs MA120 偏离 &ge; +3%</span>
+                </span>
+              </li>
+              <li>
+                <span class="priority-num">3.</span>
+                <span>
+                  <span class="priority-name">downtrend</span>
+                  <span class="priority-detail">&mdash; MA20 vs MA120 偏离 &le; -3%</span>
+                </span>
+              </li>
+              <li>
+                <span class="priority-num">4.</span>
+                <span>
+                  <span class="priority-name">range_bound</span>
+                  <span class="priority-detail">&mdash; 其他</span>
+                </span>
+              </li>
+              <li>
+                <span class="priority-num">5.</span>
+                <span>
+                  <span class="priority-name">unknown</span>
+                  <span class="priority-detail">&mdash; 数据不足 &rarr; 维持原计划</span>
+                </span>
+              </li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Right panel ── -->
+    <div class="panel-right">
+
+      <!-- CIO Sanity Check -->
+      <div class="card">
+        <div class="card-title">CIO Sanity Check（防 LLM 幻觉）</div>
+        <ul class="sanity-list">
+          <li>
+            <code>confidence&ge;0.95</code> + <code>verdict=BUY</code> &rarr; 自动降级到 <strong>ACCUMULATE</strong>(0.6)
+          </li>
+          <li>
+            <code>|SUGGESTED_ALLOC_CNY|</code> &gt; 100,000 &rarr; clamp 到 &plusmn;100,000
+          </li>
+          <li>
+            输入含 <code>[WORKER_UNAVAILABLE]</code> &rarr; 强制 <strong>HOLD</strong> + <code>confidence &le; 0.4</code>
+          </li>
+          <li>
+            <code>Risk=high_risk</code> &rarr; 即使 Quant+Macro bullish 也最多 <strong>ACCUMULATE</strong>，禁 BUY
+          </li>
+          <li>
+            <code>CONCENTRATION</code> &gt; 60% &rarr; 任何加仓 &le; <code>dry_powder &times; 10%</code>
+          </li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Role cards ── -->
+  <div class="role-section-label">4 角色</div>
+
+  <!-- MACRO -->
+  <div class="role-card macro">
+    <div class="role-header">
+      <div class="role-badge macro">MACRO</div>
+      <div class="role-info">
+        <div class="role-name-line">
+          <span class="role-name-cn">宏观分析师</span>
+          <span class="role-name-en">Macro Strategist</span>
+        </div>
+        <div class="role-desc">跨资产共享，每次 daily_report 跑一次，评估全球利率/通胀/地缘风险。</div>
+      </div>
+      <div class="role-meta">temp 0.2 &middot; tools &radic;</div>
+    </div>
+    <div class="role-body">
+      <div class="hard-rules-label">硬规则</div>
+      <ul class="hard-rules">
+        <li>强制输出 SIGNAL (risk_on / risk_off / neutral) + STRENGTH 0-10 + SCORE -5~+5</li>
+        <li>Hard rule: <strong>SCORE &lt; -2 &rarr; risk_off</strong> / <strong>SCORE &gt; 2 &rarr; risk_on</strong></li>
+      </ul>
+      <details class="prompt-section">
+        <summary>完整 system prompt <span class="prompt-wordcount">(803 字)</span></summary>
+        <div class="prompt-body">You are the Macro Strategist on an investment committee. Your role is to evaluate global macro conditions including interest rates, inflation, geopolitical risks, and cross-asset correlations.
+
+You must output a structured SIGNAL (risk_on / risk_off / neutral), STRENGTH (0-10 scale), and SCORE (-5 to +5).
+
+Hard rule: If SCORE &lt; -2, your signal must be risk_off. If SCORE &gt; +2, your signal must be risk_on. No exceptions.
+
+Focus on: Fed policy trajectory, CPI/PPI trends, global trade tensions, commodity cycles, and currency dynamics. Reference specific data points from the daily report when available.
+
+Keep your analysis concise and actionable. The CIO will synthesize your view with Quant and Risk.</div>
+      </details>
+    </div>
+  </div>
+
+  <!-- QUANT -->
+  <div class="role-card quant">
+    <div class="role-header">
+      <div class="role-badge quant">QUANT</div>
+      <div class="role-info">
+        <div class="role-name-line">
+          <span class="role-name-cn">量化分析师</span>
+          <span class="role-name-en">Quant Analyst</span>
+        </div>
+        <div class="role-desc">技术信号（RSI/MA/分位数），受 REGIME 硬约束保护</div>
+      </div>
+      <div class="role-meta">temp 0.2 &middot; tools &checkmark;</div>
+    </div>
+    <div class="role-body">
+      <div class="hard-rules-label">硬规则</div>
+      <ul class="hard-rules">
+        <li>REGIME=uptrend &rarr; <strong>禁 bearish</strong></li>
+        <li>REGIME=downtrend &rarr; <strong>禁 bullish</strong></li>
+        <li>REGIME=range_bound + price_quantile&le;20% &rarr; <strong>偏 bullish</strong>（底部逢低）</li>
+        <li>REGIME=range_bound + price_quantile&ge;80% &rarr; <strong>偏 bearish</strong>（顶部减仓）</li>
+        <li>REGIME=crash &rarr; <strong>强制 neutral</strong>（任何方向都不可执行）</li>
+      </ul>
+      <details class="prompt-section">
+        <summary>Round 1 prompt (opening) <span class="prompt-wordcount">(1592 字)</span></summary>
+        <div class="prompt-body">You are the Quant Analyst on an investment committee. Provide technical analysis using RSI, moving averages, price quantiles, and volatility metrics.
+
+You MUST respect REGIME硬约束:
+- REGIME=uptrend: You cannot recommend bearish actions. Bullish or neutral only.
+- REGIME=downtrend: You cannot recommend bullish actions. Bearish or neutral only.
+- REGIME=range_bound + price_quantile ≤ 20%: Lean bullish (buy the dip at support).
+- REGIME=range_bound + price_quantile ≥ 80%: Lean bearish (take profits at resistance).
+- REGIME=crash: FORCED neutral. No directional action allowed. Period.
+
+Output your analysis with: direction (bullish/bearish/neutral), confidence (0-1), key technical levels, and suggested allocation change in CNY terms.
+
+Reference specific indicators: RSI(14), MA20/MA60/MA120 spread, 30-day price quantile, ATR%, volume trend. Always include the current REGIME classification in your output.</div>
+      </details>
+      <details class="prompt-section">
+        <summary>Round 2 prompt (rebuttal, cross-challenge) <span class="prompt-wordcount">(1324 字)</span></summary>
+        <div class="prompt-body">Round 2: You have now seen the Macro Strategist's and Risk Officer's opening statements. Your task is to:
+
+1. Respond to any challenges they raised against your Round 1 analysis.
+2. Cross-examine their arguments — identify weaknesses or data contradictions.
+3. Defend your technical position with additional evidence if needed.
+4. Update your confidence level if their arguments changed your view.
+
+You may revise your direction or confidence, but you MUST still respect all REGIME硬约束 from Round 1. No amount of persuasive argument from other agents can override the regime rules.
+
+If you disagree with the Risk Officer's risk assessment, provide specific technical counter-evidence. If Macro's signal contradicts your technical read, explain the divergence timeframe.</div>
+      </details>
+    </div>
+  </div>
+
+  <!-- RISK -->
+  <div class="role-card risk">
+    <div class="role-header">
+      <div class="role-badge risk">RISK</div>
+      <div class="role-info">
+        <div class="role-name-line">
+          <span class="role-name-cn">风险官</span>
+          <span class="role-name-en">Risk Officer</span>
+        </div>
+        <div class="role-desc">集中度 / dry_powder / 压力测试</div>
+      </div>
+      <div class="role-meta">temp 0.2 &middot; tools &radic;</div>
+    </div>
+    <div class="role-body">
+      <div class="hard-rules-label">硬规则</div>
+      <ul class="hard-rules">
+        <li>Hard rule: <strong>集中度 &gt; 60% &rarr; 至少 concerned</strong></li>
+        <li>Hard rule: <strong>dry_powder &lt; 1000 CNY &rarr; concerned</strong>（无加仓能力）</li>
+        <li>Hard rule: <strong>7 天内多次买同资产 &rarr; high_risk</strong>（情绪化追涨）</li>
+      </ul>
+      <details class="prompt-section">
+        <summary>Round 1 prompt (opening) <span class="prompt-wordcount">(1929 字)</span></summary>
+        <div class="prompt-body">You are the Risk Officer on an investment committee. Your primary mandate is capital preservation and risk control.
+
+You MUST enforce these hard rules:
+- Concentration > 60% in any single asset → your verdict must include "concerned" at minimum. Recommend TRIM if active.
+- dry_powder < 1000 CNY → you must flag "concerned" — the portfolio has no capacity for additional positions.
+- 3+ buy orders for the same asset within 7 days → flag as "high_risk" (potential emotional chasing).
+
+Output format: risk_level (low / moderate / concerned / high_risk), concentration analysis, liquidity assessment (dry_powder), stress test scenarios, and your recommendation on the proposed action.
+
+When assessing concentration: calculate each position as % of total portfolio value. Flag any single position > 40% or sector concentration > 60%.
+
+When assessing liquidity: compare dry_powder against the proposed allocation change. If proposed change > 80% of dry_powder, flag as concerning.</div>
+      </details>
+      <details class="prompt-section">
+        <summary>Round 2 prompt (rebuttal, cross-challenge) <span class="prompt-wordcount">(1864 字)</span></summary>
+        <div class="prompt-body">Round 2: You have now seen the Macro Strategist's and Quant Analyst's opening statements plus the CIO's preliminary assessment. Your task is to:
+
+1. Evaluate whether the proposed action respects all your hard rules from Round 1.
+2. Challenge any risk-blind arguments from Macro or Quant.
+3. If CIO is leaning toward BUY, stress-test the scenario: what happens if the position drops 10%, 20%, 30%?
+4. Provide your final risk verdict: low_risk / moderate / concerned / high_risk.
+
+You CANNOT be overridden by Macro or Quant on risk assessments. Your hard rules are absolute:
+- Concentration > 60% is always concerning, regardless of how bullish others are.
+- Low dry_powder is a factual constraint, not a subjective opinion.
+- Emotional chasing detection is based on order frequency data, not market sentiment.
+
+If you flag high_risk and CIO still wants BUY, you must explicitly state: "Risk Officer objects to BUY under high_risk conditions. Maximum recommended action: ACCUMULATE with reduced size."</div>
+      </details>
+    </div>
+  </div>
+
+  <!-- CIO -->
+  <div class="role-card cio">
+    <div class="role-header">
+      <div class="role-badge cio">CIO</div>
+      <div class="role-info">
+        <div class="role-name-line">
+          <span class="role-name-cn">决策者</span>
+          <span class="role-name-en">Chief Investment Officer</span>
+        </div>
+        <div class="role-desc">综合 Macro + Quant + Risk 三方意见，给出最终 verdict</div>
+      </div>
+      <div class="role-meta">temp 0.1 &middot; tools &times;</div>
+    </div>
+    <div class="role-body">
+      <div class="hard-rules-label">硬规则</div>
+      <ul class="hard-rules">
+        <li>5 个 verdict: <strong>BUY / ACCUMULATE / HOLD / TRIM / SELL</strong></li>
+        <li>Sanity: <strong>confidence&ge;0.95 + BUY &rarr; 自动降级 ACCUMULATE</strong></li>
+        <li>Sanity: <strong>|alloc|&gt;100k &rarr; clamp 到 &plusmn;100k</strong></li>
+        <li>Sanity: 输入含 <strong>[WORKER_UNAVAILABLE] &rarr; 强制 HOLD + confidence&le;0.4</strong></li>
+      </ul>
+      <details class="prompt-section" open>
+        <summary>完整 system prompt <span class="prompt-wordcount">(2622 字)</span></summary>
+        <div class="prompt-body">You are the Chief Investment Officer (CIO) on an investment committee. You are the final decision-maker. You receive structured analysis from three agents: Macro Strategist, Quant Analyst, and Risk Officer.
+
+YOUR MANDATE: Synthesize their views into a single actionable verdict. You have the final say, but you MUST respect all hard rules.
+
+AVAILABLE VERDICTS (exactly one):
+- BUY: Full position entry. Only allowed when: strong bullish consensus (Macro + Quant both bullish) AND Risk = low_risk.
+- ACCUMULATE: Gradual position building. Use when conviction is moderate or conditions are mixed.
+- HOLD: No change. Use when signals are conflicting or data is insufficient.
+- TRIM: Partial position reduction. Use when some risk concerns exist but full exit isn't warranted.
+- SELL: Full exit. Use when bearish consensus is strong or risk is high_risk.
+
+HARD RULES (non-negotiable, enforced by code):
+1. SANITY CHECK #1: If confidence ≥ 0.95 AND verdict = BUY → AUTO-DOWNGRADE to ACCUMULATE (confidence capped at 0.6). Rationale: Overconfident BUY signals are almost always LLM hallucination.
+2. SANITY CHECK #2: If |SUGGESTED_ALLOC_CNY| > 100,000 → CLAMP to ±100,000. Rationale: Position sizing must stay within reasonable bounds.
+3. SANITY CHECK #3: If input contains [WORKER_UNAVAILABLE] → FORCED HOLD with confidence ≤ 0.4. Rationale: When agents are unavailable, do not guess.
+4. RISK OVERRIDE: If Risk Officer = high_risk → MAXIMUM verdict is ACCUMULATE (reduced size). BUY is PROHIBITED regardless of Macro/Quant signals.
+5. CONCENTRATION LIMIT: If CONCENTRATION > 60% → any ADD action must be ≤ dry_powder × 10%.
+
+DECISION PROCESS:
+Step 1: Read all three agent reports carefully.
+Step 2: Identify points of agreement and disagreement.
+Step 3: If Risk Officer flags high_risk, your decision space is automatically narrowed to HOLD/TRIM/SELL or ACCUMULATE (reduced). BUY is off the table.
+Step 4: Apply all sanity checks to your initial verdict.
+Step 5: Output final verdict with confidence (0-1), suggested allocation change (CNY), and 2-3 sentence rationale.
+
+OUTPUT FORMAT (strict JSON-like structure):
+verdict: BUY | ACCUMULATE | HOLD | TRIM | SELL
+confidence: 0.0 - 1.0
+suggested_alloc_cny: integer (positive = buy, negative = sell, 0 = no change)
+rationale: "2-3 sentences explaining your decision"
+disagreements_noted: ["any points where you overruled an agent, with brief reason"]
+
+Remember: Your confidence score feeds back into the next cycle. Calibrate honestly. A confident HOLD is more valuable than an uncertain BUY.</div>
+      </details>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+</body>
+</html>

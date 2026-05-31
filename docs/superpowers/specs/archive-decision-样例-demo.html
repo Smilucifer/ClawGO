@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>决议归档详情页 — 样例 Demo</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --bg-card: #16213e;
+    --bg-panel: #0f3460;
+    --text: #e0e0e0;
+    --text-muted: #8899aa;
+    --accent: #e94560;
+    --accent-green: #22c55e;
+    --accent-blue: #3b82f6;
+    --accent-purple: #a855f7;
+    --accent-orange: #f97316;
+    --accent-yellow: #fbbf24;
+    --border: #2a2a4a;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+
+  /* Top bar */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-card);
+  }
+  .topbar-title {
+    font-size: 15px;
+    color: var(--text-muted);
+  }
+  .topbar-title strong { color: var(--text); font-size: 17px; }
+  .topbar-actions { display: flex; gap: 10px; }
+  .topbar-actions button {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .topbar-actions button:hover { color: var(--text); border-color: var(--accent); }
+
+  /* Main layout */
+  .main {
+    display: flex;
+    gap: 0;
+    height: calc(100vh - 53px);
+  }
+
+  /* Left panel */
+  .left-panel {
+    width: 40%;
+    min-width: 380px;
+    padding: 28px 24px;
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+  }
+
+  /* Right panel */
+  .right-panel {
+    width: 60%;
+    padding: 28px 32px;
+    overflow-y: auto;
+  }
+
+  /* Symbol header */
+  .symbol-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .symbol-code {
+    font-size: 13px;
+    color: var(--text-muted);
+    background: var(--bg-panel);
+    padding: 3px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+  }
+  .symbol-name {
+    font-size: 20px;
+    font-weight: 700;
+  }
+
+  /* Verdict badge */
+  .verdict-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    border-radius: 8px;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+  .verdict-badge.buy {
+    background: rgba(34, 197, 94, 0.15);
+    color: var(--accent-green);
+    border: 2px solid var(--accent-green);
+  }
+  .verdict-badge.sell {
+    background: rgba(233, 69, 96, 0.15);
+    color: var(--accent);
+    border: 2px solid var(--accent);
+  }
+  .confidence {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+  .confidence strong { color: var(--accent-green); }
+
+  /* Timestamp */
+  .timestamp {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 12px 0 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Metrics grid */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .metric-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .metric-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+  .metric-value {
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .metric-value.green { color: var(--accent-green); }
+  .metric-value.yellow { color: var(--accent-yellow); }
+  .metric-value.blue { color: var(--accent-blue); }
+
+  /* Collapsible sections */
+  details.plan-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+  details.plan-section summary {
+    padding: 14px 18px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    user-select: none;
+    transition: background 0.15s;
+  }
+  details.plan-section summary:hover {
+    background: rgba(255,255,255,0.03);
+  }
+  details.plan-section summary::-webkit-details-marker { display: none; }
+  details.plan-section summary::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid var(--text-muted);
+    border-bottom: 2px solid var(--text-muted);
+    transform: rotate(45deg);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+  }
+  details.plan-section[open] summary::before {
+    transform: rotate(-135deg);
+  }
+  .plan-tag {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+  }
+  .plan-tag.execution {
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--accent-blue);
+  }
+  .plan-tag.risk {
+    background: rgba(249, 115, 22, 0.15);
+    color: var(--accent-orange);
+  }
+  .summary-right {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .plan-body {
+    padding: 0 18px 16px 36px;
+  }
+  .plan-body ul {
+    list-style: none;
+    padding: 0;
+  }
+  .plan-body li {
+    padding: 6px 0;
+    font-size: 13px;
+    color: var(--text);
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .plan-body li::before {
+    content: '>';
+    color: var(--accent-blue);
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .plan-body p {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  /* Right panel styles */
+  .panel-title {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .round-badge {
+    font-size: 11px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 2px 10px;
+    border-radius: 12px;
+  }
+  .panel-subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 22px;
+  }
+
+  /* Role cards */
+  .role-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 12px;
+    border-left: 4px solid transparent;
+    transition: border-color 0.15s;
+  }
+  .role-card.purple { border-left-color: var(--accent-purple); }
+  .role-card.blue { border-left-color: var(--accent-blue); }
+  .role-card.orange { border-left-color: var(--accent-orange); }
+  .role-card.green { border-left-color: var(--accent-green); }
+
+  .role-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .role-name {
+    font-weight: 700;
+    font-size: 14px;
+  }
+  .role-name.purple { color: var(--accent-purple); }
+  .role-name.blue { color: var(--accent-blue); }
+  .role-name.orange { color: var(--accent-orange); }
+  .role-name.green { color: var(--accent-green); }
+  .role-round {
+    font-size: 11px;
+    color: var(--text-muted);
+    background: rgba(255,255,255,0.05);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .role-brief {
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.65;
+    margin-bottom: 10px;
+  }
+  .role-expand {
+    font-size: 12px;
+    color: var(--accent-blue);
+    cursor: pointer;
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .role-expand:hover { color: var(--accent-purple); }
+
+  /* Final verdict box */
+  .final-verdict {
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.08), rgba(59, 130, 246, 0.08));
+    border: 2px solid var(--accent-green);
+    border-radius: 12px;
+    padding: 22px 24px;
+    margin-top: 22px;
+    text-align: center;
+  }
+  .final-verdict-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+  .final-verdict-text {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent-green);
+    margin-bottom: 8px;
+  }
+  .final-verdict-reason {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a3a5a; }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .main { flex-direction: column; }
+    .left-panel, .right-panel { width: 100%; min-width: unset; border-right: none; }
+    .left-panel { border-bottom: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div class="topbar">
+  <div class="topbar-title">
+    <strong>决议归档</strong> &nbsp;/&nbsp; openInvest LLM Committee &nbsp;/&nbsp; Detail View
+  </div>
+  <div class="topbar-actions">
+    <button>导出 JSON</button>
+    <button>重新执行</button>
+  </div>
+</div>
+
+<!-- Main dual-panel layout -->
+<div class="main">
+
+  <!-- LEFT PANEL: Verdict Summary -->
+  <div class="left-panel">
+
+    <!-- Symbol header -->
+    <div class="symbol-header">
+      <div>
+        <div class="symbol-code">600519.SH</div>
+      </div>
+      <div class="symbol-name">贵州茅台</div>
+    </div>
+
+    <!-- Verdict badge -->
+    <div class="verdict-badge buy">BUY</div>
+    <div class="confidence">置信度: <strong>87%</strong></div>
+
+    <!-- Timestamp -->
+    <div class="timestamp">
+      归档时间: 2026-05-30 14:32:08 &nbsp;|&nbsp; Pipeline: Dreaming-3 Stage &nbsp;|&nbsp; Job: #247
+    </div>
+
+    <!-- Key metrics grid -->
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-label">目标价</div>
+        <div class="metric-value green">¥1,980</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">止损价</div>
+        <div class="metric-value" style="color: var(--accent);">¥1,650</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">预期收益</div>
+        <div class="metric-value green">+18.2%</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">风险等级</div>
+        <div class="metric-value yellow">中</div>
+      </div>
+    </div>
+
+    <!-- EXECUTION_PLAN (expanded) -->
+    <details class="plan-section" open>
+      <summary>
+        <span class="plan-tag execution">EXECUTION_PLAN</span>
+        执行计划
+        <span class="summary-right">3 步</span>
+      </summary>
+      <div class="plan-body">
+        <ul>
+          <li>分批买入: 30% 仓位 @ ¥1,680</li>
+          <li>分批买入: 30% 仓位 @ ¥1,650</li>
+          <li>分批买入: 40% 仓位 @ ¥1,620</li>
+          <li>时间窗口: 5 个交易日</li>
+        </ul>
+      </div>
+    </details>
+
+    <!-- RISK_PLAN (collapsed) -->
+    <details class="plan-section">
+      <summary>
+        <span class="plan-tag risk">RISK_PLAN</span>
+        风险控制方案
+        <span class="summary-right">展开查看</span>
+      </summary>
+      <div class="plan-body">
+        <ul>
+          <li>止损触发条件: 股价跌破 ¥1,580 立即清仓</li>
+          <li>动态止盈: 股价达 ¥1,900 后回撤 5% 减半仓</li>
+          <li>对冲策略: 买入 10% 看跌期权保护</li>
+          <li>最大持仓: 不超过总资金 15%</li>
+          <li>监控频率: 每日盘后评估，异动实时响应</li>
+        </ul>
+      </div>
+    </details>
+
+  </div>
+
+  <!-- RIGHT PANEL: Debate Transcript -->
+  <div class="right-panel">
+
+    <div class="panel-title">
+      委员会辩论记录
+      <span class="round-badge">4 轮辩论</span>
+    </div>
+    <div class="panel-subtitle">LLM Committee — 4 位角色参与，最终形成一致意见</div>
+
+    <!-- Role 1: 宏观分析师 -->
+    <div class="role-card purple">
+      <div class="role-header">
+        <span class="role-name purple">宏观分析师</span>
+        <span class="role-round">Round 1</span>
+      </div>
+      <div class="role-brief">
+        当前市场处于震荡上行周期，消费板块估值修复空间充足。贵州茅台作为白酒龙头，受益于消费升级趋势，且近期政策面释放积极信号。宏观流动性维持宽松，北向资金连续 5 日净流入消费板块。
+      </div>
+      <a class="role-expand" href="javascript:void(0)">展开完整分析</a>
+    </div>
+
+    <!-- Role 2: 量化分析师 -->
+    <div class="role-card blue">
+      <div class="role-header">
+        <span class="role-name blue">量化分析师</span>
+        <span class="role-round">Round 2</span>
+      </div>
+      <div class="role-brief">
+        技术面显示突破关键阻力位 ¥1,680，MACD 金叉确认，RSI 58 处于健康区间。成交量放大 23%，资金流向指标净流入 4.2 亿。波动率处于近 30 日低位，适合建仓。目标价 ¥1,980 对应 61.8% 斐波那契回撤位。
+      </div>
+      <a class="role-expand" href="javascript:void(0)">展开完整分析</a>
+    </div>
+
+    <!-- Role 3: 风险控制官 -->
+    <div class="role-card orange">
+      <div class="role-header">
+        <span class="role-name orange">风险控制官</span>
+        <span class="role-round">Round 3</span>
+      </div>
+      <div class="role-brief">
+        主要风险：(1) 白酒政策不确定性，近期消费税改革预期升温 (2) 消费降级压力，社零增速放缓 (3) 外资流出风险，美联储议息会议前资金避险。建议仓位不超过 15%，设置硬止损 ¥1,580。
+      </div>
+      <a class="role-expand" href="javascript:void(0)">展开完整分析</a>
+    </div>
+
+    <!-- Role 4: 首席投资官 -->
+    <div class="role-card green">
+      <div class="role-header">
+        <span class="role-name green">首席投资官</span>
+        <span class="role-round">Round 4</span>
+      </div>
+      <div class="role-brief">
+        综合评估：BUY。宏观环境支持，技术面确认，风险可控。建议分批建仓，首批 30% 仓位 @ ¥1,680，逐步加仓至目标配置。风险控制官的仓位建议合理，采用 30/30/40 分批策略可有效降低择时风险。
+      </div>
+      <a class="role-expand" href="javascript:void(0)">展开完整分析</a>
+    </div>
+
+    <!-- Final Verdict Box -->
+    <div class="final-verdict">
+      <div class="final-verdict-label">CIO 最终裁决</div>
+      <div class="final-verdict-text">BUY &mdash; 置信度 87%</div>
+      <div class="final-verdict-reason">基于宏观+量化+风险三维分析，一致看好</div>
+    </div>
+
+  </div>
+
+</div>
+
+</body>
+</html>

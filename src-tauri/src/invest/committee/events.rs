@@ -7,16 +7,16 @@ use serde::Serialize;
 // ---------------------------------------------------------------------------
 
 /// Pipeline step index for a role (used by frontend PipelineFlow).
-/// Maps each role to its position in the 7-node pipeline.
+/// Maps each role+round to its position in the 6-node pipeline:
+///   Macro(0) -> Quant/R1(1) -> Risk/R1(2) -> Quant/R2(3) -> Risk/R2(4) -> CIO(5)
 pub fn step_index_for_role(role: CommitteeRole, round: u8) -> usize {
-    match role {
-        CommitteeRole::Macro => 0,
-        CommitteeRole::QuantR1 => 1,
-        CommitteeRole::RiskR1 => 2,
-        CommitteeRole::Wealth => 3,
-        CommitteeRole::QuantR2 => 4,
-        CommitteeRole::RiskR2 => 5,
-        CommitteeRole::Cio => 6,
+    match (role, round) {
+        (CommitteeRole::Macro, _) => 0,
+        (CommitteeRole::Quant, 1) => 1,
+        (CommitteeRole::Risk, 1) => 2,
+        (CommitteeRole::Quant, _) => 3,  // R2+
+        (CommitteeRole::Risk, _) => 4,   // R2+
+        (CommitteeRole::Cio, _) => 5,
     }
 }
 

@@ -462,9 +462,9 @@
     { path: "/invest", label: () => t("nav_invest"), icon: "trendingUp" },
     { path: "/memory", label: () => t("nav_memory"), icon: "book" },
     { path: "/usage", label: () => t("nav_usage"), icon: "chart" },
-    { path: "/settings", label: () => t("nav_settings"), icon: "settings" },
     { path: "/memory-mgmt", label: () => t("nav_memoryMgmt"), icon: "database" },
     { path: "/history", label: () => t("nav_history"), icon: "clock" },
+    { path: "/settings", label: () => t("nav_settings"), icon: "settings" },
   ];
 
   function navMatches(path: string): boolean {

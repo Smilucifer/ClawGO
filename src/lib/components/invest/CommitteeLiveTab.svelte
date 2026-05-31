@@ -1,12 +1,17 @@
 <script lang="ts">
   import { t } from '$lib/i18n/index.svelte';
   import { investCommitteeStore } from '$lib/stores/invest-committee-store.svelte';
+  import { investStore } from '$lib/stores/invest-store.svelte';
   import PipelineFlow from '$lib/components/invest/PipelineFlow.svelte';
   import DebateBlock from '$lib/components/invest/DebateBlock.svelte';
   import ProviderConfigPanel from '$lib/components/invest/ProviderConfigPanel.svelte';
 
+  // Must match PipelineFlow.NODES length (macro, quant_r1, risk_r1, quant_r2, risk_r2, cio)
+  const PIPELINE_STEPS = 6;
+
   let symbolsInput = $state('');
   let selectedSymbol = $state<string | null>(null);
+  let includeWatch = $state(false);
 
   const store = investCommitteeStore;
 
@@ -29,6 +34,16 @@
       .split(/[\s,]+/)
       .map((s) => s.trim())
       .filter(Boolean);
+    if (syms.length === 0) return;
+    selectedSymbol = syms[0];
+    await store.runCommittee(syms);
+  }
+
+  async function runAllHoldings() {
+    const syms = investStore.holdHoldings.map((h) => h.symbol);
+    if (includeWatch) {
+      syms.push(...investStore.watchHoldings.map((h) => h.symbol));
+    }
     if (syms.length === 0) return;
     selectedSymbol = syms[0];
     await store.runCommittee(syms);
@@ -69,6 +84,72 @@
     </button>
   </div>
 
+  <!-- Run all holdings -->
+  <div class="flex items-center gap-3">
+    <button
+      class="rounded bg-muted px-3 py-1.5 text-sm disabled:opacity-50"
+      disabled={store.running || (investStore.holdHoldings.length === 0 && (!includeWatch || investStore.watchHoldings.length === 0))}
+      onclick={runAllHoldings}
+    >
+      {t('invest_run_all_holdings')}
+    </button>
+    <label class="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <input type="checkbox" bind:checked={includeWatch} disabled={store.running} />
+      {t('invest_include_watch')}
+    </label>
+  </div>
+
+  <!-- Multi-symbol overview table -->
+  {#if store.activeSymbols.length > 1}
+    <div class="rounded-lg border border-border overflow-hidden">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b bg-muted/30 text-xs text-muted-foreground">
+            <th class="px-3 py-2 text-left">{t('invest_overview_symbol')}</th>
+            <th class="px-3 py-2 text-left">{t('invest_overview_status')}</th>
+            <th class="px-3 py-2 text-left">{t('invest_overview_progress')}</th>
+            <th class="px-3 py-2 text-left">{t('invest_overview_verdict')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each store.activeSymbols as sym}
+            {@const p = store.perSymbolProgress.get(sym)}
+            <tr
+              class="border-b border-border/50 cursor-pointer hover:bg-muted/20 {selectedSymbol === sym ? 'bg-muted/10' : ''}"
+              onclick={() => (selectedSymbol = sym)}
+            >
+              <td class="px-3 py-2 font-mono text-xs">{sym}</td>
+              <td class="px-3 py-2">
+                {#if p?.done && !p.error}
+                  <span class="text-green-500 text-xs">{t('invest_overview_done')}</span>
+                {:else if p?.error}
+                  <span class="text-red-500 text-xs">{t('invest_overview_error')}</span>
+                {:else if p && p.activeStep >= 0}
+                  <span class="text-yellow-500 text-xs">{t('invest_overview_running')}</span>
+                {:else}
+                  <span class="text-muted-foreground text-xs">{t('invest_overview_pending')}</span>
+                {/if}
+              </td>
+              <td class="px-3 py-2 text-xs text-muted-foreground">
+                {p?.completedSteps ?? 0} / {PIPELINE_STEPS}
+              </td>
+              <td class="px-3 py-2">
+                {#if p?.result}
+                  <span class="font-bold text-xs">{p.result.finalVerdict}</span>
+                  <span class="ml-1 text-xs text-muted-foreground">
+                    {(p.result.finalConfidence * 100).toFixed(0)}%
+                  </span>
+                {:else}
+                  <span class="text-xs text-muted-foreground">-</span>
+                {/if}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {/if}
+
   <!-- Multi-symbol tab selector -->
   {#if store.activeSymbols.length > 1}
     <div class="flex gap-1 border-b border-border">
@@ -82,7 +163,7 @@
           onclick={() => (selectedSymbol = sym)}
         >
           <span>{sym}</span>
-          {#if p?.done}
+          {#if p?.done && !p.error}
             <span class="inline-block h-2 w-2 rounded-full bg-green-500"></span>
           {:else if p?.error}
             <span class="inline-block h-2 w-2 rounded-full bg-red-500"></span>
@@ -179,7 +260,7 @@
         <div class="mt-4 space-y-2">
           {#if result.reasoning}
             <div class="rounded-lg border border-border p-3">
-              <div class="mb-1 text-xs font-medium text-muted-foreground">CIO 推理</div>
+              <div class="mb-1 text-xs font-medium text-muted-foreground">{t('invest_cio_reasoning')}</div>
               <div class="max-h-32 overflow-y-auto whitespace-pre-wrap text-sm">{result.reasoning}</div>
             </div>
           {/if}

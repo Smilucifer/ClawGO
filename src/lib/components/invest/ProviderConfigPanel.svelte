@@ -62,10 +62,18 @@
     }, 500);
   }
 
+  let configLoadAttempted = $state(false);
+
   $effect(() => {
-    if (!investCommitteeStore.llmConfig && !investCommitteeStore.configLoading) {
-      investCommitteeStore.loadConfig();
+    let mounted = true;
+    if (!investCommitteeStore.llmConfig && !investCommitteeStore.configLoading && !configLoadAttempted) {
+      configLoadAttempted = true;
+      investCommitteeStore.loadConfig().then(() => {
+        // Reset on success so a future refresh can retry
+        if (mounted && investCommitteeStore.llmConfig) configLoadAttempted = false;
+      });
     }
+    return () => { mounted = false; };
   });
 </script>
 

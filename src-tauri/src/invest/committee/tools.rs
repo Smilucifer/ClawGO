@@ -1,90 +1,138 @@
+use crate::invest::committee::roles::CommitteeRole;
 use crate::invest::llm::types::{Message, ToolDef};
+use crate::invest::macro_refresh;
+use crate::storage::invest::macro_cache;
 use crate::tushare::client::TushareClient;
 use serde_json::json;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (OpenAI-compatible JSON Schema)
+// Individual tool definitions (OpenAI-compatible JSON Schema)
+// ---------------------------------------------------------------------------
+
+pub fn get_history_data_def() -> ToolDef {
+    ToolDef {
+        name: "get_history_data".to_string(),
+        description: "获取指定股票的历史行情数据（日线）".to_string(),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "symbol": {
+                    "type": "string",
+                    "description": "股票代码，如 600519.SH"
+                },
+                "days": {
+                    "type": "integer",
+                    "description": "获取最近N个交易日的数据，默认60"
+                }
+            },
+            "required": ["symbol"]
+        }),
+    }
+}
+
+pub fn analyze_multi_timeframe_def() -> ToolDef {
+    ToolDef {
+        name: "analyze_multi_timeframe".to_string(),
+        description: "对股票进行多时间框架技术分析（5日/20日/60日）".to_string(),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "symbol": {
+                    "type": "string",
+                    "description": "股票代码"
+                }
+            },
+            "required": ["symbol"]
+        }),
+    }
+}
+
+pub fn get_macro_snapshot_def() -> ToolDef {
+    ToolDef {
+        name: "get_macro_snapshot".to_string(),
+        description: "获取A股宏观指标快照：沪深300波动率、北向资金、融资余额、涨跌停广度".to_string(),
+        parameters: json!({
+            "type": "object",
+            "properties": {}
+        }),
+    }
+}
+
+pub fn query_dreaming_insights_def() -> ToolDef {
+    ToolDef {
+        name: "query_dreaming_insights".to_string(),
+        description: "查询投资洞察和历史裁决".to_string(),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "查询关键词"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "返回条数，默认10"
+                }
+            },
+            "required": ["query"]
+        }),
+    }
+}
+
+pub fn get_recent_committee_verdicts_def() -> ToolDef {
+    ToolDef {
+        name: "get_recent_committee_verdicts".to_string(),
+        description: "获取近期委员会裁决记录".to_string(),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "symbol": {
+                    "type": "string",
+                    "description": "股票代码（可选）"
+                },
+                "days": {
+                    "type": "integer",
+                    "description": "最近N天，默认7"
+                }
+            }
+        }),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Composite tool-def sets
 // ---------------------------------------------------------------------------
 
 /// All 5 whitelisted tools for the Macro role.
 pub fn macro_tool_defs() -> Vec<ToolDef> {
     vec![
-        ToolDef {
-            name: "get_history_data".to_string(),
-            description: "获取指定股票的历史行情数据（日线）".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "symbol": {
-                        "type": "string",
-                        "description": "股票代码，如 600519.SH"
-                    },
-                    "days": {
-                        "type": "integer",
-                        "description": "获取最近N个交易日的数据，默认60"
-                    }
-                },
-                "required": ["symbol"]
-            }),
-        },
-        ToolDef {
-            name: "analyze_multi_timeframe".to_string(),
-            description: "对股票进行多时间框架技术分析（5日/20日/60日）".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "symbol": {
-                        "type": "string",
-                        "description": "股票代码"
-                    }
-                },
-                "required": ["symbol"]
-            }),
-        },
-        ToolDef {
-            name: "get_macro_snapshot".to_string(),
-            description: "获取A股宏观指标快照：沪深300波动率、北向资金、融资余额、涨跌停广度".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {}
-            }),
-        },
-        ToolDef {
-            name: "query_dreaming_insights".to_string(),
-            description: "查询投资洞察和历史裁决".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "查询关键词"
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "返回条数，默认10"
-                    }
-                },
-                "required": ["query"]
-            }),
-        },
-        ToolDef {
-            name: "get_recent_committee_verdicts".to_string(),
-            description: "获取近期委员会裁决记录".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "symbol": {
-                        "type": "string",
-                        "description": "股票代码（可选）"
-                    },
-                    "days": {
-                        "type": "integer",
-                        "description": "最近N天，默认7"
-                    }
-                }
-            }),
-        },
+        get_history_data_def(),
+        analyze_multi_timeframe_def(),
+        get_macro_snapshot_def(),
+        query_dreaming_insights_def(),
+        get_recent_committee_verdicts_def(),
     ]
+}
+
+/// Role-based tool definitions. Returns `None` for rounds beyond R1 (no tools
+/// in rebuttal rounds) or for roles that never use tools (CIO).
+pub fn role_tool_defs(role: CommitteeRole, round: u8) -> Option<Vec<ToolDef>> {
+    if round > 1 {
+        return None; // R2+ has no tools
+    }
+    match role {
+        CommitteeRole::Macro => Some(macro_tool_defs()),
+        CommitteeRole::Quant => Some(vec![
+            get_history_data_def(),
+            analyze_multi_timeframe_def(),
+            get_recent_committee_verdicts_def(),
+        ]),
+        CommitteeRole::Risk => Some(vec![
+            query_dreaming_insights_def(),
+            get_recent_committee_verdicts_def(),
+        ]),
+        CommitteeRole::Cio => None,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +176,27 @@ pub async fn execute_tool(
 // Tool implementations
 // ---------------------------------------------------------------------------
 
+/// Check if a symbol looks like an A-share code: exactly 6 digits followed by .SH or .SZ.
+fn is_a_share_symbol(symbol: &str) -> bool {
+    if symbol.len() != 9 {
+        return false;
+    }
+    let bytes = symbol.as_bytes();
+    bytes[0..6].iter().all(|b| b.is_ascii_digit()) && bytes[6] == b'.' && (bytes[7] == b'S' && (bytes[8] == b'H' || bytes[8] == b'Z'))
+}
+
 async fn exec_history_data(symbol: &str, days: usize) -> Result<String, String> {
+    if is_a_share_symbol(symbol) {
+        // A-share: use Tushare
+        exec_history_data_tushare(symbol, days).await
+    } else {
+        // International / Yahoo symbol: use Yahoo Finance
+        exec_history_data_yahoo(symbol, days).await
+    }
+}
+
+/// Tushare-backed history for A-share symbols (e.g. 600519.SH).
+async fn exec_history_data_tushare(symbol: &str, days: usize) -> Result<String, String> {
     let token = read_tushare_token()?;
     let client = TushareClient::new(token);
 
@@ -183,13 +251,68 @@ async fn exec_history_data(symbol: &str, days: usize) -> Result<String, String> 
     ))
 }
 
+/// Yahoo Finance-backed history for international symbols (e.g. ^VIX, GC=F).
+async fn exec_history_data_yahoo(symbol: &str, days: usize) -> Result<String, String> {
+    use crate::invest::international::InternationalClient;
+
+    let client = InternationalClient::new();
+    let bars = client
+        .fetch_yahoo_history(symbol, days as u32)
+        .await
+        .map_err(|e| format!("Yahoo history fetch failed for {symbol}: {e}"))?;
+
+    if bars.is_empty() {
+        return Ok(format!("没有找到 {} 的历史数据", symbol));
+    }
+
+    // bars are in chronological order (oldest first)
+    let latest = bars.last().unwrap();
+    let oldest = &bars[0];
+    let pct_change = if oldest.close > 0.0 {
+        (latest.close - oldest.close) / oldest.close * 100.0
+    } else {
+        0.0
+    };
+
+    let period_high = bars.iter().map(|b| b.high).fold(f64::NEG_INFINITY, f64::max);
+    let period_low = bars.iter().map(|b| b.low).fold(f64::INFINITY, f64::min);
+
+    let recent_5: String = bars
+        .iter()
+        .rev()
+        .take(5)
+        .map(|b| format!("{}:{:.2}", if b.date.len() > 5 { &b.date[5..] } else { &b.date }, b.close))
+        .collect::<Vec<_>>()
+        .join(" → ");
+
+    let display_name = crate::invest::international::resolve_symbol_name(symbol);
+
+    Ok(format!(
+        "【{} ({}) 历史行情（最近{}日）】\n\
+         最新收盘: {:.4} ({})\n\
+         区间涨跌: {:.2}%\n\
+         最高: {:.4} / 最低: {:.4}\n\
+         近5日K线: {}",
+        display_name,
+        symbol,
+        bars.len(),
+        latest.close,
+        latest.date,
+        pct_change,
+        period_high,
+        period_low,
+        recent_5
+    ))
+}
+
 async fn exec_multi_timeframe(symbol: &str) -> Result<String, String> {
     let token = read_tushare_token()?;
     let client = TushareClient::new(token);
 
+    // Request ~2 years of data for MA120 and percentile calculations
     let end_date = chrono::Local::now().format("%Y%m%d").to_string();
     let start_date =
-        (chrono::Local::now() - chrono::Duration::days(180)).format("%Y%m%d").to_string();
+        (chrono::Local::now() - chrono::Duration::days(750)).format("%Y%m%d").to_string();
 
     let mut bars = client.daily(symbol, &start_date, &end_date).await?;
     // daily() returns ascending (oldest first); reverse to descending (newest first)
@@ -209,84 +332,211 @@ async fn exec_multi_timeframe(symbol: &str) -> Result<String, String> {
     } else {
         bars.iter().map(|b| b.close).sum::<f64>() / bars.len() as f64
     };
+    let ma120 = if bars.len() >= 120 {
+        Some(bars.iter().take(120).map(|b| b.close).sum::<f64>() / 120.0)
+    } else {
+        None
+    };
 
     let latest_close = bars[0].close;
 
     // 20-day historical volatility (annualized)
-    let returns: Vec<f64> = bars
-        .windows(2)
-        .take(20)
-        .map(|w| {
-            if w[1].close > 0.0 {
-                (w[0].close - w[1].close) / w[1].close
-            } else {
-                0.0
-            }
-        })
-        .collect();
-    let mean_ret = returns.iter().sum::<f64>() / returns.len().max(1) as f64;
-    let variance =
-        returns.iter().map(|r| (r - mean_ret).powi(2)).sum::<f64>() / returns.len().max(1) as f64;
-    let hv20 = variance.sqrt() * 252.0_f64.sqrt() * 100.0;
+    let hv20_text = if bars.len() < 20 {
+        format!("N/A (仅{}日数据)", bars.len())
+    } else {
+        let returns: Vec<f64> = bars
+            .windows(2)
+            .take(20)
+            .map(|w| {
+                if w[1].close > 0.0 {
+                    (w[0].close - w[1].close) / w[1].close
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        let mean_ret = returns.iter().sum::<f64>() / returns.len().max(1) as f64;
+        let variance = returns.iter().map(|r| (r - mean_ret).powi(2)).sum::<f64>()
+            / returns.len().max(1) as f64;
+        let hv20 = variance.sqrt() * 252.0_f64.sqrt() * 100.0;
+        format!("{:.1}%", hv20)
+    };
+
+    // RSI(14) — Wilder smoothing
+    let rsi14 = compute_rsi14(&bars);
+
+    // Price percentile over available data (up to 2-year window)
+    let window = bars.len().min(500);
+    let all_closes: Vec<f64> = bars.iter().take(window).map(|b| b.close).collect();
+    let price_percentile = compute_percentile(latest_close, &all_closes);
 
     let vs_ma20 = if latest_close > ma20 { "上方（偏多）" } else { "下方（偏空）" };
 
-    let trend = if latest_close > ma5 && ma5 > ma20 && ma20 > ma60 {
-        "多头排列"
-    } else if latest_close < ma5 && ma5 < ma20 && ma20 < ma60 {
-        "空头排列"
+    let trend = if ma120.is_some() && bars.len() >= 120 {
+        let m120 = ma120.unwrap();
+        if latest_close > ma5 && ma5 > ma20 && ma20 > ma60 && ma60 > m120 {
+            "强势多头排列"
+        } else if latest_close > ma5 && ma5 > ma20 && ma20 > ma60 {
+            "多头排列"
+        } else if latest_close < ma5 && ma5 < ma20 && ma20 < ma60 && ma60 < m120 {
+            "强势空头排列"
+        } else if latest_close < ma5 && ma5 < ma20 && ma20 < ma60 {
+            "空头排列"
+        } else {
+            "震荡整理"
+        }
     } else {
-        "震荡整理"
+        if latest_close > ma5 && ma5 > ma20 && ma20 > ma60 {
+            "多头排列"
+        } else if latest_close < ma5 && ma5 < ma20 && ma20 < ma60 {
+            "空头排列"
+        } else {
+            "震荡整理"
+        }
     };
 
-    Ok(format!(
+    let mut output = format!(
         "【{} 多时间框架分析】\n\
-         MA5: {:.2} | MA20: {:.2} | MA60: {:.2}\n\
-         价格 vs MA20: {}\n\
-         HV20(年化): {:.1}%\n\
-         趋势判断: {}",
-        symbol, ma5, ma20, ma60, vs_ma20, hv20, trend
-    ))
+         MA5: {:.2} | MA20: {:.2} | MA60: {:.2}",
+        symbol, ma5, ma20, ma60
+    );
+
+    if let Some(m120) = ma120 {
+        output.push_str(&format!(" | MA120: {:.2}", m120));
+    }
+
+    output.push_str(&format!(
+        "\n价格 vs MA20: {}\
+         \nHV20(年化): {}\
+         \nRSI(14): {:.1}\
+         \n价格分位({}日): {:.0}%\
+         \n趋势判断: {}",
+        vs_ma20, hv20_text, rsi14, window, price_percentile, trend
+    ));
+
+    Ok(output)
+}
+
+/// Compute RSI(14) using Wilder's smoothing method.
+fn compute_rsi14(bars: &[crate::tushare::client::DailyBar]) -> f64 {
+    if bars.len() < 15 {
+        return 50.0; // insufficient data
+    }
+
+    // bars are newest-first; reverse for chronological calculation
+    let closes: Vec<f64> = bars.iter().rev().map(|b| b.close).collect();
+
+    let mut avg_gain = 0.0_f64;
+    let mut avg_loss = 0.0_f64;
+
+    // Initial 14-period averages
+    for i in 1..=14 {
+        let change = closes[i] - closes[i - 1];
+        if change > 0.0 {
+            avg_gain += change;
+        } else {
+            avg_loss -= change; // make positive
+        }
+    }
+    avg_gain /= 14.0;
+    avg_loss /= 14.0;
+
+    // Wilder smoothing for remaining periods
+    for i in 15..closes.len() {
+        let change = closes[i] - closes[i - 1];
+        let gain = if change > 0.0 { change } else { 0.0 };
+        let loss = if change < 0.0 { -change } else { 0.0 };
+        avg_gain = (avg_gain * 13.0 + gain) / 14.0;
+        avg_loss = (avg_loss * 13.0 + loss) / 14.0;
+    }
+
+    if avg_loss < f64::EPSILON {
+        100.0
+    } else {
+        let rs = avg_gain / avg_loss;
+        100.0 - 100.0 / (1.0 + rs)
+    }
+}
+
+/// Compute the percentile rank of `value` within the sorted data window.
+/// Returns 0.0–100.0.
+fn compute_percentile(value: f64, data: &[f64]) -> f64 {
+    if data.is_empty() {
+        return 50.0;
+    }
+    let mut sorted = data.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let rank = sorted.iter().position(|&v| v >= value).unwrap_or(sorted.len());
+    rank as f64 / sorted.len() as f64 * 100.0
 }
 
 async fn exec_macro_snapshot() -> Result<String, String> {
-    let token = read_tushare_token()?;
-    let client = TushareClient::new(token);
+    // Try reading from macro_cache first
+    let entries = macro_cache::load_all_macro_cache().unwrap_or_default();
 
-    let end_date = chrono::Local::now().format("%Y%m%d").to_string();
-    let start_date =
-        (chrono::Local::now() - chrono::Duration::days(90)).format("%Y%m%d").to_string();
+    // Check if cache is fresh (all entries within 30 minutes)
+    let cache_fresh = !entries.is_empty()
+        && entries.iter().all(|e| !macro_cache::is_stale(e, 30));
 
-    let mut idx_bars = client
-        .daily("000300.SH", &start_date, &end_date)
-        .await
-        .unwrap_or_default();
-    // daily() returns ascending (oldest first); reverse to descending (newest first)
-    idx_bars.reverse();
+    if !cache_fresh {
+        // Fallback: refresh via macro_refresh
+        log::info!("exec_macro_snapshot: cache stale or empty, refreshing...");
+        let token = read_tushare_token()?;
+        let client = TushareClient::new(token);
+        if let Err(e) = macro_refresh::refresh_macro_cache(&client).await {
+            log::warn!("exec_macro_snapshot: refresh failed: {e}, using stale cache");
+        }
+        // Re-read after refresh
+        let entries = macro_cache::load_all_macro_cache().unwrap_or_default();
+        return format_macro_entries(&entries);
+    }
 
-    let csi300_latest = idx_bars.first().map(|b| b.close).unwrap_or(0.0);
-    let csi300_pct = idx_bars.first().map(|b| b.pct_chg).unwrap_or(0.0);
+    format_macro_entries(&entries)
+}
 
-    // 60-day percentile rank (most recent 60 bars)
-    let csi300_60d: Vec<f64> = idx_bars.iter().take(60).map(|b| b.close).collect();
-    let csi300_pctile = if !csi300_60d.is_empty() {
-        let mut sorted = csi300_60d.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let rank = sorted.iter().position(|&v| v >= csi300_latest).unwrap_or(0);
-        rank as f64 / sorted.len() as f64 * 100.0
-    } else {
-        50.0
-    };
+fn format_macro_entries(entries: &[macro_cache::MacroCacheEntry]) -> Result<String, String> {
+    if entries.is_empty() {
+        return Ok("宏观指标缓存为空，请稍后重试".to_string());
+    }
 
-    Ok(format!(
-        "【A股宏观指标快照】\n\
-         沪深300: {:.2} (今日 {:.2}%)\n\
-         沪深300 60日分位: {:.0}%\n\
-         北向资金: 需通过 moneyflow_hsgt 接口获取\n\
-         融资余额: 需通过 margin 接口获取\n\
-         涨跌停广度: 需通过 limit_list_d 接口获取",
-        csi300_latest, csi300_pct, csi300_pctile
-    ))
+    let mut lines = vec!["【A股宏观指标快照】".to_string()];
+
+    for indicator in macro_cache::ALL_INDICATORS {
+        if let Some(entry) = entries.iter().find(|e| e.indicator == *indicator) {
+            let value_str = match entry.value {
+                Some(v) => format!("{:.2}", v),
+                None => "N/A".to_string(),
+            };
+            let label = match *indicator {
+                "csi300_close" => "沪深300",
+                "csi300_vol20" => "沪深300 20日波动率",
+                "northbound_net" => "北向资金净流入(亿)",
+                "margin_balance" => "融资余额(元)",
+                "shibor_on" => "SHIBOR隔夜(%)",
+                "cgb_10y" => "中国10Y国债收益率(%)",
+                "vix" => "VIX恐慌指数",
+                "tnx" => "美10Y国债收益率(%)",
+                "dxy" => "美元指数",
+                "gold" => "国际金价(USD)",
+                "oil" => "国际油价(USD)",
+                "usdcny" => "USD/CNY汇率",
+                _ => indicator,
+            };
+            let stale_marker = if macro_cache::is_stale(entry, 30) {
+                " [stale]"
+            } else {
+                ""
+            };
+            lines.push(format!("  {}: {}{}", label, value_str, stale_marker));
+        }
+    }
+
+    // Show data freshness
+    if let Some(oldest) = entries.iter().min_by_key(|e| &e.fetched_at) {
+        lines.push(format!("  数据更新时间: {}", oldest.fetched_at));
+    }
+
+    Ok(lines.join("\n"))
 }
 
 fn exec_dreaming_insights(query: &str, limit: usize) -> Result<String, String> {
@@ -407,6 +657,41 @@ mod tests {
         assert!(names.contains(&"get_macro_snapshot"));
         assert!(names.contains(&"query_dreaming_insights"));
         assert!(names.contains(&"get_recent_committee_verdicts"));
+    }
+
+    #[test]
+    fn test_role_tool_defs_macro_r1() {
+        let defs = role_tool_defs(CommitteeRole::Macro, 1).unwrap();
+        assert_eq!(defs.len(), 5);
+    }
+
+    #[test]
+    fn test_role_tool_defs_macro_r2_none() {
+        assert!(role_tool_defs(CommitteeRole::Macro, 2).is_none());
+    }
+
+    #[test]
+    fn test_role_tool_defs_quant_r1() {
+        let defs = role_tool_defs(CommitteeRole::Quant, 1).unwrap();
+        assert_eq!(defs.len(), 3);
+        let names: Vec<&str> = defs.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"get_history_data"));
+        assert!(names.contains(&"analyze_multi_timeframe"));
+        assert!(names.contains(&"get_recent_committee_verdicts"));
+    }
+
+    #[test]
+    fn test_role_tool_defs_risk_r1() {
+        let defs = role_tool_defs(CommitteeRole::Risk, 1).unwrap();
+        assert_eq!(defs.len(), 2);
+        let names: Vec<&str> = defs.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"query_dreaming_insights"));
+        assert!(names.contains(&"get_recent_committee_verdicts"));
+    }
+
+    #[test]
+    fn test_role_tool_defs_cio_none() {
+        assert!(role_tool_defs(CommitteeRole::Cio, 1).is_none());
     }
 
     #[test]
