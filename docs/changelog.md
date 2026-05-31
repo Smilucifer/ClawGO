@@ -2,6 +2,38 @@
 
 ## Phase 10+ (2026-05-31)
 
+### v5.0.1 — 代码审查修复: 数据完整性 + UI 正确性 + 死代码清理
+
+**9 路审查, 15 项修复 (2026-05-31):**
+
+**P0 — 数据完整性 (5 项):**
+1. **asset_type 列迁移**: 现有数据库 `ALTER TABLE holdings ADD COLUMN asset_type` 兼容，使用 `pragma_table_info` 幂等检查
+2. **notional 数据保护**: `recalculate_holdings_inner` 删除前查询现有 notional 值，重建时保留原值
+3. **事务包装**: DELETE+INSERT 循环使用 `BEGIN`/`COMMIT`/`ROLLBACK`，防止中途失败导致数据丢失
+4. **dry_run 前端透传**: `runCommittee()` 新增 `dryRun` 参数，simulate 模式不再归档真实判决
+5. **Pipeline 索引对齐**: 前端 `STEP_DEFS.backendIdx` 匹配后端 7 步流程 (macro=0, regime=1, quant_r1=2, ...)
+
+**P1 — UI 正确性 (5 项):**
+6. **$derived 修复**: `roleStats`/`nameMap` 改用 `$derived.by()` 替代 `$derived(() => expr)`
+7. **R1 Prompt 路径**: `get_role_prompts` 读取 `quant_r1.txt` 替代 `quant.txt`
+8. **deleteTrade 刷新**: 删除交易后调用 `loadAll()` 同步持仓/现金状态
+9. **regime_step 成功检查**: 失败时设置 `error` 状态，不再递增 `completedSteps`
+10. **TradeDialog 验证**: edit 模式不再跳过数量/价格校验
+
+**P2 — 死代码/回归 (5 项):**
+11. **archive_decision 死代码移除**: 移除旧函数，保留 `committees::archive_verdict` 唯一路径
+12. **events.jsonl 日覆盖**: 与 DB 归档策略一致，过滤同日同 symbol 旧条目
+13. **多日期回放**: ReplayTab 恢复日期选择器，支持浏览历史判决
+14. **手动审查按钮**: AccuracyTab 恢复 "Run Review" 按钮
+15. **verdict ID 查询**: 替换 `list_verdicts(limit=1)` 为 `get_verdict_by_id()` 直接查询
+
+**审查方法:**
+- 9 路独立 finder (A-I 角度) 并行扫描
+- 15 项候选 1-vote 验证 (14 CONFIRMED, 1 REFUTED)
+- Phase 3 gap sweep 补充 2 项
+
+---
+
 ### v5.0.0 — openInvest Phase 5: 委员会 LLM 工具 + Prompt 全面升级
 
 **架构变更（9 Phase, 15 项审查修复）:**
