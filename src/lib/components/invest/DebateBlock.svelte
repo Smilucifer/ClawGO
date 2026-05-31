@@ -73,9 +73,9 @@
     <!-- Structured fields -->
     {#if round.parsed.signal}
       <div class="mt-1 text-xs text-muted-foreground">
-        Signal: {round.parsed.signal}
+        {t('invest_signal_label')}: {round.parsed.signal}
         {#if round.parsed.strength != null}
-          (strength: {round.parsed.strength.toFixed(1)})
+          ({t('invest_strength_label')}: {round.parsed.strength.toFixed(1)})
         {/if}
       </div>
     {/if}

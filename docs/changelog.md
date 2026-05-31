@@ -2,6 +2,34 @@
 
 ## Phase 10+ (2026-05-31)
 
+### v5.0.3 — 委员会中文化 + REGIME 展示 + Parser 双语 + Profile 双注入
+
+**5 项功能改进 + 6 项代码审查修复 (2026-05-31):**
+
+**功能改进 (5 项):**
+1. **Gate notes + 归档报告中文化**: Gate 1-4 notes 从英文改为中文（信号一致性/集中度/子弹充足/仓位合理），归档报告全文中文化
+2. **REGIME 实时展示**: RegimeStep 事件扩展（regime/reason/strategy_hint/metrics），前端 REGIME 卡片展示市场状态、原因、策略建议和量化指标（RSI-14/MA20/MA60/波动率/价格分位数）
+3. **Parser 双语支持**: extract_field_any/extract_f64_any/extract_bool_any/extract_list_field_any 支持中英文字段名同时解析，CIO 裁决识别买入/加仓/持有/减仓/卖出
+4. **Prompt 字段名中文化**: 6 个 prompt 模板（MACRO/QUANT/QUANT_R2/RISK/RISK_R2/CIO）输出格式指令从英文改为中文
+5. **Profile 双注入 + Risk 数值预计算**: 用户档案同时注入 Risk R1 和 CIO，Risk R1 预计算 CONCENTRATION_PCT/PNL_PCT/DRY_POWDER_CNY
+
+**代码审查修复 (6 项):**
+1. **PortfolioData 消除重复 DB 查询**: 新增 PortfolioData 结构体，build_portfolio_summary 和 build_risk_metrics_context 共享同一份数据
+2. **Profile 注入合并**: CIO 和 Risk R1 的 profile 注入从两个 if 块合并为单个条件
+3. **REGIME 发射扁平化**: 成功/失败分支的重复 emit 调用合并为先计算再统一发射
+4. **预计算指标键对齐**: build_risk_metrics_context 输出从英文键改为中文键（集中度/盈亏比/可用子弹）
+5. **REGIME 卡片条件标准化**: LiveTab 和 ReplayTab 的条件顺序统一
+6. **CIO to_uppercase 注释**: 添加说明大写转换仅对英文有效
+
+**涉及文件:**
+- 后端: `roles.rs` / `parser.rs` / `orchestrator.rs` / `events.rs` / `analysis.rs` / `archive.rs`
+- 前端: `invest-committee-store.svelte.ts` / `CommitteeLiveTab.svelte` / `CommitteeReplayTab.svelte` / `DebateBlock.svelte`
+- i18n: `messages/zh-CN.json` / `messages/en.json`
+
+---
+
+## Phase 10+ (2026-05-31)
+
 ### v5.0.2 — 代码审查修复: 数据完整性 + 正确性 + 死代码清理
 
 **14 项代码审查修复 (2026-05-31):**

@@ -1,5 +1,6 @@
 use super::orchestrator::{CommitteeResult, RoundOutputSummary};
 use super::roles::CommitteeRole;
+use crate::invest::regime::RegimeMetrics;
 use serde::Serialize;
 
 // ---------------------------------------------------------------------------
@@ -65,6 +66,10 @@ pub enum CommitteeEvent {
         success: bool,
         context_preview: String,
         step_index: usize,
+        regime: Option<String>,
+        reason: Option<String>,
+        strategy_hint: Option<String>,
+        metrics: Option<RegimeMetrics>,
     },
     /// A tool was called during a role's LLM turn.
     #[serde(rename_all = "camelCase")]

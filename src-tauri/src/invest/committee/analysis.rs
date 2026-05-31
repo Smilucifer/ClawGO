@@ -156,7 +156,7 @@ pub fn cio_sanity_check(
         result.final_verdict = "HOLD".to_string();
         result
             .notes
-            .push("Gate 1: macro signal inconsistency with CIO verdict".to_string());
+            .push("G1: 宏观信号与CIO裁决不一致，降级为HOLD".to_string());
     }
 
     // Gate 2 -- Concentration > 40%
@@ -172,7 +172,7 @@ pub fn cio_sanity_check(
         if !matches!(result.final_verdict.as_str(), "TRIM" | "SELL") {
             result.final_verdict = "TRIM".to_string();
             result.notes.push(format!(
-                "Gate 2: concentration {:.1}% > 40%, forced to TRIM",
+                "G2: 集中度 {:.1}% > 40%，强制减仓",
                 concentration
             ));
         }
@@ -192,13 +192,13 @@ pub fn cio_sanity_check(
             result.final_verdict = "HOLD".to_string();
             result.final_confidence = result.final_confidence.min(0.4);
             result.notes.push(format!(
-                "Gate 3: dry powder {:.0} < emergency buffer {:.0}, downgraded to HOLD",
+                "G3: 可用子弹 {:.0} < 应急储备 {:.0}，降级为HOLD",
                 dp, emergency_buffer_cny
             ));
         }
     } else {
         // Data unavailable — note it but don't suppress the verdict
-        result.notes.push("Gate 3: dry powder data unavailable, gate skipped".to_string());
+        result.notes.push("G3: 子弹数据不可用，跳过检查".to_string());
     }
 
     // Gate 4 -- Position-aware confidence adjustment
@@ -215,8 +215,7 @@ pub fn cio_sanity_check(
         result.gate4_pass = false;
         result.final_confidence = result.final_confidence.min(0.3);
         result.notes.push(
-            "Gate 4a: zero position + HOLD, confidence capped at 0.3 (cash opportunity cost)"
-                .to_string(),
+            "G4a: 零仓位+HOLD，置信度上限0.3（现金机会成本）".to_string(),
         );
     }
     // 4b: CONCENTRATION_PCT < 20% and verdict = HOLD → low-conviction penalty
@@ -225,7 +224,7 @@ pub fn cio_sanity_check(
         result.gate4_pass = false;
         result.final_confidence = result.final_confidence.min(0.4);
         result.notes.push(format!(
-            "Gate 4b: concentration {:.1}% < 20% with HOLD, confidence capped at 0.4",
+            "G4b: 集中度 {:.1}% < 20% 且HOLD，置信度上限0.4",
             concentration_g4
         ));
     }
@@ -239,7 +238,7 @@ pub fn cio_sanity_check(
         result.final_confidence = result.final_confidence.min(0.4);
         result
             .notes
-            .push("Worker unavailable, degraded to HOLD".to_string());
+            .push("工作节点不可用，降级为HOLD".to_string());
     }
 
     result

@@ -363,6 +363,28 @@
                     {/if}
                   </div>
                 {/if}
+              {:else if step.key === 'regime' && state === 'done' && p?.regimeData}
+                <!-- REGIME step with computed metrics -->
+                <div class="space-y-2 text-xs">
+                  <div class="flex flex-wrap gap-x-4 gap-y-1">
+                    <span class="text-slate-400">
+                      {t('invest_regime_label')}: <span class="font-medium text-cyan-400">{p.regimeData.regime}</span>
+                    </span>
+                    <span class="text-slate-400">
+                      {t('invest_regime_reason')}: <span class="text-slate-300">{p.regimeData.reason}</span>
+                    </span>
+                  </div>
+                  <div class="text-slate-400">
+                    {t('invest_regime_hint')}: <span class="text-slate-300">{p.regimeData.strategyHint}</span>
+                  </div>
+                  <div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                    <span>RSI-14: {p.regimeData.metrics.rsi14.toFixed(1)}</span>
+                    <span>MA20: {p.regimeData.metrics.ma20.toFixed(2)}</span>
+                    <span>MA60: {p.regimeData.metrics.ma60.toFixed(2)}</span>
+                    <span>Vol: {(p.regimeData.metrics.volatilityAnn * 100).toFixed(1)}%</span>
+                    <span>{t('invest_regime_inputs')}: {(p.regimeData.metrics.priceQuantile2y * 100).toFixed(0)}%</span>
+                  </div>
+                </div>
               {:else if step.key === 'regime' && state === 'done'}
                 <div class="text-xs text-slate-500">
                   {t('invest_committee_regime_computed')}
@@ -401,17 +423,17 @@
 
               <!-- Sanity check gates -->
               <div class="mb-2 flex gap-3 text-[11px] text-slate-500">
-                <span class:opacity-40={!result.sanityCheck.gate1Pass}>
-                  G1 {result.sanityCheck.gate1Pass ? '✓' : '✗'}
+                <span class:opacity-40={!result.sanityCheck.gate1Pass} title={t('invest_gate1_desc')}>
+                  {t('invest_gate1_label')} {result.sanityCheck.gate1Pass ? '✓' : '✗'}
                 </span>
-                <span class:opacity-40={!result.sanityCheck.gate2Pass}>
-                  G2 {result.sanityCheck.gate2Pass ? '✓' : '✗'}
+                <span class:opacity-40={!result.sanityCheck.gate2Pass} title={t('invest_gate2_desc')}>
+                  {t('invest_gate2_label')} {result.sanityCheck.gate2Pass ? '✓' : '✗'}
                 </span>
-                <span class:opacity-40={!result.sanityCheck.gate3Pass}>
-                  G3 {result.sanityCheck.gate3Pass ? '✓' : '✗'}
+                <span class:opacity-40={!result.sanityCheck.gate3Pass} title={t('invest_gate3_desc')}>
+                  {t('invest_gate3_label')} {result.sanityCheck.gate3Pass ? '✓' : '✗'}
                 </span>
-                <span class:opacity-40={!result.sanityCheck.gate4Pass}>
-                  G4 {result.sanityCheck.gate4Pass ? '✓' : '✗'}
+                <span class:opacity-40={!result.sanityCheck.gate4Pass} title={t('invest_gate4_desc')}>
+                  {t('invest_gate4_label')} {result.sanityCheck.gate4Pass ? '✓' : '✗'}
                 </span>
                 <span class="ml-auto">
                   {result.totalTokens} tok / {(result.totalLatencyMs / 1000).toFixed(1)}s

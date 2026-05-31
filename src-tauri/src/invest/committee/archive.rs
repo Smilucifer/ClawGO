@@ -154,39 +154,39 @@ pub fn format_decision_markdown(
     let mut md = String::new();
 
     // ── Title ────────────────────────────────────────────────────────────
-    md.push_str(&format!("# {} Committee Decision Report\n\n", symbol));
-    md.push_str(&format!("**Date:** {}\n\n", now));
+    md.push_str(&format!("# {} 委员会决策报告\n\n", symbol));
+    md.push_str(&format!("**日期:** {}\n\n", now));
 
     // ── Final Verdict & Confidence ───────────────────────────────────────
-    md.push_str("## Final Verdict\n\n");
-    md.push_str(&format!("| Field | Value |\n"));
-    md.push_str(&format!("|-------|-------|\n"));
-    md.push_str(&format!("| Verdict | **{}** |\n", result.final_verdict));
-    md.push_str(&format!("| Confidence | **{:.1}%** |\n", result.final_confidence * 100.0));
-    md.push_str(&format!("| Macro Signal | {} |\n", result.macro_signal));
+    md.push_str("## 最终裁决\n\n");
+    md.push_str(&format!("| 字段 | 值 |\n"));
+    md.push_str(&format!("|------|----|\n"));
+    md.push_str(&format!("| 裁决 | **{}** |\n", result.final_verdict));
+    md.push_str(&format!("| 置信度 | **{:.1}%** |\n", result.final_confidence * 100.0));
+    md.push_str(&format!("| 宏观信号 | {} |\n", result.macro_signal));
     if let Some(strength) = result.macro_strength {
-        md.push_str(&format!("| Macro Strength | {:.0}/10 |\n", strength));
+        md.push_str(&format!("| 宏观强度 | {:.0}/10 |\n", strength));
     }
     md.push('\n');
 
     // ── Sanity Check Gates ───────────────────────────────────────────────
-    md.push_str("## Sanity Check (3 Gates)\n\n");
-    md.push_str(&format!("| Gate | Status |\n"));
-    md.push_str(&format!("|------|--------|\n"));
+    md.push_str("## 合理性检查\n\n");
+    md.push_str(&format!("| 检查项 | 状态 |\n"));
+    md.push_str(&format!("|--------|------|\n"));
     md.push_str(&format!(
-        "| Gate 1 (Signal Consistency) | {} |\n",
+        "| G1 信号一致性 | {} |\n",
         gate_label(result.sanity_check.gate1_pass)
     ));
     md.push_str(&format!(
-        "| Gate 2 (Concentration) | {} |\n",
+        "| G2 集中度 | {} |\n",
         gate_label(result.sanity_check.gate2_pass)
     ));
     md.push_str(&format!(
-        "| Gate 3 (Dry Powder) | {} |\n",
+        "| G3 子弹充足 | {} |\n",
         gate_label(result.sanity_check.gate3_pass)
     ));
     if !result.sanity_check.notes.is_empty() {
-        md.push_str("\n**Notes:**\n");
+        md.push_str("\n**备注:**\n");
         for note in &result.sanity_check.notes {
             md.push_str(&format!("- {}\n", note));
         }
@@ -195,28 +195,28 @@ pub fn format_decision_markdown(
 
     // ── Sentinel Override ────────────────────────────────────────────────
     if let Some(ref sentinel) = result.sentinel_override {
-        md.push_str("## Sentinel Override\n\n");
-        md.push_str(&format!("| Field | Value |\n"));
-        md.push_str(&format!("|-------|-------|\n"));
-        md.push_str(&format!("| Forced Verdict | **{}** |\n", sentinel.forced_verdict));
-        md.push_str(&format!("| Forced Confidence | {:.1}% |\n", sentinel.forced_confidence * 100.0));
-        md.push_str(&format!("| Reason | {} |\n", sentinel.reason));
+        md.push_str("## 哨兵覆盖\n\n");
+        md.push_str(&format!("| 字段 | 值 |\n"));
+        md.push_str(&format!("|------|----|\n"));
+        md.push_str(&format!("| 强制裁决 | **{}** |\n", sentinel.forced_verdict));
+        md.push_str(&format!("| 强制置信度 | {:.1}% |\n", sentinel.forced_confidence * 100.0));
+        md.push_str(&format!("| 原因 | {} |\n", sentinel.reason));
         md.push('\n');
     }
 
     // ── Convergence Status ───────────────────────────────────────────────
-    md.push_str("## Convergence\n\n");
+    md.push_str("## 收敛状态\n\n");
     if result.converged {
-        md.push_str("The committee **converged** on the final verdict.\n\n");
+        md.push_str("委员会已**收敛**于最终裁决。\n\n");
     } else {
-        md.push_str("The committee **did not converge**; the verdict reflects the CIO's final judgment.\n\n");
+        md.push_str("委员会**未收敛**；裁决反映CIO的最终判断。\n\n");
     }
 
     // ── Round Outputs ────────────────────────────────────────────────────
-    md.push_str("## Round Outputs\n\n");
+    md.push_str("## 各轮输出\n\n");
     for ro in &result.rounds {
-        md.push_str(&format!("### {} (Round {})\n\n", ro.label, ro.round));
-        md.push_str(&format!("**Role:** {} | **Tokens:** {} | **Latency:** {}ms\n\n",
+        md.push_str(&format!("### {} (第 {} 轮)\n\n", ro.label, ro.round));
+        md.push_str(&format!("**角色:** {} | **Token:** {} | **延迟:** {}ms\n\n",
             ro.role.label(), ro.tokens_used, ro.latency_ms));
         md.push_str("```\n");
         md.push_str(&ro.parsed.raw_text);
@@ -224,14 +224,14 @@ pub fn format_decision_markdown(
     }
 
     // ── CIO Reasoning ────────────────────────────────────────────────────
-    md.push_str("## CIO Reasoning\n\n");
+    md.push_str("## CIO 推理\n\n");
     md.push_str(&result.reasoning);
     md.push_str("\n\n");
 
     // ── Footer ───────────────────────────────────────────────────────────
     md.push_str("---\n\n");
     md.push_str(&format!(
-        "**Total Tokens:** {} | **Total Latency:** {}ms\n",
+        "**总Token:** {} | **总延迟:** {}ms\n",
         result.total_tokens, result.total_latency_ms
     ));
 
@@ -343,14 +343,14 @@ mod tests {
         let result = make_test_result();
         let md = format_decision_markdown("TEST", &result);
 
-        assert!(md.contains("# TEST Committee Decision Report"));
+        assert!(md.contains("# TEST 委员会决策报告"));
         assert!(md.contains("HOLD"));
         assert!(md.contains("75.0%"));
         assert!(md.contains("risk_on"));
         assert!(md.contains("PASS"));
         assert!(md.contains("FAIL")); // gate3
         assert!(md.contains("Gate 3 triggered"));
-        assert!(md.contains("converged"));
+        assert!(md.contains("收敛"));
         assert!(md.contains("宏观分析师 R1"));
         assert!(md.contains("Macro analysis text"));
         assert!(md.contains("CIO reasoning goes here."));

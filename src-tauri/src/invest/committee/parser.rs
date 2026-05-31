@@ -98,8 +98,29 @@ fn extract_field(text: &str, key: &str) -> Option<String> {
     None
 }
 
+/// Try extracting a field by multiple keys (e.g., English then Chinese).
+/// Returns the first match found.
+fn extract_field_any(text: &str, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(val) = extract_field(text, key) {
+            return Some(val);
+        }
+    }
+    None
+}
+
 fn extract_f64(text: &str, key: &str) -> Option<f64> {
     extract_field(text, key).and_then(|v| v.parse::<f64>().ok())
+}
+
+/// Try extracting an f64 field by multiple keys.
+fn extract_f64_any(text: &str, keys: &[&str]) -> Option<f64> {
+    for key in keys {
+        if let Some(val) = extract_f64(text, key) {
+            return Some(val);
+        }
+    }
+    None
 }
 
 /// Extract a boolean field ("true"/"false", case-insensitive).
@@ -111,30 +132,46 @@ fn extract_bool(text: &str, key: &str) -> Option<bool> {
     })
 }
 
+/// Try extracting a boolean field by multiple keys.
+fn extract_bool_any(text: &str, keys: &[&str]) -> Option<bool> {
+    for key in keys {
+        if let Some(val) = extract_bool(text, key) {
+            return Some(val);
+        }
+    }
+    None
+}
+
 /// Extract a list field: finds the key line, then collects subsequent ` - item` lines.
 /// Returns `None` if the key is not found (empty list is distinguishable from missing).
 /// Apply R2 ADJUSTED_SIGNAL/ADJUSTED_STRENGTH override to parsed fields.
 fn apply_r2_signal_override(parsed: &mut ParsedFields, text: &str) {
-    if let Some(adjusted) = extract_field(text, "ADJUSTED_SIGNAL") {
+    // English keys: ADJUSTED_SIGNAL / 调整信号
+    if let Some(adjusted) = extract_field_any(text, &["ADJUSTED_SIGNAL", "调整信号"]) {
         parsed.signal = Some(adjusted);
     }
-    if let Some(strength) = extract_f64(text, "ADJUSTED_STRENGTH") {
+    // English keys: ADJUSTED_STRENGTH / 调整强度
+    if let Some(strength) = extract_f64_any(text, &["ADJUSTED_STRENGTH", "调整强度"]) {
         parsed.strength = Some(strength);
     }
 }
 
-fn extract_list_field(text: &str, key: &str) -> Option<Vec<String>> {
+/// Extract a list field, trying multiple keys (bilingual support).
+fn extract_list_field_any(text: &str, keys: &[&str]) -> Option<Vec<String>> {
     let mut items = Vec::new();
     let mut found_key = false;
     for line in text.lines() {
         let trimmed = line.trim();
         if !found_key {
-            if trimmed.strip_prefix(&format!("{}:", key)).is_some()
-                || trimmed.strip_prefix(&format!("{}：", key)).is_some()
-            {
-                found_key = true;
-                // The key line may also have an inline value after the colon — skip it
-                // (e.g. "KEY_DATA: - item1" would not start with ` - `)
+            for key in keys {
+                if trimmed.strip_prefix(&format!("{}:", key)).is_some()
+                    || trimmed.strip_prefix(&format!("{}：", key)).is_some()
+                {
+                    found_key = true;
+                    break;
+                }
+            }
+            if found_key {
                 continue;
             }
         } else {
@@ -158,7 +195,8 @@ fn extract_list_field(text: &str, key: &str) -> Option<Vec<String>> {
 }
 
 fn parse_macro(text: &str, parsed: &mut ParsedFields) {
-    parsed.signal = extract_field(text, "SIGNAL").map(|s| {
+    // English: SIGNAL / 信号
+    parsed.signal = extract_field_any(text, &["SIGNAL", "信号"]).map(|s| {
         let s = s.to_lowercase();
         if s.contains("risk_on") || s.contains("risk on") {
             "risk_on".to_string()
@@ -168,64 +206,67 @@ fn parse_macro(text: &str, parsed: &mut ParsedFields) {
             "neutral".to_string()
         }
     });
-    parsed.strength = extract_f64(text, "STRENGTH");
+    // English: STRENGTH / 强度
+    parsed.strength = extract_f64_any(text, &["STRENGTH", "强度"]);
 }
 
 fn parse_quant(text: &str, parsed: &mut ParsedFields) {
     // R1 fields
-    parsed.regime = extract_field(text, "REGIME");
-    parsed.signal = extract_field(text, "SIGNAL");
-    parsed.strength = extract_f64(text, "STRENGTH");
-    parsed.key_data = extract_list_field(text, "KEY_DATA");
-    parsed.one_liner = extract_field(text, "ONE_LINER");
+    parsed.regime = extract_field_any(text, &["REGIME", "市场状态"]);
+    parsed.signal = extract_field_any(text, &["SIGNAL", "信号"]);
+    parsed.strength = extract_f64_any(text, &["STRENGTH", "强度"]);
+    parsed.key_data = extract_list_field_any(text, &["KEY_DATA", "关键数据"]);
+    parsed.one_liner = extract_field_any(text, &["ONE_LINER", "一句话"]);
     // R2 fields — R2 overrides R1 where applicable
     apply_r2_signal_override(parsed, text);
-    parsed.regime_protection_triggered = extract_bool(text, "REGIME_PROTECTION_TRIGGERED");
-    parsed.reasoning = extract_field(text, "REASONING");
+    parsed.regime_protection_triggered = extract_bool_any(text, &["REGIME_PROTECTION_TRIGGERED", "保护触发"]);
+    parsed.reasoning = extract_field_any(text, &["REASONING", "推理"]);
 }
 
 fn parse_risk(text: &str, parsed: &mut ParsedFields) {
     // R1 fields
-    parsed.signal = extract_field(text, "SIGNAL");
-    parsed.strength = extract_f64(text, "STRENGTH");
-    parsed.pnl_pct = extract_f64(text, "PNL_PCT");
-    parsed.worst_case_loss_pct = extract_f64(text, "WORST_CASE_LOSS_PCT_AT_-20");
-    parsed.one_liner = extract_field(text, "ONE_LINER");
-    parsed.concentration_pct = extract_f64(text, "CONCENTRATION_PCT");
-    parsed.dry_powder_cny = extract_f64(text, "DRY_POWDER_CNY");
+    parsed.signal = extract_field_any(text, &["SIGNAL", "信号"]);
+    parsed.strength = extract_f64_any(text, &["STRENGTH", "强度"]);
+    parsed.pnl_pct = extract_f64_any(text, &["PNL_PCT", "盈亏比"]);
+    parsed.worst_case_loss_pct = extract_f64_any(text, &["WORST_CASE_LOSS_PCT_AT_-20", "最大回撤"]);
+    parsed.one_liner = extract_field_any(text, &["ONE_LINER", "一句话"]);
+    parsed.concentration_pct = extract_f64_any(text, &["CONCENTRATION_PCT", "集中度"]);
+    parsed.dry_powder_cny = extract_f64_any(text, &["DRY_POWDER_CNY", "可用子弹"]);
     // R2 fields — R2 overrides R1 where applicable
     apply_r2_signal_override(parsed, text);
-    parsed.adjusted_stop_loss = extract_field(text, "ADJUSTED_STOP_LOSS");
-    parsed.reasoning = extract_field(text, "REASONING");
+    parsed.adjusted_stop_loss = extract_field_any(text, &["ADJUSTED_STOP_LOSS", "调整止损"]);
+    parsed.reasoning = extract_field_any(text, &["REASONING", "推理"]);
     // CONCENTRATION_PCT and DRY_POWDER_CNY may also appear in R2
 }
 
 fn parse_cio(text: &str, parsed: &mut ParsedFields) {
-    parsed.verdict = extract_field(text, "VERDICT").map(|v| {
+    // English: VERDICT / 裁决
+    parsed.verdict = extract_field_any(text, &["VERDICT", "裁决"]).map(|v| {
+        // Uppercase normalizes English variants; Chinese chars are unaffected by to_uppercase()
         let v = v.to_uppercase();
-        if v.contains("BUY") {
+        if v.contains("BUY") || v.contains("买入") {
             "BUY".to_string()
-        } else if v.contains("ACCUMULATE") {
+        } else if v.contains("ACCUMULATE") || v.contains("加仓") {
             "ACCUMULATE".to_string()
-        } else if v.contains("HOLD") {
+        } else if v.contains("HOLD") || v.contains("持有") {
             "HOLD".to_string()
-        } else if v.contains("TRIM") {
+        } else if v.contains("TRIM") || v.contains("减仓") {
             "TRIM".to_string()
-        } else if v.contains("SELL") {
+        } else if v.contains("SELL") || v.contains("卖出") {
             "SELL".to_string()
         } else {
             v
         }
     });
-    parsed.confidence = extract_f64(text, "CONFIDENCE");
-    parsed.concentration_pct = extract_f64(text, "CONCENTRATION_PCT");
-    parsed.dry_powder_cny = extract_f64(text, "DRY_POWDER_CNY");
-    parsed.dominant_view = extract_field(text, "DOMINANT_VIEW");
-    parsed.suggested_alloc_cny = extract_f64(text, "SUGGESTED_ALLOC_CNY");
-    parsed.reasoning = extract_field(text, "REASONING");
-    parsed.personal_note = extract_field(text, "PERSONAL_NOTE");
-    parsed.execution_plan = extract_field(text, "EXECUTION_PLAN");
-    parsed.risk_plan = extract_field(text, "RISK_PLAN");
+    parsed.confidence = extract_f64_any(text, &["CONFIDENCE", "置信度"]);
+    parsed.concentration_pct = extract_f64_any(text, &["CONCENTRATION_PCT", "集中度"]);
+    parsed.dry_powder_cny = extract_f64_any(text, &["DRY_POWDER_CNY", "可用子弹"]);
+    parsed.dominant_view = extract_field_any(text, &["DOMINANT_VIEW", "主流观点"]);
+    parsed.suggested_alloc_cny = extract_f64_any(text, &["SUGGESTED_ALLOC_CNY", "建议配置"]);
+    parsed.reasoning = extract_field_any(text, &["REASONING", "推理"]);
+    parsed.personal_note = extract_field_any(text, &["PERSONAL_NOTE", "个人备注"]);
+    parsed.execution_plan = extract_field_any(text, &["EXECUTION_PLAN", "执行计划"]);
+    parsed.risk_plan = extract_field_any(text, &["RISK_PLAN", "风控计划"]);
 }
 
 // ---------------------------------------------------------------------------
@@ -356,5 +397,113 @@ mod tests {
             super::super::roles::hard_truncate(&long, CommitteeRole::Quant, 1);
         assert!(was_truncated);
         assert!(result.chars().count() <= 250);
+    }
+
+    // ── Bilingual Chinese field name tests ──────────────────────────────
+
+    #[test]
+    fn test_parse_macro_chinese_fields() {
+        let text = "市场处于上升趋势\n信号: risk_on\n强度: 7";
+        let parsed = parse_role_output(CommitteeRole::Macro, text, false);
+        assert_eq!(parsed.signal.as_deref(), Some("risk_on"));
+        assert_eq!(parsed.strength, Some(7.0));
+    }
+
+    #[test]
+    fn test_parse_quant_r1_chinese_fields() {
+        let text = "市场状态: bull\n信号: risk_on\n强度: 8\n关键数据:\n - PE=13.5\n - 北向资金净流入120亿\n一句话: 技术面偏多";
+        let parsed = parse_role_output(CommitteeRole::Quant, text, false);
+        assert_eq!(parsed.regime.as_deref(), Some("bull"));
+        assert_eq!(parsed.signal.as_deref(), Some("risk_on"));
+        assert_eq!(parsed.strength, Some(8.0));
+        assert_eq!(
+            parsed.key_data.as_deref(),
+            Some(&["PE=13.5".to_string(), "北向资金净流入120亿".to_string()][..])
+        );
+        assert_eq!(parsed.one_liner.as_deref(), Some("技术面偏多"));
+    }
+
+    #[test]
+    fn test_parse_quant_r2_chinese_fields() {
+        let text = "调整信号: risk_off\n调整强度: 4\n保护触发: true\n推理: 回调信号增强";
+        let parsed = parse_role_output(CommitteeRole::Quant, text, false);
+        assert_eq!(parsed.signal.as_deref(), Some("risk_off"));
+        assert_eq!(parsed.strength, Some(4.0));
+        assert_eq!(parsed.regime_protection_triggered, Some(true));
+        assert_eq!(parsed.reasoning.as_deref(), Some("回调信号增强"));
+    }
+
+    #[test]
+    fn test_parse_risk_r1_chinese_fields() {
+        let text = "信号: risk_on\n强度: 6\n盈亏比: 3.5\n最大回撤: -12\n一句话: 风险可控\n集中度: 35\n可用子弹: 50000";
+        let parsed = parse_role_output(CommitteeRole::Risk, text, false);
+        assert_eq!(parsed.signal.as_deref(), Some("risk_on"));
+        assert_eq!(parsed.strength, Some(6.0));
+        assert_eq!(parsed.pnl_pct, Some(3.5));
+        assert_eq!(parsed.worst_case_loss_pct, Some(-12.0));
+        assert_eq!(parsed.one_liner.as_deref(), Some("风险可控"));
+        assert_eq!(parsed.concentration_pct, Some(35.0));
+        assert_eq!(parsed.dry_powder_cny, Some(50000.0));
+    }
+
+    #[test]
+    fn test_parse_risk_r2_chinese_fields() {
+        let text = "调整信号: risk_off\n调整止损: 0.92\n推理: 下行保护触发\n集中度: 30\n可用子弹: 60000";
+        let parsed = parse_role_output(CommitteeRole::Risk, text, false);
+        assert_eq!(parsed.signal.as_deref(), Some("risk_off"));
+        assert_eq!(parsed.adjusted_stop_loss.as_deref(), Some("0.92"));
+        assert_eq!(parsed.reasoning.as_deref(), Some("下行保护触发"));
+        assert_eq!(parsed.concentration_pct, Some(30.0));
+        assert_eq!(parsed.dry_powder_cny, Some(60000.0));
+    }
+
+    #[test]
+    fn test_parse_cio_chinese_fields() {
+        let text = "裁决: 持有\n置信度: 0.6\n集中度: 25\n可用子弹: 400000\n主流观点: 震荡市观望\n建议配置: 200000\n推理: 等待数据确认\n个人备注: 等待确认\n执行计划: 无操作\n风控计划: 维持现有仓位";
+        let parsed = parse_role_output(CommitteeRole::Cio, text, false);
+        assert_eq!(parsed.verdict.as_deref(), Some("HOLD"));
+        assert_eq!(parsed.confidence, Some(0.6));
+        assert_eq!(parsed.concentration_pct, Some(25.0));
+        assert_eq!(parsed.dry_powder_cny, Some(400000.0));
+        assert_eq!(parsed.dominant_view.as_deref(), Some("震荡市观望"));
+        assert_eq!(parsed.suggested_alloc_cny, Some(200000.0));
+        assert_eq!(parsed.reasoning.as_deref(), Some("等待数据确认"));
+        assert_eq!(parsed.personal_note.as_deref(), Some("等待确认"));
+        assert_eq!(parsed.execution_plan.as_deref(), Some("无操作"));
+        assert_eq!(parsed.risk_plan.as_deref(), Some("维持现有仓位"));
+    }
+
+    #[test]
+    fn test_parse_cio_chinese_verdict_variants() {
+        // 买入
+        let text = "裁决: 买入\n置信度: 0.9";
+        let parsed = parse_role_output(CommitteeRole::Cio, text, false);
+        assert_eq!(parsed.verdict.as_deref(), Some("BUY"));
+
+        // 加仓
+        let text = "裁决: 加仓\n置信度: 0.8";
+        let parsed = parse_role_output(CommitteeRole::Cio, text, false);
+        assert_eq!(parsed.verdict.as_deref(), Some("ACCUMULATE"));
+
+        // 减仓
+        let text = "裁决: 减仓\n置信度: 0.7";
+        let parsed = parse_role_output(CommitteeRole::Cio, text, false);
+        assert_eq!(parsed.verdict.as_deref(), Some("TRIM"));
+
+        // 卖出
+        let text = "裁决: 卖出\n置信度: 0.6";
+        let parsed = parse_role_output(CommitteeRole::Cio, text, false);
+        assert_eq!(parsed.verdict.as_deref(), Some("SELL"));
+    }
+
+    #[test]
+    fn test_parse_mixed_english_chinese_fields() {
+        // Mix of English and Chinese keys in the same text
+        let text = "SIGNAL: risk_on\n强度: 5\nKEY_DATA:\n - test\n一句话: mixed test";
+        let parsed = parse_role_output(CommitteeRole::Quant, text, false);
+        assert_eq!(parsed.signal.as_deref(), Some("risk_on"));
+        assert_eq!(parsed.strength, Some(5.0));
+        assert_eq!(parsed.key_data.as_deref(), Some(&["test".to_string()][..]));
+        assert_eq!(parsed.one_liner.as_deref(), Some("mixed test"));
     }
 }

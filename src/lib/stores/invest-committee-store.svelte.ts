@@ -61,6 +61,22 @@ export interface CommitteeResult {
 
 export type RolePrompts = Record<string, string>;
 
+export interface RegimeMetrics {
+  latest: number;
+  ma20: number;
+  ma60: number;
+  rsi14: number;
+  volatilityAnn: number;
+  priceQuantile2y: number;
+}
+
+export interface RegimeStepData {
+  regime: string;
+  reason: string;
+  strategyHint: string;
+  metrics: RegimeMetrics;
+}
+
 export interface ArchivedDecision {
   date: string;
   symbol: string;
@@ -73,7 +89,7 @@ export type CommitteeEventType =
   | { type: 'committee_start'; symbols: string[]; total: number }
   | { type: 'role_start'; symbol: string; role: string; round: number; stepIndex: number }
   | { type: 'role_complete'; symbol: string; role: string; round: number; summary: RoundOutputSummary; stepIndex: number }
-  | { type: 'regime_step'; symbol: string; success: boolean; contextPreview: string; stepIndex: number }
+  | { type: 'regime_step'; symbol: string; success: boolean; contextPreview: string; stepIndex: number; regime?: string; reason?: string; strategyHint?: string; metrics?: RegimeMetrics }
   | { type: 'tool_call'; symbol: string; role: string; round: number; toolName: string; arguments: string; result?: string; success: boolean; latencyMs: number }
   | { type: 'symbol_complete'; symbol: string; result: CommitteeResult }
   | { type: 'done'; completed: number; total: number }
@@ -98,6 +114,7 @@ export interface SymbolProgress {
   done: boolean;
   error: string | null;
   result: CommitteeResult | null;
+  regimeData: RegimeStepData | null;  // REGIME step output (populated during streaming)
 }
 
 // ── Store ───────────────────────────────────────────────────────────────────
@@ -163,6 +180,7 @@ class InvestCommitteeStore {
         done: false,
         error: null,
         result: null,
+        regimeData: null,
       });
     }
     this.perSymbolProgress = progress;
@@ -227,7 +245,19 @@ class InvestCommitteeStore {
       case 'regime_step': {
         const p = progress.get(event.symbol);
         if (p) {
-          if (event.success) {
+          if (event.success && event.regime && event.reason && event.strategyHint && event.metrics) {
+            progress.set(event.symbol, {
+              ...p,
+              activeStep: -1,
+              completedSteps: Math.max(p.completedSteps, 2),
+              regimeData: {
+                regime: event.regime,
+                reason: event.reason,
+                strategyHint: event.strategyHint,
+                metrics: event.metrics,
+              },
+            });
+          } else if (event.success) {
             progress.set(event.symbol, {
               ...p,
               activeStep: -1,

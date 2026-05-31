@@ -131,32 +131,41 @@ fn get_asset_name(symbol: &str) -> Option<String> {
     .filter(|s| !s.is_empty())
 }
 
-/// Build a structured portfolio summary from the holdings and cash tables.
+/// Pre-loaded portfolio data shared across multiple context builders.
+/// Loaded once in `run_committee` and passed by reference to avoid redundant DB reads.
+struct PortfolioData {
+    holdings: Vec<crate::storage::invest::portfolio::Holding>,
+    cash: f64,
+    total_notional: f64,
+}
+
+impl PortfolioData {
+    fn load() -> Self {
+        use crate::storage::invest::portfolio::{get_cash, list_holdings};
+
+        let holdings = list_holdings().unwrap_or_else(|e| {
+            log::warn!("portfolio: failed to list holdings: {}", e);
+            Vec::new()
+        });
+        let cash = get_cash().unwrap_or(0.0);
+        let total_notional = holdings.iter().map(|h| h.notional.abs()).sum();
+        Self { holdings, cash, total_notional }
+    }
+}
+
+/// Build a structured portfolio summary from pre-loaded portfolio data.
 /// Returns an empty string if no holdings or cash data is available.
-fn build_portfolio_summary() -> String {
-    use crate::storage::invest::portfolio::{get_cash, list_holdings};
-
-    let holdings = match list_holdings() {
-        Ok(h) => h,
-        Err(e) => {
-            log::warn!("portfolio summary: failed to list holdings: {}", e);
-            return String::new();
-        }
-    };
-    let cash = get_cash().unwrap_or(0.0);
-
-    if holdings.is_empty() && cash <= 0.0 {
+fn build_portfolio_summary(data: &PortfolioData) -> String {
+    if data.holdings.is_empty() && data.cash <= 0.0 {
         return String::new();
     }
 
-    let total_notional: f64 = holdings.iter().map(|h| h.notional.abs()).sum();
-
     let mut out = String::from("【组合持仓概览】\n");
 
-    if !holdings.is_empty() {
+    if !data.holdings.is_empty() {
         out.push_str("| 标的 | 名称 | 股数 | 均价 | 市值(CNY) | 集中度 |\n");
         out.push_str("|------|------|------|------|----------|--------|\n");
-        for h in &holdings {
+        for h in &data.holdings {
             let name = h.name.as_deref().unwrap_or("-");
             let shares = h
                 .shares
@@ -167,8 +176,8 @@ fn build_portfolio_summary() -> String {
                 .map(|c| format!("{:.2}", c))
                 .unwrap_or_else(|| "-".to_string());
             let notional = format!("{:.0}", h.notional);
-            let concentration = if total_notional > 0.0 {
-                format!("{:.1}%", h.notional.abs() / total_notional * 100.0)
+            let concentration = if data.total_notional > 0.0 {
+                format!("{:.1}%", h.notional.abs() / data.total_notional * 100.0)
             } else {
                 "-".to_string()
             };
@@ -177,10 +186,10 @@ fn build_portfolio_summary() -> String {
                 h.symbol, name, shares, avg_cost, notional, concentration
             ));
         }
-        out.push_str(&format!("总市值: {:.0} CNY\n", total_notional));
+        out.push_str(&format!("总市值: {:.0} CNY\n", data.total_notional));
     }
 
-    out.push_str(&format!("现金: {:.0} CNY", cash));
+    out.push_str(&format!("现金: {:.0} CNY", data.cash));
 
     out
 }
@@ -248,7 +257,7 @@ fn build_strategy_context() -> String {
     out
 }
 
-/// Load user profile and format as a context block for CIO prompt injection.
+/// Load user profile and format as a context block for Risk/CIO prompt injection.
 /// Includes account purpose, family support, and lifestyle notes.
 /// Returns an empty string if no meaningful profile data is configured.
 fn build_user_profile_context() -> String {
@@ -290,6 +299,45 @@ fn build_user_profile_context() -> String {
     out.push_str("\n请根据上述用户档案调整裁决的激进程度和仓位建议。例如：退休金账户应更保守，零花钱账户可更灵活，无家族支持时需更注重安全边际。\n");
 
     out
+}
+
+// ---------------------------------------------------------------------------
+// Per-symbol risk metrics
+// ---------------------------------------------------------------------------
+
+/// Pre-compute CONCENTRATION_PCT and PNL_PCT for a specific symbol.
+/// Returns a context string to inject into Risk R1 messages.
+/// Uses pre-loaded portfolio data to avoid redundant DB reads.
+fn build_risk_metrics_context(symbol: &str, data: &PortfolioData) -> String {
+    let holding = data.holdings.iter().find(|h| h.symbol == symbol);
+
+    let concentration_pct = holding
+        .map(|h| {
+            if data.total_notional > 0.0 {
+                h.notional.abs() / data.total_notional * 100.0
+            } else {
+                0.0
+            }
+        })
+        .unwrap_or(0.0);
+
+    let pnl_pct = holding
+        .and_then(|h| {
+            let shares = h.shares?;
+            let avg_cost = h.avg_cost?;
+            if shares > 0.0 && avg_cost > 0.0 {
+                let current_price = h.notional / shares;
+                Some((current_price - avg_cost) / avg_cost * 100.0)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(0.0);
+
+    format!(
+        "【预计算风险指标】\n集中度: {:.1}\n盈亏比: {:.2}\n可用子弹: {:.0}\n\n请在分析中直接使用上述预计算指标，无需重新计算。\n",
+        concentration_pct, pnl_pct, data.cash
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -380,22 +428,6 @@ async fn llm_call_with_retry(
         "LLM call failed after 3 retries: {}",
         last_err
     ))
-}
-
-// ---------------------------------------------------------------------------
-// Regime context
-// ---------------------------------------------------------------------------
-
-/// Compute the regime classification for a symbol and return a formatted
-/// context string for LLM prompt injection. Returns an error if the
-/// Tushare token is not configured or data is insufficient.
-async fn compute_regime_context(symbol: &str) -> Result<String, String> {
-    let token = crate::storage::settings::get_user_settings()
-        .tushare_token
-        .ok_or_else(|| "tushare_token not configured".to_string())?;
-    let client = crate::tushare::client::TushareClient::new(token);
-    let result = regime::compute_regime_for_symbol(&client, symbol).await?;
-    Ok(regime::format_regime_context(&result))
 }
 
 // ---------------------------------------------------------------------------
@@ -683,6 +715,7 @@ async fn run_role_phase(
     portfolio_summary: &str,
     regime_context: Option<&str>,
     emitter: &Option<EventEmitter>,
+    portfolio_data: &PortfolioData,
 ) -> Result<RoundOutput, String> {
     let provider = resolve_provider(config, role);
     let llm_config = build_llm_config(provider, role, config.timeout_secs, config.model_override.as_deref());
@@ -702,6 +735,10 @@ async fn run_role_phase(
             system_prompt.push_str("\n\n");
             system_prompt.push_str(&strategy_ctx);
         }
+    }
+
+    // Inject user profile for roles that need user context (CIO always, Risk R1 for liquidity assessment)
+    if role == CommitteeRole::Cio || (role == CommitteeRole::Risk && round == 1) {
         let profile_ctx = build_user_profile_context();
         if !profile_ctx.is_empty() {
             system_prompt.push_str("\n\n");
@@ -713,6 +750,16 @@ async fn run_role_phase(
     let _permit = governor.acquire(provider).await;
 
     let mut messages = build_context_messages(round_outputs, symbol, macro_signal, emergency_buffer_cny, portfolio_summary, regime_context);
+
+    // For Risk R1, inject pre-computed risk metrics (CONCENTRATION_PCT, PNL_PCT, DRY_POWDER_CNY)
+    if role == CommitteeRole::Risk && round == 1 {
+        let risk_ctx = build_risk_metrics_context(symbol, portfolio_data);
+        if !risk_ctx.is_empty() {
+            if let Some(last) = messages.last_mut() {
+                last.content.push_str(&format!("\n\n{}", risk_ctx));
+            }
+        }
+    }
 
     // For Round 2 rebuttal roles, append a rebuttal-specific instruction
     if round >= 2 && matches!(role, CommitteeRole::Quant | CommitteeRole::Risk) {
@@ -759,6 +806,7 @@ async fn run_debate_rounds(
     emitter: &Option<EventEmitter>,
     portfolio_summary: &str,
     regime_context: Option<&str>,
+    portfolio_data: &PortfolioData,
 ) -> Result<bool, String> {
     let max_rounds = config.debate_rounds;
     let mut converged = false;
@@ -790,6 +838,7 @@ async fn run_debate_rounds(
                 portfolio_summary,
                 regime_context,
                 emitter,
+                &portfolio_data,
             )
             .await?;
             *total_tokens += output.tokens_used;
@@ -859,8 +908,9 @@ pub async fn run_committee(
     let mut round_outputs: Vec<RoundOutput> = Vec::new();
     let mut total_tokens: u32 = 0;
 
-    // Build portfolio summary once for injection into Macro and Risk R1
-    let portfolio_summary = build_portfolio_summary();
+    // Load portfolio data once for injection into Macro and Risk R1
+    let portfolio_data = PortfolioData::load();
+    let portfolio_summary = build_portfolio_summary(&portfolio_data);
 
     // ── Step 1: Macro phase (with tool-call loop) ──────────────────────
     {
@@ -902,32 +952,53 @@ pub async fn run_committee(
     // Compute quantitative regime metrics (RSI-14, MA, volatility, price
     // quantile) after Macro and inject into Quant/Risk/CIO context.
     let regime_si = 1; // step_index for REGIME node
-    let regime_context: Option<String> = match compute_regime_context(symbol).await {
-        Ok(ctx) => {
-            log::info!("REGIME computed for {}: {}", symbol, ctx.lines().next().unwrap_or(""));
-            if let Some(ref emit) = emitter {
+    let regime_context: Option<String> = {
+        let regime_result = match crate::storage::settings::get_user_settings().tushare_token {
+            Some(token) => {
+                let client = crate::tushare::client::TushareClient::new(token);
+                regime::compute_regime_for_symbol(&client, symbol).await
+            }
+            None => Err("tushare_token not configured".to_string()),
+        };
+
+        // Compute structured fields + context in one pass
+        let (success, context_preview, regime_fields, ctx) = match regime_result {
+            Ok(result) => {
+                let ctx = regime::format_regime_context(&result);
+                log::info!("REGIME computed for {}: {}", symbol, result.regime);
                 let preview = ctx.lines().next().unwrap_or("").to_string();
-                emit(CommitteeEvent::RegimeStep {
-                    symbol: symbol.to_string(),
-                    success: true,
-                    context_preview: preview,
-                    step_index: regime_si,
-                });
+                (
+                    true,
+                    preview,
+                    (
+                        Some(result.regime.to_string()),
+                        Some(result.reason),
+                        Some(result.strategy_hint.to_string()),
+                        Some(result.metrics),
+                    ),
+                    Some(ctx),
+                )
             }
-            Some(ctx)
-        }
-        Err(e) => {
-            log::warn!("REGIME computation failed for {}: {}", symbol, e);
-            if let Some(ref emit) = emitter {
-                emit(CommitteeEvent::RegimeStep {
-                    symbol: symbol.to_string(),
-                    success: false,
-                    context_preview: format!("Error: {}", e),
-                    step_index: regime_si,
-                });
+            Err(e) => {
+                log::warn!("REGIME computation failed for {}: {}", symbol, e);
+                (false, format!("Error: {}", e), (None, None, None, None), None)
             }
-            None
+        };
+
+        if let Some(ref emit) = emitter {
+            emit(CommitteeEvent::RegimeStep {
+                symbol: symbol.to_string(),
+                success,
+                context_preview,
+                step_index: regime_si,
+                regime: regime_fields.0,
+                reason: regime_fields.1,
+                strategy_hint: regime_fields.2,
+                metrics: regime_fields.3,
+            });
         }
+
+        ctx
     };
 
     // ── Step 3: Debate rounds ──────────────────────────────────────────
@@ -942,6 +1013,7 @@ pub async fn run_committee(
         &emitter,
         &portfolio_summary,
         regime_context.as_deref(),
+        &portfolio_data,
     )
     .await?;
 
@@ -969,6 +1041,7 @@ pub async fn run_committee(
             &portfolio_summary,
             regime_context.as_deref(),
             &emitter,
+            &portfolio_data,
         )
         .await?;
         total_tokens += cio_output.tokens_used;

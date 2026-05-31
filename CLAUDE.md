@@ -364,6 +364,7 @@ Key phases and their status:
 | 10+ (v5.0.1) | 代码审查修复: 9 路审查 15 项修复 — 数据完整性(asset_type 迁移/notional 保护/事务包装/dry_run 透传/索引对齐), UI 正确性($derived 修复/R1 Prompt 路径/deleteTrade 刷新/regime 成功检查/TradeDialog 验证), 死代码清理(archive_decision 移除/events.jsonl 覆盖/多日期回放/手动审查/verdict ID 查询) | [done] |
 | 10+ (v5.0.2) | Yahoo Finance 429 限流修复: fetch_chart_raw/fetch_yahoo_news 重试 3 次+指数退避, fetch_all_quotes/fetch_china_finance_news 串行化+300ms 间隔 | [done] |
 | 10+ (v5.0.2) | 代码审查修复: 15 项修复 — 数据完整性(initial_balance 写入/family_support 迁移集中/provider config 对称), UI 正确性(bars 排序/account purpose 迁移/loading 状态/model_override 透传), 死代码清理(parse_provider_id 去重/row_to_verdict 提取/ETF 过滤/DB 错误日志/saveTimer 清理) | [done] |
+| 10+ (v5.0.3) | 委员会中文化+REGIME 展示+Parser 双语+Profile 双注入: Gate notes/归档报告中文化, RegimeStep 事件扩展+前端 REGIME 卡片, Parser 双语支持(any 系列函数), 6 个 Prompt 模板字段名中文化, Profile Risk R1+CIO 双注入, 风险指标预计算(CONCENTRATION_PCT/PNL_PCT/DRY_POWDER_CNY), PortfolioData 消除重复 DB 查询, 6 项审查修复 | [done] |
 
 Detailed plans and review responses are in `docs/`.
 
