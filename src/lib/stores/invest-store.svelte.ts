@@ -75,11 +75,9 @@ class InvestStore {
   );
 
   totalReturnPct = $derived(
-    this.initialCash > 0
-      ? ((this.totalAssets - this.initialCash) / this.initialCash) * 100
-      : this.totalCostBasis > 0
-        ? ((this.totalAssets - this.totalCostBasis) / this.totalCostBasis) * 100
-        : 0,
+    this.totalCostBasis > 0
+      ? ((this.totalAssets - this.totalCostBasis) / this.totalCostBasis) * 100
+      : 0,
   );
 
   // ── Event Watch Derived ─────────────────────────────────────────────
@@ -486,7 +484,6 @@ class InvestStore {
 
   async deleteTrade(id: string): Promise<void> {
     await invoke("delete_trade", { id });
-    this.trades = this.trades.filter((t) => t.id !== id);
     await this.loadAll();
   }
 

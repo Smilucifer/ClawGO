@@ -2,9 +2,9 @@
   import { onDestroy } from 'svelte';
   import { t } from '$lib/i18n/index.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
-  import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend } from 'chart.js';
+  import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler } from 'chart.js';
 
-  Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend);
+  Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler);
 
   let canvas: HTMLCanvasElement;
   let chart: Chart | null = null;
@@ -27,18 +27,19 @@
           {
             label: t('invest_pnl_total_assets'),
             data: totalAssetsData,
-            borderColor: 'rgb(59, 130, 246)',
+            borderColor: '#3b82f6',
             backgroundColor: 'rgba(59, 130, 246, 0.1)',
             fill: true,
             tension: 0.3,
             pointRadius: 2,
+            pointHoverRadius: 4,
             yAxisID: 'y',
           },
           {
             label: t('invest_pnl_daily_pnl'),
             data: dailyPnlData,
-            borderColor: 'rgb(34, 197, 94)',
-            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+            borderColor: '#8a9a76',
+            backgroundColor: 'rgba(138, 154, 118, 0.1)',
             fill: false,
             tension: 0.3,
             pointRadius: 2,
@@ -55,23 +56,38 @@
           intersect: false,
         },
         scales: {
+          x: {
+            grid: { color: 'rgba(255,255,255,0.04)' },
+            ticks: { color: '#6b6660', font: { size: 10 } },
+          },
           y: {
             type: 'linear',
             position: 'left',
             beginAtZero: false,
-            title: { display: true, text: t('invest_pnl_total_assets') },
+            grid: { color: 'rgba(255,255,255,0.04)' },
+            ticks: { color: '#6b6660', font: { size: 10 } },
+            title: { display: true, text: t('invest_pnl_total_assets'), color: '#9a9590', font: { size: 11 } },
           },
           y1: {
             type: 'linear',
             position: 'right',
             beginAtZero: true,
             grid: { drawOnChartArea: false },
-            title: { display: true, text: t('invest_pnl_daily_pnl') },
+            ticks: { color: '#6b6660', font: { size: 10 } },
+            title: { display: true, text: t('invest_pnl_daily_pnl'), color: '#9a9590', font: { size: 11 } },
           },
         },
         plugins: {
-          legend: { display: true },
+          legend: {
+            display: true,
+            labels: { color: '#9a9590', font: { size: 11 }, boxWidth: 12, padding: 16 },
+          },
           tooltip: {
+            backgroundColor: '#242220',
+            titleColor: '#ebe8e4',
+            bodyColor: '#9a9590',
+            borderColor: 'rgba(255,255,255,0.06)',
+            borderWidth: 1,
             callbacks: {
               label: (ctx) => {
                 const val = ctx.parsed.y ?? 0;
@@ -96,12 +112,15 @@
   });
 </script>
 
-<div>
-  <h3 class="mb-2 text-sm font-medium text-muted-foreground">{t('invest_pnl_chart')}</h3>
+<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)]">
+  <div class="mb-[var(--space-2)] flex items-center justify-between">
+    <h3 class="text-[14px] font-semibold text-[var(--text-primary)]">📈 {t('invest_pnl_chart')}</h3>
+    <span class="text-[11px] text-[var(--text-tertiary)]">左轴: {t('invest_pnl_total_assets')} | 右轴: {t('invest_pnl_daily_pnl')}</span>
+  </div>
   {#if investStore.pnlSnapshots.length === 0}
-    <p class="py-4 text-center text-sm text-muted-foreground">{t('invest_no_pnl')}</p>
+    <p class="py-[var(--space-4)] text-center text-[12px] text-[var(--text-tertiary)]">{t('invest_no_pnl')}</p>
   {:else}
-    <div class="rounded-lg border p-4" style="height: 300px;">
+    <div style="height: 220px;">
       <canvas bind:this={canvas}></canvas>
     </div>
   {/if}

@@ -126,10 +126,10 @@
   }
 
   function statusColor(status: string): string {
-    if (status === 'completed') return 'text-green-500';
-    if (status === 'rolled_back') return 'text-amber-500';
-    if (status === 'failed') return 'text-red-500';
-    return 'text-muted-foreground';
+    if (status === 'completed') return 'text-[var(--color-success)]';
+    if (status === 'rolled_back') return 'text-[var(--color-warning)]';
+    if (status === 'failed') return 'text-[var(--color-error)]';
+    return 'text-[var(--text-secondary)]';
   }
 
   $effect(() => {
@@ -138,26 +138,26 @@
 </script>
 
 <div class="space-y-4">
-  <h3 class="text-lg font-semibold">
+  <h3 class="text-lg font-semibold text-[var(--text-primary)]">
     {isInvest ? t('invest_dreaming_title_invest') : t('invest_dreaming_title_userMemory')}
   </h3>
 
   {#if loading}
-    <p class="text-muted-foreground">{t('invest_dreaming_loadingConfig')}</p>
+    <p class="text-[var(--text-secondary)]">{t('invest_dreaming_loadingConfig')}</p>
   {:else if config}
     <!-- Config section -->
-    <div class="rounded-lg border p-4 space-y-3">
-      <h4 class="text-sm font-medium">{t('invest_dreaming_configuration')}</h4>
+    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3">
+      <h4 class="text-sm font-medium text-[var(--text-primary)]">{t('invest_dreaming_configuration')}</h4>
 
       {#if !isInvest}
-        <div class="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+        <div class="rounded-[var(--radius-sm)] border border-[var(--color-warning)] bg-[var(--color-warning)]/10 p-2 text-xs text-[var(--color-warning)]">
           {t('invest_dreaming_notImplemented')}
         </div>
       {/if}
 
       <div class="flex items-center gap-3">
         <button
-          class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors {(isInvest ? config.investEnabled : config.userMemoryEnabled) ? 'bg-primary' : 'bg-muted'} {!isInvest ? 'opacity-50 cursor-not-allowed' : ''}"
+          class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors {(isInvest ? config.investEnabled : config.userMemoryEnabled) ? 'bg-[var(--accent)]' : 'bg-[var(--bg-input)]'} {!isInvest ? 'opacity-50 cursor-not-allowed' : ''}"
           aria-label="Toggle enabled"
           disabled={!isInvest}
           onclick={() => {
@@ -172,23 +172,23 @@
               : 'translate-x-1'}"
           ></span>
         </button>
-        <span class="text-sm {!isInvest ? 'text-muted-foreground' : ''}">{isInvest ? t('invest_dreaming_investEnabled') : t('invest_dreaming_userMemoryEnabled')}</span>
+        <span class="text-sm {!isInvest ? 'text-[var(--text-secondary)]' : ''}">{isInvest ? t('invest_dreaming_investEnabled') : t('invest_dreaming_userMemoryEnabled')}</span>
       </div>
 
       {#if isInvest}
         <div class="flex items-center gap-2">
-          <label class="text-xs text-muted-foreground w-20">{t('invest_dreaming_cron')}</label>
+          <label class="text-xs text-[var(--text-secondary)] w-20">{t('invest_dreaming_cron')}</label>
           <input
-            class="flex-1 rounded border bg-background px-2 py-1 text-xs font-mono"
+            class="flex-1 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-xs font-[var(--font-mono)] text-[var(--text-primary)]"
             bind:value={config!.investCron}
           />
         </div>
       {:else}
         <div class="flex items-center gap-2">
-          <label class="text-xs text-muted-foreground w-20">{t('invest_dreaming_intervalMin')}</label>
+          <label class="text-xs text-[var(--text-secondary)] w-20">{t('invest_dreaming_intervalMin')}</label>
           <input
             type="number"
-            class="w-24 rounded border bg-background px-2 py-1 text-xs opacity-50"
+            class="w-24 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-xs text-[var(--text-primary)] opacity-50"
             disabled
             bind:value={config!.userMemoryIntervalMin}
           />
@@ -196,44 +196,44 @@
       {/if}
 
       <div class="flex items-center gap-2">
-        <label class="text-xs text-muted-foreground w-20">{t('invest_dreaming_lookback')}</label>
+        <label class="text-xs text-[var(--text-secondary)] w-20">{t('invest_dreaming_lookback')}</label>
         <input
           type="number"
-          class="w-24 rounded border bg-background px-2 py-1 text-xs"
+          class="w-24 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-xs text-[var(--text-primary)]"
           bind:value={config!.lookbackDays}
         />
-        <span class="text-xs text-muted-foreground">{t('invest_dreaming_days')}</span>
+        <span class="text-xs text-[var(--text-tertiary)]">{t('invest_dreaming_days')}</span>
       </div>
 
       <div class="flex items-center gap-2">
-        <label class="text-xs text-muted-foreground w-20">{t('invest_dreaming_minScore')}</label>
+        <label class="text-xs text-[var(--text-secondary)] w-20">{t('invest_dreaming_minScore')}</label>
         <input
           type="number"
           step="0.05"
-          class="w-24 rounded border bg-background px-2 py-1 text-xs"
+          class="w-24 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-xs text-[var(--text-primary)]"
           bind:value={config!.minScore}
         />
       </div>
 
       <div class="flex items-center gap-2">
-        <label class="text-xs text-muted-foreground w-20">{t('invest_dreaming_minCount')}</label>
+        <label class="text-xs text-[var(--text-secondary)] w-20">{t('invest_dreaming_minCount')}</label>
         <input
           type="number"
-          class="w-24 rounded border bg-background px-2 py-1 text-xs"
+          class="w-24 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-xs text-[var(--text-primary)]"
           bind:value={config!.minCount}
         />
       </div>
 
       <div class="flex gap-2 pt-1">
         <button
-          class="rounded bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          class="rounded-[var(--radius-md)] bg-[var(--accent)] px-[var(--space-3)] py-[var(--space-1)] text-xs font-medium text-[#1a1918] hover:opacity-90 disabled:opacity-50"
           disabled={saving}
           onclick={saveConfig}
         >
           {saving ? t('invest_dreaming_saving') : t('invest_dreaming_saveConfig')}
         </button>
         <button
-          class="rounded bg-amber-600 px-3 py-1.5 text-xs text-white hover:bg-amber-700 disabled:opacity-50"
+          class="rounded-[var(--radius-md)] bg-[var(--color-warning)] px-[var(--space-3)] py-[var(--space-1)] text-xs font-medium text-[#1a1918] hover:opacity-90 disabled:opacity-50"
           disabled={triggering || !isInvest}
           onclick={trigger}
         >
@@ -244,31 +244,31 @@
 
     <!-- Last result -->
     {#if lastResult}
-      <div class="rounded-lg border p-4 space-y-2">
-        <h4 class="text-sm font-medium">{t('invest_dreaming_lastResult')}</h4>
+      <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-2">
+        <h4 class="text-sm font-medium text-[var(--text-primary)]">{t('invest_dreaming_lastResult')}</h4>
         <div class="grid grid-cols-3 gap-2 text-center text-xs">
-          <div class="rounded bg-green-500/10 p-2">
-            <div class="text-lg font-bold text-green-500">{lastResult.insightsWritten}</div>
-            <div class="text-muted-foreground">{t('invest_dreaming_written')}</div>
+          <div class="rounded-[var(--radius-sm)] bg-[var(--color-success)]/10 p-2">
+            <div class="text-lg font-bold text-[var(--color-success)]">{lastResult.insightsWritten}</div>
+            <div class="text-[var(--text-secondary)]">{t('invest_dreaming_written')}</div>
           </div>
-          <div class="rounded bg-blue-500/10 p-2">
+          <div class="rounded-[var(--radius-sm)] bg-blue-500/10 p-2">
             <div class="text-lg font-bold text-blue-500">{lastResult.insightsUpdated}</div>
-            <div class="text-muted-foreground">{t('invest_dreaming_updated')}</div>
+            <div class="text-[var(--text-secondary)]">{t('invest_dreaming_updated')}</div>
           </div>
-          <div class="rounded bg-amber-500/10 p-2">
-            <div class="text-lg font-bold text-amber-500">{lastResult.insightsArchived}</div>
-            <div class="text-muted-foreground">{t('invest_dreaming_archived')}</div>
+          <div class="rounded-[var(--radius-sm)] bg-[var(--color-warning)]/10 p-2">
+            <div class="text-lg font-bold text-[var(--color-warning)]">{lastResult.insightsArchived}</div>
+            <div class="text-[var(--text-secondary)]">{t('invest_dreaming_archived')}</div>
           </div>
         </div>
-        <div class="text-xs text-muted-foreground">
+        <div class="text-xs text-[var(--text-tertiary)]">
           {t('invest_dreaming_totalDuration')} {formatDuration(lastResult.pipelineDurationMs)}
         </div>
         {#if lastResult.stages.length > 0}
           <div class="space-y-1">
             {#each lastResult.stages as stage}
               <div class="flex items-center justify-between text-xs">
-                <span class="font-medium">{stage.stage}</span>
-                <span class="text-muted-foreground">
+                <span class="font-medium text-[var(--text-primary)]">{stage.stage}</span>
+                <span class="text-[var(--text-secondary)]">
                   {stage.itemsProcessed} in / {stage.itemsOutput} out ({formatDuration(stage.durationMs)})
                 </span>
               </div>
@@ -279,30 +279,30 @@
     {/if}
 
     <!-- Trace list -->
-    <div class="rounded-lg border p-4 space-y-2">
-      <h4 class="text-sm font-medium">{t('invest_dreaming_recentTraces')}</h4>
+    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-2">
+      <h4 class="text-sm font-medium text-[var(--text-primary)]">{t('invest_dreaming_recentTraces')}</h4>
       {#if traces.length === 0}
-        <p class="text-xs text-muted-foreground">{t('invest_dreaming_noTraces')}</p>
+        <p class="text-xs text-[var(--text-secondary)]">{t('invest_dreaming_noTraces')}</p>
       {:else}
         <div class="max-h-60 space-y-2 overflow-y-auto">
           {#each traces as trace}
-            <div class="flex items-center justify-between rounded border px-3 py-2 text-xs">
+            <div class="flex items-center justify-between rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2 text-xs">
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
                   <span class={statusColor(trace.status)}>{trace.status}</span>
-                  <span class="text-muted-foreground">#{trace.id}</span>
-                  <span class="text-muted-foreground">{trace.triggerType}</span>
+                  <span class="text-[var(--text-tertiary)]">#{trace.id}</span>
+                  <span class="text-[var(--text-tertiary)]">{trace.triggerType}</span>
                 </div>
                 {#if trace.summary}
-                  <div class="mt-0.5 truncate text-muted-foreground">{trace.summary}</div>
+                  <div class="mt-0.5 truncate text-[var(--text-secondary)]">{trace.summary}</div>
                 {/if}
-                <div class="text-muted-foreground">
+                <div class="text-[var(--text-tertiary)]">
                   {new Date(trace.createdAt).toLocaleString()}
                 </div>
               </div>
               {#if trace.rollbackReady && trace.status === 'completed'}
                 <button
-                  class="ml-2 rounded border px-2 py-1 text-xs hover:bg-destructive/10 text-destructive disabled:opacity-50"
+                  class="ml-2 rounded-[var(--radius-sm)] border border-[var(--color-error)]/30 px-2 py-1 text-xs text-[var(--color-error)] hover:bg-[var(--color-error)]/10 disabled:opacity-50"
                   disabled={rollingBack === trace.id}
                   onclick={() => rollback(trace.id)}
                 >
@@ -317,13 +317,13 @@
 
     <!-- Messages -->
     {#if error}
-      <div class="flex items-center justify-between rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+      <div class="flex items-center justify-between rounded-[var(--radius-md)] border border-[var(--color-error)]/50 bg-[var(--color-error)]/10 px-3 py-2 text-sm text-[var(--color-error)]">
         <span>{error}</span>
-        <button class="ml-2 text-xs hover:underline" onclick={() => (error = null)}>{t('invest_dreaming_dismiss')}</button>
+        <button class="ml-2 text-xs hover:underline text-[var(--color-error)]" onclick={() => (error = null)}>{t('invest_dreaming_dismiss')}</button>
       </div>
     {/if}
     {#if success}
-      <div class="rounded-md border border-green-500/50 bg-green-500/10 px-3 py-2 text-sm text-green-500">
+      <div class="rounded-[var(--radius-md)] border border-[var(--color-success)]/50 bg-[var(--color-success)]/10 px-3 py-2 text-sm text-[var(--color-success)]">
         {success}
       </div>
     {/if}

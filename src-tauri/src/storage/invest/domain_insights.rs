@@ -99,7 +99,7 @@ pub fn get_active_insights_json() -> Result<String, String> {
         let mut stmt = conn
             .prepare(
                 "SELECT json_group_array(
-                    json(id, insight_type, symbol, content, confidence, source_verdict_ids, status, created_at, updated_at)
+                    json('id', id, 'insight_type', insight_type, 'symbol', symbol, 'content', content, 'confidence', confidence, 'source_verdict_ids', source_verdict_ids, 'status', status, 'created_at', created_at, 'updated_at', updated_at)
                  )
                  FROM domain_insights WHERE status = 'active'",
             )
@@ -221,15 +221,15 @@ pub fn restore_insight_snapshot(json: &str) -> Result<(), String> {
             conn.execute(
                 "INSERT INTO domain_insights (id, insight_type, symbol, content, confidence, source_verdict_ids, status, created_at, updated_at)
                  SELECT
-                    json_extract(value, '$[0]'),
-                    json_extract(value, '$[1]'),
-                    json_extract(value, '$[2]'),
-                    json_extract(value, '$[3]'),
-                    CAST(json_extract(value, '$[4]') AS REAL),
-                    json_extract(value, '$[5]'),
-                    json_extract(value, '$[6]'),
-                    json_extract(value, '$[7]'),
-                    json_extract(value, '$[8]')
+                    json_extract(value, '$.id'),
+                    json_extract(value, '$.insight_type'),
+                    json_extract(value, '$.symbol'),
+                    json_extract(value, '$.content'),
+                    CAST(json_extract(value, '$.confidence') AS REAL),
+                    json_extract(value, '$.source_verdict_ids'),
+                    json_extract(value, '$.status'),
+                    json_extract(value, '$.created_at'),
+                    json_extract(value, '$.updated_at')
                  FROM json_each(?1)",
                 [json],
             )

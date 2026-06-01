@@ -326,6 +326,7 @@ fn scan_md_inner(
                 scope: "memory".to_string(),
                 provider: Some("claude".to_string()),
                 exists: true,
+                project_slug: None,
             });
         }
     }
@@ -407,7 +408,18 @@ pub fn list_memory_files(
                     scope: "global".to_string(),
                     provider: Some(spec.provider.to_string()),
                     exists: p.exists(),
+                    project_slug: None,
                 });
+            }
+
+            // Global auto-memory — scan ~/.claude/memory/*.md
+            let global_memory_dir = std::path::Path::new(&home).join(".claude").join("memory");
+            if global_memory_dir.is_dir() {
+                let memory_files = scan_memory_md_files(&global_memory_dir, &global_memory_dir, 3, 50);
+                for mut f in memory_files {
+                    f.scope = "global-memory".to_string();
+                    files.push(f);
+                }
             }
         }
         _ => {
@@ -428,21 +440,29 @@ pub fn list_memory_files(
                 scope: "project".to_string(),
                 provider: Some(spec.provider.to_string()),
                 exists: p.exists(),
+                project_slug: None,
             });
         }
     }
 
-    // Project auto-memory scope — scan ~/.claude/projects/{slug}/memory/*.md
-    if let (Some(home), Some(ref cwd_val)) = (crate::storage::home_dir(), &cwd) {
-        let slug = crate::storage::cli_sessions::encode_cwd(cwd_val);
-        let memory_dir = std::path::Path::new(&home)
-            .join(".claude")
-            .join("projects")
-            .join(&slug)
-            .join("memory");
-        if memory_dir.is_dir() {
-            let memory_files = scan_memory_md_files(&memory_dir, &memory_dir, 3, 50);
-            files.extend(memory_files);
+    // Project auto-memory scope — scan ALL ~/.claude/projects/*/memory/*.md
+    if let Some(ref home) = crate::storage::home_dir() {
+        let projects_dir = std::path::Path::new(&home).join(".claude").join("projects");
+        if projects_dir.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(&projects_dir) {
+                for entry in entries.flatten() {
+                    let slug = entry.file_name().to_string_lossy().to_string();
+                    let memory_dir = entry.path().join("memory");
+                    if memory_dir.is_dir() {
+                        let memory_files =
+                            scan_memory_md_files(&memory_dir, &memory_dir, 3, 50);
+                        for mut f in memory_files {
+                            f.project_slug = Some(slug.clone());
+                            files.push(f);
+                        }
+                    }
+                }
+            }
         }
     }
 

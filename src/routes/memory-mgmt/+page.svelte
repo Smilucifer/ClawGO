@@ -1,18 +1,69 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { t } from "$lib/i18n/index.svelte";
   import { getTransport } from "$lib/transport";
-  import { goto } from "$app/navigation";
+  import * as api from "$lib/api";
+  import Input from "$lib/components/Input.svelte";
+  import { dbgWarn } from "$lib/utils/debug";
+  import type { UserSettings } from "$lib/types";
 
-  type MemTab = "userMemory" | "archived";
+  type MemTab = "userMemory" | "archived" | "extractionConfig";
   let activeTab: MemTab = $state("userMemory");
 
   const tabs: { id: MemTab; label: string }[] = $derived([
     { id: "userMemory", label: t("memoryMgmt_tab_userMemory") },
     { id: "archived", label: "Archived" },
+    { id: "extractionConfig", label: t("memoryMgmt_tab_extractionConfig") },
   ]);
 
   let scopeFilter: string | null = $state(null);
   const scopeOptions = [null, "global", "project", "invest"];
+
+  // ── Memory Extraction Config state ──
+  let memoryExtractionEnabled = $state(true);
+  let memoryExtractionChatEndpoint = $state("");
+  let memoryExtractionChatModel = $state("");
+  let memoryExtractionChatApiKey = $state("");
+  let memoryExtractionShowKey = $state(false);
+  let memoryExtractionSaveDebounce: ReturnType<typeof setTimeout> | null = null;
+  let memoryDreamEnabled = $state(true);
+  let settings = $state<UserSettings | null>(null);
+
+  function loadMemoryExtractionConfig() {
+    try {
+      const s = JSON.parse(localStorage.getItem("clawgo-memory-extraction") ?? "{}");
+      if (s.chat_endpoint) memoryExtractionChatEndpoint = s.chat_endpoint;
+      if (s.chat_model) memoryExtractionChatModel = s.chat_model;
+      if (s.chat_api_key) memoryExtractionChatApiKey = s.chat_api_key;
+      if (s.enabled === false) memoryExtractionEnabled = false;
+    } catch {
+      // defaults are fine
+    }
+  }
+
+  function saveMemoryExtractionConfig() {
+    localStorage.setItem("clawgo-memory-extraction", JSON.stringify({
+      enabled: memoryExtractionEnabled,
+      chat_endpoint: memoryExtractionChatEndpoint.trim() || undefined,
+      chat_model: memoryExtractionChatModel.trim() || undefined,
+      chat_api_key: memoryExtractionChatApiKey.trim() || undefined,
+    }));
+  }
+
+  function debouncedSaveMemoryExtraction() {
+    if (memoryExtractionSaveDebounce) clearTimeout(memoryExtractionSaveDebounce);
+    memoryExtractionSaveDebounce = setTimeout(() => saveMemoryExtractionConfig(), 500);
+  }
+
+  onMount(async () => {
+    try {
+      settings = await api.getUserSettings();
+      memoryDreamEnabled = settings.memory_dream_enabled ?? true;
+    } catch (e) {
+      dbgWarn("memory-mgmt", "load settings failed", e);
+    }
+    loadMemoryExtractionConfig();
+  });
 
   let memories: any[] = $state([]);
   let loading = $state(false);
@@ -109,17 +160,6 @@
     </div>
   </div>
 
-  <div class="border-b border-border bg-muted/50 px-4 py-2">
-    <p class="text-xs text-muted-foreground">
-      提取配置（API Endpoint / Key / Model）已移至
-      <button
-        class="underline hover:text-foreground"
-        onclick={() => goto("/settings?tab=memory")}
-      >设置 > Memory Extraction</button>
-      统一管理。记忆衰减与归档开关也位于该页面。
-    </p>
-  </div>
-
   <div class="flex-1 overflow-auto p-4">
     {#if activeTab === "userMemory"}
       <div class="mb-4 flex gap-2">
@@ -189,6 +229,95 @@
           {/each}
         </div>
       {/if}
+
+    {:else if activeTab === "extractionConfig"}
+      <div class="space-y-4 max-w-lg">
+        <h3 class="text-sm font-semibold">Memory Extraction</h3>
+        <p class="text-xs text-muted-foreground">
+          配置从群聊对话中自动提取用户记忆的 LLM。使用 SQLite FTS5 全文检索，无需 Embedding API。
+        </p>
+
+        <!-- Enable/Disable -->
+        <label class="flex items-center gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={memoryExtractionEnabled}
+            onchange={(e) => {
+              memoryExtractionEnabled = e.currentTarget.checked;
+              saveMemoryExtractionConfig();
+            }}
+            class="h-4 w-4 rounded border-input"
+          />
+          <span class="text-sm">启用自动记忆提取</span>
+        </label>
+
+        {#if memoryExtractionEnabled}
+          <!-- Chat Endpoint -->
+          <Input
+            label="Chat API Endpoint"
+            type="text"
+            bind:value={memoryExtractionChatEndpoint}
+            placeholder="留空使用 Provider 默认端点"
+            onblur={debouncedSaveMemoryExtraction}
+          />
+
+          <!-- Chat API Key -->
+          <div class="relative">
+            <Input
+              label="Chat API Key"
+              type={memoryExtractionShowKey ? "text" : "password"}
+              bind:value={memoryExtractionChatApiKey}
+              placeholder="留空使用 Provider 默认 Key"
+              onblur={debouncedSaveMemoryExtraction}
+            />
+            <button
+              class="absolute right-2 top-8 text-xs text-muted-foreground hover:text-foreground"
+              onclick={() => (memoryExtractionShowKey = !memoryExtractionShowKey)}
+            >
+              {memoryExtractionShowKey ? "隐藏" : "显示"}
+            </button>
+          </div>
+
+          <!-- Chat Model -->
+          <Input
+            label="Chat Model"
+            type="text"
+            bind:value={memoryExtractionChatModel}
+            placeholder="留空使用 Provider 默认模型"
+            onblur={debouncedSaveMemoryExtraction}
+          />
+        {:else}
+          <p class="text-xs text-muted-foreground">
+            自动记忆提取已禁用。群聊对话中的信息将不会被自动提取为用户记忆。
+          </p>
+        {/if}
+
+        <hr class="border-border" />
+
+        <!-- Memory Dream Cycle -->
+        <div class="space-y-2">
+          <h4 class="text-sm font-semibold">记忆衰减与归档</h4>
+          <p class="text-xs text-muted-foreground">
+            启用后，后台定期执行记忆合并（去重）和置信度衰减，低于阈值的记忆自动归档。
+          </p>
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={memoryDreamEnabled}
+              onchange={async (e) => {
+                memoryDreamEnabled = e.currentTarget.checked;
+                try {
+                  settings = await api.updateUserSettings({ memory_dream_enabled: memoryDreamEnabled } as Partial<UserSettings>);
+                } catch (err) {
+                  dbgWarn("memory-mgmt", "save memory_dream_enabled failed", err);
+                }
+              }}
+              class="h-4 w-4 rounded border-input"
+            />
+            <span class="text-sm">启用记忆衰减与归档</span>
+          </label>
+        </div>
+      </div>
     {/if}
   </div>
 </div>

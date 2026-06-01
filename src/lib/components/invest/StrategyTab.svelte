@@ -57,90 +57,90 @@
 
 <div>
   <div class="mb-4 flex items-center justify-between">
-    <h3 class="text-sm font-medium text-muted-foreground">{t('invest_strategy')}</h3>
+    <h3 class="text-[13px] font-medium text-[var(--text-secondary)]">{t('invest_strategy')}</h3>
     {#if !editing}
-      <button class="rounded bg-primary px-3 py-1 text-sm text-primary-foreground" onclick={startNew}>
+      <button class="rounded-[var(--radius-md)] bg-[var(--accent)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] text-[var(--bg-base)]" onclick={startNew}>
         {t('invest_strategy_add')}
       </button>
     {/if}
   </div>
 
   {#if editing}
-    <div class="space-y-4 rounded-lg border p-4">
+    <div class="space-y-4 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-4">
       <div>
-        <label class="mb-1 block text-sm">Strategy Name</label>
-        <input class="w-full rounded border bg-background px-3 py-1.5 text-sm" bind:value={editName} />
+        <label class="mb-1 block text-[12px] text-[var(--text-secondary)]">Strategy Name</label>
+        <input class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-[13px] text-[var(--text-primary)]" bind:value={editName} />
       </div>
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <label class="mb-1 block text-sm">{t('invest_strategy_max_single')} (%)</label>
-          <input type="number" class="w-full rounded border bg-background px-3 py-1.5 text-sm" min="0" max="100" bind:value={editMaxSinglePct} />
+          <label class="mb-1 block text-[12px] text-[var(--text-secondary)]">{t('invest_strategy_max_single')} (%)</label>
+          <input type="number" class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-[13px] text-[var(--text-primary)]" min="0" max="100" bind:value={editMaxSinglePct} />
         </div>
         <div>
-          <label class="mb-1 block text-sm">{t('invest_strategy_min_cash')} (%)</label>
-          <input type="number" class="w-full rounded border bg-background px-3 py-1.5 text-sm" min="0" max="100" bind:value={editMinCashPct} />
+          <label class="mb-1 block text-[12px] text-[var(--text-secondary)]">{t('invest_strategy_min_cash')} (%)</label>
+          <input type="number" class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-[13px] text-[var(--text-primary)]" min="0" max="100" bind:value={editMinCashPct} />
         </div>
       </div>
 
       <div>
         <div class="mb-2 flex items-center justify-between">
-          <label class="text-sm">{t('invest_strategy_targets')}</label>
-          <button class="rounded bg-muted px-2 py-0.5 text-xs" onclick={addTarget}>{t('invest_strategy_add_target')}</button>
+          <label class="text-[12px] text-[var(--text-secondary)]">{t('invest_strategy_targets')}</label>
+          <button class="rounded-[var(--radius-md)] bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-0.5)] text-[11px] text-[var(--text-secondary)]" onclick={addTarget}>{t('invest_strategy_add_target')}</button>
         </div>
         {#if editTargets.length === 0}
-          <p class="text-xs text-muted-foreground">{t('invest_strategy_no_targets')}</p>
+          <p class="text-[11px] text-[var(--text-tertiary)]">{t('invest_strategy_no_targets')}</p>
         {:else}
           {#each editTargets as target, idx}
             <div class="mb-2 flex items-center gap-2">
               <input
-                class="flex-1 rounded border bg-background px-2 py-1 text-sm"
+                class="flex-1 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-[13px] text-[var(--text-primary)]"
                 placeholder={t('invest_strategy_target_symbol')}
                 bind:value={target.symbol}
               />
               <input
                 type="number"
-                class="w-20 rounded border bg-background px-2 py-1 text-sm"
+                class="w-20 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-[13px] text-[var(--text-primary)]"
                 min="0" max="100"
                 placeholder="%"
                 bind:value={target.targetPct}
               />
-              <span class="text-xs text-muted-foreground">%</span>
-              <button class="rounded px-2 py-1 text-xs text-destructive hover:bg-muted" onclick={() => removeTarget(idx)}>&times;</button>
+              <span class="text-[11px] text-[var(--text-tertiary)]">%</span>
+              <button class="rounded-[var(--radius-md)] px-2 py-1 text-[11px] text-[var(--color-error)] hover:bg-[var(--bg-hover)]" onclick={() => removeTarget(idx)}>&times;</button>
             </div>
           {/each}
         {/if}
       </div>
 
       <div class="flex gap-2">
-        <button class="rounded bg-primary px-4 py-1.5 text-sm text-primary-foreground" onclick={save}>
+        <button class="rounded-[var(--radius-md)] bg-[var(--accent)] px-4 py-1.5 text-[12px] text-[var(--bg-base)]" onclick={save}>
           {t('invest_strategy_save')}
         </button>
-        <button class="rounded bg-muted px-4 py-1.5 text-sm" onclick={() => (editing = false)}>{t('invest_cancel')}</button>
+        <button class="rounded-[var(--radius-md)] bg-[var(--bg-input)] px-4 py-1.5 text-[12px] text-[var(--text-secondary)]" onclick={() => (editing = false)}>{t('invest_cancel')}</button>
         {#if editingId}
-          <button class="ml-auto rounded px-4 py-1.5 text-sm text-destructive hover:bg-muted" onclick={() => deleteStrategy(editingId!)}>
+          <button class="ml-auto rounded-[var(--radius-md)] px-4 py-1.5 text-[12px] text-[var(--color-error)] hover:bg-[var(--bg-hover)]" onclick={() => deleteStrategy(editingId!)}>
             {t('invest_strategy_delete')}
           </button>
         {/if}
       </div>
     </div>
   {:else if investStore.strategies.length === 0}
-    <p class="py-4 text-center text-sm text-muted-foreground">{t('invest_strategy_empty')}</p>
+    <p class="py-4 text-center text-[13px] text-[var(--text-tertiary)]">{t('invest_strategy_empty')}</p>
   {:else}
     <div class="space-y-3">
       {#each investStore.strategies as s}
-        <div class="rounded-lg border p-4">
+        <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-4">
           <div class="flex items-center justify-between">
-            <p class="font-medium">{s.name}</p>
-            <button class="rounded px-2 py-0.5 text-xs hover:bg-muted" onclick={() => startEdit(s)}>{t('invest_edit')}</button>
+            <p class="text-[13px] font-medium text-[var(--text-primary)]">{s.name}</p>
+            <button class="rounded-[var(--radius-md)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]" onclick={() => startEdit(s)}>{t('invest_edit')}</button>
           </div>
-          <p class="mt-1 text-xs text-muted-foreground">
+          <p class="mt-1 text-[11px] text-[var(--text-tertiary)]">
             {t('invest_strategy_max_single')}: {s.maxSinglePct ?? '-'}% |
             {t('invest_strategy_min_cash')}: {s.minCashPct ?? '-'}%
           </p>
           {#if s.targets && s.targets.length > 0}
             <div class="mt-2 flex flex-wrap gap-2">
               {#each s.targets as target}
-                <span class="rounded bg-muted px-2 py-0.5 text-xs">
+                <span class="rounded-[var(--radius-full)] bg-[var(--accent-muted)] px-3 py-1 text-[11px] font-bold text-[var(--accent)]">
                   {target.symbol} {target.targetPct}%
                 </span>
               {/each}

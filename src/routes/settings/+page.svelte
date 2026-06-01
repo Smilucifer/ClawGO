@@ -40,7 +40,7 @@
   import { getTransport } from "$lib/transport";
 
   // ── Tab state ──
-  type SettingsTab = "general" | "connection" | "cli-config" | "shortcuts" | "remote" | "debug" | "characters" | "memory";
+  type SettingsTab = "general" | "connection" | "cli-config" | "shortcuts" | "remote" | "debug" | "characters";
   const VALID_TABS: SettingsTab[] = [
     "general",
     "connection",
@@ -49,7 +49,6 @@
     "remote",
     "debug",
     "characters",
-    "memory",
   ];
   const urlTab = $page.url.searchParams.get("tab");
   // Redirect old profile deep-links to invest page
@@ -69,7 +68,6 @@
     remote: () => t("settings_tab_remote"),
     debug: () => t("settings_tab_debug"),
     characters: () => t("settings_tab_characters"),
-    memory: () => "Memory Extraction",
   };
 
   const tabs: { id: SettingsTab; icon: string }[] = [
@@ -95,7 +93,6 @@
     },
     { id: "debug", icon: "m18 16 4-4-4-4 M6 8l-4 4 4 4 M14.5 4l-5 16" },
     { id: "characters", icon: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M22 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75" },
-    { id: "memory", icon: "M12 2a7 7 0 0 0-7 7c0 4.42 6.26 11.34 7 11.34s7-6.92 7-11.34A7 7 0 0 0 12 2z M12 6a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" },
   ];
 
   let settings = $state<UserSettings | null>(null);
@@ -110,41 +107,6 @@
   let customFormModel = $state("");
   let customFormEffort = $state("max");
   let customShowApiKey = $state(false);
-
-  // ── Memory Extraction Config state ──
-  let memoryExtractionEnabled = $state(true);
-  let memoryExtractionChatEndpoint = $state("");
-  let memoryExtractionChatModel = $state("");
-  let memoryExtractionChatApiKey = $state("");
-  let memoryExtractionShowKey = $state(false);
-  let memoryExtractionSaveDebounce: ReturnType<typeof setTimeout> | null = null;
-  let memoryDreamEnabled = $state(true);
-
-  function loadMemoryExtractionConfig() {
-    try {
-      const settings = JSON.parse(localStorage.getItem("clawgo-memory-extraction") ?? "{}");
-      if (settings.chat_endpoint) memoryExtractionChatEndpoint = settings.chat_endpoint;
-      if (settings.chat_model) memoryExtractionChatModel = settings.chat_model;
-      if (settings.chat_api_key) memoryExtractionChatApiKey = settings.chat_api_key;
-      if (settings.enabled === false) memoryExtractionEnabled = false;
-    } catch {
-      // defaults are fine
-    }
-  }
-
-  function saveMemoryExtractionConfig() {
-    localStorage.setItem("clawgo-memory-extraction", JSON.stringify({
-      enabled: memoryExtractionEnabled,
-      chat_endpoint: memoryExtractionChatEndpoint.trim() || undefined,
-      chat_model: memoryExtractionChatModel.trim() || undefined,
-      chat_api_key: memoryExtractionChatApiKey.trim() || undefined,
-    }));
-  }
-
-  function debouncedSaveMemoryExtraction() {
-    if (memoryExtractionSaveDebounce) clearTimeout(memoryExtractionSaveDebounce);
-    memoryExtractionSaveDebounce = setTimeout(() => saveMemoryExtractionConfig(), 500);
-  }
 
   type ConnectionAgentTab = "claude" | "codex";
   const connectionAgentTabs: Array<{ id: ConnectionAgentTab; label: string; command: string }> = [
@@ -1165,13 +1127,11 @@
       remoteHosts = settings.remote_hosts ?? [];
       platformCredentials = settings.platform_credentials ?? [];
       msvcEnvMode = settings.windows_msvc_env_mode ?? "auto";
-      memoryDreamEnabled = settings.memory_dream_enabled ?? true;
     } catch (e) {
       dbgWarn("settings", "error", e);
     }
     void refreshConnectionCliChecks();
     void loadMsvcEnvStatus(settings?.working_directory);
-    loadMemoryExtractionConfig();
     // Load web server status + token (desktop only)
     if (getTransport().isDesktop()) {
       Promise.all([api.getWebServerStatus(), api.getWebServerToken()])
@@ -3548,94 +3508,6 @@
           </svg>
           {t("settings_characters_manage")}
         </a>
-      </Card>
-    {:else if activeTab === "memory"}
-      <Card class="p-6 space-y-4">
-        <h3 class="text-sm font-semibold">Memory Extraction</h3>
-        <p class="text-xs text-muted-foreground">
-          配置从群聊对话中自动提取用户记忆的 LLM。使用 SQLite FTS5 全文检索，无需 Embedding API。
-        </p>
-
-        <!-- Enable/Disable -->
-        <label class="flex items-center gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={memoryExtractionEnabled}
-            onchange={(e) => {
-              memoryExtractionEnabled = e.currentTarget.checked;
-              saveMemoryExtractionConfig();
-            }}
-            class="h-4 w-4 rounded border-input"
-          />
-          <span class="text-sm">启用自动记忆提取</span>
-        </label>
-
-        {#if memoryExtractionEnabled}
-          <!-- Chat Endpoint -->
-          <Input
-            label="Chat API Endpoint"
-            type="text"
-            bind:value={memoryExtractionChatEndpoint}
-            placeholder="留空使用 Provider 默认端点"
-            onblur={debouncedSaveMemoryExtraction}
-          />
-
-          <!-- Chat API Key -->
-          <div class="relative">
-            <Input
-              label="Chat API Key"
-              type={memoryExtractionShowKey ? "text" : "password"}
-              bind:value={memoryExtractionChatApiKey}
-              placeholder="留空使用 Provider 默认 Key"
-              onblur={debouncedSaveMemoryExtraction}
-            />
-            <button
-              class="absolute right-2 top-8 text-xs text-muted-foreground hover:text-foreground"
-              onclick={() => (memoryExtractionShowKey = !memoryExtractionShowKey)}
-            >
-              {memoryExtractionShowKey ? "隐藏" : "显示"}
-            </button>
-          </div>
-
-          <!-- Chat Model -->
-          <Input
-            label="Chat Model"
-            type="text"
-            bind:value={memoryExtractionChatModel}
-            placeholder="留空使用 Provider 默认模型"
-            onblur={debouncedSaveMemoryExtraction}
-          />
-        {:else}
-          <p class="text-xs text-muted-foreground">
-            自动记忆提取已禁用。群聊对话中的信息将不会被自动提取为用户记忆。
-          </p>
-        {/if}
-
-        <hr class="border-border" />
-
-        <!-- Memory Dream Cycle -->
-        <div class="space-y-2">
-          <h4 class="text-sm font-semibold">记忆衰减与归档</h4>
-          <p class="text-xs text-muted-foreground">
-            启用后，后台定期执行记忆合并（去重）和置信度衰减，低于阈值的记忆自动归档。
-          </p>
-          <label class="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={memoryDreamEnabled}
-              onchange={async (e) => {
-                memoryDreamEnabled = e.currentTarget.checked;
-                try {
-                  settings = await api.updateUserSettings({ memory_dream_enabled: memoryDreamEnabled } as Partial<UserSettings>);
-                } catch (err) {
-                  dbgWarn("settings", "save memory_dream_enabled failed", err);
-                }
-              }}
-              class="h-4 w-4 rounded border-input"
-            />
-            <span class="text-sm">启用记忆衰减与归档</span>
-          </label>
-        </div>
       </Card>
     {/if}
   </div>

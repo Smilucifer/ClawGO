@@ -163,27 +163,27 @@
   }
 </script>
 
-<div class="replay-tab space-y-4">
+<div class="replay-tab space-y-[var(--space-4)]">
   <!-- ── Top bar: mode tabs + symbol selector ────────────────────────────── -->
-  <div class="flex items-center gap-3">
+  <div class="flex items-center gap-[var(--space-3)]">
     <!-- Mode tabs -->
-    <div class="flex rounded-lg border border-[#334155] bg-[#020617] p-0.5">
+    <div class="flex rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-base)] p-0.5">
       <button
-        class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
-        class:bg-[#0F172A]={mode === 'replay'}
-        class:text-white={mode === 'replay'}
-        class:text-slate-500={mode !== 'replay'}
-        class:hover:text-slate-300={mode !== 'replay'}
+        class="rounded-[var(--radius-md)] px-[var(--space-3)] py-[var(--space-1)] text-xs font-medium transition-colors"
+        class:bg-[var(--bg-card)]={mode === 'replay'}
+        class:text-[var(--text-primary)]={mode === 'replay'}
+        class:text-[var(--text-secondary)]={mode !== 'replay'}
+        class:hover:text-[var(--text-primary)]={mode !== 'replay'}
         onclick={() => switchMode('replay')}
       >
         {t('invest_replay_tab_replay')}
       </button>
       <button
-        class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
-        class:bg-[#0F172A]={mode === 'simulate'}
-        class:text-white={mode === 'simulate'}
-        class:text-slate-500={mode !== 'simulate'}
-        class:hover:text-slate-300={mode !== 'simulate'}
+        class="rounded-[var(--radius-md)] px-[var(--space-3)] py-[var(--space-1)] text-xs font-medium transition-colors"
+        class:bg-[var(--bg-card)]={mode === 'simulate'}
+        class:text-[var(--text-primary)]={mode === 'simulate'}
+        class:text-[var(--text-secondary)]={mode !== 'simulate'}
+        class:hover:text-[var(--text-primary)]={mode !== 'simulate'}
         onclick={() => switchMode('simulate')}
       >
         {t('invest_replay_tab_simulate')}
@@ -194,7 +194,7 @@
     <div class="flex-1">
       {#if hasHoldings && !manualMode}
         <select
-          class="w-full rounded border border-[#334155] bg-[#0F172A] px-3 py-1.5 text-sm text-white"
+          class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-3)] py-[var(--space-1)] text-sm text-[var(--text-primary)]"
           bind:value={symbol}
         >
           <option value="">{t('invest_replay_select_placeholder')}</option>
@@ -203,7 +203,7 @@
           {/each}
         </select>
         <button
-          class="mt-1 text-xs text-slate-500 hover:text-slate-300"
+          class="mt-1 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
           onclick={() => { manualMode = true; symbol = ''; }}
         >
           {t('invest_replay_manual_input')}
@@ -211,13 +211,13 @@
       {:else}
         <input
           type="text"
-          class="w-full rounded border border-[#334155] bg-[#0F172A] px-3 py-1.5 text-sm text-white"
+          class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-3)] py-[var(--space-1)] text-sm text-[var(--text-primary)]"
           placeholder="600519.SH"
           bind:value={symbol}
         />
         {#if hasHoldings}
           <button
-            class="mt-1 text-xs text-slate-500 hover:text-slate-300"
+            class="mt-1 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
             onclick={() => { manualMode = false; symbol = ''; }}
           >
             {t('invest_replay_select_from_holdings')}
@@ -233,31 +233,31 @@
   {#if mode === 'replay'}
     <!-- Loading / empty states -->
     {#if !symbol.trim()}
-      <div class="rounded-lg border border-[#334155] bg-[#0F172A] px-4 py-8 text-center text-sm text-slate-500">
+      <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-4)] py-8 text-center text-sm text-[var(--text-secondary)]">
         {t('invest_replay_empty')}
       </div>
     {:else if loading}
-      <div class="flex items-center justify-center gap-2 rounded-lg border border-[#334155] bg-[#0F172A] px-4 py-8 text-sm text-slate-400">
-        <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-blue-400"></span>
+      <div class="flex items-center justify-center gap-2 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-4)] py-8 text-sm text-[var(--text-secondary)]">
+        <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--accent)]"></span>
         {t('invest_replay_loading')}
       </div>
     {:else if archives.length === 0}
-      <div class="rounded-lg border border-[#334155] bg-[#0F172A] px-4 py-8 text-center text-sm text-slate-500">
+      <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-4)] py-8 text-center text-sm text-[var(--text-secondary)]">
         {t('invest_replay_no_history')}
       </div>
     {:else}
       <!-- Date selector (when multiple dates available) -->
       {#if archives.length > 1}
-        <div class="rounded-lg border border-[#334155] bg-[#0F172A] px-4 py-2">
-          <div class="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">
+        <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-2)]">
+          <div class="mb-1 text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
             {t('invest_replay_browse_dates')}
           </div>
           <div class="flex flex-wrap gap-1.5">
             {#each archives as archive}
               <button
-                class="rounded-md border px-2.5 py-1 text-xs font-medium transition-colors {selectedDate === archive.date
-                  ? 'border-[#06b6d4] bg-[#06b6d4]/10 text-[#06b6d4]'
-                  : 'border-[#334155] text-slate-400 hover:border-slate-500 hover:text-slate-300'}"
+                class="rounded-[var(--radius-md)] border px-2.5 py-1 text-xs font-medium transition-colors {selectedDate === archive.date
+                  ? 'border-[var(--accent)] bg-[var(--accent-muted)] text-[var(--accent)]'
+                  : 'border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--text-tertiary)] hover:text-[var(--text-primary)]'}"
                 onclick={() => (selectedDate = archive.date)}
               >
                 {archive.date}
@@ -269,25 +269,25 @@
 
       <!-- Verdict info card -->
       {#if selectedArchive}
-        <div class="rounded-lg border border-[#334155] bg-[#0F172A] px-4 py-3">
-          <div class="mb-2 text-xs font-medium uppercase tracking-wider text-[#06b6d4]">
+        <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-3)]">
+          <div class="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--accent)]">
             {t('invest_replay_latest_verdict')}
           </div>
-          <div class="flex items-center gap-3 text-sm">
-            <span class="font-medium text-white">
+          <div class="flex items-center gap-[var(--space-3)] text-sm">
+            <span class="font-medium text-[var(--text-primary)]">
               {allHoldings.find((h) => h.symbol === selectedArchive.symbol)?.name ?? selectedArchive.symbol}
             </span>
-            <span class="font-mono text-xs text-slate-400">{selectedArchive.symbol}</span>
-            <span class="text-xs text-slate-500">{selectedArchive.date}</span>
+            <span class="font-[var(--font-mono)] text-xs text-[var(--text-secondary)]">{selectedArchive.symbol}</span>
+            <span class="text-xs text-[var(--text-tertiary)]">{selectedArchive.date}</span>
           </div>
         </div>
 
         <!-- Discussion steps card -->
-        <div class="rounded-lg border border-[#334155] bg-[#0F172A] px-4 py-3">
-          <div class="mb-3 text-xs font-medium uppercase tracking-wider text-[#8b5cf6]">
+        <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-3)]">
+          <div class="mb-3 text-[11px] font-medium uppercase tracking-wider text-purple-500">
             {t('invest_replay_report_steps')}
           </div>
-          <div class="max-h-[60vh] overflow-y-auto whitespace-pre-wrap font-mono text-sm leading-relaxed text-slate-300">
+          <div class="max-h-[60vh] overflow-y-auto whitespace-pre-wrap font-[var(--font-mono)] text-sm leading-relaxed text-[var(--text-primary)]">
             {selectedArchive.content}
           </div>
         </div>
@@ -300,19 +300,19 @@
   {:else}
     {#if !hasHoldings}
       <!-- No holdings -->
-      <div class="rounded-lg border border-[#334155] bg-[#0F172A] px-4 py-8 text-center text-sm text-slate-500">
+      <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-4)] py-8 text-center text-sm text-[var(--text-secondary)]">
         {t('invest_replay_no_holdings')}
       </div>
     {:else}
       <!-- Round selector + start button -->
-      <div class="rounded-lg border border-[#334155] bg-[#0F172A] px-4 py-3">
-        <div class="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400">
+      <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-3)]">
+        <div class="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
           {t('invest_replay_simulate_rounds')}
         </div>
         <div class="flex flex-wrap items-center gap-2">
           {#each ROUND_OPTIONS as opt}
             <button
-              class="rounded-md border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 {simulateRounds === opt.value ? 'border-[#3b82f6] bg-[#3b82f6]/10 text-[#3b82f6]' : 'border-[#334155] text-slate-400 hover:border-slate-500'}"
+              class="rounded-[var(--radius-md)] border px-[var(--space-3)] py-[var(--space-1)] text-xs font-medium transition-colors disabled:opacity-40 {simulateRounds === opt.value ? 'border-blue-500 bg-blue-500/10 text-blue-400' : 'border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--text-tertiary)]'}"
               disabled={simulateRunning}
               onclick={() => (simulateRounds = opt.value)}
             >
@@ -321,19 +321,19 @@
           {/each}
         </div>
 
-        <div class="mt-3 flex items-center gap-3">
+        <div class="mt-3 flex items-center gap-[var(--space-3)]">
           <button
-            class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-            class:bg-green-600={!simulateRunning}
-            class:hover:bg-green-500={!simulateRunning}
+            class="flex items-center gap-2 rounded-[var(--radius-md)] px-[var(--space-4)] py-[var(--space-2)] text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+            class:bg-[var(--color-success)]={!simulateRunning}
+            class:hover:brightness-110={!simulateRunning}
             class:text-white={!simulateRunning}
-            class:bg-slate-700={simulateRunning}
-            class:text-slate-300={simulateRunning}
+            class:bg-[var(--bg-elevated)]={simulateRunning}
+            class:text-[var(--text-primary)]={simulateRunning}
             disabled={simulateRunning || !symbol.trim()}
             onclick={startSimulation}
           >
             {#if simulateRunning}
-              <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-green-400"></span>
+              <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-[var(--color-success)]"></span>
               {t('invest_replay_simulate_running')}
             {:else}
               {t('invest_replay_start_simulate')}
@@ -344,14 +344,14 @@
 
       <!-- Empty state (no simulation started yet) -->
       {#if !simulateStarted && !simulateRunning}
-        <div class="rounded-lg border border-[#334155] bg-[#0F172A] px-4 py-8 text-center text-sm text-slate-500">
+        <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-4)] py-8 text-center text-sm text-[var(--text-secondary)]">
           {t('invest_replay_simulate_empty')}
         </div>
       {/if}
 
       <!-- Error banner -->
       {#if investCommitteeStore.runError}
-        <div class="rounded-lg border border-red-800/50 bg-red-900/20 px-3 py-2 text-sm text-red-400">
+        <div class="rounded-[var(--radius-lg)] border border-red-700/50 bg-[var(--color-error)]/10 px-[var(--space-3)] py-[var(--space-2)] text-sm text-[var(--color-error)]">
           {investCommitteeStore.runError}
         </div>
       {/if}
@@ -368,17 +368,17 @@
           {@const round = getRoundForStep(p, step.backendIdx)}
 
           {@const stepCardCls = state === 'done'
-            ? 'border-green-700/50 bg-green-900/5'
+            ? 'border-[var(--color-success)]/40 bg-[var(--color-success)]/5'
             : state === 'active'
-              ? 'border-blue-600/50 bg-blue-900/5'
+              ? 'border-blue-500/40 bg-blue-500/5'
               : state === 'error'
-                ? 'border-red-700/50 bg-red-900/5'
-                : 'border-slate-700 bg-slate-900/30'}
+                ? 'border-[var(--color-error)]/40 bg-[var(--color-error)]/5'
+                : 'border-[var(--border)] bg-[var(--bg-base)]/30'}
 
-          <div class="relative rounded-lg border p-3 transition-colors duration-150 {stepCardCls}">
+          <div class="relative rounded-[var(--radius-lg)] border p-[var(--space-3)] transition-colors duration-150 {stepCardCls}">
             <!-- Simulation watermark -->
             {#if result}
-              <span class="absolute right-2 top-2 rounded bg-amber-900/30 px-1.5 py-0.5 text-[10px] font-bold text-amber-400">
+              <span class="absolute right-2 top-2 rounded bg-[var(--color-warning)]/20 px-1.5 py-0.5 text-[10px] font-bold text-[var(--color-warning)]">
                 {t('invest_replay_simulate_watermark')}
               </span>
             {/if}
@@ -395,21 +395,21 @@
                   {t(step.labelKey)}
                 </span>
                 {#if state === 'active'}
-                  <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-600 border-t-blue-400"></span>
-                  <span class="text-xs text-slate-400">{t('invest_debate_waiting_llm')}</span>
+                  <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-[var(--border)] border-t-blue-400"></span>
+                  <span class="text-xs text-[var(--text-secondary)]">{t('invest_debate_waiting_llm')}</span>
                 {:else if step.key === 'regime' && state === 'done' && p?.regimeData}
                   <!-- REGIME step with computed metrics -->
-                  <span class="text-[10px] text-green-500">✓</span>
+                  <span class="text-[10px] text-[var(--color-success)]">✓</span>
                   <div class="mt-1 w-full space-y-1 text-xs">
                     <div class="flex flex-wrap gap-x-3 gap-y-1">
-                      <span class="text-slate-400">
-                        {t('invest_regime_label')}: <span class="font-medium text-cyan-400">{p.regimeData.regime}</span>
+                      <span class="text-[var(--text-secondary)]">
+                        {t('invest_regime_label')}: <span class="font-medium text-[var(--accent)]">{p.regimeData.regime}</span>
                       </span>
-                      <span class="text-slate-400">
-                        {t('invest_regime_reason')}: <span class="text-slate-300">{p.regimeData.reason}</span>
+                      <span class="text-[var(--text-secondary)]">
+                        {t('invest_regime_reason')}: <span class="text-[var(--text-primary)]">{p.regimeData.reason}</span>
                       </span>
                     </div>
-                    <div class="text-[11px] text-slate-500">
+                    <div class="text-[11px] text-[var(--text-tertiary)]">
                       RSI-14: {p.regimeData.metrics.rsi14.toFixed(1)} ·
                       MA20: {p.regimeData.metrics.ma20.toFixed(2)} ·
                       MA60: {p.regimeData.metrics.ma60.toFixed(2)} ·
@@ -417,12 +417,12 @@
                     </div>
                   </div>
                 {:else if state === 'done' && step.key === 'regime'}
-                  <span class="text-[10px] text-green-500">✓</span>
-                  <span class="text-xs text-slate-500">{t('invest_committee_regime_computed')}</span>
+                  <span class="text-[10px] text-[var(--color-success)]">✓</span>
+                  <span class="text-xs text-[var(--text-tertiary)]">{t('invest_committee_regime_computed')}</span>
                 {:else if state === 'pending'}
-                  <span class="text-xs text-slate-600">{t('invest_overview_pending')}</span>
+                  <span class="text-xs text-[var(--text-tertiary)]">{t('invest_overview_pending')}</span>
                 {:else if state === 'error'}
-                  <span class="text-[10px] text-red-400">✗</span>
+                  <span class="text-[10px] text-[var(--color-error)]">✗</span>
                 {/if}
               </div>
             {/if}
@@ -431,32 +431,32 @@
 
         <!-- CIO final verdict card (when done) -->
         {#if result}
-          <div class="rounded-lg border border-[#334155] bg-[#0F172A] p-4">
-            <div class="mb-2 text-xs font-medium uppercase tracking-wider text-[#eab308]">
+          <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)]">
+            <div class="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--color-warning)]">
               {t('invest_replay_cio_verdict')}
             </div>
 
-            <div class="mb-3 flex flex-wrap items-center gap-3">
-              <span class="rounded border px-3 py-1 text-sm font-bold {getVerdictColor(result.finalVerdict)}">
+            <div class="mb-3 flex flex-wrap items-center gap-[var(--space-3)]">
+              <span class="rounded-[var(--radius-full)] border px-3 py-1 text-[11px] font-bold {getVerdictColor(result.finalVerdict)}">
                 {result.finalVerdict}
               </span>
-              <span class="text-sm text-slate-400">
+              <span class="text-sm text-[var(--text-secondary)]">
                 {t('invest_macro_signal')}: {(result.finalConfidence * 100).toFixed(0)}%
               </span>
               {#if result.converged}
-                <span class="rounded bg-green-900/30 px-1.5 py-0.5 text-[10px] font-medium text-green-400">
+                <span class="rounded-[var(--radius-full)] bg-[var(--color-success)]/20 px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-success)]">
                   {t('invest_replay_converged')}
                 </span>
               {/if}
               {#if result.sentinelOverride}
-                <span class="rounded bg-red-900/30 px-1.5 py-0.5 text-[10px] font-medium text-red-400">
+                <span class="rounded-[var(--radius-full)] bg-[var(--color-error)]/20 px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-error)]">
                   {t('invest_replay_sentinel_override')}
                 </span>
               {/if}
             </div>
 
             <!-- Sanity check gates -->
-            <div class="mb-2 flex gap-3 text-[11px] text-slate-500">
+            <div class="mb-2 flex gap-3 text-[11px] text-[var(--text-tertiary)]">
               <span class:opacity-40={!result.sanityCheck.gate1Pass} title={t('invest_gate1_desc')}>
                 {t('invest_gate1_label')} {result.sanityCheck.gate1Pass ? '✓' : '✗'}
               </span>
@@ -469,19 +469,19 @@
               <span class:opacity-40={!result.sanityCheck.gate4Pass} title={t('invest_gate4_desc')}>
                 {t('invest_gate4_label')} {result.sanityCheck.gate4Pass ? '✓' : '✗'}
               </span>
-              <span class="ml-auto">
+              <span class="ml-auto font-[var(--font-mono)]">
                 {result.totalTokens} tok / {(result.totalLatencyMs / 1000).toFixed(1)}s
               </span>
             </div>
 
             {#if result.reasoning}
-              <div class="max-h-32 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-slate-400">
+              <div class="max-h-32 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-[var(--text-secondary)]">
                 {result.reasoning}
               </div>
             {/if}
 
             {#if result.sanityCheck.notes.length > 0}
-              <div class="mt-2 space-y-0.5 text-[11px] text-slate-500">
+              <div class="mt-2 space-y-0.5 text-[11px] text-[var(--text-tertiary)]">
                 {#each result.sanityCheck.notes as note}
                   <div>- {note}</div>
                 {/each}
@@ -489,7 +489,7 @@
             {/if}
 
             {#if result.sentinelOverride}
-              <div class="mt-2 rounded bg-red-900/20 px-2 py-1 text-[11px] text-red-400">
+              <div class="mt-2 rounded bg-[var(--color-error)]/15 px-2 py-1 text-[11px] text-[var(--color-error)]">
                 {result.sentinelOverride.reason}
               </div>
             {/if}
@@ -498,7 +498,7 @@
 
         <!-- Disclaimer footer (only when done) -->
         {#if result && !investCommitteeStore.streaming}
-          <div class="rounded-lg border border-amber-800/30 bg-amber-900/10 px-3 py-2 text-xs text-amber-400/80">
+          <div class="rounded-[var(--radius-lg)] border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 px-[var(--space-3)] py-[var(--space-2)] text-xs text-[var(--color-warning)]/80">
             ⚠️ {t('invest_replay_simulate_disclaimer')}
           </div>
         {/if}

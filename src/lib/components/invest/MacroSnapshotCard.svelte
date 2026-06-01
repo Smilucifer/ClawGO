@@ -4,47 +4,60 @@
 
   const latestVerdict = $derived(investStore.verdicts[0] ?? null);
 
-  const signalColor = $derived(
+  const signalLabel = $derived(
     latestVerdict?.macroSignal === 'risk_on'
-      ? 'text-green-500'
+      ? 'Risk-On'
       : latestVerdict?.macroSignal === 'risk_off'
-        ? 'text-red-500'
-        : 'text-yellow-500'
+        ? 'Risk-Off'
+        : 'Neutral'
+  );
+
+  const signalBadgeClass = $derived(
+    latestVerdict?.macroSignal === 'risk_on'
+      ? 'bg-[rgba(138,154,118,0.15)] text-[#8a9a76]'
+      : latestVerdict?.macroSignal === 'risk_off'
+        ? 'bg-[rgba(168,122,122,0.15)] text-[#a87a7a]'
+        : 'bg-[var(--accent-muted)] text-[var(--accent)]'
+  );
+
+  const barColor = $derived(
+    (latestVerdict?.macroStrength ?? 0) >= 7 ? '#8a9a76'
+      : (latestVerdict?.macroStrength ?? 0) >= 4 ? '#b89a6a'
+        : '#a87a7a'
   );
 </script>
 
-<div class="rounded-lg border border-border p-4">
-  <h3 class="mb-3 text-sm font-semibold flex items-center gap-2">
-    <span class="h-4 w-0.5 rounded-full bg-primary"></span>
-    {t('invest_macro_snapshot')}
-  </h3>
+<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)]">
+  <div class="mb-[var(--space-3)] flex items-center justify-between">
+    <h3 class="text-[14px] font-semibold text-[var(--text-primary)]">📊 {t('invest_macro_snapshot')}</h3>
+    {#if latestVerdict?.macroSignal}
+      <span class="rounded-[var(--radius-full)] px-3 py-1 text-[11px] font-semibold {signalBadgeClass}">
+        {signalLabel}
+      </span>
+    {/if}
+  </div>
 
   {#if latestVerdict?.macroSignal}
-    <div class="space-y-2">
-      <div class="flex items-center gap-2">
-        <span class="text-xs text-muted-foreground">{t('invest_macro_signal')}:</span>
-        <span class="text-sm font-bold {signalColor}">{latestVerdict.macroSignal}</span>
-      </div>
+    <div class="space-y-[var(--space-2)]">
       {#if latestVerdict.macroStrength != null}
-        <div class="flex items-center gap-2">
-          <span class="text-xs text-muted-foreground">{t('invest_macro_strength')}:</span>
-          <div class="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-            <div
-              class="h-full rounded-full transition-all"
-              class:bg-green-500={latestVerdict.macroStrength >= 7}
-              class:bg-yellow-500={latestVerdict.macroStrength >= 4 && latestVerdict.macroStrength < 7}
-              class:bg-red-500={latestVerdict.macroStrength < 4}
-              style="width: {(latestVerdict.macroStrength / 10) * 100}%"
-            ></div>
+        <div class="flex items-center gap-[var(--space-2)]">
+          <span class="flex-1 text-[12px] text-[var(--text-tertiary)]">{t('invest_macro_strength')}</span>
+          <span class="min-w-[50px] text-right text-[12px] font-[var(--font-mono)] text-[var(--text-secondary)]">{latestVerdict.macroStrength}/10</span>
+          <div class="h-[4px] w-[80px] overflow-hidden rounded-[2px] bg-[var(--bg-input)]">
+            <div class="h-full rounded-[2px] transition-all" style="width: {(latestVerdict.macroStrength / 10) * 100}%; background: {barColor};"></div>
           </div>
-          <span class="text-xs font-mono">{latestVerdict.macroStrength}/10</span>
         </div>
       {/if}
-      <div class="text-xs text-muted-foreground">
-        {t('invest_macro_from')}: {latestVerdict.symbol} · {new Date(latestVerdict.createdAt).toLocaleDateString()}
+      <div class="flex items-center gap-[var(--space-2)]">
+        <span class="flex-1 text-[12px] text-[var(--text-tertiary)]">{t('invest_macro_from')}</span>
+        <span class="text-[11px] font-[var(--font-mono)] text-[var(--text-secondary)]">{latestVerdict.symbol}</span>
+      </div>
+      <div class="flex items-center gap-[var(--space-2)]">
+        <span class="flex-1 text-[12px] text-[var(--text-tertiary)]">{t('invest_macro_signal')}</span>
+        <span class="text-[11px] font-[var(--font-mono)] text-[var(--text-secondary)]">{new Date(latestVerdict.createdAt).toLocaleString()}</span>
       </div>
     </div>
   {:else}
-    <p class="text-xs text-muted-foreground">{t('invest_macro_no_data')}</p>
+    <p class="text-[12px] text-[var(--text-tertiary)]">{t('invest_macro_no_data')}</p>
   {/if}
 </div>

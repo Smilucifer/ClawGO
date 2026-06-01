@@ -34,17 +34,35 @@
 
   function severityColor(severity: string): string {
     switch (severity) {
-      case 'high': return 'text-red-400 bg-red-500/10 border-red-500/30';
-      case 'medium': return 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30';
-      default: return 'text-zinc-400 bg-zinc-500/10 border-zinc-500/30';
+      case 'high': return 'text-[#a87a7a] bg-[var(--color-error-bg)] border-[var(--color-error-bg)]';
+      case 'medium': return 'text-[#b89a6a] bg-[var(--color-warning-bg)] border-[var(--color-warning-bg)]';
+      default: return 'text-[var(--text-secondary)] bg-[var(--bg-hover)] border-[var(--border)]';
     }
   }
 
   function stanceColor(stance: string): string {
     switch (stance) {
-      case 'bullish': return 'text-green-400';
-      case 'bearish': return 'text-red-400';
-      default: return 'text-zinc-400';
+      case 'bullish': return 'text-[var(--color-success)]';
+      case 'bearish': return 'text-[var(--color-error)]';
+      default: return 'text-[var(--text-tertiary)]';
+    }
+  }
+
+  function severityLabel(severity: string): string {
+    switch (severity) {
+      case 'high': return t('invest.eventWatch.filterHigh');
+      case 'medium': return t('invest.eventWatch.filterMedium');
+      case 'low': return t('invest.eventWatch.filterLow');
+      default: return severity;
+    }
+  }
+
+  function stanceLabel(stance: string): string {
+    switch (stance) {
+      case 'bullish': return t('invest.eventWatch.stanceBullish');
+      case 'bearish': return t('invest.eventWatch.stanceBearish');
+      case 'neutral': return t('invest.eventWatch.stanceNeutral');
+      default: return stance;
     }
   }
 
@@ -68,13 +86,13 @@
 
 <div class="flex flex-col h-full">
   <!-- Status bar -->
-  <div class="flex items-center justify-between px-4 py-2 border-b border-zinc-800">
-    <div class="flex items-center gap-3 text-xs text-zinc-400">
+  <div class="flex items-center justify-between px-[var(--space-4)] py-[var(--space-2)] border-b border-[var(--border)]">
+    <div class="flex items-center gap-3 text-[12px] text-[var(--text-secondary)]">
       {#if store.scanStatus}
         <span>{store.scanStatus.totalEvents} {t('invest.eventWatch.events')}</span>
-        <span class="text-red-400">{store.scanStatus.highCount} {t('invest.eventWatch.high')}</span>
+        <span class="text-[#a87a7a]">{store.scanStatus.highCount} {t('invest.eventWatch.high')}</span>
         {#if store.scanStatus.untriggeredHigh > 0}
-          <span class="text-amber-400">{store.scanStatus.untriggeredHigh} {t('invest.eventWatch.untriggered')}</span>
+          <span class="text-[#b89a6a]">{store.scanStatus.untriggeredHigh} {t('invest.eventWatch.untriggered')}</span>
         {/if}
         {#if store.scanStatus.lastEventAt}
           <span>{t('invest.eventWatch.last')}: {fmtRelative(store.scanStatus.lastEventAt)}</span>
@@ -85,12 +103,12 @@
     </div>
     <div class="flex items-center gap-2">
       {#if store.error}
-        <span class="text-xs text-red-400 max-w-xs truncate" title={store.error}>{store.error}</span>
+        <span class="text-[12px] text-[#a87a7a] max-w-xs truncate" title={store.error}>{store.error}</span>
       {/if}
       <button
         onclick={handleScan}
         disabled={store.isScanning}
-        class="px-3 py-1 text-xs rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 disabled:opacity-50"
+        class="rounded-[var(--radius-md)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] bg-[var(--bg-input)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] transition-colors disabled:opacity-50"
       >
         {store.isScanning ? t('invest.eventWatch.scanning') : t('invest.eventWatch.scanNow')}
       </button>
@@ -98,13 +116,13 @@
   </div>
 
   <!-- Filters -->
-  <div class="flex items-center gap-2 px-4 py-2 border-b border-zinc-800">
+  <div class="flex items-center gap-2 px-[var(--space-4)] py-[var(--space-2)] border-b border-[var(--border)]">
     <!-- Time window -->
-    <div class="flex rounded overflow-hidden border border-zinc-700">
+    <div class="flex rounded-[var(--radius-md)] overflow-hidden border border-[var(--border)]">
       {#each ['24h', '48h', '7d'] as tw}
         <button
           onclick={() => handleTimeWindowChange(tw as '24h' | '48h' | '7d')}
-          class="px-2 py-0.5 text-xs {store.eventFilter.timeWindow === tw ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-zinc-300'}"
+          class="px-2 py-0.5 text-[12px] {store.eventFilter.timeWindow === tw ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]' : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'}"
         >{tw}</button>
       {/each}
     </div>
@@ -114,7 +132,7 @@
       {#each ['all', 'high', 'medium', 'low'] as sev}
         <button
           onclick={() => handleSeverityChange(sev as 'all' | 'high' | 'medium' | 'low')}
-          class="px-2 py-0.5 text-xs rounded border {store.eventFilter.severity === sev ? 'border-zinc-500 text-white' : 'border-zinc-700 text-zinc-500 hover:text-zinc-400'}"
+          class="px-2 py-0.5 text-[12px] rounded-[var(--radius-md)] border {store.eventFilter.severity === sev ? 'border-[var(--text-tertiary)] text-[var(--text-primary)]' : 'border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'}"
         >{sev === 'all' ? t('invest.eventWatch.filterAll') : sev === 'high' ? t('invest.eventWatch.filterHigh') : sev === 'medium' ? t('invest.eventWatch.filterMedium') : t('invest.eventWatch.filterLow')}</button>
       {/each}
     </div>
@@ -125,45 +143,45 @@
       placeholder={t('invest.eventWatch.searchPlaceholder')}
       value={store.eventFilter.search}
       oninput={handleSearchInput}
-      class="ml-auto px-2 py-0.5 text-xs bg-zinc-900 border border-zinc-700 rounded text-zinc-300 placeholder-zinc-600 w-40"
+      class="ml-auto rounded-[var(--radius-md)] px-[var(--space-2)] py-[var(--space-1)] text-[12px] bg-[var(--bg-input)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] w-40"
     />
   </div>
 
   <!-- Event list -->
   <div class="flex-1 overflow-y-auto">
     {#if store.filteredEvents.length === 0}
-      <div class="flex items-center justify-center h-full text-zinc-500 text-sm">
+      <div class="flex items-center justify-center h-full text-[var(--text-tertiary)] text-[13px]">
         {t('invest.eventWatch.noEvents')}
       </div>
     {:else}
       {#each store.filteredEvents as event (event.id)}
-        <div class="px-4 py-2 border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors">
+        <div class="px-[var(--space-4)] py-[var(--space-2)] border-b border-[var(--border)]/50 hover:bg-[var(--bg-hover)] transition-colors">
           <div class="flex items-start gap-2">
             <!-- Severity badge -->
-            <span class="px-1.5 py-0.5 text-[10px] rounded border {severityColor(event.severity)}">
-              {event.severity.toUpperCase()}
+            <span class="px-1.5 py-0.5 text-[10px] rounded-[var(--radius-full)] border {severityColor(event.severity)}">
+              {severityLabel(event.severity)}
             </span>
 
             <!-- Content -->
             <div class="flex-1 min-w-0 cursor-pointer" role="button" tabindex="0" onclick={() => toggleExpand(event.id)} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpand(event.id); } }}>
               <div class="flex items-center gap-2">
-                <span class="text-sm text-zinc-200 truncate">{event.title}</span>
-                <span class="text-[10px] {stanceColor(event.stance)}">{event.stance}</span>
+                <span class="text-[13px] text-[var(--text-primary)] truncate" title={event.body && event.title !== event.body ? event.title : ''}>{event.body || event.title}</span>
+                <span class="text-[10px] {stanceColor(event.stance)}">{stanceLabel(event.stance)}</span>
               </div>
-              {#if event.body && event.body !== event.title}
+              {#if event.body && event.title && event.title !== event.body}
                 {#if expandedIds.has(event.id)}
-                  <p class="text-xs text-zinc-400 mt-1">{event.body}</p>
+                  <p class="text-[12px] text-[var(--text-secondary)] mt-1">{event.title}</p>
                 {:else}
-                  <p class="text-xs text-zinc-500 mt-0.5 line-clamp-2">{event.body}</p>
+                  <p class="text-[12px] text-[var(--text-tertiary)] mt-0.5 line-clamp-1">{event.title}</p>
                 {/if}
               {/if}
               <div class="flex items-center gap-2 mt-1">
-                <span class="text-[10px] text-zinc-600">{event.source}</span>
-                <span class="text-[10px] text-zinc-600">{fmtRelative(event.createdAt)}</span>
+                <span class="text-[10px] text-[var(--text-tertiary)]">{event.source}</span>
+                <span class="text-[10px] text-[var(--text-tertiary)]">{fmtRelative(event.createdAt)}</span>
                 {#if event.symbols}
                   <div class="flex gap-1">
                     {#each event.symbols.split(',').filter(Boolean) as sym}
-                      <span class="px-1 py-0 text-[10px] bg-zinc-800 rounded text-zinc-400">{sym}</span>
+                      <span class="px-1 py-0 text-[10px] bg-[var(--bg-input)] rounded-[var(--radius-md)] text-[var(--text-secondary)]">{sym}</span>
                     {/each}
                   </div>
                 {/if}
@@ -174,12 +192,12 @@
             {#if event.severity === 'high' && !event.triggered}
               <button
                 onclick={(e) => { e.stopPropagation(); handleTrigger(event); }}
-                class="px-2 py-1 text-xs bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 rounded"
+                class="rounded-[var(--radius-md)] px-2 py-1 text-[12px] bg-[var(--color-warning-bg)] hover:bg-[var(--color-warning-bg)]/80 text-[var(--color-warning)] transition-colors"
               >
                 {t('invest.eventWatch.triggerCommittee')}
               </button>
             {:else if event.triggered}
-              <span class="text-[10px] text-zinc-600">{t('invest.eventWatch.triggered')}</span>
+              <span class="text-[10px] text-[var(--text-tertiary)]">{t('invest.eventWatch.triggered')}</span>
             {/if}
           </div>
         </div>

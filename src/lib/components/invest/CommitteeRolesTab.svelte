@@ -47,9 +47,9 @@
     <!-- Left panel -->
     <div class="space-y-5">
       <!-- Verdict options -->
-      <div class="rounded-lg border border-border p-4">
-        <h3 class="mb-3 text-sm font-semibold flex items-center gap-2">
-          <span class="h-4 w-0.5 rounded-full bg-primary"></span>
+      <div class="rounded-[var(--radius-lg)] border border-[var(--border)] p-4 bg-[var(--bg-card)]">
+        <h3 class="mb-3 text-sm font-semibold flex items-center gap-2 text-[var(--text-primary)]">
+          <span class="h-4 w-0.5 rounded-full bg-[var(--accent)]"></span>
           {t('invest_roles_verdict_options')}
         </h3>
         <ul class="space-y-2">
@@ -61,25 +61,25 @@
             { key: 'SELL', desc: t('invest_roles_verdict_sell_desc') },
           ] as v}
             <li class="flex items-start gap-2 text-xs">
-              <span class="min-w-[90px] font-mono font-bold text-primary">{v.key}</span>
-              <span class="text-muted-foreground">{v.desc}</span>
+              <span class="min-w-[90px] font-[var(--font-mono)] font-bold text-[var(--accent)]">{v.key}</span>
+              <span class="text-[var(--text-secondary)]">{v.desc}</span>
             </li>
           {/each}
         </ul>
       </div>
 
       <!-- REGIME hard rules -->
-      <div class="rounded-lg border border-border p-4">
-        <h3 class="mb-1 text-sm font-semibold flex items-center gap-2">
-          <span class="h-4 w-0.5 rounded-full bg-primary"></span>
+      <div class="rounded-[var(--radius-lg)] border border-[var(--border)] p-4 bg-[var(--bg-card)]">
+        <h3 class="mb-1 text-sm font-semibold flex items-center gap-2 text-[var(--text-primary)]">
+          <span class="h-4 w-0.5 rounded-full bg-[var(--accent)]"></span>
           {t('invest_roles_regime_rules')}
         </h3>
-        <p class="mb-3 text-xs text-muted-foreground leading-relaxed">
+        <p class="mb-3 text-xs text-[var(--text-secondary)] leading-relaxed">
           {t('invest_roles_regime_desc')}
         </p>
         <div class="grid gap-4 sm:grid-cols-[55%_1fr]">
           <!-- Thresholds -->
-          <table class="w-full text-xs font-mono">
+          <table class="w-full text-xs font-[var(--font-mono)]">
             <tbody>
               {#each [
                 ['trend_ma_spread_pct', '= 3'],
@@ -91,16 +91,16 @@
                 ['low_quantile_threshold', '= 0.2'],
                 ['high_quantile_threshold', '= 0.8'],
               ] as [name, val]}
-                <tr class="border-b border-border/50">
-                  <td class="py-1 pr-2 text-blue-400">{name}</td>
-                  <td class="py-1 text-right text-yellow-400">{val}</td>
+                <tr class="border-b border-[var(--border)]">
+                  <td class="py-1 pr-2 text-[#3b82f6]">{name}</td>
+                  <td class="py-1 text-right text-[var(--color-warning)]">{val}</td>
                 </tr>
               {/each}
             </tbody>
           </table>
           <!-- Priorities -->
           <div>
-            <div class="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <div class="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
               {t('invest_roles_priority_type')}
             </div>
             <ol class="space-y-1.5 text-xs">
@@ -112,10 +112,10 @@
                 { n: '5', name: 'unknown', detail: t('invest_roles_regime_unknown') },
               ] as p}
                 <li class="flex items-start gap-1.5">
-                  <span class="min-w-[14px] font-bold text-primary">{p.n}.</span>
+                  <span class="min-w-[14px] font-bold text-[var(--accent)]">{p.n}.</span>
                   <span>
-                    <span class="font-semibold">{p.name}</span>
-                    <span class="text-muted-foreground"> &mdash; {p.detail}</span>
+                    <span class="font-semibold text-[var(--text-primary)]">{p.name}</span>
+                    <span class="text-[var(--text-secondary)]"> &mdash; {p.detail}</span>
                   </span>
                 </li>
               {/each}
@@ -126,9 +126,9 @@
     </div>
 
     <!-- Right panel: CIO Sanity Check -->
-    <div class="rounded-lg border border-border p-4">
-      <h3 class="mb-3 text-sm font-semibold flex items-center gap-2">
-        <span class="h-4 w-0.5 rounded-full bg-primary"></span>
+    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] p-4 bg-[var(--bg-card)]">
+      <h3 class="mb-3 text-sm font-semibold flex items-center gap-2 text-[var(--text-primary)]">
+        <span class="h-4 w-0.5 rounded-full bg-[var(--accent)]"></span>
         {t('invest_roles_sanity_check')}
       </h3>
       <ul class="space-y-2.5">
@@ -139,7 +139,7 @@
           t('invest_roles_sanity_4'),
           t('invest_roles_sanity_5'),
         ] as rule}
-          <li class="relative pl-3.5 text-xs leading-relaxed text-muted-foreground before:absolute before:left-0 before:top-[5px] before:h-1 before:w-1 before:rounded-full before:bg-orange-400">
+          <li class="relative pl-3.5 text-xs leading-relaxed text-[var(--text-secondary)] before:absolute before:left-0 before:top-[5px] before:h-1 before:w-1 before:rounded-full before:bg-[var(--color-warning)]">
             {@html rule}
           </li>
         {/each}
@@ -149,18 +149,18 @@
 
   <!-- Save message -->
   {#if saveMsg}
-    <div class="text-xs text-muted-foreground">{saveMsg}</div>
+    <div class="text-xs text-[var(--text-secondary)]">{saveMsg}</div>
   {/if}
 
   <!-- Role cards -->
-  <div class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+  <div class="text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
     {t('invest_roles_section_label')}
   </div>
 
   {#each [
     {
       key: 'macro',
-      color: 'purple',
+      color: '#8b5cf6',
       badge: 'MACRO',
       nameCn: t('invest_roles_macro_cn'),
       nameEn: 'Macro Strategist',
@@ -170,7 +170,7 @@
     },
     {
       key: 'quant',
-      color: 'blue',
+      color: '#3b82f6',
       badge: 'QUANT',
       nameCn: t('invest_roles_quant_cn'),
       nameEn: 'Quant Analyst',
@@ -183,7 +183,7 @@
     },
     {
       key: 'risk',
-      color: 'orange',
+      color: 'var(--color-warning)',
       badge: 'RISK',
       nameCn: t('invest_roles_risk_cn'),
       nameEn: 'Risk Officer',
@@ -196,7 +196,7 @@
     },
     {
       key: 'l4_officer',
-      color: 'red',
+      color: 'var(--color-error)',
       badge: 'L4',
       nameCn: t('invest_roles_l4_officer_cn'),
       nameEn: 'L4 Execution Officer',
@@ -206,7 +206,7 @@
     },
     {
       key: 'cio',
-      color: 'green',
+      color: 'var(--color-success)',
       badge: 'CIO',
       nameCn: t('invest_roles_cio_cn'),
       nameEn: 'Chief Investment Officer',
@@ -215,28 +215,28 @@
       prompts: [{ key: 'cio', label: t('invest_roles_prompt_full') }],
     },
   ] as role}
-    <div class="overflow-hidden rounded-lg border border-border border-l-[3px]"
-      style="border-left-color: {role.color === 'purple' ? '#a855f7' : role.color === 'blue' ? '#3b82f6' : role.color === 'orange' ? '#f97316' : role.color === 'red' ? '#ef4444' : '#22c55e'}">
+    <div class="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] border-l-[3px]"
+      style="border-left-color: {role.color}">
       <!-- Role header -->
       <div class="flex items-center gap-3 p-4">
-        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[10px] font-extrabold tracking-wider text-white"
-          style="background: {role.color === 'purple' ? '#a855f7' : role.color === 'blue' ? '#3b82f6' : role.color === 'orange' ? '#f97316' : role.color === 'red' ? '#ef4444' : '#22c55e'}">
+        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] text-[10px] font-extrabold tracking-wider text-white"
+          style="background: {role.color}">
           {role.badge}
         </div>
         <div class="min-w-0 flex-1">
           <div class="flex items-baseline gap-2">
-            <span class="text-sm font-bold">{role.nameCn}</span>
-            <span class="text-xs text-muted-foreground">{role.nameEn}</span>
+            <span class="text-sm font-bold text-[var(--text-primary)]">{role.nameCn}</span>
+            <span class="text-xs text-[var(--text-secondary)]">{role.nameEn}</span>
           </div>
-          <div class="mt-0.5 text-xs text-muted-foreground">{role.desc}</div>
+          <div class="mt-0.5 text-xs text-[var(--text-secondary)]">{role.desc}</div>
         </div>
-        <div class="shrink-0 text-xs text-muted-foreground/60">{role.meta}</div>
+        <div class="shrink-0 text-xs text-[var(--text-tertiary)]">{role.meta}</div>
       </div>
 
       <!-- Role body -->
       <div class="px-4 pb-4">
         <!-- Hard rules -->
-        <div class="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <div class="mb-3 text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
           {t('invest_roles_hard_rules')}
         </div>
         <ul class="mb-3 space-y-1">
@@ -265,7 +265,7 @@
               t('invest_roles_hard_cio_4'),
             ]
           ) as rule}
-            <li class="relative pl-3 text-xs leading-relaxed text-muted-foreground before:absolute before:left-0 before:top-[5px] before:h-1 before:w-1 before:rounded-full before:bg-muted-foreground/40">
+            <li class="relative pl-3 text-xs leading-relaxed text-[var(--text-secondary)] before:absolute before:left-0 before:top-[5px] before:h-1 before:w-1 before:rounded-full before:bg-[var(--text-tertiary)]">
               {@html rule}
             </li>
           {/each}
@@ -276,31 +276,31 @@
           {@const currentText = store.rolePrompts[prompt.key] ?? ''}
           {@const wordCount = currentText.length}
           <details class="mb-1.5">
-            <summary class="cursor-pointer select-none py-1.5 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5">
-              <span class="text-[9px] text-muted-foreground/50">&#9654;</span>
+            <summary class="cursor-pointer select-none py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] flex items-center gap-1.5">
+              <span class="text-[9px] text-[var(--text-tertiary)]">&#9654;</span>
               {prompt.label}
-              <span class="text-muted-foreground/50">({wordCount} {t('invest_roles_chars')})</span>
+              <span class="text-[var(--text-tertiary)]">({wordCount} {t('invest_roles_chars')})</span>
             </summary>
             <div class="mt-1">
               {#if editingKey === prompt.key}
                 <textarea
-                  class="h-48 w-full rounded border border-border bg-background p-2.5 font-mono text-xs leading-relaxed text-muted-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/30"
+                  class="h-48 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] p-2.5 font-[var(--font-mono)] text-xs leading-relaxed text-[var(--text-secondary)] focus:border-[#3b82f6] focus:outline-none focus:ring-1 focus:ring-[#3b82f6]/30"
                   bind:value={editText}
                 ></textarea>
                 <div class="mt-2 flex items-center gap-2">
                   <button
-                    class="rounded bg-primary px-3 py-1 text-xs text-primary-foreground disabled:opacity-50"
+                    class="rounded-[var(--radius-md)] bg-[var(--accent)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] text-white disabled:opacity-50"
                     disabled={saving}
                     onclick={() => savePrompt(prompt.key)}
                   >{saving ? t('invest_roles_saving') : t('invest_roles_save')}</button>
                   <button
-                    class="rounded px-3 py-1 text-xs text-muted-foreground hover:bg-muted"
+                    class="rounded-[var(--radius-md)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                     onclick={cancelEdit}
                   >{t('invest_roles_cancel')}</button>
                 </div>
               {:else}
                 <div
-                  class="max-h-48 overflow-y-auto rounded border border-border bg-background/50 p-2.5 font-mono text-xs leading-relaxed text-muted-foreground cursor-pointer hover:border-muted-foreground/30"
+                  class="max-h-48 overflow-y-auto rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] p-2.5 font-[var(--font-mono)] text-xs leading-relaxed text-[var(--text-secondary)] cursor-pointer hover:border-[var(--text-tertiary)]"
                   onclick={() => startEdit(prompt.key)}
                   role="button"
                   tabindex="0"
@@ -317,9 +317,9 @@
   {/each}
 
   <!-- Provider Configuration -->
-  <div class="rounded-lg border border-border p-4">
-    <h3 class="mb-3 text-sm font-semibold flex items-center gap-2">
-      <span class="h-4 w-0.5 rounded-full bg-primary"></span>
+  <div class="rounded-[var(--radius-lg)] border border-[var(--border)] p-4 bg-[var(--bg-card)]">
+    <h3 class="mb-3 text-sm font-semibold flex items-center gap-2 text-[var(--text-primary)]">
+      <span class="h-4 w-0.5 rounded-full bg-[var(--accent)]"></span>
       {t('invest_committee_config')}
     </h3>
     <ProviderConfigPanel />

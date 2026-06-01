@@ -1,5 +1,84 @@
 # Changelog / 更新日志
 
+## v5.2.2 (2026-06-02)
+
+### /invest 全模块 UI 设计系统统一
+
+**升级范围：**
+- 28 个 Svelte 文件（27 组件 + 1 页面框架）全面从旧 Tailwind 风格迁移至暖色暗黑设计系统
+- 覆盖全部 5 个一级 Tab（Dashboard / Committee / Strategy / Trades / System）+ 14 个子 Tab + 6 个通用组件
+
+**设计系统变量映射：**
+- 卡片容器：`rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)]`
+- 表头文字：`text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]`
+- 数值展示：`font-[var(--font-mono)]` 等宽字体
+- Badge/状态：`rounded-[var(--radius-full)] px-3 py-1 text-[11px] font-bold` + 角色/状态对应颜色
+- 颜色统一：success `#8a9a76` / error `#a87a7a` / warning `#b89a6a` / accent `#c9a96e` / blue `#3b82f6` / purple `#8b5cf6`
+
+**组件清单：**
+- Dashboard：KpiCard, MacroSnapshotCard, LatestVerdictCard, HoldingsTable, PnlChart
+- Committee：CommitteeLiveTab, CommitteeReplayTab, CommitteeArchiveTab, CommitteeRolesTab, CommitteeAccuracyTab, CommitteeToolsTab
+- Strategy：StrategyTab
+- Trades：TradeLogTab
+- System：SchedulerTab, SystemRegimeTab, EventWatchTab, SystemDatasourceTab, SystemPnlHistoryTab, InsightsFeed, SystemDreamsTab, UserProfileSection
+- 通用：TradeDialog, EventTriggerDialog, DebateBlock, PipelineFlow, DreamingConfigPanel, ProviderConfigPanel
+- 页面：+page.svelte（header + tab 导航 + sub-tab 导航）
+
+**验证：** svelte-check ✅ / ESLint ✅ / Build ✅ (35s)
+
+---
+
+## v5.2.1 (2026-06-02)
+
+### Memory Extraction 设置迁移 + 全局记忆文件扩展
+
+**设置迁移：**
+- Memory Extraction 整个 tab（提取配置 + 记忆衰减与归档）从 `/settings` 迁移到 `/memory-mgmt` 页面
+- `/memory-mgmt` 新增 "提取配置" tab，包含启用开关、Chat API Endpoint/Key/Model、记忆衰减与归档开关
+- Settings 页面移除 Memory Extraction tab 及相关状态变量和函数
+
+**记忆文件扫描扩展：**
+- `MemoryFileCandidate` 新增 `project_slug` 字段，标识文件所属的 `~/.claude/projects/{slug}` 项目
+- 后端扫描从单项目（依赖 cwd）改为遍历所有 `~/.claude/projects/*/memory/` 目录
+- 新增 `~/.claude/memory/` 全局记忆目录扫描（scope `"global-memory"`）
+- 前端 `/memory` 页面 Global 区域合并 `"global"` + `"global-memory"` scope
+- Layout sidebar 按 `projectSlug` 过滤，每个项目文件夹只显示属于该项目的 memory 文件
+
+### 委员会 7 项改进
+
+**收益率计算：**
+- 总收益率改为成本基准收益率：`(totalAssets - totalCostBasis) / totalCostBasis × 100%`
+- 移除 `initialCash` 参与收益率计算的逻辑
+
+**交易记录过滤：**
+- TradeLogTab 默认隐藏系统操作（`cash_adjust`/`cost_edit`/`add_watch`/`delete_watch`）
+- 新增 "显示系统操作" toggle 开关
+
+**删除 UI 修复：**
+- Dashboard watch 持仓删除从 `confirm()` 替换为自定义 ConfirmDialog 组件
+- TradeLogTab 删除后移除乐观更新，改为依赖 `loadAll()` 刷新
+
+**Dream Pipeline 修复：**
+- `domain_insights.rs` SQLite `json()` 函数语法修复（key 名缺失 + `json_extract` 路径格式）
+
+**事件中文化：**
+- EventWatchTab/EventTriggerDialog 的 severity 和 stance 标签改为 i18n 翻译
+- 新增 3 个 i18n 键：`invest.eventWatch.stanceBullish/Bearish/Neutral`
+- 内容展示优先级调整：body（LLM 中文摘要）作为主显示，title 降为次要信息
+
+**策略注入扩展：**
+- 策略约束注入从仅 CIO 扩展到 CIO + Risk 角色
+
+**L4 Officer 工具面板：**
+- CommitteeToolsTab 新增 L4 Officer 角色条目（工具：`query_dreaming_insights`）
+
+**i18n 新增键（6 个）：**
+- `invest_confirm` / `invest_confirm_title` — 确认对话框
+- `invest_trade_show_system` — 显示系统操作
+- `invest.eventWatch.stanceBullish/Bearish/Neutral` — 立场标签
+
+---
+
 ## v5.2.0 (2026-06-02)
 
 ### 委员会 Prompt L1-L4 策略框架升级

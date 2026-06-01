@@ -26,7 +26,10 @@
     typeof window !== "undefined" ? (localStorage.getItem("clawgo:project-cwd") ?? "") : "",
   );
 
-  let scopeGlobal = $derived(candidates.filter((c) => c.scope === "global"));
+  let scopeGlobal = $derived([
+    ...candidates.filter((c) => c.scope === "global"),
+    ...candidates.filter((c) => c.scope === "global-memory"),
+  ]);
   let scopeProject = $derived(candidates.filter((c) => c.scope === "project"));
   let scopeMemory = $derived(candidates.filter((c) => c.scope === "memory"));
   // Merge project + auto-memory for the project section

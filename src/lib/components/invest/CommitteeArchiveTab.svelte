@@ -48,12 +48,12 @@
 
 <div class="flex h-full gap-4">
   <!-- Left panel: list -->
-  <div class="w-64 shrink-0 space-y-3">
+  <div class="w-64 shrink-0 flex flex-col gap-3">
     <div class="flex items-end gap-2">
       <div class="flex-1">
-        <label class="mb-1 block text-xs text-muted-foreground">{t('invest_archive_symbol_label')}</label>
+        <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_archive_symbol_label')}</label>
         <select
-          class="w-full rounded border border-border bg-background px-3 py-1.5 text-sm"
+          class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-[13px] text-[var(--text-primary)]"
           bind:value={symbol}
         >
           <option value="">{t('invest_archive_empty')}</option>
@@ -63,7 +63,7 @@
         </select>
       </div>
       <button
-        class="rounded bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
+        class="rounded-[var(--radius-md)] bg-[var(--accent)] px-3 py-1.5 text-[13px] font-medium text-[#1a1918] disabled:opacity-40 transition-opacity"
         disabled={loading || !symbol.trim()}
         onclick={load}
       >
@@ -72,21 +72,24 @@
     </div>
 
     {#if archives.length > 0}
-      <div class="space-y-1">
+      <div class="flex flex-col gap-1">
         {#each archives as archive}
           <button
-            class="flex w-full items-center justify-between rounded border px-3 py-2 text-left text-sm transition-colors"
-            class:border-primary={selectedDate === archive.date}
-            class:bg-muted={selectedDate === archive.date}
+            class="flex w-full items-center justify-between rounded-[var(--radius-md)] border px-3 py-2 text-left text-[13px] transition-colors"
+            class:border-[var(--accent)]={selectedDate === archive.date}
+            class:bg-[var(--accent-muted)]={selectedDate === archive.date}
+            class:border-[var(--border)]={selectedDate !== archive.date}
+            class:text-[var(--text-primary)]={selectedDate === archive.date}
+            class:text-[var(--text-secondary)]={selectedDate !== archive.date}
             onclick={() => (selectedDate = archive.date)}
           >
             <span class="font-medium">{archive.date}</span>
-            <span class="text-xs text-muted-foreground" title={archive.symbol}>{symLabel(archive.symbol)}</span>
+            <span class="text-[11px] text-[var(--text-tertiary)]" title={archive.symbol}>{symLabel(archive.symbol)}</span>
           </button>
         {/each}
       </div>
     {:else}
-      <div class="py-4 text-center text-xs text-muted-foreground">
+      <div class="py-4 text-center text-[11px] text-[var(--text-tertiary)]">
         {t('invest_archive_empty')}
       </div>
     {/if}
@@ -95,17 +98,17 @@
   <!-- Right panel: detail -->
   <div class="flex-1 overflow-auto">
     {#if selected}
-      <div class="rounded-lg border border-border p-4">
+      <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-4">
         <div class="mb-2 flex items-center justify-between">
-          <span class="text-sm font-semibold" title={selected.symbol}>{symLabel(selected.symbol)}</span>
-          <span class="text-xs text-muted-foreground">{selected.date}</span>
+          <span class="text-[13px] font-semibold text-[var(--text-primary)]" title={selected.symbol}>{symLabel(selected.symbol)}</span>
+          <span class="text-[11px] text-[var(--text-tertiary)]">{selected.date}</span>
         </div>
-        <div class="max-h-[60vh] overflow-y-auto whitespace-pre-wrap font-mono text-sm">
+        <div class="max-h-[60vh] overflow-y-auto whitespace-pre-wrap font-[var(--font-mono)] text-[13px] text-[var(--text-secondary)] leading-relaxed">
           {selected.content}
         </div>
       </div>
     {:else}
-      <div class="flex h-full items-center justify-center text-sm text-muted-foreground">
+      <div class="flex h-full items-center justify-center text-[13px] text-[var(--text-tertiary)]">
         {t('invest_archive_select')}
       </div>
     {/if}

@@ -64,47 +64,49 @@
 </script>
 
 <div class="space-y-3">
-  <h3 class="text-sm font-medium">{t('invest_system_datasource_title')}</h3>
+  <h3 class="text-[13px] font-medium text-[var(--text-primary)]">{t('invest_system_datasource_title')}</h3>
 
   {#if loading && sources.length === 0}
-    <p class="text-sm text-muted-foreground">{t('invest_loading')}</p>
+    <p class="text-[13px] text-[var(--text-secondary)]">{t('invest_loading')}</p>
   {:else if error}
-    <p class="text-sm text-red-400">{error}</p>
+    <p class="text-[13px] text-[var(--color-error)]">{error}</p>
   {:else}
-    <table class="w-full text-sm">
-      <thead>
-        <tr class="border-b border-border text-left text-muted-foreground">
-          <th class="pb-2 pr-3">{t('invest_system_ds_name')}</th>
-          <th class="pb-2 pr-3">{t('invest_system_ds_status')}</th>
-          <th class="pb-2 pr-3">{t('invest_system_ds_last_success')}</th>
-          <th class="pb-2">{t('invest_system_ds_sample')}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each sources as src}
-          <tr class="border-b border-border/50">
-            <td class="py-1.5 pr-3">{src.name}</td>
-            <td class="py-1.5 pr-3">
-              <span
-                class="inline-block h-2 w-2 rounded-full"
-                class:bg-green-400={src.ok}
-                class:bg-red-400={!src.ok}
-              ></span>
-              <span class="ml-1 text-xs">{src.ok ? 'OK' : 'DOWN'}</span>
-            </td>
-            <td class="py-1.5 pr-3 text-xs text-muted-foreground">
-              {src.lastSuccess ?? '-'}
-            </td>
-            <td class="py-1.5 text-xs">
-              {#if providerStatusText(src.name)}
-                <span class="text-muted-foreground">{providerStatusText(src.name)}</span>
-              {:else}
-                {src.sampleValue ?? '-'}
-              {/if}
-            </td>
+    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] overflow-hidden">
+      <table class="w-full text-[13px]">
+        <thead>
+          <tr class="border-b border-[var(--border)] text-left">
+            <th class="pb-2 pr-3 text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_system_ds_name')}</th>
+            <th class="pb-2 pr-3 text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_system_ds_status')}</th>
+            <th class="pb-2 pr-3 text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_system_ds_last_success')}</th>
+            <th class="pb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_system_ds_sample')}</th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each sources as src}
+            <tr class="border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--bg-hover)]">
+              <td class="py-1.5 pr-3 text-[var(--text-primary)]">{src.name}</td>
+              <td class="py-1.5 pr-3">
+                <span
+                  class="inline-block h-2 w-2 rounded-full"
+                  class:bg-[var(--color-success)]={src.ok}
+                  class:bg-[var(--color-error)]={!src.ok}
+                ></span>
+                <span class="ml-1 text-[12px] text-[var(--text-secondary)]">{src.ok ? 'OK' : 'DOWN'}</span>
+              </td>
+              <td class="py-1.5 pr-3 text-[12px] text-[var(--text-secondary)] font-[var(--font-mono)]">
+                {src.lastSuccess ?? '-'}
+              </td>
+              <td class="py-1.5 text-[12px] text-[var(--text-secondary)]">
+                {#if providerStatusText(src.name)}
+                  <span class="font-[var(--font-mono)]">{providerStatusText(src.name)}</span>
+                {:else}
+                  {src.sampleValue ?? '-'}
+                {/if}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
   {/if}
 </div>

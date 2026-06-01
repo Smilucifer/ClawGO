@@ -7,12 +7,12 @@
   } = $props();
 </script>
 
-<div class="rounded-lg border bg-card p-4">
-  <p class="text-xs text-muted-foreground">{label}</p>
-  <p class="mt-1 text-2xl font-bold tabular-nums {trend === 'up' ? 'text-green-600' : trend === 'down' ? 'text-red-600' : ''}">
+<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)]">
+  <p class="mb-[var(--space-2)] text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{label}</p>
+  <p class="text-[22px] font-bold leading-tight font-[var(--font-mono)] {trend === 'up' ? 'text-[#8a9a76]' : trend === 'down' ? 'text-[#a87a7a]' : 'text-[var(--text-primary)]'}">
     {value}
   </p>
   {#if sub}
-    <p class="mt-0.5 text-xs text-muted-foreground">{sub}</p>
+    <p class="mt-[var(--space-1)] text-[11px] font-[var(--font-mono)] {trend === 'up' ? 'text-[#8a9a76]' : trend === 'down' ? 'text-[#a87a7a]' : 'text-[var(--text-tertiary)]'}">{sub}</p>
   {/if}
 </div>

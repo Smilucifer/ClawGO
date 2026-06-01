@@ -21,6 +21,24 @@
     event.symbols ? event.symbols.split(',').map(s => s.trim()).filter(Boolean) : []
   );
 
+  function severityLabel(severity: string): string {
+    switch (severity) {
+      case 'high': return t('invest.eventWatch.filterHigh');
+      case 'medium': return t('invest.eventWatch.filterMedium');
+      case 'low': return t('invest.eventWatch.filterLow');
+      default: return severity;
+    }
+  }
+
+  function stanceLabel(stance: string): string {
+    switch (stance) {
+      case 'bullish': return t('invest.eventWatch.stanceBullish');
+      case 'bearish': return t('invest.eventWatch.stanceBearish');
+      case 'neutral': return t('invest.eventWatch.stanceNeutral');
+      default: return stance;
+    }
+  }
+
   // Sync Modal close with parent
   $effect(() => {
     if (!open) onClose();
@@ -59,52 +77,52 @@
 </script>
 
 <Modal bind:open title={t('invest.eventWatch.triggerDialogTitle')}>
-  <div class="space-y-3 text-sm">
-    <div class="text-zinc-400">{t('invest.eventWatch.triggerDialogDetected')}:</div>
-    <div class="p-2 bg-zinc-800 rounded text-zinc-200">
+  <div class="space-y-[var(--space-3)] text-[13px]">
+    <div class="text-[var(--text-secondary)]">{t('invest.eventWatch.triggerDialogDetected')}:</div>
+    <div class="rounded-[var(--radius-md)] bg-[var(--bg-input)] p-[var(--space-2)] text-[var(--text-primary)]">
       {event.body || event.title}
     </div>
 
-    <div class="flex gap-2 text-xs">
-      <span class="text-red-400">{t('invest.eventWatch.severityLabel')}: {event.severity.toUpperCase()}</span>
-      <span class="text-zinc-600">|</span>
-      <span class="text-zinc-300">{t('invest.eventWatch.stanceLabel')}: {event.stance}</span>
+    <div class="flex gap-2 text-[11px]">
+      <span class="text-[var(--color-error)]">{t('invest.eventWatch.severityLabel')}: {severityLabel(event.severity)}</span>
+      <span class="text-[var(--text-tertiary)]">|</span>
+      <span class="text-[var(--text-secondary)]">{t('invest.eventWatch.stanceLabel')}: {stanceLabel(event.stance)}</span>
     </div>
 
     {#if symbolList.length > 0}
-      <div class="text-xs">
-        <span class="text-zinc-400">{t('invest.eventWatch.triggerDialogHoldings')}:</span>
-        <span class="text-zinc-200">{symbolList.join(', ')}</span>
+      <div class="text-[11px]">
+        <span class="text-[var(--text-secondary)]">{t('invest.eventWatch.triggerDialogHoldings')}:</span>
+        <span class="text-[var(--text-primary)] font-[var(--font-mono)]">{symbolList.join(', ')}</span>
       </div>
     {/if}
 
     <div class="flex items-center gap-2">
-      <span class="text-zinc-400 text-xs">{t('invest.eventWatch.triggerDialogRounds')}:</span>
-      <select bind:value={debateRounds} class="px-2 py-1 rounded border border-zinc-700 bg-zinc-800 text-sm text-zinc-200">
+      <span class="text-[var(--text-secondary)] text-[11px]">{t('invest.eventWatch.triggerDialogRounds')}:</span>
+      <select bind:value={debateRounds} class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-[13px] text-[var(--text-primary)]">
         {#each DEBATE_OPTIONS as opt (opt)}
           <option value={opt}>{opt}</option>
         {/each}
       </select>
     </div>
 
-    <div class="text-zinc-400 text-xs">
+    <div class="text-[var(--text-secondary)] text-[11px]">
       {t('invest.eventWatch.triggerDialogConfirm')}
     </div>
   </div>
 
   {#if errorMsg}
-    <div class="mt-4 px-3 py-2 rounded bg-red-500/10 border border-red-500/30 text-sm text-red-400">
+    <div class="mt-[var(--space-4)] rounded-[var(--radius-md)] border border-[rgba(168,122,122,0.3)] bg-[rgba(168,122,122,0.1)] px-[var(--space-3)] py-[var(--space-2)] text-[13px] text-[var(--color-error)]">
       {errorMsg}
     </div>
   {/if}
 
-  <div class="flex justify-end gap-3 mt-6">
+  <div class="mt-[var(--space-6)] flex justify-end gap-[var(--space-3)]">
     <button
-      class="px-4 py-2 text-sm rounded-md border border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+      class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
       onclick={() => { open = false; }}
     >{t('invest.eventWatch.triggerDialogCancel')}</button>
     <button
-      class="px-4 py-2 text-sm rounded-md bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50"
+      class="rounded-[var(--radius-md)] bg-[#c9a96e] px-[var(--space-3)] py-[var(--space-1)] text-[12px] text-white transition-colors hover:bg-[#b8985e] disabled:opacity-50"
       onclick={handleConfirm}
       disabled={symbolList.length === 0 || confirming}
     >{confirming ? t('invest_committee_running') : t('invest.eventWatch.triggerDialogConfirmBtn')}</button>

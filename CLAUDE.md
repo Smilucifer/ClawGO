@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v5.2.0, 2026-06-02). 委员会 L1-L4 策略框架升级。See `docs/changelog.md`.
+**Current phase:** Phase 10+ (v5.2.2, 2026-06-02). /invest 全模块 UI 设计系统统一（28 文件）。See `docs/changelog.md`.
 
 ## Standard workflow
 
@@ -371,6 +371,8 @@ Key phases and their status:
 | 10+ (v5.1.1) | Bug 修复+Chat UI 升级+代码审查优化: 标题栏权限/Python Overlay 竞态/Index 首页/消息+输入框+状态栏+右侧面板 UI/Flat token 别名/format 工具复用/recompute_notional 方法/并发价格获取/6 项 simplify 审查修复 | [done] |
 | 10+ (v5.1.2) | ETF 价格修复+事件扫描增强+simplify 审查修复: daily_api() ETF 路由/Severity::as_str()/循环合并/英文关键词/零分配截断/record_trade 自动 recalculate/notional 兜底/CIO 100 股规则 | [done] |
 | 10+ (v5.2.0) | 委员会 L1-L4 策略框架升级: 5 角色+L4 Officer/8 步 Pipeline/7 Prompt 重写/AssetContext 数据注入层/4 新工具/30+ Parser 字段/行为红灯评分/catalyst Tier 框架/Simplify 8 项审查修复 | [done] |
+| 10+ (v5.2.1) | Memory Extraction 设置迁移+全局记忆文件扩展+委员会 7 项改进(成本基准收益率/交易过滤/ConfirmDialog/Dream 修复/事件中文化/策略注入 Risk/L4 Officer 工具面板)+6 i18n keys | [done] |
+| 10+ (v5.2.2) | /invest 全模块 UI 设计系统统一: 28 文件(27 组件+1 页面)暖色暗黑迁移/5 Tab+14 子 Tab+6 通用组件/CSS 变量映射/Badge 重设计/tab 导航重写/svelte-check+ESLint+Build 全通过 | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

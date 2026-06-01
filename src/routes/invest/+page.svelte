@@ -25,6 +25,7 @@
   import SystemDatasourceTab from '$lib/components/invest/SystemDatasourceTab.svelte';
   import SystemPnlHistoryTab from '$lib/components/invest/SystemPnlHistoryTab.svelte';
   import SystemDreamsTab from '$lib/components/invest/SystemDreamsTab.svelte';
+  import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
   import type { Holding } from '$lib/types';
 
   type InvestTab = 'dashboard' | 'committee' | 'strategy' | 'trades' | 'system';
@@ -67,6 +68,7 @@
   let dialogMode = $state<'buy' | 'sell' | 'cash' | 'convert' | 'add_watch' | null>(null);
   let dialogPrefill = $state<{ symbol?: string; name?: string; holding?: Holding } | undefined>();
   let refreshInterval = $state<ReturnType<typeof setInterval> | null>(null);
+  let confirmDeleteWatch = $state<{ open: boolean; symbol: string; name: string }>({ open: false, symbol: '', name: '' });
 
   const invoke = <T,>(cmd: string, args?: Record<string, unknown>) =>
     getTransport().invoke<T>(cmd, args);
@@ -113,41 +115,46 @@
   function openConvert(h: Holding) { dialogMode = 'convert'; dialogPrefill = { symbol: h.symbol, name: h.name ?? undefined }; }
   function openAddWatch() { dialogMode = 'add_watch'; dialogPrefill = undefined; }
   function openDeleteWatch(h: Holding) {
-    if (confirm(`${t('invest_delete')} ${h.name ?? h.symbol}?`)) {
-      investStore.deleteWatch(h.symbol);
-    }
+    confirmDeleteWatch = { open: true, symbol: h.symbol, name: h.name ?? h.symbol };
   }
   function closeDialog() { dialogMode = null; dialogPrefill = undefined; }
 </script>
 
-<div class="flex h-full flex-col">
-  <div class="border-b border-border px-4 pt-3">
-    <h1 class="mb-3 text-lg font-semibold">{t('nav_invest')}</h1>
-    <div class="flex gap-1">
+<div class="flex h-full flex-col bg-[var(--bg-base)]">
+  <!-- Header -->
+  <div class="border-b border-[var(--border)] px-[var(--space-4)] pt-[var(--space-4)]">
+    <h1 class="mb-[var(--space-1)] text-[22px] font-bold text-[var(--text-primary)]">{t('nav_invest')}</h1>
+    <p class="mb-[var(--space-3)] text-[12px] text-[var(--text-tertiary)]">openInvest</p>
+
+    <!-- Primary tab navigation -->
+    <div class="flex gap-0">
       {#each tabs as tab}
         <button
-          class="rounded-t-md px-3 py-1.5 text-sm transition-colors"
-          class:bg-primary={activeTab === tab.id}
-          class:text-primary-foreground={activeTab === tab.id}
-          class:text-muted-foreground={activeTab !== tab.id}
-          class:hover:bg-muted={activeTab !== tab.id}
+          class="relative px-[var(--space-3)] pb-[var(--space-2)] text-[12px] tracking-wide uppercase transition-colors"
+          class:text-[var(--accent)]={activeTab === tab.id}
+          class:text-[var(--text-tertiary)]={activeTab !== tab.id}
+          class:hover:text-[var(--text-secondary)]={activeTab !== tab.id}
           onclick={() => (activeTab = tab.id)}
         >
           {tab.label}
+          {#if activeTab === tab.id}
+            <span class="absolute bottom-0 left-0 h-[2px] w-full rounded-full bg-[var(--accent)]"></span>
+          {/if}
         </button>
       {/each}
     </div>
   </div>
 
-  <div class="flex-1 overflow-auto p-4">
+  <!-- Content area -->
+  <div class="flex-1 overflow-auto p-[var(--space-4)]">
     {#if activeTab === 'dashboard'}
       {#if !tushareToken}
-        <div class="mb-4 rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+        <div class="mb-[var(--space-4)] rounded-[var(--radius-lg)] border border-dashed border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)] text-center text-[13px] text-[var(--text-tertiary)]">
           {t('invest_no_token')}
         </div>
       {/if}
 
-      <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div class="mb-[var(--space-6)] grid grid-cols-2 gap-[var(--space-3)] sm:grid-cols-5">
         <KpiCard label={t('invest_total_assets')} value={'¥' + investStore.totalAssets.toLocaleString(undefined, { minimumFractionDigits: 2 })} />
         <KpiCard label={t('invest_holdings_value')} value={'¥' + investStore.holdingsMarketValue.toLocaleString(undefined, { minimumFractionDigits: 2 })} />
         <KpiCard label={t('invest_cash')} value={'¥' + investStore.cash.toLocaleString(undefined, { minimumFractionDigits: 2 })} sub="✎" />
@@ -156,20 +163,20 @@
       </div>
 
       <!-- Macro snapshot + Latest verdict -->
-      <div class="mb-4 grid gap-3 sm:grid-cols-2">
+      <div class="mb-[var(--space-4)] grid gap-[var(--space-3)] sm:grid-cols-2">
         <MacroSnapshotCard />
         <LatestVerdictCard />
       </div>
 
-      <div class="mb-4 flex gap-2">
-        <button class="rounded bg-primary px-4 py-1.5 text-sm text-primary-foreground" onclick={openBuy}>{t('invest_buy')}</button>
-        <button class="rounded bg-muted px-4 py-1.5 text-sm" onclick={openCash}>{t('invest_edit_cash')}</button>
-        <button class="rounded bg-muted px-4 py-1.5 text-sm" onclick={() => investStore.refreshPrices(tushareToken)}>{t('invest_refresh_prices')}</button>
+      <div class="mb-[var(--space-4)] flex gap-[var(--space-2)]">
+        <button class="rounded-[var(--radius-md)] bg-[var(--accent)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] font-medium text-[var(--bg-base)] transition-colors hover:opacity-90" onclick={openBuy}>{t('invest_buy')}</button>
+        <button class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]" onclick={openCash}>{t('invest_edit_cash')}</button>
+        <button class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]" onclick={() => investStore.refreshPrices(tushareToken)}>{t('invest_refresh_prices')}</button>
       </div>
 
       <HoldingsTable onSell={openSell} onConvert={openConvert} onAddWatch={openAddWatch} onDeleteWatch={openDeleteWatch} {tushareToken} />
 
-      <div class="mt-6">
+      <div class="mt-[var(--space-6)]">
         <PnlChart />
       </div>
 
@@ -178,15 +185,17 @@
     {:else if activeTab === 'strategy'}
       <StrategyTab {tushareToken} />
     {:else if activeTab === 'committee'}
-      <!-- Sub-tab navigation -->
-      <div class="mb-4 flex gap-1 border-b border-border">
+      <!-- Committee sub-tab navigation (pill style) -->
+      <div class="mb-[var(--space-4)] flex flex-wrap gap-[var(--space-2)]">
         {#each committeeSubTabs as subTab}
           <button
-            class="rounded-t-md px-3 py-1.5 text-sm transition-colors"
-            class:bg-primary={committeeSubTab === subTab.id}
-            class:text-primary-foreground={committeeSubTab === subTab.id}
-            class:text-muted-foreground={committeeSubTab !== subTab.id}
-            class:hover:bg-muted={committeeSubTab !== subTab.id}
+            class="rounded-full px-[var(--space-3)] py-[var(--space-1)] text-[12px] font-medium transition-colors"
+            class:bg-[var(--accent-muted)]={committeeSubTab === subTab.id}
+            class:text-[var(--accent)]={committeeSubTab === subTab.id}
+            class:bg-[var(--bg-hover)]={committeeSubTab !== subTab.id}
+            class:text-[var(--text-tertiary)]={committeeSubTab !== subTab.id}
+            class:hover:bg-[var(--accent-muted)]={committeeSubTab !== subTab.id}
+            class:hover:text-[var(--accent)]={committeeSubTab !== subTab.id}
             onclick={() => (committeeSubTab = subTab.id)}
           >
             {subTab.label}
@@ -208,14 +217,17 @@
         <CommitteeToolsTab />
       {/if}
     {:else if activeTab === 'system'}
-      <div class="mb-4 flex gap-1 border-b border-border">
+      <!-- System sub-tab navigation (pill style) -->
+      <div class="mb-[var(--space-4)] flex flex-wrap gap-[var(--space-2)]">
         {#each systemSubTabs as subTab}
           <button
-            class="rounded-t-md px-3 py-1.5 text-sm transition-colors"
-            class:bg-primary={systemSubTab === subTab.id}
-            class:text-primary-foreground={systemSubTab === subTab.id}
-            class:text-muted-foreground={systemSubTab !== subTab.id}
-            class:hover:bg-muted={systemSubTab !== subTab.id}
+            class="rounded-full px-[var(--space-3)] py-[var(--space-1)] text-[12px] font-medium transition-colors"
+            class:bg-[var(--accent-muted)]={systemSubTab === subTab.id}
+            class:text-[var(--accent)]={systemSubTab === subTab.id}
+            class:bg-[var(--bg-hover)]={systemSubTab !== subTab.id}
+            class:text-[var(--text-tertiary)]={systemSubTab !== subTab.id}
+            class:hover:bg-[var(--accent-muted)]={systemSubTab !== subTab.id}
+            class:hover:text-[var(--accent)]={systemSubTab !== subTab.id}
             onclick={() => (systemSubTab = subTab.id)}
           >
             {subTab.label}
@@ -247,3 +259,11 @@
 {#if dialogMode}
   <TradeDialog mode={dialogMode} prefill={dialogPrefill} {tushareToken} onClose={closeDialog} />
 {/if}
+
+<ConfirmDialog
+  bind:open={confirmDeleteWatch.open}
+  title={t('invest_delete')}
+  message={`${t('invest_delete')} ${confirmDeleteWatch.name}?`}
+  variant="danger"
+  onConfirm={() => { investStore.deleteWatch(confirmDeleteWatch.symbol); }}
+/>

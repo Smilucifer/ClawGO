@@ -1118,8 +1118,8 @@ async fn run_role_phase(
         length_constraint_suffix(role)
     );
 
-    // For CIO role, inject active strategy constraints and user profile into the system prompt
-    if role == CommitteeRole::Cio {
+    // For CIO and Risk roles, inject active strategy constraints into the system prompt
+    if role == CommitteeRole::Cio || role == CommitteeRole::Risk {
         let strategy_ctx = build_strategy_context();
         if !strategy_ctx.is_empty() {
             system_prompt.push_str("\n\n");

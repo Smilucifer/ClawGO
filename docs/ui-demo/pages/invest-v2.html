@@ -1,0 +1,1809 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClawGO — Invest v2</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../design-system.css">
+  <style>
+    /* === Invest v2 Layout === */
+    .invest-header { display: flex; align-items: center; justify-content: space-between; padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border); }
+    .invest-title { font-size: 18px; font-weight: 600; color: var(--text-primary); }
+    .invest-subtitle { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+    .invest-actions { display: flex; gap: var(--space-2); }
+    .btn { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font-size: 12px; font-weight: 500; cursor: pointer; border: none; transition: all var(--duration-fast); }
+    .btn-primary { background: var(--accent-muted); color: var(--accent); border: 1px solid var(--border-accent); }
+    .btn-primary:hover { background: rgba(201, 169, 110, 0.25); }
+    .btn-ghost { background: none; color: var(--text-secondary); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--bg-hover); }
+    .btn-danger { background: none; color: #a87a7a; border: 1px solid rgba(168,122,122,0.3); }
+    .btn-danger:hover { background: rgba(168,122,122,0.1); }
+    .btn-success { background: rgba(138,154,118,0.15); color: #8a9a76; border: 1px solid rgba(138,154,118,0.3); }
+    .btn-success:hover { background: rgba(138,154,118,0.25); }
+    .btn-sm { padding: 2px 8px; font-size: 11px; }
+
+    /* === Tab Navigation === */
+    .tab-nav { display: flex; gap: 0; border-bottom: 1px solid var(--border); padding: 0 var(--space-5); }
+    .tab-btn { padding: var(--space-3) var(--space-4); font-size: 13px; font-weight: 500; color: var(--text-tertiary); cursor: pointer; border: none; background: none; position: relative; transition: color var(--duration-fast); }
+    .tab-btn:hover { color: var(--text-secondary); }
+    .tab-btn.active { color: var(--accent); }
+    .tab-btn.active::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px; background: var(--accent); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* === Sub-tab Navigation === */
+    .sub-tab-nav { display: flex; gap: var(--space-1); margin-bottom: var(--space-4); flex-wrap: wrap; }
+    .sub-tab-btn { padding: 5px 14px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 500; color: var(--text-tertiary); cursor: pointer; border: none; background: none; transition: all var(--duration-fast); }
+    .sub-tab-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
+    .sub-tab-btn.active { background: var(--accent-muted); color: var(--accent); }
+
+    /* === Content Area === */
+    .invest-content { flex: 1; overflow-y: auto; padding: var(--space-4) var(--space-5); }
+
+    /* === KPI Grid === */
+    .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-3); margin-bottom: var(--space-4); }
+    .kpi-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); }
+    .kpi-label { font-size: 11px; font-weight: 500; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: var(--space-2); }
+    .kpi-value { font-size: 22px; font-weight: 700; font-family: var(--font-mono); color: var(--text-primary); }
+    .kpi-change { font-size: 11px; font-family: var(--font-mono); margin-top: var(--space-1); }
+    .kpi-change.positive { color: #8a9a76; }
+    .kpi-change.negative { color: #a87a7a; }
+
+    /* === Info Cards Row === */
+    .info-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); margin-bottom: var(--space-4); }
+    .info-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); }
+    .info-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-3); }
+    .info-card-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+
+    /* === Holdings Table === */
+    .holdings-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; margin-bottom: var(--space-4); }
+    .holdings-header { display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
+    .holdings-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+    .holdings-filter { display: flex; gap: var(--space-1); }
+    .filter-btn { padding: 4px 10px; border-radius: var(--radius-sm); font-size: 11px; color: var(--text-tertiary); cursor: pointer; border: none; background: none; }
+    .filter-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
+    .filter-btn.active { background: var(--accent-muted); color: var(--accent); }
+    .holdings-table { width: 100%; }
+    .holdings-table th { padding: var(--space-2) var(--space-4); font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-align: left; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.3px; }
+    .holdings-table td { padding: var(--space-3) var(--space-4); font-size: 13px; color: var(--text-secondary); border-bottom: 1px solid var(--border); }
+    .holdings-table tr:last-child td { border-bottom: none; }
+    .holdings-table tr:hover td { background: var(--bg-hover); }
+    .holdings-table .ticker { font-weight: 600; color: var(--text-primary); font-family: var(--font-mono); }
+    .holdings-table .pnl-positive { color: #8a9a76; font-family: var(--font-mono); }
+    .holdings-table .pnl-negative { color: #a87a7a; font-family: var(--font-mono); }
+
+    /* === Badges === */
+    .badge { padding: 2px 8px; border-radius: var(--radius-sm); font-size: 10px; font-weight: 600; display: inline-block; }
+    .badge-hold { background: rgba(138,154,118,0.15); color: #8a9a76; }
+    .badge-watch { background: var(--accent-muted); color: var(--accent); }
+    .badge-stock { background: rgba(59,130,246,0.15); color: #3b82f6; }
+    .badge-etf { background: rgba(139,92,246,0.15); color: #8b5cf6; }
+    .badge-buy { background: rgba(138,154,118,0.15); color: #8a9a76; }
+    .badge-sell { background: rgba(168,122,122,0.15); color: #a87a7a; }
+    .badge-accumulate { background: rgba(59,130,246,0.15); color: #3b82f6; }
+    .badge-trim { background: rgba(245,158,11,0.15); color: #f59e0b; }
+    .badge-hold-verdict { background: var(--accent-muted); color: var(--accent); }
+    .badge-system { background: var(--bg-input); color: var(--text-tertiary); }
+    .badge-watch-action { background: var(--accent-muted); color: var(--accent); }
+    .severity-badge { padding: 2px 8px; border-radius: var(--radius-sm); font-size: 10px; font-weight: 600; }
+    .severity-badge.high { background: rgba(168,122,122,0.15); color: #a87a7a; }
+    .severity-badge.medium { background: rgba(184,154,106,0.15); color: #b89a6a; }
+    .severity-badge.low { background: var(--bg-input); color: var(--text-tertiary); }
+    .stance-badge { padding: 2px 8px; border-radius: var(--radius-sm); font-size: 10px; font-weight: 600; }
+    .stance-badge.bullish { background: rgba(138,154,118,0.15); color: #8a9a76; }
+    .stance-badge.bearish { background: rgba(168,122,122,0.15); color: #a87a7a; }
+    .stance-badge.neutral { background: var(--bg-input); color: var(--text-tertiary); }
+
+    /* === Regime Card === */
+    .regime-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); }
+    .regime-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-3); }
+    .regime-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+    .regime-badge { padding: 4px 12px; border-radius: var(--radius-full); font-size: 12px; font-weight: 600; }
+    .regime-badge.uptrend { background: rgba(138,154,118,0.15); color: #8a9a76; }
+    .regime-badge.downtrend { background: rgba(168,122,122,0.15); color: #a87a7a; }
+    .regime-badge.range_bound { background: var(--accent-muted); color: var(--accent); }
+    .regime-badge.crash { background: rgba(168,122,122,0.25); color: #a87a7a; }
+    .regime-badge.unknown { background: var(--bg-input); color: var(--text-tertiary); }
+    .metric-row { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) 0; }
+    .metric-row .label { font-size: 12px; color: var(--text-tertiary); flex: 1; }
+    .metric-row .value { font-size: 12px; font-family: var(--font-mono); color: var(--text-secondary); min-width: 50px; text-align: right; }
+    .metric-row .bar { width: 80px; height: 4px; background: var(--bg-input); border-radius: 2px; overflow: hidden; }
+    .metric-row .bar-fill { height: 100%; border-radius: 2px; }
+
+    /* === Committee Section === */
+    .committee-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-3); margin-bottom: var(--space-4); }
+    .role-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); text-align: center; }
+    .role-icon { width: 44px; height: 44px; border-radius: var(--radius-full); display: flex; align-items: center; justify-content: center; margin: 0 auto var(--space-2); font-size: 18px; }
+    .role-name { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 2px; }
+    .role-label { font-size: 10px; color: var(--text-tertiary); margin-bottom: var(--space-2); }
+    .role-tools { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; }
+    .tool-tag { padding: 2px 6px; border-radius: var(--radius-sm); font-size: 9px; font-family: var(--font-mono); background: var(--bg-input); color: var(--text-secondary); }
+    .tool-tag.unavailable { opacity: 0.4; text-decoration: line-through; }
+
+    /* === Progress Dots (8-step pipeline) === */
+    .progress-dots { display: flex; gap: 6px; align-items: center; }
+    .progress-dot { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; position: relative; }
+    .progress-dot.pending { background: var(--bg-input); color: var(--text-tertiary); }
+    .progress-dot.active { background: rgba(59,130,246,0.2); color: #3b82f6; animation: pulse 1.5s infinite; }
+    .progress-dot.done { color: #fff; }
+    .progress-dot.error { background: rgba(168,122,122,0.2); color: #a87a7a; }
+    .progress-dot .tooltip { display: none; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: var(--bg-card); border: 1px solid var(--border); padding: 4px 8px; border-radius: var(--radius-sm); font-size: 10px; white-space: nowrap; z-index: 10; margin-bottom: 4px; }
+    .progress-dot:hover .tooltip { display: block; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+    /* === Committee Live Cards === */
+    .committee-symbol-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: var(--space-3); overflow: hidden; }
+    .committee-symbol-header { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); cursor: pointer; }
+    .committee-symbol-header:hover { background: var(--bg-hover); }
+    .committee-symbol-name { font-size: 14px; font-weight: 600; color: var(--text-primary); min-width: 80px; }
+    .committee-symbol-body { display: none; padding: 0 var(--space-4) var(--space-4); }
+    .committee-symbol-body.expanded { display: block; }
+    .step-card { background: var(--bg-input); border-radius: var(--radius-md); padding: var(--space-3); margin-bottom: var(--space-2); }
+    .step-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2); }
+    .step-card-label { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+    .step-card-meta { font-size: 10px; color: var(--text-tertiary); font-family: var(--font-mono); }
+    .step-card-body { font-size: 12px; color: var(--text-secondary); line-height: 1.6; font-family: var(--font-mono); white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
+
+    /* === CIO Verdict Card === */
+    .verdict-card { background: var(--bg-card); border: 2px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); margin-top: var(--space-3); }
+    .verdict-header { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+    .verdict-badge { padding: 4px 14px; border-radius: var(--radius-full); font-size: 14px; font-weight: 700; }
+    .verdict-badge.buy { background: rgba(138,154,118,0.2); color: #8a9a76; }
+    .verdict-badge.accumulate { background: rgba(59,130,246,0.2); color: #3b82f6; }
+    .verdict-badge.hold { background: var(--accent-muted); color: var(--accent); }
+    .verdict-badge.trim { background: rgba(245,158,11,0.2); color: #f59e0b; }
+    .verdict-badge.sell { background: rgba(168,122,122,0.2); color: #a87a7a; }
+    .gate-row { display: flex; gap: var(--space-2); margin-top: var(--space-2); }
+    .gate-badge { padding: 2px 8px; border-radius: var(--radius-sm); font-size: 10px; font-weight: 600; }
+    .gate-badge.pass { background: rgba(138,154,118,0.15); color: #8a9a76; }
+    .gate-badge.fail { background: rgba(168,122,122,0.15); color: #a87a7a; }
+
+    /* === Strategy Tab (CRUD) === */
+    .strategy-list-item { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); margin-bottom: var(--space-3); cursor: pointer; transition: border-color var(--duration-fast); }
+    .strategy-list-item:hover { border-color: var(--accent); }
+    .strategy-list-item.editing { border-color: var(--accent); }
+    .strategy-name { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: var(--space-2); }
+    .strategy-meta { font-size: 12px; color: var(--text-tertiary); display: flex; gap: var(--space-3); }
+    .strategy-targets { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-2); }
+    .target-badge { padding: 2px 8px; border-radius: var(--radius-sm); font-size: 11px; font-family: var(--font-mono); background: var(--bg-input); color: var(--text-secondary); }
+    .strategy-form { background: var(--bg-card); border: 1px solid var(--accent); border-radius: var(--radius-lg); padding: var(--space-4); margin-bottom: var(--space-3); }
+    .form-row { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+    .form-label { font-size: 12px; color: var(--text-tertiary); min-width: 100px; }
+    .form-input { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font-size: 12px; background: var(--bg-input); border: 1px solid var(--border); color: var(--text-secondary); flex: 1; }
+    .form-input:focus { outline: none; border-color: var(--accent); }
+
+    /* === Trade Log === */
+    .trade-filters { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); flex-wrap: wrap; }
+    .trade-filters select, .trade-filters input { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font-size: 12px; background: var(--bg-input); border: 1px solid var(--border); color: var(--text-secondary); }
+    .trade-table { width: 100%; }
+    .trade-table th { padding: var(--space-2) var(--space-3); font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-align: left; border-bottom: 1px solid var(--border); text-transform: uppercase; }
+    .trade-table td { padding: var(--space-2) var(--space-3); font-size: 12px; color: var(--text-secondary); border-bottom: 1px solid var(--border); }
+    .trade-table tr:last-child td { border-bottom: none; }
+    .trade-table tr:hover td { background: var(--bg-hover); }
+    .trade-table .mono { font-family: var(--font-mono); }
+
+    /* === Event Watch === */
+    .event-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); margin-bottom: var(--space-3); }
+    .event-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2); }
+    .event-badges { display: flex; gap: var(--space-2); }
+    .event-body { font-size: 13px; color: var(--text-secondary); margin-bottom: var(--space-2); }
+    .event-meta { font-size: 11px; color: var(--text-tertiary); display: flex; gap: var(--space-3); }
+    .event-actions { margin-top: var(--space-3); }
+
+    /* === Dream Pipeline === */
+    .dream-stage { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); margin-bottom: var(--space-3); }
+    .dream-stage-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-3); }
+    .dream-stage-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+    .dream-item { padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); margin-bottom: var(--space-2); }
+    .dream-item-title { font-size: 13px; font-weight: 500; color: var(--text-primary); margin-bottom: var(--space-1); }
+    .dream-item-body { font-size: 12px; color: var(--text-secondary); }
+
+    /* === Insights Feed === */
+    .insight-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); margin-bottom: var(--space-3); display: flex; gap: var(--space-3); }
+    .insight-content { flex: 1; }
+    .insight-type { padding: 2px 8px; border-radius: var(--radius-sm); font-size: 10px; font-weight: 600; margin-bottom: var(--space-2); display: inline-block; }
+    .insight-type.pattern { background: var(--accent-muted); color: var(--accent); }
+    .insight-type.regime { background: rgba(59,130,246,0.15); color: #3b82f6; }
+    .insight-type.sector { background: rgba(139,92,246,0.15); color: #8b5cf6; }
+    .insight-type.risk { background: rgba(168,122,122,0.15); color: #a87a7a; }
+    .insight-type.opportunity { background: rgba(138,154,118,0.15); color: #8a9a76; }
+    .insight-body { font-size: 13px; color: var(--text-secondary); }
+    .insight-meta { font-size: 11px; color: var(--text-tertiary); margin-top: var(--space-2); }
+
+    /* === Scheduler / Cron === */
+    .cron-table { width: 100%; }
+    .cron-table th { padding: var(--space-2) var(--space-3); font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-align: left; border-bottom: 1px solid var(--border); text-transform: uppercase; }
+    .cron-table td { padding: var(--space-3); font-size: 12px; color: var(--text-secondary); border-bottom: 1px solid var(--border); }
+    .cron-table tr:hover td { background: var(--bg-hover); }
+    .cron-expr { font-family: var(--font-mono); font-size: 11px; color: var(--accent); }
+    .status-dot-sm { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .status-dot-sm.ok { background: #8a9a76; }
+    .status-dot-sm.error { background: #a87a7a; }
+    .status-dot-sm.disabled { background: var(--text-tertiary); }
+    .toggle-switch { width: 32px; height: 18px; border-radius: 9px; position: relative; cursor: pointer; transition: background var(--duration-fast); }
+    .toggle-switch.on { background: #8a9a76; }
+    .toggle-switch.off { background: var(--bg-input); }
+    .toggle-switch .toggle-knob { width: 14px; height: 14px; border-radius: 50%; background: #fff; position: absolute; top: 2px; transition: left var(--duration-fast); }
+    .toggle-switch.on .toggle-knob { left: 16px; }
+    .toggle-switch.off .toggle-knob { left: 2px; }
+    .log-panel { background: var(--bg-input); border-radius: var(--radius-md); padding: var(--space-3); margin-top: var(--space-2); max-height: 160px; overflow-y: auto; }
+    .log-entry { font-size: 11px; font-family: var(--font-mono); color: var(--text-secondary); padding: 2px 0; }
+    .log-entry .log-ok { color: #8a9a76; }
+    .log-entry .log-err { color: #a87a7a; }
+
+    /* === Data Source Health === */
+    .datasource-table { width: 100%; }
+    .datasource-table th, .datasource-table td { padding: var(--space-2) var(--space-3); font-size: 12px; text-align: left; border-bottom: 1px solid var(--border); }
+    .datasource-table th { font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; }
+    .datasource-table td { color: var(--text-secondary); }
+    .health-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+    .health-dot.ok { background: #8a9a76; }
+    .health-dot.down { background: #a87a7a; }
+
+    /* === Profile Section === */
+    .profile-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); margin-bottom: var(--space-4); }
+    .profile-section-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: var(--space-4); }
+    .profile-row { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+    .profile-label { font-size: 12px; color: var(--text-tertiary); min-width: 120px; }
+    .profile-input { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font-size: 12px; background: var(--bg-input); border: 1px solid var(--border); color: var(--text-secondary); flex: 1; max-width: 300px; }
+    .profile-input:focus { outline: none; border-color: var(--accent); }
+    .profile-select { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font-size: 12px; background: var(--bg-input); border: 1px solid var(--border); color: var(--text-secondary); }
+    .profile-textarea { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font-size: 12px; background: var(--bg-input); border: 1px solid var(--border); color: var(--text-secondary); width: 100%; max-width: 500px; min-height: 60px; resize: vertical; }
+
+    /* === PnL Chart placeholder === */
+    .chart-container { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); margin-bottom: var(--space-4); height: 220px; position: relative; overflow: hidden; }
+    .chart-placeholder { width: 100%; height: 100%; }
+    .chart-svg { width: 100%; height: 100%; }
+
+    /* === Accuracy Tab === */
+    .accuracy-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); margin-bottom: var(--space-4); }
+    .accuracy-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); text-align: center; }
+    .accuracy-value { font-size: 28px; font-weight: 700; font-family: var(--font-mono); color: var(--text-primary); }
+    .accuracy-label { font-size: 11px; color: var(--text-tertiary); margin-top: var(--space-1); }
+    .honesty-banner { background: rgba(168,122,122,0.1); border: 1px solid rgba(168,122,122,0.2); border-radius: var(--radius-md); padding: var(--space-3); margin-bottom: var(--space-4); font-size: 12px; color: #a87a7a; }
+    .hit-rate-table { width: 100%; }
+    .hit-rate-table th, .hit-rate-table td { padding: var(--space-2) var(--space-3); font-size: 12px; text-align: left; border-bottom: 1px solid var(--border); }
+    .hit-rate-table th { font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; }
+
+    /* === Tools Tab === */
+    .tools-kpi { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); margin-bottom: var(--space-4); }
+    .tool-call-item { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3); margin-bottom: var(--space-2); }
+    .tool-call-header { display: flex; align-items: center; justify-content: space-between; }
+    .tool-call-meta { font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
+    .tool-call-body { display: none; margin-top: var(--space-2); }
+    .tool-call-body.expanded { display: block; }
+
+    /* === Replay Tab === */
+    .replay-mode-toggle { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); }
+    .replay-panel { display: grid; grid-template-columns: 250px 1fr; gap: var(--space-4); }
+    .replay-sidebar { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-3); max-height: 500px; overflow-y: auto; }
+    .replay-item { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); cursor: pointer; font-size: 12px; color: var(--text-secondary); margin-bottom: 2px; }
+    .replay-item:hover { background: var(--bg-hover); }
+    .replay-item.active { background: var(--accent-muted); color: var(--accent); }
+    .replay-content { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); max-height: 500px; overflow-y: auto; }
+
+    /* === Archive Tab === */
+    .archive-panel { display: grid; grid-template-columns: 250px 1fr; gap: var(--space-4); }
+    .archive-sidebar { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-3); max-height: 500px; overflow-y: auto; }
+    .archive-content { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); max-height: 500px; overflow-y: auto; font-size: 13px; color: var(--text-secondary); line-height: 1.7; }
+
+    /* === Roles Tab === */
+    .roles-panel { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); margin-bottom: var(--space-4); }
+    .verdict-ref { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); }
+    .verdict-ref-row { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
+    .verdict-ref-row:last-child { border-bottom: none; }
+    .verdict-ref-name { font-size: 13px; font-weight: 600; color: var(--text-primary); min-width: 80px; }
+    .verdict-ref-desc { font-size: 12px; color: var(--text-secondary); }
+    .role-detail-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); margin-bottom: var(--space-3); }
+    .role-detail-header { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+    .role-detail-badge { width: 32px; height: 32px; border-radius: var(--radius-full); display: flex; align-items: center; justify-content: center; font-size: 14px; }
+    .role-detail-meta { font-size: 11px; color: var(--text-tertiary); display: flex; gap: var(--space-3); }
+    .prompt-block { background: var(--bg-input); border-radius: var(--radius-md); padding: var(--space-3); font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); line-height: 1.6; white-space: pre-wrap; max-height: 150px; overflow-y: auto; margin-top: var(--space-2); }
+
+    /* === Misc === */
+    .mono { font-family: var(--font-mono); }
+    .text-muted { color: var(--text-tertiary); }
+    .text-sm { font-size: 11px; }
+    .mb-3 { margin-bottom: var(--space-3); }
+    .mb-4 { margin-bottom: var(--space-4); }
+    .flex-between { display: flex; align-items: center; justify-content: space-between; }
+    .expand-arrow { font-size: 12px; color: var(--text-tertiary); cursor: pointer; transition: transform var(--duration-fast); }
+    .expand-arrow.rotated { transform: rotate(90deg); }
+
+    /* === Bottom Row === */
+    .bottom-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+
+    /* === Responsive === */
+    @media (max-width: 1200px) {
+      .committee-grid { grid-template-columns: repeat(3, 1fr); }
+      .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+      .info-row { grid-template-columns: 1fr; }
+      .roles-panel { grid-template-columns: 1fr; }
+      .replay-panel, .archive-panel { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Sidebar -->
+    <div class="sidebar" style="width: 200px; background: var(--bg-sidebar); border-right: 1px solid var(--border); padding: var(--space-4);">
+      <div style="font-size: 16px; font-weight: 700; color: var(--accent); margin-bottom: var(--space-5);">ClawGO</div>
+      <div class="sidebar-nav">
+        <div class="nav-item" style="padding: var(--space-2) var(--space-3); font-size: 13px; color: var(--text-tertiary); cursor: pointer;">Chat</div>
+        <div class="nav-item" style="padding: var(--space-2) var(--space-3); font-size: 13px; color: var(--text-tertiary); cursor: pointer;">Memory</div>
+        <div class="nav-item active" style="padding: var(--space-2) var(--space-3); font-size: 13px; color: var(--accent); background: var(--accent-subtle); border-radius: var(--radius-md); cursor: pointer;">Invest</div>
+        <div class="nav-item" style="padding: var(--space-2) var(--space-3); font-size: 13px; color: var(--text-tertiary); cursor: pointer;">History</div>
+        <div class="nav-item" style="padding: var(--space-2) var(--space-3); font-size: 13px; color: var(--text-tertiary); cursor: pointer;">Settings</div>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content" style="flex: 1; display: flex; flex-direction: column;">
+      <!-- Header -->
+      <div class="invest-header">
+        <div>
+          <div class="invest-title">投资管理</div>
+          <div class="invest-subtitle">Investment Portfolio Management</div>
+        </div>
+        <div class="invest-actions">
+          <button class="btn btn-ghost">🔄 同步行情</button>
+          <button class="btn btn-ghost">✏️ 编辑现金</button>
+          <button class="btn btn-primary">+ 买入</button>
+        </div>
+      </div>
+
+      <!-- Tab Navigation -->
+      <div class="tab-nav">
+        <button class="tab-btn active" onclick="switchTab('dashboard', this)">Dashboard</button>
+        <button class="tab-btn" onclick="switchTab('committee', this)">委员会</button>
+        <button class="tab-btn" onclick="switchTab('strategy', this)">策略</button>
+        <button class="tab-btn" onclick="switchTab('trades', this)">交易记录</button>
+        <button class="tab-btn" onclick="switchTab('system', this)">系统</button>
+      </div>
+
+      <!-- Tab Content -->
+      <div class="invest-content">
+        <!-- ==================== Dashboard Tab ==================== -->
+        <div id="tab-dashboard" class="tab-panel active">
+          <!-- KPI Cards (5 cards) -->
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-label">总资产</div>
+              <div class="kpi-value">¥1,284,567</div>
+              <div class="kpi-change positive">+12.4% 总收益率</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">持仓市值</div>
+              <div class="kpi-value">¥987,234</div>
+              <div class="kpi-change positive">+¥123,456</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">现金余额</div>
+              <div class="kpi-value">¥297,333</div>
+              <div class="kpi-change">23.1% 仓位</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">总收益率</div>
+              <div class="kpi-value" style="color: #8a9a76;">+12.4%</div>
+              <div class="kpi-change positive">趋势良好</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">持仓数</div>
+              <div class="kpi-value">3 <span style="font-size:12px;color:var(--text-tertiary);font-weight:400;">持仓</span> + 1 <span style="font-size:12px;color:var(--text-tertiary);font-weight:400;">观望</span></div>
+              <div class="kpi-change">4 标的</div>
+            </div>
+          </div>
+
+          <!-- Macro Snapshot + Latest Verdict -->
+          <div class="info-row">
+            <div class="info-card">
+              <div class="info-card-header">
+                <div class="info-card-title">📊 宏观信号 Macro Signal</div>
+                <span class="regime-badge uptrend" style="font-size:11px;">Risk-On</span>
+              </div>
+              <div class="metric-row">
+                <span class="label">信号强度</span>
+                <span class="value">7/10</span>
+                <div class="bar"><div class="bar-fill" style="width:70%; background:#8a9a76;"></div></div>
+              </div>
+              <div class="metric-row">
+                <span class="label">来源标的</span>
+                <span class="value" style="font-size:11px;">600519.SH</span>
+              </div>
+              <div class="metric-row">
+                <span class="label">更新时间</span>
+                <span class="value" style="font-size:11px;">2026-06-02 14:30</span>
+              </div>
+            </div>
+
+            <div class="info-card">
+              <div class="info-card-header">
+                <div class="info-card-title">🏛️ 最新判决 Latest Verdict</div>
+                <span class="verdict-badge buy" style="font-size:11px;">BUY</span>
+              </div>
+              <div style="font-size:13px; font-weight:600; color:var(--text-primary); margin-bottom:var(--space-1);">贵州茅台 600519.SH</div>
+              <div style="font-size:12px; color:var(--text-secondary); line-height:1.6; margin-bottom:var(--space-2);">宏观环境偏多，RSI 处于健康区间，估值分位合理。建议逢低买入，止损设在 1720。</div>
+              <div style="font-size:11px; color:var(--text-tertiary); display:flex; gap:var(--space-3);">
+                <span>置信度: 82%</span>
+                <span>模型: claude-sonnet-4-6</span>
+                <span>耗时: 45.2s</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Holdings Table -->
+          <div class="holdings-section">
+            <div class="holdings-header">
+              <div class="holdings-title">持仓管理</div>
+              <div style="display:flex; gap:var(--space-2); align-items:center;">
+                <div class="holdings-filter">
+                  <button class="filter-btn active">全部</button>
+                  <button class="filter-btn">持仓中</button>
+                  <button class="filter-btn">观望中</button>
+                </div>
+                <button class="btn btn-ghost btn-sm">+ 加入观望</button>
+              </div>
+            </div>
+            <table class="holdings-table">
+              <thead>
+                <tr>
+                  <th>标的</th>
+                  <th>状态</th>
+                  <th>资产类型</th>
+                  <th>数量</th>
+                  <th>成本价</th>
+                  <th>现价</th>
+                  <th>盈亏%</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="ticker">600519</span> <span style="color:var(--text-secondary);">贵州茅台</span></td>
+                  <td><span class="badge badge-hold">HOLD</span></td>
+                  <td><span class="badge badge-stock">stock</span></td>
+                  <td class="mono">100</td>
+                  <td class="mono">¥1,720.50</td>
+                  <td class="mono">¥1,856.00</td>
+                  <td class="pnl-positive mono">+7.9%</td>
+                  <td><button class="btn btn-danger btn-sm">卖出</button></td>
+                </tr>
+                <tr>
+                  <td><span class="ticker">300750</span> <span style="color:var(--text-secondary);">宁德时代</span></td>
+                  <td><span class="badge badge-hold">HOLD</span></td>
+                  <td><span class="badge badge-stock">stock</span></td>
+                  <td class="mono">200</td>
+                  <td class="mono">¥218.30</td>
+                  <td class="mono">¥245.80</td>
+                  <td class="pnl-positive mono">+12.6%</td>
+                  <td><button class="btn btn-danger btn-sm">卖出</button></td>
+                </tr>
+                <tr>
+                  <td><span class="ticker">601318</span> <span style="color:var(--text-secondary);">中国平安</span></td>
+                  <td><span class="badge badge-hold">HOLD</span></td>
+                  <td><span class="badge badge-stock">stock</span></td>
+                  <td class="mono">500</td>
+                  <td class="mono">¥58.70</td>
+                  <td class="mono">¥52.30</td>
+                  <td class="pnl-negative mono">-10.9%</td>
+                  <td><button class="btn btn-danger btn-sm">卖出</button></td>
+                </tr>
+                <tr>
+                  <td><span class="ticker">AAPL</span> <span style="color:var(--text-secondary);">苹果公司</span></td>
+                  <td><span class="badge badge-watch">WATCH</span></td>
+                  <td><span class="badge badge-stock">stock</span></td>
+                  <td class="mono" style="color:var(--text-tertiary);">—</td>
+                  <td class="mono" style="color:var(--text-tertiary);">—</td>
+                  <td class="mono">$189.25</td>
+                  <td class="mono" style="color:var(--text-tertiary);">—</td>
+                  <td>
+                    <button class="btn btn-success btn-sm">转持仓</button>
+                    <button class="btn btn-danger btn-sm" style="margin-left:4px;">删除</button>
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="ticker">510300</span> <span style="color:var(--text-secondary);">沪深300ETF</span></td>
+                  <td><span class="badge badge-hold">HOLD</span></td>
+                  <td><span class="badge badge-etf">etf</span></td>
+                  <td class="mono">50000</td>
+                  <td class="mono">¥3.85</td>
+                  <td class="mono">¥4.12</td>
+                  <td class="pnl-positive mono">+7.0%</td>
+                  <td><button class="btn btn-danger btn-sm">卖出</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- PnL Chart -->
+          <div class="chart-container">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:var(--space-2);">
+              <span style="font-size:14px; font-weight:600; color:var(--text-primary);">收益曲线 PnL Chart</span>
+              <span style="font-size:11px; color:var(--text-tertiary);">左轴: 总资产 | 右轴: 每日盈亏</span>
+            </div>
+            <svg class="chart-svg" viewBox="0 0 800 180" preserveAspectRatio="none">
+              <!-- Grid lines -->
+              <line x1="0" y1="45" x2="800" y2="45" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="4"/>
+              <line x1="0" y1="90" x2="800" y2="90" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="4"/>
+              <line x1="0" y1="135" x2="800" y2="135" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="4"/>
+              <!-- Total Assets area (blue) -->
+              <path d="M0,140 C80,130 160,120 240,100 C320,80 400,85 480,70 C560,55 640,50 720,40 L800,35 L800,180 L0,180 Z" fill="rgba(59,130,246,0.1)"/>
+              <path d="M0,140 C80,130 160,120 240,100 C320,80 400,85 480,70 C560,55 640,50 720,40 L800,35" fill="none" stroke="#3b82f6" stroke-width="2"/>
+              <!-- Daily PnL bars (green/red) -->
+              <rect x="30" y="120" width="8" height="60" fill="rgba(138,154,118,0.4)" rx="1"/>
+              <rect x="70" y="125" width="8" height="55" fill="rgba(138,154,118,0.4)" rx="1"/>
+              <rect x="110" y="110" width="8" height="70" fill="rgba(138,154,118,0.4)" rx="1"/>
+              <rect x="150" y="130" width="8" height="50" fill="rgba(168,122,122,0.4)" rx="1"/>
+              <rect x="190" y="105" width="8" height="75" fill="rgba(138,154,118,0.4)" rx="1"/>
+              <rect x="230" y="95" width="8" height="85" fill="rgba(138,154,118,0.4)" rx="1"/>
+              <rect x="270" y="115" width="8" height="65" fill="rgba(168,122,122,0.4)" rx="1"/>
+              <rect x="310" y="100" width="8" height="80" fill="rgba(138,154,118,0.4)" rx="1"/>
+              <rect x="350" y="90" width="8" height="90" fill="rgba(138,154,118,0.4)" rx="1"/>
+              <rect x="390" y="110" width="8" height="70" fill="rgba(168,122,122,0.4)" rx="1"/>
+              <rect x="430" y="85" width="8" height="95" fill="rgba(138,154,118,0.4)" rx="1"/>
+              <rect x="470" y="80" width="8" height="100" fill="rgba(138,154,118,0.4)" rx="1"/>
+              <rect x="510" y="95" width="8" height="85" fill="rgba(168,122,122,0.4)" rx="1"/>
+              <rect x="550" y="75" width="8" height="105" fill="rgba(138,154,118,0.4)" rx="1"/>
+              <rect x="590" y="65" width="8" height="115" fill="rgba(138,154,118,0.4)" rx="1"/>
+              <rect x="630" y="70" width="8" height="110" fill="rgba(168,122,122,0.4)" rx="1"/>
+              <rect x="670" y="55" width="8" height="125" fill="rgba(138,154,118,0.4)" rx="1"/>
+              <rect x="710" y="50" width="8" height="130" fill="rgba(138,154,118,0.4)" rx="1"/>
+              <rect x="750" y="45" width="8" height="135" fill="rgba(138,154,118,0.4)" rx="1"/>
+            </svg>
+          </div>
+
+          <!-- Bottom Row: Regime + Allocation -->
+          <div class="bottom-row">
+            <div class="regime-card">
+              <div class="regime-header">
+                <div class="regime-title">市场状态 REGIME</div>
+                <div class="regime-badge uptrend">上行 uptrend</div>
+              </div>
+              <div class="metric-row">
+                <span class="label">RSI-14</span>
+                <span class="value">62.4</span>
+                <div class="bar"><div class="bar-fill" style="width: 62.4%; background: #8a9a76;"></div></div>
+              </div>
+              <div class="metric-row">
+                <span class="label">价格分位 (120日)</span>
+                <span class="value">78.2%</span>
+                <div class="bar"><div class="bar-fill" style="width: 78.2%; background: var(--accent);"></div></div>
+              </div>
+              <div class="metric-row">
+                <span class="label">MA20 / MA60</span>
+                <span class="value" style="font-size:11px;">1,812 / 1,756</span>
+              </div>
+              <div class="metric-row">
+                <span class="label">波动率</span>
+                <span class="value">中等</span>
+                <div class="bar"><div class="bar-fill" style="width: 55%; background: #b89a6a;"></div></div>
+              </div>
+              <div class="metric-row">
+                <span class="label">趋势强度</span>
+                <span class="value">强</span>
+                <div class="bar"><div class="bar-fill" style="width: 82%; background: #8a9a76;"></div></div>
+              </div>
+            </div>
+
+            <div class="regime-card">
+              <div class="regime-header">
+                <div class="regime-title">资产配置</div>
+                <div style="font-size: 11px; color: var(--text-tertiary);">目标 vs 实际</div>
+              </div>
+              <div class="metric-row">
+                <span class="label">股票</span>
+                <span class="value">33.5% / 40%</span>
+                <div class="bar"><div class="bar-fill" style="width: 33.5%; background: #8a9a76;"></div></div>
+              </div>
+              <div class="metric-row">
+                <span class="label">ETF</span>
+                <span class="value">41.2% / 35%</span>
+                <div class="bar"><div class="bar-fill" style="width: 41.2%; background: var(--accent);"></div></div>
+              </div>
+              <div class="metric-row">
+                <span class="label">现金</span>
+                <span class="value">23.1% / 20%</span>
+                <div class="bar"><div class="bar-fill" style="width: 23.1%; background: #b89a6a;"></div></div>
+              </div>
+              <div class="metric-row">
+                <span class="label">其他</span>
+                <span class="value">2.2% / 5%</span>
+                <div class="bar"><div class="bar-fill" style="width: 2.2%; background: var(--text-tertiary);"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- ==================== Committee Tab ==================== -->
+        <div id="tab-committee" class="tab-panel">
+          <!-- Sub-tabs -->
+          <div class="sub-tab-nav">
+            <button class="sub-tab-btn active" onclick="switchSubTab('committee', 'live', this)">Live 运行</button>
+            <button class="sub-tab-btn" onclick="switchSubTab('committee', 'replay', this)">Replay 回放</button>
+            <button class="sub-tab-btn" onclick="switchSubTab('committee', 'archive', this)">Archive 归档</button>
+            <button class="sub-tab-btn" onclick="switchSubTab('committee', 'roles', this)">Roles 角色</button>
+            <button class="sub-tab-btn" onclick="switchSubTab('committee', 'accuracy', this)">Accuracy 准确率</button>
+            <button class="sub-tab-btn" onclick="switchSubTab('committee', 'tools', this)">Tools 工具</button>
+          </div>
+
+          <!-- ===== Committee > Live ===== -->
+          <div id="subtab-committee-live" class="tab-panel active">
+            <!-- Action bar -->
+            <div class="flex-between mb-4">
+              <div style="display:flex; align-items:center; gap:var(--space-3);">
+                <button class="btn btn-success">▶ 运行全部持仓</button>
+                <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-tertiary); cursor:pointer;">
+                  <input type="checkbox" style="accent-color:var(--accent);"> 包含观望标的
+                </label>
+              </div>
+              <span style="font-size:12px; color:var(--text-tertiary);">上次运行: 2026-06-02 14:30</span>
+            </div>
+
+            <!-- Portfolio Summary -->
+            <div class="info-card mb-4">
+              <div class="info-card-header">
+                <div class="info-card-title">组合摘要</div>
+              </div>
+              <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:var(--space-3); text-align:center;">
+                <div><div style="font-size:11px; color:var(--text-tertiary);">持仓数</div><div style="font-size:18px; font-weight:700; font-family:var(--font-mono); color:var(--text-primary);">4</div></div>
+                <div><div style="font-size:11px; color:var(--text-tertiary);">总市值</div><div style="font-size:18px; font-weight:700; font-family:var(--font-mono); color:var(--text-primary);">¥987K</div></div>
+                <div><div style="font-size:11px; color:var(--text-tertiary);">应急缓冲</div><div style="font-size:18px; font-weight:700; font-family:var(--font-mono); color:#8a9a76;">¥297K</div></div>
+                <div><div style="font-size:11px; color:var(--text-tertiary);">集中度警告</div><div style="font-size:18px; font-weight:700; font-family:var(--font-mono); color:#b89a6a;">1</div></div>
+                <div><div style="font-size:11px; color:var(--text-tertiary);">总收益率</div><div style="font-size:18px; font-weight:700; font-family:var(--font-mono); color:#8a9a76;">+12.4%</div></div>
+              </div>
+            </div>
+
+            <!-- Per-symbol cards -->
+            <!-- Symbol 1: 600519 贵州茅台 -->
+            <div class="committee-symbol-card">
+              <div class="committee-symbol-header" onclick="toggleExpand(this)">
+                <span class="committee-symbol-name">贵州茅台</span>
+                <span class="mono" style="font-size:12px; color:var(--text-tertiary);">600519.SH</span>
+                <span class="badge badge-hold">HOLD</span>
+                <div class="progress-dots" style="margin-left:auto; margin-right:var(--space-3);">
+                  <div class="progress-dot done" style="background:rgba(59,130,246,0.3); color:#3b82f6;">M<span class="tooltip">Macro 12s</span></div>
+                  <div class="progress-dot done" style="background:rgba(139,92,246,0.3); color:#8b5cf6;">R<span class="tooltip">Regime 0.1s</span></div>
+                  <div class="progress-dot done" style="background:rgba(59,130,246,0.3); color:#3b82f6;">Q1<span class="tooltip">Quant R1 18s</span></div>
+                  <div class="progress-dot done" style="background:rgba(245,158,11,0.3); color:#f59e0b;">R1<span class="tooltip">Risk R1 10s</span></div>
+                  <div class="progress-dot done" style="background:rgba(59,130,246,0.3); color:#3b82f6;">Q2<span class="tooltip">Quant R2 15s</span></div>
+                  <div class="progress-dot done" style="background:rgba(245,158,11,0.3); color:#f59e0b;">R2<span class="tooltip">Risk R2 8s</span></div>
+                  <div class="progress-dot done" style="background:rgba(239,68,68,0.3); color:#ef4444;">L4<span class="tooltip">L4 Officer 6s</span></div>
+                  <div class="progress-dot done" style="background:rgba(16,185,129,0.3); color:#10b981;">C<span class="tooltip">CIO 5s</span></div>
+                </div>
+                <span class="verdict-badge buy" style="font-size:11px;">BUY</span>
+                <span class="expand-arrow">▶</span>
+              </div>
+              <div class="committee-symbol-body">
+                <!-- Step details -->
+                <div class="step-card">
+                  <div class="step-card-header">
+                    <span class="step-card-label">🌍 Macro 分析</span>
+                    <span class="step-card-meta">12.3s | 1,240 tokens</span>
+                  </div>
+                  <div class="step-card-body">宏观环境偏多。国内 PMI 超预期扩张，北向资金持续流入。美联储维持利率不变，鹰派言论略有缓和。建议 Risk-On 配置。</div>
+                </div>
+                <div class="step-card">
+                  <div class="step-card-header">
+                    <span class="step-card-label">📐 Regime 计算</span>
+                    <span class="step-card-meta">0.1s | 指标计算</span>
+                  </div>
+                  <div class="step-card-body">分类: uptrend | RSI-14: 62.4 | MA20: 1,812 | MA60: 1,756 | 波动率: 0.28 | 价格分位(120d): 78.2%</div>
+                </div>
+                <div class="step-card">
+                  <div class="step-card-header">
+                    <span class="step-card-label">📊 Quant R1</span>
+                    <span class="step-card-meta">18.1s | 2,100 tokens</span>
+                  </div>
+                  <div class="step-card-body">技术面健康，RSI 处于中性偏多区间。资金流入明显，北向连续3日净买入。估值分位78%略高但在合理范围。建议买入。</div>
+                </div>
+                <div class="step-card">
+                  <div class="step-card-header">
+                    <span class="step-card-label">🛡️ Risk R1</span>
+                    <span class="step-card-meta">10.2s | 980 tokens</span>
+                  </div>
+                  <div class="step-card-body">单标的权重18.5%未超限。现金缓冲充足。成本基础良好，距止损线有安全边际。情绪指标中性。</div>
+                </div>
+                <div class="step-card">
+                  <div class="step-card-header">
+                    <span class="step-card-label">📊 Quant R2 交叉挑战</span>
+                    <span class="step-card-meta">15.4s | 1,800 tokens</span>
+                  </div>
+                  <div class="step-card-body">R1 结论经得起推敲。REGIME uptrend 硬保护规则生效，不得在 uptrend 中建议 SELL。维持买入判断。</div>
+                </div>
+                <div class="step-card">
+                  <div class="step-card-header">
+                    <span class="step-card-label">🛡️ Risk R2 交叉挑战</span>
+                    <span class="step-card-meta">8.1s | 720 tokens</span>
+                  </div>
+                  <div class="step-card-body">情绪重新校准：近期无过度交易迹象。集中度风险可控。维持 R1 风控判断。</div>
+                </div>
+                <div class="step-card">
+                  <div class="step-card-header">
+                    <span class="step-card-label">⚠️ L4 行为审查</span>
+                    <span class="step-card-meta">6.3s | 540 tokens</span>
+                  </div>
+                  <div class="step-card-body">行为红灯评分: 12/100 (低风险)。无频繁交易异常。买入理由合理：估值+资金+趋势三重共振。Guard clause 未触发。</div>
+                </div>
+
+                <!-- CIO Verdict -->
+                <div class="verdict-card">
+                  <div class="verdict-header">
+                    <span style="font-size:14px; font-weight:700; color:var(--text-primary);">👔 CIO 最终判决</span>
+                    <span class="verdict-badge buy">BUY</span>
+                    <span style="font-size:13px; font-family:var(--font-mono); color:var(--text-secondary);">置信度 82%</span>
+                  </div>
+                  <div style="font-size:12px; color:var(--text-secondary); line-height:1.7; margin-bottom:var(--space-2);">宏观偏多 + REGIME uptrend + 技术面健康 + 资金流入。建议逢低买入，止损设在 1720（MA60 附近）。Catalyst Tier: T1（宏观+资金双驱动）。</div>
+                  <div class="gate-row">
+                    <span class="gate-badge pass">✓ Gate1: 信号一致</span>
+                    <span class="gate-badge pass">✓ Gate2: 风控合规</span>
+                    <span class="gate-badge pass">✓ Gate3: 行为正常</span>
+                    <span class="gate-badge pass">✓ Gate4: REGIME 合规</span>
+                  </div>
+                  <div style="font-size:11px; color:var(--text-tertiary); margin-top:var(--space-2); display:flex; gap:var(--space-3);">
+                    <span>总耗时: 81.4s</span>
+                    <span>总 tokens: 8,380</span>
+                    <span>收敛: ✓</span>
+                    <span>哨兵覆盖: 否</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Symbol 2: 300750 宁德时代 -->
+            <div class="committee-symbol-card">
+              <div class="committee-symbol-header" onclick="toggleExpand(this)">
+                <span class="committee-symbol-name">宁德时代</span>
+                <span class="mono" style="font-size:12px; color:var(--text-tertiary);">300750.SZ</span>
+                <span class="badge badge-hold">HOLD</span>
+                <div class="progress-dots" style="margin-left:auto; margin-right:var(--space-3);">
+                  <div class="progress-dot done" style="background:rgba(59,130,246,0.3); color:#3b82f6;">M</div>
+                  <div class="progress-dot done" style="background:rgba(139,92,246,0.3); color:#8b5cf6;">R</div>
+                  <div class="progress-dot done" style="background:rgba(59,130,246,0.3); color:#3b82f6;">Q1</div>
+                  <div class="progress-dot done" style="background:rgba(245,158,11,0.3); color:#f59e0b;">R1</div>
+                  <div class="progress-dot done" style="background:rgba(59,130,246,0.3); color:#3b82f6;">Q2</div>
+                  <div class="progress-dot done" style="background:rgba(245,158,11,0.3); color:#f59e0b;">R2</div>
+                  <div class="progress-dot done" style="background:rgba(239,68,68,0.3); color:#ef4444;">L4</div>
+                  <div class="progress-dot done" style="background:rgba(16,185,129,0.3); color:#10b981;">C</div>
+                </div>
+                <span class="verdict-badge accumulate" style="font-size:11px;">ACCUMULATE</span>
+                <span class="expand-arrow">▶</span>
+              </div>
+              <div class="committee-symbol-body">
+                <div class="verdict-card">
+                  <div class="verdict-header">
+                    <span style="font-size:14px; font-weight:700; color:var(--text-primary);">👔 CIO 最终判决</span>
+                    <span class="verdict-badge accumulate">ACCUMULATE</span>
+                    <span style="font-size:13px; font-family:var(--font-mono); color:var(--text-secondary);">置信度 75%</span>
+                  </div>
+                  <div style="font-size:12px; color:var(--text-secondary); line-height:1.7;">新能源板块景气度回升，但估值偏高。建议分批加仓，不追高。Catalyst Tier: T2（行业驱动）。</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Symbol 3: 601318 中国平安 -->
+            <div class="committee-symbol-card">
+              <div class="committee-symbol-header" onclick="toggleExpand(this)">
+                <span class="committee-symbol-name">中国平安</span>
+                <span class="mono" style="font-size:12px; color:var(--text-tertiary);">601318.SH</span>
+                <span class="badge badge-hold">HOLD</span>
+                <div class="progress-dots" style="margin-left:auto; margin-right:var(--space-3);">
+                  <div class="progress-dot done" style="background:rgba(59,130,246,0.3); color:#3b82f6;">M</div>
+                  <div class="progress-dot done" style="background:rgba(139,92,246,0.3); color:#8b5cf6;">R</div>
+                  <div class="progress-dot done" style="background:rgba(59,130,246,0.3); color:#3b82f6;">Q1</div>
+                  <div class="progress-dot done" style="background:rgba(245,158,11,0.3); color:#f59e0b;">R1</div>
+                  <div class="progress-dot done" style="background:rgba(59,130,246,0.3); color:#3b82f6;">Q2</div>
+                  <div class="progress-dot done" style="background:rgba(245,158,11,0.3); color:#f59e0b;">R2</div>
+                  <div class="progress-dot done" style="background:rgba(239,68,68,0.3); color:#ef4444;">L4</div>
+                  <div class="progress-dot done" style="background:rgba(16,185,129,0.3); color:#10b981;">C</div>
+                </div>
+                <span class="verdict-badge hold-verdict" style="font-size:11px;">HOLD</span>
+                <span class="expand-arrow">▶</span>
+              </div>
+              <div class="committee-symbol-body">
+                <div class="verdict-card">
+                  <div class="verdict-header">
+                    <span style="font-size:14px; font-weight:700; color:var(--text-primary);">👔 CIO 最终判决</span>
+                    <span class="verdict-badge hold">HOLD</span>
+                    <span style="font-size:13px; font-family:var(--font-mono); color:var(--text-secondary);">置信度 68%</span>
+                  </div>
+                  <div style="font-size:12px; color:var(--text-secondary); line-height:1.7;">保险板块基本面稳健但缺乏催化剂。当前持仓成本偏高，不宜加仓也不急于止损。维持观望。</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Symbol 4: 510300 沪深300ETF -->
+            <div class="committee-symbol-card">
+              <div class="committee-symbol-header" onclick="toggleExpand(this)">
+                <span class="committee-symbol-name">沪深300ETF</span>
+                <span class="mono" style="font-size:12px; color:var(--text-tertiary);">510300.SH</span>
+                <span class="badge badge-hold">HOLD</span>
+                <div class="progress-dots" style="margin-left:auto; margin-right:var(--space-3);">
+                  <div class="progress-dot done" style="background:rgba(59,130,246,0.3); color:#3b82f6;">M</div>
+                  <div class="progress-dot done" style="background:rgba(139,92,246,0.3); color:#8b5cf6;">R</div>
+                  <div class="progress-dot done" style="background:rgba(59,130,246,0.3); color:#3b82f6;">Q1</div>
+                  <div class="progress-dot done" style="background:rgba(245,158,11,0.3); color:#f59e0b;">R1</div>
+                  <div class="progress-dot done" style="background:rgba(59,130,246,0.3); color:#3b82f6;">Q2</div>
+                  <div class="progress-dot done" style="background:rgba(245,158,11,0.3); color:#f59e0b;">R2</div>
+                  <div class="progress-dot done" style="background:rgba(239,68,68,0.3); color:#ef4444;">L4</div>
+                  <div class="progress-dot done" style="background:rgba(16,185,129,0.3); color:#10b981;">C</div>
+                </div>
+                <span class="verdict-badge hold-verdict" style="font-size:11px;">HOLD</span>
+                <span class="expand-arrow">▶</span>
+              </div>
+              <div class="committee-symbol-body">
+                <div class="verdict-card">
+                  <div class="verdict-header">
+                    <span style="font-size:14px; font-weight:700; color:var(--text-primary);">👔 CIO 最终判决</span>
+                    <span class="verdict-badge hold">HOLD</span>
+                    <span style="font-size:13px; font-family:var(--font-mono); color:var(--text-secondary);">置信度 71%</span>
+                  </div>
+                  <div style="font-size:12px; color:var(--text-secondary); line-height:1.7;">宽基 ETF 作为底仓配置，当前权重41.2%略超目标。如需再平衡可小幅减持。维持持有。</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== Committee > Replay ===== -->
+          <div id="subtab-committee-replay" class="tab-panel">
+            <div class="replay-mode-toggle">
+              <button class="filter-btn active">📖 回放模式</button>
+              <button class="filter-btn">⚡ 模拟模式</button>
+            </div>
+            <div class="replay-panel">
+              <div class="replay-sidebar">
+                <div style="font-size:12px; font-weight:600; color:var(--text-primary); padding:var(--space-2) var(--space-3); margin-bottom:var(--space-2);">选择标的</div>
+                <div class="replay-item active">600519 贵州茅台</div>
+                <div class="replay-item">300750 宁德时代</div>
+                <div class="replay-item">601318 中国平安</div>
+                <div class="replay-item">510300 沪深300ETF</div>
+                <div style="border-top:1px solid var(--border); margin:var(--space-2) 0; padding-top:var(--space-2);">
+                  <div style="font-size:11px; color:var(--text-tertiary); padding:0 var(--space-3);">历史日期</div>
+                  <div class="replay-item">2026-06-02</div>
+                  <div class="replay-item">2026-06-01</div>
+                  <div class="replay-item">2026-05-30</div>
+                </div>
+              </div>
+              <div class="replay-content">
+                <div style="font-size:14px; font-weight:600; color:var(--text-primary); margin-bottom:var(--space-3);">600519 贵州茅台 — 2026-06-02</div>
+                <div style="font-size:13px; color:var(--text-secondary); line-height:1.8;">
+                  <p><strong>宏观环境:</strong> 国内 PMI 51.2 超预期，北向资金连续3日净流入。美联储维持利率不变。</p>
+                  <p><strong>REGIME:</strong> uptrend，RSI-14 62.4，价格分位 78.2%。</p>
+                  <p><strong>量化分析:</strong> 技术面健康，MACD 金叉，成交量温和放大。估值分位合理。</p>
+                  <p><strong>风控评估:</strong> 单标的权重18.5%未超限。止损线安全边际充足。</p>
+                  <p><strong>L4 行为审查:</strong> 行为红灯评分12/100，无异常。</p>
+                  <p><strong>CIO 判决:</strong> <span class="badge badge-buy">BUY</span> 置信度 82%。建议逢低买入，止损1720。</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== Committee > Archive ===== -->
+          <div id="subtab-committee-archive" class="tab-panel">
+            <div class="archive-panel">
+              <div class="archive-sidebar">
+                <div style="display:flex; align-items:center; gap:var(--space-2); padding:var(--space-2) var(--space-3); margin-bottom:var(--space-2);">
+                  <select style="flex:1; padding:4px 8px; border-radius:var(--radius-sm); font-size:12px; background:var(--bg-input); border:1px solid var(--border); color:var(--text-secondary);">
+                    <option>600519 贵州茅台</option>
+                    <option>300750 宁德时代</option>
+                    <option>601318 中国平安</option>
+                    <option>510300 沪深300ETF</option>
+                  </select>
+                  <button class="btn btn-ghost btn-sm">查询</button>
+                </div>
+                <div class="replay-item active">2026-06-02 BUY</div>
+                <div class="replay-item">2026-06-01 HOLD</div>
+                <div class="replay-item">2026-05-30 BUY</div>
+                <div class="replay-item">2026-05-28 ACCUMULATE</div>
+                <div class="replay-item">2026-05-25 HOLD</div>
+              </div>
+              <div class="archive-content">
+                <div style="font-size:14px; font-weight:600; color:var(--text-primary); margin-bottom:var(--space-2);">600519 贵州茅台 — 2026-06-02</div>
+                <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:var(--space-3);">归档时间: 2026-06-02 14:30:45 | 模型: claude-sonnet-4-6 | Tokens: 8,380</div>
+                <p>完整委员会报告内容（Markdown 格式）。包含宏观分析、REGIME 计算、量化分析、风控评估、L4 行为审查、CIO 最终判决等全部步骤的详细输出。</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== Committee > Roles ===== -->
+          <div id="subtab-committee-roles" class="tab-panel">
+            <!-- Verdict Reference + Sanity Rules -->
+            <div class="roles-panel">
+              <div class="verdict-ref">
+                <div style="font-size:14px; font-weight:600; color:var(--text-primary); margin-bottom:var(--space-3);">判决选项参考</div>
+                <div class="verdict-ref-row"><span class="verdict-ref-name"><span class="badge badge-buy">BUY</span></span><span class="verdict-ref-desc">强烈看好，建议新建/加仓</span></div>
+                <div class="verdict-ref-row"><span class="verdict-ref-name"><span class="badge badge-accumulate">ACCUM</span></span><span class="verdict-ref-desc">看好但需分批，不追高</span></div>
+                <div class="verdict-ref-row"><span class="verdict-ref-name"><span class="badge badge-hold-verdict">HOLD</span></span><span class="verdict-ref-desc">维持现状，不增不减</span></div>
+                <div class="verdict-ref-row"><span class="verdict-ref-name"><span class="badge badge-trim">TRIM</span></span><span class="verdict-ref-desc">建议部分减持锁定利润</span></div>
+                <div class="verdict-ref-row"><span class="verdict-ref-name"><span class="badge badge-sell">SELL</span></span><span class="verdict-ref-desc">建议清仓/大幅减仓</span></div>
+                <div style="margin-top:var(--space-3); font-size:12px; font-weight:600; color:var(--text-primary);">REGIME 硬保护规则</div>
+                <div style="font-size:11px; color:var(--text-secondary); line-height:1.6; margin-top:var(--space-2);">
+                  <div>• uptrend → 禁止 SELL（除非止损触发）</div>
+                  <div>• downtrend → 禁止 BUY（除非超跌反弹）</div>
+                  <div>• crash → 强制 HOLD/SELL</div>
+                  <div>• 优先级: 安全 > REGIME > 信号</div>
+                </div>
+              </div>
+              <div class="verdict-ref">
+                <div style="font-size:14px; font-weight:600; color:var(--text-primary); margin-bottom:var(--space-3);">CIO Sanity Check (4 Gates)</div>
+                <div style="font-size:12px; color:var(--text-secondary); line-height:1.8;">
+                  <div style="margin-bottom:var(--space-2);"><strong>Gate 1:</strong> 信号一致性 — Quant 和 Risk 是否意见一致？</div>
+                  <div style="margin-bottom:var(--space-2);"><strong>Gate 2:</strong> 风控合规 — 是否满足集中度、现金缓冲等风控要求？</div>
+                  <div style="margin-bottom:var(--space-2);"><strong>Gate 3:</strong> 行为正常 — L4 行为红灯评分是否低于阈值？</div>
+                  <div><strong>Gate 4:</strong> REGIME 合规 — 判决是否符合当前 REGIME 的硬保护规则？</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 5 Role Detail Cards -->
+            <div class="role-detail-card">
+              <div class="role-detail-header">
+                <div class="role-detail-badge" style="background:rgba(59,130,246,0.15); color:#3b82f6;">🌍</div>
+                <div>
+                  <div style="font-size:14px; font-weight:600; color:var(--text-primary);">宏观分析师 Macro Analyst</div>
+                  <div class="role-detail-meta"><span>L1</span><span>temp: 0.7</span><span>6 tools</span></div>
+                </div>
+              </div>
+              <div style="font-size:12px; color:var(--text-secondary); margin-bottom:var(--space-2);">分析宏观经济环境，输出 risk_on/risk_off/neutral 信号及强度。</div>
+              <div class="prompt-block">你是宏观分析师(Macro Analyst)，专注于宏观经济环境分析。使用 RSI-14、价格分位数等指标评估市场状态。分析国际局势、央行政策、资金流向。输出 signal(risk_on/risk_off/neutral) 和 strength(0-10)。...</div>
+            </div>
+
+            <div class="role-detail-card">
+              <div class="role-detail-header">
+                <div class="role-detail-badge" style="background:rgba(139,92,246,0.15); color:#8b5cf6;">📊</div>
+                <div>
+                  <div style="font-size:14px; font-weight:600; color:var(--text-primary);">量化分析师 Quant Analyst</div>
+                  <div class="role-detail-meta"><span>L2</span><span>temp: 0.7</span><span>5 tools</span></div>
+                </div>
+              </div>
+              <div style="font-size:12px; color:var(--text-secondary); margin-bottom:var(--space-2);">技术分析、资金流、估值评估。R1 输出信号，R2 交叉挑战。</div>
+              <div class="prompt-block">你是量化分析师(Quant Analyst)，专注于技术分析和量化评估。使用历史数据、多时间框架分析、资金流等工具。R1 输出初步判断，R2 与 Risk 交叉挑战。注意 REGIME 硬保护规则：uptrend 禁止 SELL。...</div>
+            </div>
+
+            <div class="role-detail-card">
+              <div class="role-detail-header">
+                <div class="role-detail-badge" style="background:rgba(245,158,11,0.15); color:#f59e0b;">🛡️</div>
+                <div>
+                  <div style="font-size:14px; font-weight:600; color:var(--text-primary);">风控官 Risk Officer</div>
+                  <div class="role-detail-meta"><span>L3</span><span>temp: 0.7</span><span>3 tools</span></div>
+                </div>
+              </div>
+              <div style="font-size:12px; color:var(--text-secondary); margin-bottom:var(--space-2);">集中度、现金流、止损线、情绪评估。R1+R2 均可用工具。</div>
+              <div class="prompt-block">你是风控官(Risk Officer)，专注于风险评估和管理。检查集中度风险、现金缓冲、成本基础、最大回撤、情绪指标。输出风险等级和建议。...</div>
+            </div>
+
+            <div class="role-detail-card">
+              <div class="role-detail-header">
+                <div class="role-detail-badge" style="background:rgba(239,68,68,0.15); color:#ef4444;">⚠️</div>
+                <div>
+                  <div style="font-size:14px; font-weight:600; color:var(--text-primary);">L4 行为官 Behavioral Officer</div>
+                  <div class="role-detail-meta"><span>L4</span><span>temp: 0.3</span><span>1 tool</span></div>
+                </div>
+              </div>
+              <div style="font-size:12px; color:var(--text-secondary); margin-bottom:var(--space-2);">Guard clause（三重恶化检测）、行为红灯评分、买入合理性审查。仅 query_dreaming_insights 一个工具。</div>
+              <div class="prompt-block">你是 L4 行为官(Behavioral Officer)，专注于行为审查。检查：1) 三重恶化 guard clause，2) 行为红灯评分(频繁交易/情绪化操作)，3) 买入理由合理性。temp=0.3 以确保严格审查。...</div>
+            </div>
+
+            <div class="role-detail-card">
+              <div class="role-detail-header">
+                <div class="role-detail-badge" style="background:rgba(16,185,129,0.15); color:#10b981;">👔</div>
+                <div>
+                  <div style="font-size:14px; font-weight:600; color:var(--text-primary);">首席投资官 CIO</div>
+                  <div class="role-detail-meta"><span>L4</span><span>temp: 0.1</span><span>0 tools</span></div>
+                </div>
+              </div>
+              <div style="font-size:12px; color:var(--text-secondary); margin-bottom:var(--space-2);">最终判决。综合所有角色意见，输出 verdict(BUY/ACCUMULATE/HOLD/TRIM/SELL)、confidence、catalyst tier、止损位。禁止调用工具。</div>
+              <div class="prompt-block">你是首席投资官(CIO)，做最终投资决策。综合 Macro/Quant/Risk/L4 的意见，输出：verdict(BUY/ACCUMULATE/HOLD/TRIM/SELL)、confidence(0-100)、catalyst_tier(T1/T2/T3)、stop_loss。注意 4 个 Sanity Gate。...</div>
+            </div>
+
+            <!-- Provider Config -->
+            <div class="role-detail-card">
+              <div class="role-detail-header">
+                <div style="font-size:14px; font-weight:600; color:var(--text-primary);">⚙️ Provider 配置</div>
+              </div>
+              <div style="font-size:12px; color:var(--text-secondary);">
+                <div class="metric-row"><span class="label">当前 Provider</span><span class="value">Claude (claude-sonnet-4-6)</span></div>
+                <div class="metric-row"><span class="label">Base URL</span><span class="value mono" style="font-size:10px;">https://api.anthropic.com</span></div>
+                <div class="metric-row"><span class="label">Max Tokens</span><span class="value">4096</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== Committee > Accuracy ===== -->
+          <div id="subtab-committee-accuracy" class="tab-panel">
+            <div class="flex-between mb-4">
+              <div style="font-size:14px; font-weight:600; color:var(--text-primary);">判决准确率</div>
+              <button class="btn btn-ghost">🔄 运行复查</button>
+            </div>
+
+            <div class="accuracy-grid">
+              <div class="accuracy-card">
+                <div class="accuracy-value">24</div>
+                <div class="accuracy-label">总判决数</div>
+              </div>
+              <div class="accuracy-card">
+                <div class="accuracy-value" style="color:#8a9a76;">67%</div>
+                <div class="accuracy-label">总命中率 (30d)</div>
+              </div>
+              <div class="accuracy-card">
+                <div class="accuracy-value" style="color:#8a9a76;">72%</div>
+                <div class="accuracy-label">方向命中率 (30d)</div>
+              </div>
+            </div>
+
+            <!-- Hit Rate by Window -->
+            <div class="holdings-section mb-4">
+              <div class="holdings-header">
+                <div class="holdings-title">窗口命中率</div>
+              </div>
+              <table class="hit-rate-table">
+                <thead><tr><th>窗口</th><th>样本数</th><th>命中率</th></tr></thead>
+                <tbody>
+                  <tr><td>1 日</td><td class="mono">24</td><td class="mono" style="color:#8a9a76;">58%</td></tr>
+                  <tr><td>7 日</td><td class="mono">20</td><td class="mono" style="color:#8a9a76;">65%</td></tr>
+                  <tr><td>30 日</td><td class="mono">15</td><td class="mono" style="color:#8a9a76;">72%</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Hit Rate by Verdict Type -->
+            <div class="holdings-section">
+              <div class="holdings-header">
+                <div class="holdings-title">按判决类型</div>
+              </div>
+              <table class="hit-rate-table">
+                <thead><tr><th>判决</th><th>数量</th><th>1d 命中</th><th>7d 命中</th><th>30d 命中</th></tr></thead>
+                <tbody>
+                  <tr><td><span class="badge badge-buy">BUY</span></td><td class="mono">10</td><td class="mono">60%</td><td class="mono" style="color:#8a9a76;">70%</td><td class="mono" style="color:#8a9a76;">80%</td></tr>
+                  <tr><td><span class="badge badge-accumulate">ACCUM</span></td><td class="mono">6</td><td class="mono">50%</td><td class="mono">67%</td><td class="mono" style="color:#8a9a76;">67%</td></tr>
+                  <tr><td><span class="badge badge-hold-verdict">HOLD</span></td><td class="mono">5</td><td class="mono">60%</td><td class="mono">60%</td><td class="mono">60%</td></tr>
+                  <tr><td><span class="badge badge-trim">TRIM</span></td><td class="mono">2</td><td class="mono">50%</td><td class="mono" style="color:#8a9a76;">100%</td><td class="mono" style="color:#8a9a76;">100%</td></tr>
+                  <tr><td><span class="badge badge-sell">SELL</span></td><td class="mono">1</td><td class="mono" style="color:#8a9a76;">100%</td><td class="mono" style="color:#8a9a76;">100%</td><td class="mono" style="color:#8a9a76;">100%</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ===== Committee > Tools ===== -->
+          <div id="subtab-committee-tools" class="tab-panel">
+            <div class="tools-kpi">
+              <div class="accuracy-card">
+                <div class="accuracy-value">156</div>
+                <div class="accuracy-label">总调用次数</div>
+              </div>
+              <div class="accuracy-card">
+                <div class="accuracy-value" style="color:#8a9a76;">94%</div>
+                <div class="accuracy-label">成功率</div>
+              </div>
+              <div class="accuracy-card">
+                <div class="accuracy-value">2.3s</div>
+                <div class="accuracy-label">平均延迟</div>
+              </div>
+            </div>
+
+            <!-- Tool Access Matrix -->
+            <div class="holdings-section mb-4">
+              <div class="holdings-header"><div class="holdings-title">角色-工具访问矩阵</div></div>
+              <table class="holdings-table">
+                <thead><tr><th>工具</th><th>Macro</th><th>Quant</th><th>Risk</th><th>L4 Officer</th><th>CIO</th></tr></thead>
+                <tbody>
+                  <tr><td class="mono" style="font-size:11px;">get_history_data</td><td style="color:#8a9a76;">✓ R1</td><td style="color:#8a9a76;">✓ R1+R2</td><td style="color:var(--text-tertiary);">✗</td><td style="color:var(--text-tertiary);">✗</td><td style="color:var(--text-tertiary);">✗</td></tr>
+                  <tr><td class="mono" style="font-size:11px;">analyze_multi_timeframe</td><td style="color:#8a9a76;">✓ R1</td><td style="color:#8a9a76;">✓ R1+R2</td><td style="color:var(--text-tertiary);">✗</td><td style="color:var(--text-tertiary);">✗</td><td style="color:var(--text-tertiary);">✗</td></tr>
+                  <tr><td class="mono" style="font-size:11px;">get_macro_snapshot</td><td style="color:#8a9a76;">✓ R1</td><td style="color:var(--text-tertiary);">✗</td><td style="color:var(--text-tertiary);">✗</td><td style="color:var(--text-tertiary);">✗</td><td style="color:var(--text-tertiary);">✗</td></tr>
+                  <tr><td class="mono" style="font-size:11px;">query_dreaming_insights</td><td style="color:#8a9a76;">✓ R1</td><td style="color:var(--text-tertiary);">✗</td><td style="color:#8a9a76;">✓ R1+R2</td><td style="color:#8a9a76;">✓</td><td style="color:var(--text-tertiary);">✗</td></tr>
+                  <tr><td class="mono" style="font-size:11px;">get_recent_committee_verdicts</td><td style="color:#8a9a76;">✓ R1</td><td style="color:#8a9a76;">✓ R1+R2</td><td style="color:#8a9a76;">✓ R1+R2</td><td style="color:var(--text-tertiary);">✗</td><td style="color:var(--text-tertiary);">✗</td></tr>
+                  <tr><td class="mono" style="font-size:11px;">get_moneyflow</td><td style="color:var(--text-tertiary);">✗</td><td style="color:#8a9a76;">✓ R1+R2</td><td style="color:var(--text-tertiary);">✗</td><td style="color:var(--text-tertiary);">✗</td><td style="color:var(--text-tertiary);">✗</td></tr>
+                  <tr><td class="mono" style="font-size:11px;">get_company_info</td><td style="color:var(--text-tertiary);">✗</td><td style="color:#8a9a76;">✓ R1+R2</td><td style="color:var(--text-tertiary);">✗</td><td style="color:var(--text-tertiary);">✗</td><td style="color:var(--text-tertiary);">✗</td></tr>
+                  <tr><td class="mono" style="font-size:11px;">get_company_news</td><td style="color:#8a9a76;">✓ R1</td><td style="color:var(--text-tertiary);">✗</td><td style="color:var(--text-tertiary);">✗</td><td style="color:var(--text-tertiary);">✗</td><td style="color:var(--text-tertiary);">✗</td></tr>
+                  <tr><td class="mono" style="font-size:11px;">get_recent_events</td><td style="color:#8a9a76;">✓ R1</td><td style="color:var(--text-tertiary);">✗</td><td style="color:var(--text-tertiary);">✗</td><td style="color:var(--text-tertiary);">✗</td><td style="color:var(--text-tertiary);">✗</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Recent Tool Calls -->
+            <div style="font-size:14px; font-weight:600; color:var(--text-primary); margin-bottom:var(--space-3);">最近调用记录</div>
+            <div class="tool-call-item">
+              <div class="tool-call-header">
+                <div style="display:flex; align-items:center; gap:var(--space-2);">
+                  <span class="badge" style="background:rgba(59,130,246,0.15); color:#3b82f6;">Macro</span>
+                  <span class="mono" style="font-size:12px; color:var(--text-primary);">get_history_data</span>
+                  <span class="status-dot-sm ok"></span>
+                </div>
+                <span class="tool-call-meta">1.2s</span>
+              </div>
+            </div>
+            <div class="tool-call-item">
+              <div class="tool-call-header">
+                <div style="display:flex; align-items:center; gap:var(--space-2);">
+                  <span class="badge" style="background:rgba(139,92,246,0.15); color:#8b5cf6;">Quant</span>
+                  <span class="mono" style="font-size:12px; color:var(--text-primary);">get_moneyflow</span>
+                  <span class="status-dot-sm ok"></span>
+                </div>
+                <span class="tool-call-meta">0.8s</span>
+              </div>
+            </div>
+            <div class="tool-call-item">
+              <div class="tool-call-header">
+                <div style="display:flex; align-items:center; gap:var(--space-2);">
+                  <span class="badge" style="background:rgba(245,158,11,0.15); color:#f59e0b;">Risk</span>
+                  <span class="mono" style="font-size:12px; color:var(--text-primary);">query_dreaming_insights</span>
+                  <span class="status-dot-sm error"></span>
+                </div>
+                <span class="tool-call-meta">5.0s (timeout)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- ==================== Strategy Tab ==================== -->
+        <div id="tab-strategy" class="tab-panel">
+          <div class="flex-between mb-4">
+            <div style="font-size:14px; font-weight:600; color:var(--text-primary);">策略管理</div>
+            <button class="btn btn-primary">+ 新建策略</button>
+          </div>
+
+          <!-- Strategy list items -->
+          <div class="strategy-list-item">
+            <div class="flex-between">
+              <div class="strategy-name">核心稳健策略</div>
+              <div style="display:flex; gap:var(--space-2);">
+                <button class="btn btn-ghost btn-sm">编辑</button>
+                <button class="btn btn-danger btn-sm">删除</button>
+              </div>
+            </div>
+            <div class="strategy-meta">
+              <span>单笔上限: 25%</span>
+              <span>最低现金: 15%</span>
+            </div>
+            <div class="strategy-targets">
+              <span class="target-badge">600519 贵州茅台 20%</span>
+              <span class="target-badge">510300 沪深300ETF 40%</span>
+              <span class="target-badge">300750 宁德时代 15%</span>
+              <span class="target-badge">601318 中国平安 10%</span>
+            </div>
+          </div>
+
+          <div class="strategy-list-item">
+            <div class="flex-between">
+              <div class="strategy-name">进攻型策略</div>
+              <div style="display:flex; gap:var(--space-2);">
+                <button class="btn btn-ghost btn-sm">编辑</button>
+                <button class="btn btn-danger btn-sm">删除</button>
+              </div>
+            </div>
+            <div class="strategy-meta">
+              <span>单笔上限: 35%</span>
+              <span>最低现金: 10%</span>
+            </div>
+            <div class="strategy-targets">
+              <span class="target-badge">300750 宁德时代 30%</span>
+              <span class="target-badge">AAPL 苹果 25%</span>
+              <span class="target-badge">600519 贵州茅台 20%</span>
+            </div>
+          </div>
+
+          <!-- Edit form example (collapsed) -->
+          <div class="strategy-form" style="display:none;">
+            <div style="font-size:14px; font-weight:600; color:var(--text-primary); margin-bottom:var(--space-3);">编辑策略</div>
+            <div class="form-row">
+              <span class="form-label">策略名称</span>
+              <input class="form-input" value="核心稳健策略">
+            </div>
+            <div class="form-row">
+              <span class="form-label">单笔上限 %</span>
+              <input class="form-input" type="number" value="25" style="max-width:80px;">
+            </div>
+            <div class="form-row">
+              <span class="form-label">最低现金 %</span>
+              <input class="form-input" type="number" value="15" style="max-width:80px;">
+            </div>
+            <div class="form-row">
+              <span class="form-label">目标配置</span>
+              <div style="flex:1;">
+                <div style="display:flex; gap:var(--space-2); margin-bottom:var(--space-2); align-items:center;">
+                  <input class="form-input" value="600519" style="max-width:80px;" placeholder="代码">
+                  <input class="form-input" value="20" style="max-width:60px;" placeholder="%">
+                  <span style="font-size:11px; color:var(--text-tertiary);">贵州茅台</span>
+                  <button class="btn btn-danger btn-sm">✕</button>
+                </div>
+                <div style="display:flex; gap:var(--space-2); margin-bottom:var(--space-2); align-items:center;">
+                  <input class="form-input" value="510300" style="max-width:80px;" placeholder="代码">
+                  <input class="form-input" value="40" style="max-width:60px;" placeholder="%">
+                  <span style="font-size:11px; color:var(--text-tertiary);">沪深300ETF</span>
+                  <button class="btn btn-danger btn-sm">✕</button>
+                </div>
+                <button class="btn btn-ghost btn-sm">+ 添加标的</button>
+              </div>
+            </div>
+            <div style="display:flex; gap:var(--space-2); margin-top:var(--space-3);">
+              <button class="btn btn-primary">保存</button>
+              <button class="btn btn-ghost">取消</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== Trades Tab ==================== -->
+        <div id="tab-trades" class="tab-panel">
+          <!-- Trade Filters -->
+          <div class="trade-filters">
+            <input type="text" placeholder="搜索代码..." style="width: 160px;">
+            <select>
+              <option value="all">全部方向</option>
+              <option value="buy">买入</option>
+              <option value="sell">卖出</option>
+            </select>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-tertiary); cursor: pointer;">
+              <input type="checkbox" style="accent-color: var(--accent);">
+              显示系统操作
+            </label>
+            <button class="btn btn-ghost" style="margin-left: auto;">导出 CSV</button>
+          </div>
+
+          <!-- Trade Table -->
+          <div class="holdings-section">
+            <table class="trade-table">
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>代码</th>
+                  <th>方向</th>
+                  <th>数量</th>
+                  <th>价格</th>
+                  <th>金额</th>
+                  <th>备注</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="mono" style="font-size:11px;">2026-06-02 14:30</td>
+                  <td class="ticker">600519</td>
+                  <td><span class="badge badge-sell">SELL</span></td>
+                  <td class="mono">100</td>
+                  <td class="mono">¥1,856.00</td>
+                  <td class="mono">¥185,600</td>
+                  <td style="font-size:11px; color:var(--text-tertiary);">止盈减仓</td>
+                  <td>
+                    <button class="btn btn-ghost btn-sm">编辑</button>
+                    <button class="btn btn-danger btn-sm" style="margin-left:4px;">删除</button>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="mono" style="font-size:11px;">2026-06-01 10:15</td>
+                  <td class="ticker">300750</td>
+                  <td><span class="badge badge-buy">BUY</span></td>
+                  <td class="mono">200</td>
+                  <td class="mono">¥218.30</td>
+                  <td class="mono">¥43,660</td>
+                  <td style="font-size:11px; color:var(--text-tertiary);">委员会建议</td>
+                  <td>
+                    <button class="btn btn-ghost btn-sm">编辑</button>
+                    <button class="btn btn-danger btn-sm" style="margin-left:4px;">删除</button>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="mono" style="font-size:11px;">2026-05-30 09:45</td>
+                  <td class="ticker">601318</td>
+                  <td><span class="badge badge-sell">SELL</span></td>
+                  <td class="mono">200</td>
+                  <td class="mono">¥52.30</td>
+                  <td class="mono">¥10,460</td>
+                  <td style="font-size:11px; color:var(--text-tertiary);">止损</td>
+                  <td>
+                    <button class="btn btn-ghost btn-sm">编辑</button>
+                    <button class="btn btn-danger btn-sm" style="margin-left:4px;">删除</button>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="mono" style="font-size:11px;">2026-05-25 16:00</td>
+                  <td class="ticker" style="color:var(--text-tertiary);">CASH</td>
+                  <td><span class="badge badge-system">资金调整</span></td>
+                  <td class="mono">—</td>
+                  <td class="mono">—</td>
+                  <td class="mono">¥500,000</td>
+                  <td style="font-size:11px; color:var(--text-tertiary);">初始资金</td>
+                  <td>
+                    <button class="btn btn-ghost btn-sm">编辑</button>
+                    <button class="btn btn-danger btn-sm" style="margin-left:4px;">删除</button>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="mono" style="font-size:11px;">2026-05-20 13:45</td>
+                  <td class="ticker">510300</td>
+                  <td><span class="badge badge-buy">BUY</span></td>
+                  <td class="mono">50000</td>
+                  <td class="mono">¥3.85</td>
+                  <td class="mono">¥192,500</td>
+                  <td style="font-size:11px; color:var(--text-tertiary);">底仓配置</td>
+                  <td>
+                    <button class="btn btn-ghost btn-sm">编辑</button>
+                    <button class="btn btn-danger btn-sm" style="margin-left:4px;">删除</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <!-- ==================== System Tab ==================== -->
+        <div id="tab-system" class="tab-panel">
+          <!-- Sub-tabs (8 tabs) -->
+          <div class="sub-tab-nav">
+            <button class="sub-tab-btn active" onclick="switchSubTab('system', 'cron', this)">Cron 调度</button>
+            <button class="sub-tab-btn" onclick="switchSubTab('system', 'regime', this)">Regime 分类</button>
+            <button class="sub-tab-btn" onclick="switchSubTab('system', 'events', this)">事件监控</button>
+            <button class="sub-tab-btn" onclick="switchSubTab('system', 'datasource', this)">数据源</button>
+            <button class="sub-tab-btn" onclick="switchSubTab('system', 'pnl_history', this)">PnL 历史</button>
+            <button class="sub-tab-btn" onclick="switchSubTab('system', 'insights', this)">洞察库</button>
+            <button class="sub-tab-btn" onclick="switchSubTab('system', 'dreams', this)">Dreams</button>
+            <button class="sub-tab-btn" onclick="switchSubTab('system', 'profile', this)">Profile</button>
+          </div>
+
+          <!-- ===== System > Cron Jobs ===== -->
+          <div id="subtab-system-cron" class="tab-panel active">
+            <div class="holdings-section">
+              <div class="holdings-header"><div class="holdings-title">定时任务</div></div>
+              <table class="cron-table">
+                <thead><tr><th>任务</th><th>说明</th><th>Cron 表达式</th><th>状态</th><th>上次运行</th><th>操作</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td style="font-weight:600; color:var(--text-primary);">pnl_snapshot</td>
+                    <td>PnL 快照</td>
+                    <td><span class="cron-expr">0 16 * * 1-5</span> <span class="text-muted text-sm">每个交易日 16:00</span></td>
+                    <td><div class="toggle-switch on"><div class="toggle-knob"></div></div></td>
+                    <td><span class="status-dot-sm ok"></span> <span class="text-sm">今天 16:00</span></td>
+                    <td><button class="btn btn-ghost btn-sm">运行</button> <button class="btn btn-ghost btn-sm">日志</button></td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:600; color:var(--text-primary);">event_scan</td>
+                    <td>事件扫描</td>
+                    <td><span class="cron-expr">0 */4 * * *</span> <span class="text-muted text-sm">每 4 小时</span></td>
+                    <td><div class="toggle-switch on"><div class="toggle-knob"></div></div></td>
+                    <td><span class="status-dot-sm ok"></span> <span class="text-sm">2 小时前</span></td>
+                    <td><button class="btn btn-ghost btn-sm">运行</button> <button class="btn btn-ghost btn-sm">日志</button></td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:600; color:var(--text-primary);">verdict_review</td>
+                    <td>判决复查</td>
+                    <td><span class="cron-expr">0 18 * * 5</span> <span class="text-muted text-sm">每周五 18:00</span></td>
+                    <td><div class="toggle-switch on"><div class="toggle-knob"></div></div></td>
+                    <td><span class="status-dot-sm ok"></span> <span class="text-sm">上周五</span></td>
+                    <td><button class="btn btn-ghost btn-sm">运行</button> <button class="btn btn-ghost btn-sm">日志</button></td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:600; color:var(--text-primary);">dream_invest</td>
+                    <td>Dream 管道</td>
+                    <td><span class="cron-expr">0 2 * * 0</span> <span class="text-muted text-sm">每周日 02:00</span></td>
+                    <td><div class="toggle-switch on"><div class="toggle-knob"></div></div></td>
+                    <td><span class="status-dot-sm ok"></span> <span class="text-sm">上周日</span></td>
+                    <td><button class="btn btn-ghost btn-sm">运行</button> <button class="btn btn-ghost btn-sm">日志</button></td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:600; color:var(--text-primary);">daily_report</td>
+                    <td>每日报告</td>
+                    <td><span class="cron-expr">0 8 * * 1-5</span> <span class="text-muted text-sm">每个交易日 08:00</span></td>
+                    <td><div class="toggle-switch off"><div class="toggle-knob"></div></div></td>
+                    <td><span class="status-dot-sm disabled"></span> <span class="text-sm">已禁用</span></td>
+                    <td><button class="btn btn-ghost btn-sm">运行</button> <button class="btn btn-ghost btn-sm">日志</button></td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:600; color:var(--text-primary);">macro_refresh</td>
+                    <td>宏观指标刷新</td>
+                    <td><span class="cron-expr">30 9 * * 1-5</span> <span class="text-muted text-sm">每个交易日 09:30</span></td>
+                    <td><div class="toggle-switch on"><div class="toggle-knob"></div></div></td>
+                    <td><span class="status-dot-sm ok"></span> <span class="text-sm">今天 09:30</span></td>
+                    <td><button class="btn btn-ghost btn-sm">运行</button> <button class="btn btn-ghost btn-sm">日志</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <!-- Example expanded log panel -->
+            <div class="log-panel" style="margin-top:var(--space-3);">
+              <div style="font-size:11px; font-weight:600; color:var(--text-primary); margin-bottom:var(--space-2);">pnl_snapshot 运行日志</div>
+              <div class="log-entry"><span class="log-ok">[OK]</span> 2026-06-02 16:00:02 — 快照已保存 (总资产: ¥1,284,567) <span class="text-muted">0.3s</span></div>
+              <div class="log-entry"><span class="log-ok">[OK]</span> 2026-06-01 16:00:01 — 快照已保存 (总资产: ¥1,271,011) <span class="text-muted">0.2s</span></div>
+              <div class="log-entry"><span class="log-err">[ERR]</span> 2026-05-31 16:00:05 — Tushare API 超时 <span class="text-muted">30.0s</span></div>
+              <div class="log-entry"><span class="log-ok">[OK]</span> 2026-05-30 16:00:01 — 快照已保存 (总资产: ¥1,258,432) <span class="text-muted">0.2s</span></div>
+            </div>
+          </div>
+
+          <!-- ===== System > Regime Classification ===== -->
+          <div id="subtab-system-regime" class="tab-panel">
+            <div class="info-card mb-4">
+              <div class="info-card-header">
+                <div class="info-card-title">Regime 分类器</div>
+              </div>
+              <div class="form-row">
+                <span class="form-label">标的代码</span>
+                <input class="form-input" value="600519.SH" style="max-width:200px;" placeholder="e.g. 600519.SH">
+                <button class="btn btn-primary">分类</button>
+              </div>
+            </div>
+
+            <!-- Result -->
+            <div class="info-card">
+              <div class="info-card-header">
+                <div class="info-card-title">600519.SH 分类结果</div>
+                <span class="regime-badge uptrend">uptrend 上行</span>
+              </div>
+              <div style="font-size:12px; color:var(--text-secondary); margin-bottom:var(--space-3);">股价处于 MA20 和 MA60 之上，RSI 中性偏多，波动率适中，120日价格分位处于中高位。</div>
+              <div class="metric-row"><span class="label">RSI-14</span><span class="value">62.4</span></div>
+              <div class="metric-row"><span class="label">MA20</span><span class="value">¥1,812.00</span></div>
+              <div class="metric-row"><span class="label">MA60</span><span class="value">¥1,756.00</span></div>
+              <div class="metric-row"><span class="label">波动率 (20d)</span><span class="value">0.28</span></div>
+              <div class="metric-row"><span class="label">价格分位 (120d)</span><span class="value">78.2%</span></div>
+              <div class="metric-row"><span class="label">计算时间</span><span class="value" style="font-size:11px;">2026-06-02 14:30:12</span></div>
+            </div>
+          </div>
+
+          <!-- ===== System > Events ===== -->
+          <div id="subtab-system-events" class="tab-panel">
+            <!-- Status bar -->
+            <div class="flex-between mb-4">
+              <div style="display:flex; gap:var(--space-4); font-size:12px;">
+                <span>总事件: <strong>12</strong></span>
+                <span style="color:#a87a7a;">高严重度: <strong>3</strong></span>
+                <span style="color:#a87a7a;">未触发高严重度: <strong>1</strong></span>
+                <span class="text-muted">最近: 2 小时前</span>
+              </div>
+              <button class="btn btn-ghost">🔄 立即扫描</button>
+            </div>
+
+            <!-- Filters -->
+            <div class="trade-filters">
+              <select>
+                <option value="all">全部时间</option>
+                <option value="24h">24 小时</option>
+                <option value="48h">48 小时</option>
+                <option value="7d">7 天</option>
+              </select>
+              <select>
+                <option value="all">全部严重度</option>
+                <option value="high">高</option>
+                <option value="medium">中</option>
+                <option value="low">低</option>
+              </select>
+              <input type="text" placeholder="搜索事件..." style="width:200px;">
+            </div>
+
+            <!-- Event cards -->
+            <div class="event-card">
+              <div class="event-header">
+                <div class="event-badges">
+                  <span class="severity-badge high">高</span>
+                  <span class="stance-badge bearish">看空</span>
+                </div>
+                <span style="font-size:11px; color:var(--text-tertiary);">2 小时前</span>
+              </div>
+              <div class="event-body">美联储会议纪要显示鹰派立场，暗示可能继续加息</div>
+              <div class="event-meta">
+                <span>来源: Tushare</span>
+                <span style="font-family:var(--font-mono); font-size:10px;">影响: 全球市场</span>
+              </div>
+              <div class="event-actions">
+                <button class="btn btn-danger btn-sm">⚡ 触发委员会</button>
+              </div>
+            </div>
+
+            <div class="event-card">
+              <div class="event-header">
+                <div class="event-badges">
+                  <span class="severity-badge medium">中</span>
+                  <span class="stance-badge bullish">看多</span>
+                </div>
+                <span style="font-size:11px; color:var(--text-tertiary);">5 小时前</span>
+              </div>
+              <div class="event-body">中国5月PMI数据超预期，制造业扩张加速</div>
+              <div class="event-meta">
+                <span>来源: Tushare</span>
+                <span>影响: A股市场</span>
+                <span>已触发</span>
+              </div>
+            </div>
+
+            <div class="event-card">
+              <div class="event-header">
+                <div class="event-badges">
+                  <span class="severity-badge low">低</span>
+                  <span class="stance-badge neutral">中性</span>
+                </div>
+                <span style="font-size:11px; color:var(--text-tertiary);">1 天前</span>
+              </div>
+              <div class="event-body">AAPL 发布新一代 Vision Pro，市场反应平淡</div>
+              <div class="event-meta">
+                <span>来源: Yahoo Finance</span>
+                <span>影响: 科技板块</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== System > Data Sources ===== -->
+          <div id="subtab-system-datasource" class="tab-panel">
+            <div class="holdings-section">
+              <div class="holdings-header"><div class="holdings-title">数据源健康状态</div></div>
+              <table class="datasource-table">
+                <thead><tr><th>数据源</th><th>状态</th><th>最后成功</th><th>示例值</th></tr></thead>
+                <tbody>
+                  <tr><td>Tushare Daily</td><td><span class="health-dot ok"></span>OK</td><td class="text-sm">今天 14:30</td><td class="mono text-sm">600519.SH close: ¥1,856.00</td></tr>
+                  <tr><td>Tushare News</td><td><span class="health-dot ok"></span>OK</td><td class="text-sm">今天 12:00</td><td class="mono text-sm">3 条新事件</td></tr>
+                  <tr><td>Yahoo Finance</td><td><span class="health-dot ok"></span>OK</td><td class="text-sm">今天 14:00</td><td class="mono text-sm">VIX: 14.23</td></tr>
+                  <tr><td>Macro Cache</td><td><span class="health-dot ok"></span>OK</td><td class="text-sm">今天 09:30</td><td class="mono text-sm">CSI300: 3,856.12</td></tr>
+                  <tr><td>LLM Provider</td><td><span class="health-dot ok"></span>OK</td><td class="text-sm">今天 14:30</td><td class="mono text-sm">claude-sonnet-4-6</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ===== System > PnL History ===== -->
+          <div id="subtab-system-pnl_history" class="tab-panel">
+            <div class="holdings-section">
+              <div class="holdings-header"><div class="holdings-title">PnL 快照历史</div></div>
+              <table class="holdings-table">
+                <thead><tr><th>日期</th><th>总资产</th><th>现金</th><th>持仓市值</th><th>日盈亏</th><th>日盈亏%</th><th>操作</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td class="mono">2026-06-02</td>
+                    <td class="mono">¥1,284,567</td>
+                    <td class="mono">¥297,333</td>
+                    <td class="mono">¥987,234</td>
+                    <td class="pnl-positive mono">+¥13,556</td>
+                    <td class="pnl-positive mono">+1.07%</td>
+                    <td><button class="btn btn-danger btn-sm">删除</button></td>
+                  </tr>
+                  <tr>
+                    <td class="mono">2026-06-01</td>
+                    <td class="mono">¥1,271,011</td>
+                    <td class="mono">¥297,333</td>
+                    <td class="mono">¥973,678</td>
+                    <td class="pnl-positive mono">+¥8,234</td>
+                    <td class="pnl-positive mono">+0.65%</td>
+                    <td><button class="btn btn-danger btn-sm">删除</button></td>
+                  </tr>
+                  <tr>
+                    <td class="mono">2026-05-30</td>
+                    <td class="mono">¥1,262,777</td>
+                    <td class="mono">¥297,333</td>
+                    <td class="mono">¥965,444</td>
+                    <td class="pnl-negative mono">-¥5,678</td>
+                    <td class="pnl-negative mono">-0.45%</td>
+                    <td><button class="btn btn-danger btn-sm">删除</button></td>
+                  </tr>
+                  <tr>
+                    <td class="mono">2026-05-29</td>
+                    <td class="mono">¥1,268,455</td>
+                    <td class="mono">¥297,333</td>
+                    <td class="mono">¥971,122</td>
+                    <td class="pnl-positive mono">+¥4,123</td>
+                    <td class="pnl-positive mono">+0.33%</td>
+                    <td><button class="btn btn-danger btn-sm">删除</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ===== System > Insights ===== -->
+          <div id="subtab-system-insights" class="tab-panel">
+            <div class="trade-filters">
+              <div class="holdings-filter">
+                <button class="filter-btn active">活跃</button>
+                <button class="filter-btn">已归档</button>
+              </div>
+              <input type="text" placeholder="搜索洞察..." style="width:200px; margin-left:auto;">
+            </div>
+
+            <div class="insight-card">
+              <div class="insight-content">
+                <span class="insight-type pattern">pattern</span>
+                <div style="font-size:13px; font-weight:500; color:var(--text-primary);">科技股估值偏高</div>
+                <div class="insight-body">基于多因子模型分析，当前科技板块 PE 分位数处于历史 85% 以上，建议逐步减仓至目标权重。</div>
+                <div class="insight-meta">
+                  <span>600519.SH</span>
+                  <span>置信度: 78%</span>
+                  <span>2026-06-01</span>
+                </div>
+              </div>
+              <button class="btn btn-ghost btn-sm">归档</button>
+            </div>
+
+            <div class="insight-card">
+              <div class="insight-content">
+                <span class="insight-type risk">risk</span>
+                <div style="font-size:13px; font-weight:500; color:var(--text-primary);">现金比例偏低</div>
+                <div class="insight-body">当前现金比例 23.1%，接近策略下限 15%。建议在下一轮再平衡前保持现金缓冲。</div>
+                <div class="insight-meta">
+                  <span>portfolio</span>
+                  <span>置信度: 90%</span>
+                  <span>2026-05-30</span>
+                </div>
+              </div>
+              <button class="btn btn-ghost btn-sm">归档</button>
+            </div>
+
+            <div class="insight-card">
+              <div class="insight-content">
+                <span class="insight-type regime">regime</span>
+                <div style="font-size:13px; font-weight:500; color:var(--text-primary);">频繁交易倾向</div>
+                <div class="insight-body">近 7 天内交易 3 次，超过历史平均。建议冷静期 3 天，避免情绪化交易。</div>
+                <div class="insight-meta">
+                  <span>L4 Officer</span>
+                  <span>置信度: 65%</span>
+                  <span>2026-05-28</span>
+                </div>
+              </div>
+              <button class="btn btn-ghost btn-sm">归档</button>
+            </div>
+          </div>
+
+          <!-- ===== System > Dreams ===== -->
+          <div id="subtab-system-dreams" class="tab-panel">
+            <div class="flex-between mb-4">
+              <div style="font-size:14px; font-weight:600; color:var(--text-primary);">Dream Pipeline</div>
+              <button class="btn btn-ghost">🔄 触发 Dream</button>
+            </div>
+
+            <!-- Dream traces list -->
+            <div class="holdings-section mb-4">
+              <div class="holdings-header"><div class="holdings-title">Dream 记录</div></div>
+              <table class="holdings-table">
+                <thead><tr><th>类型</th><th>触发</th><th>状态</th><th>时间</th><th>摘要</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td>invest_full</td>
+                    <td>cron</td>
+                    <td><span class="badge badge-hold">completed</span></td>
+                    <td class="mono text-sm">2026-06-02 02:00</td>
+                    <td style="font-size:11px; color:var(--text-secondary);">提取 12 条判决模式，聚合 3 条领域洞察</td>
+                  </tr>
+                  <tr>
+                    <td>invest_full</td>
+                    <td>cron</td>
+                    <td><span class="badge badge-hold">completed</span></td>
+                    <td class="mono text-sm">2026-05-26 02:00</td>
+                    <td style="font-size:11px; color:var(--text-secondary);">提取 8 条判决模式，聚合 2 条领域洞察</td>
+                  </tr>
+                  <tr>
+                    <td>invest_full</td>
+                    <td>manual</td>
+                    <td><span class="badge badge-sell">failed</span></td>
+                    <td class="mono text-sm">2026-05-19 14:30</td>
+                    <td style="font-size:11px; color:var(--text-secondary);">Light sleep 阶段超时</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Pipeline stages -->
+            <div class="dream-stage">
+              <div class="dream-stage-header">
+                <div class="dream-stage-title">① Light Sleep 浅睡</div>
+                <div class="badge badge-hold">已完成</div>
+              </div>
+              <div class="dream-item">
+                <div class="dream-item-title">扫描近期事件</div>
+                <div class="dream-item-body">从 domain_insights 表提取近期高严重度事件，生成初步洞察。提取 12 条判决元组。</div>
+              </div>
+            </div>
+
+            <div class="dream-stage">
+              <div class="dream-stage-header">
+                <div class="dream-stage-title">② REM Sleep 快速眼动</div>
+                <div class="badge badge-hold">已完成</div>
+              </div>
+              <div class="dream-item">
+                <div class="dream-item-title">模式识别</div>
+                <div class="dream-item-body">发现: 近期美联储鹰派言论与 A 股回调存在相关性 (r=0.72)。</div>
+              </div>
+              <div class="dream-item">
+                <div class="dream-item-title">命中率聚合</div>
+                <div class="dream-item-body">BUY 判决 30d 命中率 80%，ACCUMULATE 67%，HOLD 60%。</div>
+              </div>
+            </div>
+
+            <div class="dream-stage">
+              <div class="dream-stage-header">
+                <div class="dream-stage-title">③ Deep Sleep 深度睡眠</div>
+                <div class="badge badge-hold">已完成</div>
+              </div>
+              <div class="dream-item">
+                <div class="dream-item-title">领域洞察写入</div>
+                <div class="dream-item-body">写入 3 条领域洞察至 domain_insights 表。基于历史周期分析，当前处于加息末期，建议逐步增配债券和防御性板块。</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== System > Profile ===== -->
+          <div id="subtab-system-profile" class="tab-panel">
+            <div class="profile-section">
+              <div class="profile-section-title">用户档案 User Profile</div>
+              <div class="profile-row">
+                <span class="profile-label">应急缓冲金额 (CNY)</span>
+                <input class="profile-input" type="number" value="100000">
+              </div>
+              <div class="profile-row">
+                <span class="profile-label">家庭备用金</span>
+                <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); cursor:pointer;">
+                  <input type="checkbox" style="accent-color:var(--accent);"> 启用
+                </label>
+              </div>
+              <div class="profile-row">
+                <span class="profile-label">账户用途</span>
+                <select class="profile-select">
+                  <option value="default">默认</option>
+                  <option value="pocket_money">零花钱</option>
+                  <option value="long_term">长期投资</option>
+                  <option value="retirement">退休</option>
+                  <option value="education">教育</option>
+                  <option value="other">其他</option>
+                </select>
+              </div>
+              <div class="profile-row">
+                <span class="profile-label">家庭支持</span>
+                <select class="profile-select">
+                  <option value="none">无</option>
+                  <option value="occasional">偶尔</option>
+                  <option value="partial">部分</option>
+                  <option value="full">全部</option>
+                </select>
+              </div>
+              <div class="profile-row" style="align-items:flex-start;">
+                <span class="profile-label">生活备注</span>
+                <textarea class="profile-textarea" placeholder="记录与投资决策相关的生活因素...">近期有一笔大额支出计划（装修），需保留足够现金缓冲。</textarea>
+              </div>
+              <div style="margin-top:var(--space-4);">
+                <button class="btn btn-primary">保存档案</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- end invest-content -->
+    </div><!-- end main-content -->
+  </div><!-- end app-shell -->
+
+  <script>
+    // Tab switching — pass clicked button directly (no reliance on event.target)
+    function switchTab(tabName, btn) {
+      document.querySelectorAll('.tab-panel[id^="tab-"]').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + tabName).classList.add('active');
+      if (btn) btn.classList.add('active');
+    }
+
+    // Sub-tab switching — works for any parent group
+    function switchSubTab(parent, subTabName, btn) {
+      // Hide all sub-panels of this parent
+      document.querySelectorAll('[id^="subtab-' + parent + '-"]').forEach(p => p.classList.remove('active'));
+      // Deactivate sibling buttons
+      if (btn && btn.parentElement) {
+        btn.parentElement.querySelectorAll('.sub-tab-btn').forEach(b => b.classList.remove('active'));
+      }
+      // Show selected
+      var target = document.getElementById('subtab-' + parent + '-' + subTabName);
+      if (target) target.classList.add('active');
+      if (btn) btn.classList.add('active');
+    }
+
+    // Expand/collapse committee symbol cards
+    function toggleExpand(header) {
+      var body = header.nextElementSibling;
+      var arrow = header.querySelector('.expand-arrow');
+      if (body) {
+        body.classList.toggle('expanded');
+      }
+      if (arrow) {
+        arrow.classList.toggle('rotated');
+      }
+    }
+
+    // Filter button group toggling
+    document.querySelectorAll('.holdings-filter').forEach(function(group) {
+      group.querySelectorAll('.filter-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          group.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
+          btn.classList.add('active');
+        });
+      });
+    });
+  </script>
+</body>
+</html>

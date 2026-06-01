@@ -74,30 +74,30 @@
   });
 
   function confidenceColor(c: number | null): string {
-    if (c == null) return 'text-muted-foreground';
-    if (c >= 0.8) return 'text-green-500';
-    if (c >= 0.5) return 'text-amber-500';
-    return 'text-red-400';
+    if (c == null) return 'text-[var(--text-tertiary)]';
+    if (c >= 0.8) return 'text-[var(--color-success)]';
+    if (c >= 0.5) return 'text-[var(--color-warning)]';
+    return 'text-[var(--color-error)]';
   }
 
   function typeBadge(type: string): string {
     const map: Record<string, string> = {
-      pattern: 'bg-blue-500/10 text-blue-400',
-      regime: 'bg-purple-500/10 text-purple-400',
-      sector: 'bg-emerald-500/10 text-emerald-400',
-      risk: 'bg-red-500/10 text-red-400',
-      opportunity: 'bg-amber-500/10 text-amber-400',
+      pattern: 'bg-[rgba(59,130,246,0.10)] text-[#3b82f6]',
+      regime: 'bg-[rgba(139,92,246,0.10)] text-[#8b5cf6]',
+      sector: 'bg-[rgba(138,154,118,0.10)] text-[var(--color-success)]',
+      risk: 'bg-[rgba(168,122,122,0.10)] text-[var(--color-error)]',
+      opportunity: 'bg-[rgba(184,154,106,0.10)] text-[var(--color-warning)]',
     };
-    return map[type] || 'bg-muted text-muted-foreground';
+    return map[type] || 'bg-[var(--bg-input)] text-[var(--text-tertiary)]';
   }
 
 </script>
 
-<div class="space-y-4">
+<div class="space-y-[var(--space-4)]">
   <div class="flex items-center justify-between">
-    <h3 class="text-lg font-semibold">{t('invest_insights_title')}</h3>
+    <h3 class="text-lg font-semibold text-[var(--text-primary)]">{t('invest_insights_title')}</h3>
     <button
-      class="rounded bg-muted px-3 py-1.5 text-xs hover:bg-muted/80"
+      class="rounded-[var(--radius-md)] bg-[var(--bg-input)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors"
       onclick={loadInsights}
     >
       {t('common_refresh')}
@@ -105,20 +105,20 @@
   </div>
 
   <!-- Filters -->
-  <div class="flex items-center gap-3">
-    <div class="flex gap-1 rounded-md border p-0.5">
+  <div class="flex items-center gap-[var(--space-3)]">
+    <div class="flex gap-1 rounded-[var(--radius-md)] border border-[var(--border)] p-0.5">
       <button
-        class="rounded px-2.5 py-1 text-xs transition-colors {statusFilter === 'active'
-          ? 'bg-primary text-primary-foreground'
-          : 'text-muted-foreground hover:text-foreground'}"
+        class="rounded-[var(--radius-md)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] transition-colors {statusFilter === 'active'
+          ? 'bg-[var(--accent)] text-[#1a1918]'
+          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}"
         onclick={() => { statusFilter = 'active'; loadInsights(); }}
       >
         {t('invest_insights_active')}
       </button>
       <button
-        class="rounded px-2.5 py-1 text-xs transition-colors {statusFilter === 'archived'
-          ? 'bg-primary text-primary-foreground'
-          : 'text-muted-foreground hover:text-foreground'}"
+        class="rounded-[var(--radius-md)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] transition-colors {statusFilter === 'archived'
+          ? 'bg-[var(--accent)] text-[#1a1918]'
+          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}"
         onclick={() => { statusFilter = 'archived'; loadInsights(); }}
       >
         {t('invest_insights_archived')}
@@ -126,51 +126,51 @@
     </div>
     <input
       type="text"
-      class="rounded-md border bg-background px-3 py-1.5 text-sm"
+      class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-3)] py-[var(--space-1)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
       placeholder={t('invest_insights_search')}
       bind:value={searchQuery}
     />
   </div>
 
   {#if error}
-    <div class="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+    <div class="rounded-[var(--radius-md)] border border-[var(--color-error)]/50 bg-[var(--color-error)]/10 px-[var(--space-3)] py-[var(--space-2)] text-sm text-[var(--color-error)]">
       {error}
     </div>
   {/if}
 
   {#if loading}
-    <p class="text-sm text-muted-foreground">{t('invest_scheduler_loading')}</p>
+    <p class="text-sm text-[var(--text-secondary)]">{t('invest_scheduler_loading')}</p>
   {:else if insights.length === 0}
-    <p class="text-sm text-muted-foreground">{t('invest_insights_empty')}</p>
+    <p class="text-sm text-[var(--text-secondary)]">{t('invest_insights_empty')}</p>
   {:else}
-    <div class="space-y-2">
+    <div class="space-y-[var(--space-2)]">
       {#each insights as insight}
-        <div class="rounded-lg border p-4 space-y-2">
-          <div class="flex items-start justify-between gap-3">
-            <div class="flex items-center gap-2">
-              <span class="rounded px-2 py-0.5 text-xs font-medium {typeBadge(insight.insightType)}">
+        <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)] space-y-[var(--space-2)]">
+          <div class="flex items-start justify-between gap-[var(--space-3)]">
+            <div class="flex items-center gap-[var(--space-2)]">
+              <span class="rounded-full px-3 py-1 text-[11px] font-bold {typeBadge(insight.insightType)}">
                 {insight.insightType}
               </span>
               {#if insight.symbol}
-                <span class="text-xs font-mono text-muted-foreground">{insight.symbol}</span>
+                <span class="text-[11px] font-[var(--font-mono)] text-[var(--text-tertiary)]">{insight.symbol}</span>
               {/if}
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-[var(--space-2)]">
               {#if insight.confidence != null}
-                <span class="text-xs {confidenceColor(insight.confidence)}">
+                <span class="text-[12px] font-[var(--font-mono)] {confidenceColor(insight.confidence)}">
                   {(insight.confidence * 100).toFixed(0)}%
                 </span>
               {/if}
               {#if statusFilter === 'active'}
                 <button
-                  class="text-xs text-muted-foreground hover:text-foreground"
+                  class="text-[12px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
                   onclick={() => archiveInsight(insight.id)}
                 >
                   {t('invest_accuracy_hide')}
                 </button>
               {:else}
                 <button
-                  class="text-xs text-muted-foreground hover:text-foreground"
+                  class="text-[12px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
                   onclick={() => unarchiveInsight(insight.id)}
                 >
                   {t('invest_accuracy_show')}
@@ -178,8 +178,8 @@
               {/if}
             </div>
           </div>
-          <p class="text-sm leading-relaxed">{insight.content}</p>
-          <div class="text-xs text-muted-foreground">
+          <p class="text-sm leading-relaxed text-[var(--text-primary)]">{insight.content}</p>
+          <div class="text-[11px] text-[var(--text-tertiary)]">
             {new Date(insight.createdAt).toLocaleString()}
           </div>
         </div>

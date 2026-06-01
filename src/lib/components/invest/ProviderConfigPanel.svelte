@@ -95,32 +95,32 @@
   });
 </script>
 
-<div class="mb-4 rounded-lg border border-border">
+<div class="mb-4 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)]">
   <button
-    class="flex w-full items-center justify-between px-4 py-2.5 text-sm font-medium hover:bg-muted/50"
+    class="flex w-full items-center justify-between px-[var(--space-4)] py-[var(--space-2)] text-[13px] font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
     onclick={() => (expanded = !expanded)}
   >
     <span class="flex items-center gap-2">
       {t('invest_committee_llm_config')}
       {#if saving}
-        <span class="text-xs text-muted-foreground">saving...</span>
+        <span class="text-[11px] text-[var(--text-tertiary)]">saving...</span>
       {/if}
     </span>
-    <span class="text-muted-foreground">{expanded ? '▲' : '▼'}</span>
+    <span class="text-[var(--text-tertiary)]">{expanded ? '▲' : '▼'}</span>
   </button>
 
   {#if expanded}
-    <div class="border-t border-border px-4 py-3">
+    <div class="border-t border-[var(--border)] px-[var(--space-4)] py-[var(--space-3)]">
       {#if investCommitteeStore.configLoading}
-        <div class="text-sm text-muted-foreground">Loading...</div>
+        <div class="text-[13px] text-[var(--text-secondary)]">Loading...</div>
       {:else if config}
         <!-- Provider selector -->
         <div class="mb-3">
-          <label class="mb-1 block text-xs text-muted-foreground">
+          <label class="mb-1 block text-[11px] text-[var(--text-tertiary)]">
             {t('invest_committee_provider')}
           </label>
           <select
-            class="w-full rounded border border-border bg-background px-2 py-1.5 text-sm"
+            class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
             value={config.selectedProvider}
             onchange={handleProviderChange}
           >
@@ -132,36 +132,36 @@
 
         <!-- Selected provider settings -->
         {#if selectedProvider}
-          <div class="rounded border border-border p-3">
-            <div class="mb-2 text-xs font-medium uppercase text-muted-foreground">
+          <div class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] p-[var(--space-3)]">
+            <div class="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
               {selectedProvider.providerId}
             </div>
-            <label class="mb-1 block text-xs text-muted-foreground">
+            <label class="mb-1 block text-[11px] text-[var(--text-tertiary)]">
               {t('invest_committee_api_key')}
             </label>
             <input
               type="password"
-              class="mb-2 w-full rounded border border-border bg-background px-2 py-1 text-sm"
+              class="mb-2 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
               value={selectedProvider.apiKey}
               oninput={handleApiKeyInput}
             />
 
-            <label class="mb-1 block text-xs text-muted-foreground">
+            <label class="mb-1 block text-[11px] text-[var(--text-tertiary)]">
               {t('invest_committee_base_url')}
             </label>
             <input
               type="text"
-              class="mb-2 w-full rounded border border-border bg-background px-2 py-1 text-sm"
+              class="mb-2 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
               value={selectedProvider.baseUrl}
               oninput={handleBaseUrlInput}
             />
 
-            <label class="mb-1 block text-xs text-muted-foreground">
+            <label class="mb-1 block text-[11px] text-[var(--text-tertiary)]">
               {t('invest_committee_model')}
             </label>
             <input
               type="text"
-              class="w-full rounded border border-border bg-background px-2 py-1 text-sm"
+              class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
               value={selectedProvider.defaultModel}
               oninput={handleModelInput}
             />
@@ -169,13 +169,13 @@
         {/if}
 
         <!-- Global settings -->
-        <div class="mt-3 flex flex-wrap items-center gap-4">
+        <div class="mt-[var(--space-3)] flex flex-wrap items-center gap-[var(--space-4)]">
           <div>
-            <label class="mr-1 text-xs text-muted-foreground">
+            <label class="mr-1 text-[11px] text-[var(--text-tertiary)]">
               {t('invest_committee_debate_rounds')}
             </label>
             <select
-              class="rounded border border-border bg-background px-2 py-1 text-sm"
+              class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
               value={config.debateRounds}
               onchange={handleRoundsChange}
             >
@@ -186,12 +186,12 @@
           </div>
 
           <div>
-            <label class="mr-1 text-xs text-muted-foreground">
+            <label class="mr-1 text-[11px] text-[var(--text-tertiary)]">
               {t('invest_committee_emergency_buffer')}
             </label>
             <input
               type="number"
-              class="w-28 rounded border border-border bg-background px-2 py-1 text-sm"
+              class="w-28 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] font-[var(--font-mono)] text-[var(--text-primary)]"
               value={config.emergencyBufferCny}
               min={0}
               step={10000}
@@ -200,7 +200,7 @@
           </div>
         </div>
       {:else}
-        <div class="text-sm text-muted-foreground">
+        <div class="text-[13px] text-[var(--text-secondary)]">
           {t('invest_committee_no_config')}
         </div>
       {/if}

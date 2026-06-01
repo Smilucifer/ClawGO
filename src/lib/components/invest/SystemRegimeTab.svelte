@@ -40,20 +40,20 @@
   }
 </script>
 
-<div class="space-y-3">
-  <h3 class="text-sm font-medium">{t('invest_system_regime_title')}</h3>
-  <p class="text-xs text-muted-foreground">{t('invest_system_regime_desc')}</p>
+<div class="space-y-[var(--space-3)]">
+  <h3 class="text-sm font-medium text-[var(--text-primary)]">{t('invest_system_regime_title')}</h3>
+  <p class="text-xs text-[var(--text-secondary)]">{t('invest_system_regime_desc')}</p>
 
-  <div class="flex gap-2">
+  <div class="flex gap-[var(--space-2)]">
     <input
       type="text"
-      class="w-48 rounded border border-border bg-background px-3 py-1.5 text-sm"
+      class="w-48 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-3)] py-[var(--space-1)] text-sm text-[var(--text-primary)]"
       placeholder={t('invest_system_regime_placeholder')}
       bind:value={symbol}
       onkeydown={(e) => e.key === 'Enter' && classify()}
     />
     <button
-      class="rounded bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
+      class="rounded-[var(--radius-md)] bg-[var(--accent)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] font-medium text-[var(--bg-base)] disabled:opacity-50"
       onclick={classify}
       disabled={loading || !symbol.trim()}
     >
@@ -62,29 +62,35 @@
   </div>
 
   {#if error}
-    <p class="text-sm text-red-400">{error}</p>
+    <p class="text-sm text-[var(--color-error)]">{error}</p>
   {/if}
 
   {#if result}
-    <div class="rounded border border-border p-3 space-y-2">
-      <div class="flex items-center gap-2">
-        <span class="text-sm font-medium">{result.tsCode}</span>
-        <span class="rounded bg-secondary px-2 py-0.5 text-xs font-medium">{result.regime}</span>
+    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-3)] space-y-[var(--space-2)]">
+      <div class="flex items-center gap-[var(--space-2)]">
+        <span class="text-sm font-medium text-[var(--text-primary)]">{result.tsCode}</span>
+        <span class="rounded-[var(--radius-full)] bg-[var(--accent-muted)] px-3 py-1 text-[11px] font-bold text-[var(--accent)]">{result.regime}</span>
       </div>
-      <p class="text-sm">{result.brief}</p>
+      <p class="text-sm text-[var(--text-primary)]">{result.brief}</p>
       {#if result.metrics && Object.keys(result.metrics).length > 0}
         <table class="w-full text-xs">
+          <thead>
+            <tr>
+              <th class="py-1 pr-3 text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">Key</th>
+              <th class="py-1 text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">Value</th>
+            </tr>
+          </thead>
           <tbody>
             {#each Object.entries(result.metrics) as [key, val]}
-              <tr class="border-t border-border/30">
-                <td class="py-1 pr-3 text-muted-foreground">{key}</td>
-                <td class="py-1">{typeof val === 'number' ? val.toFixed(2) : String(val)}</td>
+              <tr class="border-t border-[var(--border)]">
+                <td class="py-1 pr-3 text-[var(--text-secondary)]">{key}</td>
+                <td class="py-1 font-[var(--font-mono)] text-[var(--text-primary)]">{typeof val === 'number' ? val.toFixed(2) : String(val)}</td>
               </tr>
             {/each}
           </tbody>
         </table>
       {/if}
-      <p class="text-xs text-muted-foreground">{t('invest_system_regime_computed')}: {result.computedAt}</p>
+      <p class="text-xs text-[var(--text-tertiary)]">{t('invest_system_regime_computed')}: {result.computedAt}</p>
     </div>
   {/if}
 </div>

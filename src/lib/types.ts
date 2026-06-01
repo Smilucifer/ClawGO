@@ -1,9 +1,10 @@
 export interface MemoryFileCandidate {
   path: string;
   label: string;
-  scope: "project" | "global" | "memory";
+  scope: "project" | "global" | "memory" | "global-memory";
   provider?: "claude" | "codex";
   exists: boolean;
+  projectSlug?: string;
 }
 
 export type RunStatus = "pending" | "running" | "idle" | "completed" | "failed" | "stopped";

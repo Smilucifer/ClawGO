@@ -27,9 +27,10 @@ pub struct ApiTestResult {
 pub struct MemoryFileCandidate {
     pub path: String,
     pub label: String,
-    pub scope: String, // "project" | "global" | "memory"
+    pub scope: String, // "project" | "global" | "memory" | "global-memory"
     pub provider: Option<String>,
     pub exists: bool,
+    pub project_slug: Option<String>, // ~/.claude/projects/{slug} for "memory" scope
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

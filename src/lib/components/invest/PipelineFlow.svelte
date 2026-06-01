@@ -70,12 +70,12 @@
     display: flex;
     align-items: center;
     gap: 0;
-    padding: 0.75rem 0;
+    padding: var(--space-3) 0;
     overflow-x: auto;
   }
 
   .pipeline-flow.compact {
-    padding: 0.25rem 0;
+    padding: var(--space-1) 0;
     transform: scale(0.8);
     transform-origin: left center;
   }
@@ -106,7 +106,7 @@
     height: 3rem;
     border-radius: 50%;
     border: 2px solid var(--border);
-    background: var(--background);
+    background: var(--bg-card);
     transition: all 0.3s ease;
     cursor: default;
     position: relative;
@@ -127,7 +127,7 @@
     font-size: 0.6rem;
     margin-top: 0.25rem;
     white-space: nowrap;
-    color: var(--muted-foreground);
+    color: var(--text-tertiary);
     position: absolute;
     bottom: -1.25rem;
   }
@@ -144,26 +144,21 @@
 
   .node.done {
     border-color: var(--node-color);
-    background: color-mix(in srgb, var(--node-color) 15%, var(--background));
+    background: color-mix(in srgb, var(--node-color) 15%, var(--bg-card));
     color: var(--node-color);
   }
 
   .node.error {
-    border-color: hsl(0, 84%, 60%);
-    background: hsl(0, 84%, 95%);
-    color: hsl(0, 84%, 50%);
+    border-color: var(--color-error);
+    background: rgba(168, 122, 122, 0.15);
+    color: var(--color-error);
   }
 
   .node.skipped {
     border-style: dashed;
     border-color: var(--border);
     opacity: 0.4;
-    color: var(--muted-foreground);
-  }
-
-  :global(.dark) .node.error {
-    background: hsl(0, 84%, 15%);
-    color: hsl(0, 84%, 70%);
+    color: var(--text-tertiary);
   }
 
   @keyframes pulse {

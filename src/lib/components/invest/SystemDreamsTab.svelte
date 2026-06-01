@@ -44,32 +44,32 @@
   }
 </script>
 
-<div class="space-y-3">
-  <h3 class="text-sm font-medium">{t('invest_system_dreams_title')}</h3>
+<div class="space-y-[var(--space-3)]">
+  <h3 class="text-[13px] font-medium text-[var(--text-primary)]">{t('invest_system_dreams_title')}</h3>
 
   {#if loading}
-    <p class="text-sm text-muted-foreground">{t('invest_loading')}</p>
+    <p class="text-[13px] text-[var(--text-secondary)]">{t('invest_loading')}</p>
   {:else if error}
-    <p class="text-sm text-red-400">{error}</p>
+    <p class="text-[13px] text-[var(--color-error)]">{error}</p>
   {:else if traces.length === 0}
-    <p class="text-sm text-muted-foreground">{t('invest_system_dreams_empty')}</p>
+    <p class="text-[13px] text-[var(--text-secondary)]">{t('invest_system_dreams_empty')}</p>
   {:else}
-    <div class="space-y-2">
+    <div class="space-y-[var(--space-2)]">
       {#each traces as trace}
-        <div class="rounded border border-border p-3">
+        <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-3)]">
           <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <span class="rounded bg-muted px-2 py-0.5 text-xs">{trace.dreamType}</span>
-              <span class="text-xs text-muted-foreground">{trace.triggerType}</span>
-              <span class="rounded px-1.5 py-0.5 text-xs {trace.status === 'completed' ? 'bg-green-500/10 text-green-400' : trace.status === 'failed' ? 'bg-red-500/10 text-red-400' : 'bg-secondary'}">{trace.status}</span>
+            <div class="flex items-center gap-[var(--space-2)]">
+              <span class="rounded-[var(--radius-md)] bg-[var(--bg-input)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]">{trace.dreamType}</span>
+              <span class="text-[11px] text-[var(--text-tertiary)]">{trace.triggerType}</span>
+              <span class="rounded-[var(--radius-full)] px-1.5 py-0.5 text-[11px] font-bold {trace.status === 'completed' ? 'bg-[rgba(138,154,118,0.15)] text-[var(--color-success)]' : trace.status === 'failed' ? 'bg-[rgba(168,122,122,0.15)] text-[var(--color-error)]' : 'bg-[var(--bg-input)] text-[var(--text-secondary)]'}">{trace.status}</span>
               {#if trace.rollbackReady}
-                <span class="rounded bg-yellow-500/10 px-1.5 py-0.5 text-xs text-yellow-400">rollback</span>
+                <span class="rounded-[var(--radius-full)] bg-[rgba(184,154,106,0.15)] px-1.5 py-0.5 text-[11px] font-bold text-[var(--color-warning)]">rollback</span>
               {/if}
             </div>
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-muted-foreground">{trace.createdAt.slice(0, 16)}</span>
+            <div class="flex items-center gap-[var(--space-2)]">
+              <span class="text-[11px] text-[var(--text-tertiary)]">{trace.createdAt.slice(0, 16)}</span>
               <button
-                class="rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted"
+                class="rounded-[var(--radius-md)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors"
                 onclick={() => toggleExpand(trace.id)}
               >
                 {expandedId === trace.id ? '▲' : '▼'}
@@ -78,27 +78,27 @@
           </div>
 
           {#if trace.summary && expandedId !== trace.id}
-            <p class="mt-1 text-xs text-muted-foreground">{truncate(trace.summary)}</p>
+            <p class="mt-1 text-[12px] text-[var(--text-tertiary)]">{truncate(trace.summary)}</p>
           {/if}
 
           {#if expandedId === trace.id}
-            <div class="mt-2 space-y-2 border-t border-border/50 pt-2">
+            <div class="mt-2 space-y-[var(--space-2)] border-t border-[var(--border)]/50 pt-[var(--space-2)]">
               {#if trace.summary}
                 <div>
-                  <span class="text-xs font-medium">Summary:</span>
-                  <p class="whitespace-pre-wrap text-xs">{trace.summary}</p>
+                  <span class="text-[12px] font-medium text-[var(--text-secondary)]">Summary:</span>
+                  <p class="whitespace-pre-wrap text-[12px] text-[var(--text-primary)]">{trace.summary}</p>
                 </div>
               {/if}
               {#if trace.beforeJson}
                 <div>
-                  <span class="text-xs font-medium">Before:</span>
-                  <pre class="mt-1 max-h-40 overflow-auto rounded bg-muted p-2 text-xs">{truncate(trace.beforeJson, 500)}</pre>
+                  <span class="text-[12px] font-medium text-[var(--text-secondary)]">Before:</span>
+                  <pre class="mt-1 max-h-40 overflow-auto rounded-[var(--radius-md)] bg-[var(--bg-input)] p-[var(--space-2)] text-[11px] font-[var(--font-mono)] text-[var(--text-primary)]">{truncate(trace.beforeJson, 500)}</pre>
                 </div>
               {/if}
               {#if trace.afterJson}
                 <div>
-                  <span class="text-xs font-medium">After:</span>
-                  <pre class="mt-1 max-h-40 overflow-auto rounded bg-muted p-2 text-xs">{truncate(trace.afterJson, 500)}</pre>
+                  <span class="text-[12px] font-medium text-[var(--text-secondary)]">After:</span>
+                  <pre class="mt-1 max-h-40 overflow-auto rounded-[var(--radius-md)] bg-[var(--bg-input)] p-[var(--space-2)] text-[11px] font-[var(--font-mono)] text-[var(--text-primary)]">{truncate(trace.afterJson, 500)}</pre>
                 </div>
               {/if}
             </div>

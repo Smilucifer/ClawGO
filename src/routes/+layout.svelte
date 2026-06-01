@@ -307,10 +307,26 @@
   });
 
   let memoryScopeProject = $derived(memoryCandidates.filter((c) => c.scope === "project"));
-  let memoryScopeGlobal = $derived(memoryCandidates.filter((c) => c.scope === "global"));
+  let memoryScopeGlobal = $derived(
+    memoryCandidates.filter((c) => c.scope === "global" || c.scope === "global-memory"),
+  );
   let memoryScopeMemory = $derived(memoryCandidates.filter((c) => c.scope === "memory"));
-  // Merged project + auto memory for flat folder view
-  let memoryScopeFolder = $derived([...memoryScopeProject, ...memoryScopeMemory]);
+
+  /** Encode a cwd path to match ~/.claude/projects/{slug} naming convention. */
+  function encodeCwdSlug(cwd: string): string {
+    return cwd.replace(/[/\\]/g, "-");
+  }
+
+  /** Get memory files belonging to a specific project. */
+  function memoryForProject(cwd: string): MemoryFileCandidate[] {
+    const slug = encodeCwdSlug(cwd);
+    return memoryScopeMemory.filter((c) => c.projectSlug === slug);
+  }
+
+  /** Merged project + auto memory for a specific project folder. */
+  function memoryScopeFolderFor(cwd: string): MemoryFileCandidate[] {
+    return [...memoryScopeProject, ...memoryForProject(cwd)];
+  }
 
   let memoryCandidateSeq = 0;
 
@@ -2054,8 +2070,8 @@
                       class="h-4 w-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin"
                     ></div>
                   </div>
-                {:else if memoryScopeFolder.length > 0}
-                  {#each filterVisibleCandidates(memoryScopeFolder, true, memorySelectedFile) as file}
+                {:else if memoryScopeFolderFor(folder.cwd).length > 0}
+                  {#each filterVisibleCandidates(memoryScopeFolderFor(folder.cwd), true, memorySelectedFile) as file}
                     <button
                       class="flex w-full items-center gap-1.5 py-1 pl-4 pr-3 text-xs transition-colors
                         {memorySelectedFile === file.path

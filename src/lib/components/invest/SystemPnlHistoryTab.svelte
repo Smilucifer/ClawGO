@@ -34,45 +34,45 @@
   }
 </script>
 
-<div class="space-y-3">
-  <h3 class="text-sm font-medium">{t('invest_system_pnl_history_title')}</h3>
+<div class="space-y-[var(--space-3)]">
+  <h3 class="text-sm font-medium text-[var(--text-primary)]">{t('invest_system_pnl_history_title')}</h3>
 
   {#if loading}
-    <p class="text-sm text-muted-foreground">{t('invest_loading')}</p>
+    <p class="text-sm text-[var(--text-secondary)]">{t('invest_loading')}</p>
   {:else if error}
-    <p class="text-sm text-red-400">{error}</p>
+    <p class="text-sm text-[var(--color-error)]">{error}</p>
   {:else if snapshots.length === 0}
-    <p class="text-sm text-muted-foreground">{t('invest_system_pnl_history_empty')}</p>
+    <p class="text-sm text-[var(--text-secondary)]">{t('invest_system_pnl_history_empty')}</p>
   {:else}
-    <div class="overflow-x-auto">
+    <div class="overflow-x-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)]">
       <table class="w-full text-sm">
         <thead>
-          <tr class="border-b border-border text-left text-muted-foreground">
-            <th class="pb-2 pr-3">{t('invest_system_pnl_date')}</th>
-            <th class="pb-2 pr-3 text-right">{t('invest_system_pnl_total')}</th>
-            <th class="pb-2 pr-3 text-right">{t('invest_system_pnl_cash')}</th>
-            <th class="pb-2 pr-3 text-right">{t('invest_system_pnl_holdings')}</th>
-            <th class="pb-2 pr-3 text-right">{t('invest_system_pnl_daily')}</th>
-            <th class="pb-2 pr-3 text-right">{t('invest_system_pnl_daily_pct')}</th>
-            <th class="pb-2">{t('invest_actions')}</th>
+          <tr class="border-b border-[var(--border)] text-left text-[var(--text-tertiary)]">
+            <th class="text-[11px] font-medium uppercase tracking-wider pb-[var(--space-2)] pr-[var(--space-3)]">{t('invest_system_pnl_date')}</th>
+            <th class="text-[11px] font-medium uppercase tracking-wider pb-[var(--space-2)] pr-[var(--space-3)] text-right">{t('invest_system_pnl_total')}</th>
+            <th class="text-[11px] font-medium uppercase tracking-wider pb-[var(--space-2)] pr-[var(--space-3)] text-right">{t('invest_system_pnl_cash')}</th>
+            <th class="text-[11px] font-medium uppercase tracking-wider pb-[var(--space-2)] pr-[var(--space-3)] text-right">{t('invest_system_pnl_holdings')}</th>
+            <th class="text-[11px] font-medium uppercase tracking-wider pb-[var(--space-2)] pr-[var(--space-3)] text-right">{t('invest_system_pnl_daily')}</th>
+            <th class="text-[11px] font-medium uppercase tracking-wider pb-[var(--space-2)] pr-[var(--space-3)] text-right">{t('invest_system_pnl_daily_pct')}</th>
+            <th class="text-[11px] font-medium uppercase tracking-wider pb-[var(--space-2)]">{t('invest_actions')}</th>
           </tr>
         </thead>
         <tbody>
           {#each snapshots as snap}
-            <tr class="border-b border-border/50">
-              <td class="py-1.5 pr-3">{formatDate(snap.snapshotDate)}</td>
-              <td class="py-1.5 pr-3 text-right">¥{snap.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-              <td class="py-1.5 pr-3 text-right">¥{snap.cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-              <td class="py-1.5 pr-3 text-right">¥{snap.holdingsValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-              <td class="py-1.5 pr-3 text-right" class:text-green-400={(snap.dailyPnl ?? 0) > 0} class:text-red-400={(snap.dailyPnl ?? 0) < 0}>
+            <tr class="border-b border-[var(--border)]">
+              <td class="py-[var(--space-2)] pr-[var(--space-3)] text-[var(--text-primary)] font-[var(--font-mono)]">{formatDate(snap.snapshotDate)}</td>
+              <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right text-[var(--text-primary)] font-[var(--font-mono)]">¥{snap.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+              <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right text-[var(--text-primary)] font-[var(--font-mono)]">¥{snap.cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+              <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right text-[var(--text-primary)] font-[var(--font-mono)]">¥{snap.holdingsValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+              <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right font-[var(--font-mono)]" class:text-[var(--color-success)]={(snap.dailyPnl ?? 0) > 0} class:text-[var(--color-error)]={(snap.dailyPnl ?? 0) < 0}>
                 {fmtPnl(snap.dailyPnl)}
               </td>
-              <td class="py-1.5 pr-3 text-right" class:text-green-400={(snap.dailyPnlPct ?? 0) > 0} class:text-red-400={(snap.dailyPnlPct ?? 0) < 0}>
+              <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right font-[var(--font-mono)]" class:text-[var(--color-success)]={(snap.dailyPnlPct ?? 0) > 0} class:text-[var(--color-error)]={(snap.dailyPnlPct ?? 0) < 0}>
                 {fmtPct(snap.dailyPnlPct)}
               </td>
-              <td class="py-1.5">
+              <td class="py-[var(--space-2)]">
                 <button
-                  class="rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
+                  class="rounded-[var(--radius-md)] px-[var(--space-2)] py-[var(--space-1)] text-[11px] font-medium text-[var(--color-error)] hover:bg-[rgba(168,122,122,0.1)]"
                   onclick={() => handleDelete(snap.id)}
                 >{t('invest_delete')}</button>
               </td>
