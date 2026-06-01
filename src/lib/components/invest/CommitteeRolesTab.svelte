@@ -195,6 +195,16 @@
       ],
     },
     {
+      key: 'l4_officer',
+      color: 'red',
+      badge: 'L4',
+      nameCn: t('invest_roles_l4_officer_cn'),
+      nameEn: 'L4 Execution Officer',
+      desc: t('invest_roles_l4_officer_desc'),
+      meta: 'temp 0.3 · tools ✗',
+      prompts: [{ key: 'l4_officer', label: t('invest_roles_prompt_full') }],
+    },
+    {
       key: 'cio',
       color: 'green',
       badge: 'CIO',
@@ -206,11 +216,11 @@
     },
   ] as role}
     <div class="overflow-hidden rounded-lg border border-border border-l-[3px]"
-      style="border-left-color: {role.color === 'purple' ? '#a855f7' : role.color === 'blue' ? '#3b82f6' : role.color === 'orange' ? '#f97316' : '#22c55e'}">
+      style="border-left-color: {role.color === 'purple' ? '#a855f7' : role.color === 'blue' ? '#3b82f6' : role.color === 'orange' ? '#f97316' : role.color === 'red' ? '#ef4444' : '#22c55e'}">
       <!-- Role header -->
       <div class="flex items-center gap-3 p-4">
         <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[10px] font-extrabold tracking-wider text-white"
-          style="background: {role.color === 'purple' ? '#a855f7' : role.color === 'blue' ? '#3b82f6' : role.color === 'orange' ? '#f97316' : '#22c55e'}">
+          style="background: {role.color === 'purple' ? '#a855f7' : role.color === 'blue' ? '#3b82f6' : role.color === 'orange' ? '#f97316' : role.color === 'red' ? '#ef4444' : '#22c55e'}">
           {role.badge}
         </div>
         <div class="min-w-0 flex-1">
@@ -244,6 +254,10 @@
               t('invest_roles_hard_risk_1'),
               t('invest_roles_hard_risk_2'),
               t('invest_roles_hard_risk_3'),
+            ] : role.key === 'l4_officer' ? [
+              t('invest_roles_hard_l4_1'),
+              t('invest_roles_hard_l4_2'),
+              t('invest_roles_hard_l4_3'),
             ] : [
               t('invest_roles_hard_cio_1'),
               t('invest_roles_hard_cio_2'),

@@ -120,6 +120,103 @@ pub struct CnBondYield {
     pub yield_10y: f64,
 }
 
+/// Daily basic indicators for a stock (每日指标).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyBasic {
+    pub ts_code: String,
+    pub trade_date: String,
+    pub close: Option<f64>,
+    pub turnover_rate: Option<f64>,
+    pub turnover_rate_f: Option<f64>,
+    pub volume_ratio: Option<f64>,
+    pub pe: Option<f64>,
+    pub pe_ttm: Option<f64>,
+    pub pb: Option<f64>,
+    pub ps: Option<f64>,
+    pub ps_ttm: Option<f64>,
+    pub dv_ratio: Option<f64>,
+    pub dv_ttm: Option<f64>,
+    pub total_share: Option<f64>,
+    pub float_share: Option<f64>,
+    pub free_share: Option<f64>,
+    pub total_mv: Option<f64>,
+    pub circ_mv: Option<f64>,
+}
+
+/// Financial indicators for a stock (财务指标).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FinaIndicator {
+    pub ts_code: String,
+    pub ann_date: Option<String>,
+    pub end_date: Option<String>,
+    pub roe: Option<f64>,
+    pub roe_waa: Option<f64>,
+    pub roe_dt: Option<f64>,
+    pub roa: Option<f64>,
+    pub netprofit_yoy: Option<f64>,
+    pub or_yoy: Option<f64>,
+    pub debt_to_assets: Option<f64>,
+}
+
+/// Analyst ratings for a stock (机构评级).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportRc {
+    pub ts_code: String,
+    pub report_date: Option<String>,
+    pub org_num: Option<f64>,
+    pub buy_num: Option<f64>,
+    pub hold_num: Option<f64>,
+    pub reduce_num: Option<f64>,
+    pub sell_num: Option<f64>,
+    pub strong_buy_num: Option<f64>,
+    pub rating_avg: Option<f64>,
+}
+
+/// Individual stock money flow detail (个股资金流向).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoneyflowDc {
+    pub ts_code: String,
+    pub trade_date: String,
+    pub buy_sm_vol: Option<f64>,
+    pub sell_sm_vol: Option<f64>,
+    pub buy_md_vol: Option<f64>,
+    pub sell_md_vol: Option<f64>,
+    pub buy_lg_vol: Option<f64>,
+    pub sell_lg_vol: Option<f64>,
+    pub buy_elg_vol: Option<f64>,
+    pub sell_elg_vol: Option<f64>,
+    pub net_mf_vol: Option<f64>,
+}
+
+impl MoneyflowDc {
+    /// 聚合主力/散户净流入（万手）
+    /// 主力 = 超大单 + 大单 净流入
+    /// 散户 = 中单 + 小单 净流入
+    pub fn aggregate_moneyflow(rows: &[MoneyflowDc]) -> (f64, f64) {
+        let mut main_net = 0.0;
+        let mut retail_net = 0.0;
+        for r in rows {
+            main_net += r.buy_elg_vol.unwrap_or(0.0) - r.sell_elg_vol.unwrap_or(0.0)
+                      + r.buy_lg_vol.unwrap_or(0.0) - r.sell_lg_vol.unwrap_or(0.0);
+            retail_net += r.buy_md_vol.unwrap_or(0.0) - r.sell_md_vol.unwrap_or(0.0)
+                        + r.buy_sm_vol.unwrap_or(0.0) - r.sell_sm_vol.unwrap_or(0.0);
+        }
+        (main_net, retail_net)
+    }
+
+    /// 格式化资金流向摘要
+    pub fn format_moneyflow_summary(rows: &[MoneyflowDc]) -> String {
+        let (main_net, retail_net) = Self::aggregate_moneyflow(rows);
+        let main_label = if main_net >= 0.0 { "主力净流入" } else { "主力净流出" };
+        let retail_label = if retail_net >= 0.0 { "散户净流入" } else { "散户净流出" };
+        format!("{} {:.1}万手，{} {:.1}万手", main_label, main_net.abs(), retail_label, retail_net.abs())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Row helpers — extract typed values from a positional row slice
 // ---------------------------------------------------------------------------
@@ -779,6 +876,225 @@ impl TushareClient {
                 yield_10y: yield_10y_idx
                     .and_then(|i| get_f64(row, i))
                     .unwrap_or_default(),
+            });
+        }
+        Ok(items)
+    }
+
+    /// 获取个股每日指标（换手率、PE、PB、市值等）。
+    /// ETF 标的可能返回空数据，调用方需处理空结果。
+    pub async fn daily_basic(
+        &self,
+        ts_code: &str,
+        trade_date: Option<&str>,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+    ) -> Result<Vec<DailyBasic>, String> {
+        let mut params = serde_json::json!({ "ts_code": ts_code });
+        if let Some(d) = trade_date {
+            params["trade_date"] = serde_json::json!(d);
+        }
+        if let Some(s) = start_date {
+            params["start_date"] = serde_json::json!(s);
+        }
+        if let Some(e) = end_date {
+            params["end_date"] = serde_json::json!(e);
+        }
+
+        let resp = self.call_api("daily_basic", params, "").await?;
+        let fields = &resp.data.fields;
+
+        let ts_code_idx = fields.iter().position(|f| f == "ts_code");
+        let trade_date_idx = fields.iter().position(|f| f == "trade_date");
+        let close_idx = fields.iter().position(|f| f == "close");
+        let turnover_rate_idx = fields.iter().position(|f| f == "turnover_rate");
+        let turnover_rate_f_idx = fields.iter().position(|f| f == "turnover_rate_f");
+        let volume_ratio_idx = fields.iter().position(|f| f == "volume_ratio");
+        let pe_idx = fields.iter().position(|f| f == "pe");
+        let pe_ttm_idx = fields.iter().position(|f| f == "pe_ttm");
+        let pb_idx = fields.iter().position(|f| f == "pb");
+        let ps_idx = fields.iter().position(|f| f == "ps");
+        let ps_ttm_idx = fields.iter().position(|f| f == "ps_ttm");
+        let dv_ratio_idx = fields.iter().position(|f| f == "dv_ratio");
+        let dv_ttm_idx = fields.iter().position(|f| f == "dv_ttm");
+        let total_share_idx = fields.iter().position(|f| f == "total_share");
+        let float_share_idx = fields.iter().position(|f| f == "float_share");
+        let free_share_idx = fields.iter().position(|f| f == "free_share");
+        let total_mv_idx = fields.iter().position(|f| f == "total_mv");
+        let circ_mv_idx = fields.iter().position(|f| f == "circ_mv");
+
+        let mut items = Vec::with_capacity(resp.data.items.len());
+        for row in &resp.data.items {
+            items.push(DailyBasic {
+                ts_code: ts_code_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+                trade_date: trade_date_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+                close: close_idx.and_then(|i| get_f64(row, i)),
+                turnover_rate: turnover_rate_idx.and_then(|i| get_f64(row, i)),
+                turnover_rate_f: turnover_rate_f_idx.and_then(|i| get_f64(row, i)),
+                volume_ratio: volume_ratio_idx.and_then(|i| get_f64(row, i)),
+                pe: pe_idx.and_then(|i| get_f64(row, i)),
+                pe_ttm: pe_ttm_idx.and_then(|i| get_f64(row, i)),
+                pb: pb_idx.and_then(|i| get_f64(row, i)),
+                ps: ps_idx.and_then(|i| get_f64(row, i)),
+                ps_ttm: ps_ttm_idx.and_then(|i| get_f64(row, i)),
+                dv_ratio: dv_ratio_idx.and_then(|i| get_f64(row, i)),
+                dv_ttm: dv_ttm_idx.and_then(|i| get_f64(row, i)),
+                total_share: total_share_idx.and_then(|i| get_f64(row, i)),
+                float_share: float_share_idx.and_then(|i| get_f64(row, i)),
+                free_share: free_share_idx.and_then(|i| get_f64(row, i)),
+                total_mv: total_mv_idx.and_then(|i| get_f64(row, i)),
+                circ_mv: circ_mv_idx.and_then(|i| get_f64(row, i)),
+            });
+        }
+        Ok(items)
+    }
+
+    /// 获取个股财务指标（ROE、ROA、净利润增速、营收增速、资产负债率等）。
+    pub async fn fina_indicator(
+        &self,
+        ts_code: &str,
+        period: Option<&str>,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+    ) -> Result<Vec<FinaIndicator>, String> {
+        let mut params = serde_json::json!({ "ts_code": ts_code });
+        if let Some(p) = period {
+            params["period"] = serde_json::json!(p);
+        }
+        if let Some(s) = start_date {
+            params["start_date"] = serde_json::json!(s);
+        }
+        if let Some(e) = end_date {
+            params["end_date"] = serde_json::json!(e);
+        }
+
+        let resp = self.call_api("fina_indicator", params, "").await?;
+        let fields = &resp.data.fields;
+
+        let ts_code_idx = fields.iter().position(|f| f == "ts_code");
+        let ann_date_idx = fields.iter().position(|f| f == "ann_date");
+        let end_date_idx = fields.iter().position(|f| f == "end_date");
+        let roe_idx = fields.iter().position(|f| f == "roe");
+        let roe_waa_idx = fields.iter().position(|f| f == "roe_waa");
+        let roe_dt_idx = fields.iter().position(|f| f == "roe_dt");
+        let roa_idx = fields.iter().position(|f| f == "roa");
+        let netprofit_yoy_idx = fields.iter().position(|f| f == "netprofit_yoy");
+        let or_yoy_idx = fields.iter().position(|f| f == "or_yoy");
+        let debt_to_assets_idx = fields.iter().position(|f| f == "debt_to_assets");
+
+        let mut items = Vec::with_capacity(resp.data.items.len());
+        for row in &resp.data.items {
+            items.push(FinaIndicator {
+                ts_code: ts_code_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+                ann_date: ann_date_idx.and_then(|i| get_str(row, i)),
+                end_date: end_date_idx.and_then(|i| get_str(row, i)),
+                roe: roe_idx.and_then(|i| get_f64(row, i)),
+                roe_waa: roe_waa_idx.and_then(|i| get_f64(row, i)),
+                roe_dt: roe_dt_idx.and_then(|i| get_f64(row, i)),
+                roa: roa_idx.and_then(|i| get_f64(row, i)),
+                netprofit_yoy: netprofit_yoy_idx.and_then(|i| get_f64(row, i)),
+                or_yoy: or_yoy_idx.and_then(|i| get_f64(row, i)),
+                debt_to_assets: debt_to_assets_idx.and_then(|i| get_f64(row, i)),
+            });
+        }
+        Ok(items)
+    }
+
+    /// 获取个股机构评级汇总（买入/增持/减持/卖出家数及评级均值）。
+    pub async fn report_rc(
+        &self,
+        ts_code: &str,
+        report_date: Option<&str>,
+    ) -> Result<Vec<ReportRc>, String> {
+        let mut params = serde_json::json!({ "ts_code": ts_code });
+        if let Some(d) = report_date {
+            params["report_date"] = serde_json::json!(d);
+        }
+
+        let resp = self.call_api("report_rc", params, "").await?;
+        let fields = &resp.data.fields;
+
+        let ts_code_idx = fields.iter().position(|f| f == "ts_code");
+        let report_date_idx = fields.iter().position(|f| f == "report_date");
+        let org_num_idx = fields.iter().position(|f| f == "org_num");
+        let buy_num_idx = fields.iter().position(|f| f == "buy_num");
+        let hold_num_idx = fields.iter().position(|f| f == "hold_num");
+        let reduce_num_idx = fields.iter().position(|f| f == "reduce_num");
+        let sell_num_idx = fields.iter().position(|f| f == "sell_num");
+        let strong_buy_num_idx = fields.iter().position(|f| f == "strong_buy_num");
+        let rating_avg_idx = fields.iter().position(|f| f == "rating_avg");
+
+        let mut items = Vec::with_capacity(resp.data.items.len());
+        for row in &resp.data.items {
+            items.push(ReportRc {
+                ts_code: ts_code_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+                report_date: report_date_idx.and_then(|i| get_str(row, i)),
+                org_num: org_num_idx.and_then(|i| get_f64(row, i)),
+                buy_num: buy_num_idx.and_then(|i| get_f64(row, i)),
+                hold_num: hold_num_idx.and_then(|i| get_f64(row, i)),
+                reduce_num: reduce_num_idx.and_then(|i| get_f64(row, i)),
+                sell_num: sell_num_idx.and_then(|i| get_f64(row, i)),
+                strong_buy_num: strong_buy_num_idx.and_then(|i| get_f64(row, i)),
+                rating_avg: rating_avg_idx.and_then(|i| get_f64(row, i)),
+            });
+        }
+        Ok(items)
+    }
+
+    /// 获取个股每日资金流向明细（小单/中单/大单/超大单买卖量及主力净流入）。
+    pub async fn moneyflow_dc(
+        &self,
+        ts_code: &str,
+        start_date: &str,
+        end_date: &str,
+    ) -> Result<Vec<MoneyflowDc>, String> {
+        let params = serde_json::json!({
+            "ts_code": ts_code,
+            "start_date": start_date,
+            "end_date": end_date,
+        });
+
+        let resp = self.call_api("moneyflow_dc", params, "").await?;
+        let fields = &resp.data.fields;
+
+        let ts_code_idx = fields.iter().position(|f| f == "ts_code");
+        let trade_date_idx = fields.iter().position(|f| f == "trade_date");
+        let buy_sm_vol_idx = fields.iter().position(|f| f == "buy_sm_vol");
+        let sell_sm_vol_idx = fields.iter().position(|f| f == "sell_sm_vol");
+        let buy_md_vol_idx = fields.iter().position(|f| f == "buy_md_vol");
+        let sell_md_vol_idx = fields.iter().position(|f| f == "sell_md_vol");
+        let buy_lg_vol_idx = fields.iter().position(|f| f == "buy_lg_vol");
+        let sell_lg_vol_idx = fields.iter().position(|f| f == "sell_lg_vol");
+        let buy_elg_vol_idx = fields.iter().position(|f| f == "buy_elg_vol");
+        let sell_elg_vol_idx = fields.iter().position(|f| f == "sell_elg_vol");
+        let net_mf_vol_idx = fields.iter().position(|f| f == "net_mf_vol");
+
+        let mut items = Vec::with_capacity(resp.data.items.len());
+        for row in &resp.data.items {
+            items.push(MoneyflowDc {
+                ts_code: ts_code_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+                trade_date: trade_date_idx
+                    .and_then(|i| get_str(row, i))
+                    .unwrap_or_default(),
+                buy_sm_vol: buy_sm_vol_idx.and_then(|i| get_f64(row, i)),
+                sell_sm_vol: sell_sm_vol_idx.and_then(|i| get_f64(row, i)),
+                buy_md_vol: buy_md_vol_idx.and_then(|i| get_f64(row, i)),
+                sell_md_vol: sell_md_vol_idx.and_then(|i| get_f64(row, i)),
+                buy_lg_vol: buy_lg_vol_idx.and_then(|i| get_f64(row, i)),
+                sell_lg_vol: sell_lg_vol_idx.and_then(|i| get_f64(row, i)),
+                buy_elg_vol: buy_elg_vol_idx.and_then(|i| get_f64(row, i)),
+                sell_elg_vol: sell_elg_vol_idx.and_then(|i| get_f64(row, i)),
+                net_mf_vol: net_mf_vol_idx.and_then(|i| get_f64(row, i)),
             });
         }
         Ok(items)

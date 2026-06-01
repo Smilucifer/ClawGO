@@ -14,6 +14,7 @@
     macro: '#8b5cf6',
     quant: '#3b82f6',
     risk: '#f97316',
+    l4_officer: '#ef4444',
     cio: '#eab308',
   };
 

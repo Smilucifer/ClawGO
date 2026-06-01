@@ -112,6 +112,44 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
         COMMIT;"
     ).map_err(|e| format!("migrate trades add_watch action: {}", e))?;
 
+    // Migration: add 'delete_watch' action to trades CHECK constraint.
+    {
+        let has_delete_watch: i32 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('trades') WHERE name='action'",
+            [],
+            |r| r.get(0),
+        ).unwrap_or(0);
+        // Only migrate if the trades table exists and doesn't already have delete_watch
+        if has_delete_watch > 0 {
+            let check: String = conn.query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='trades'",
+                [],
+                |r| r.get(0),
+            ).unwrap_or_default();
+            if !check.contains("delete_watch") {
+                conn.execute_batch(
+                    "BEGIN;
+                    CREATE TABLE IF NOT EXISTS trades_new (
+                        id TEXT PRIMARY KEY,
+                        symbol TEXT NOT NULL,
+                        currency TEXT NOT NULL DEFAULT 'CNY',
+                        kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
+                        action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_watch_to_hold', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust', 'add_watch', 'delete_watch')),
+                        shares REAL,
+                        price REAL,
+                        amount REAL,
+                        notes TEXT,
+                        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                    );
+                    INSERT OR IGNORE INTO trades_new SELECT * FROM trades;
+                    DROP TABLE IF EXISTS trades;
+                    ALTER TABLE trades_new RENAME TO trades;
+                    COMMIT;"
+                ).map_err(|e| format!("migrate trades delete_watch action: {}", e))?;
+            }
+        }
+    }
+
     // Migration: create verdict_reviews table (use local conn, DB not yet in static)
     verdict_reviews::create_table(&conn)?;
 
@@ -235,7 +273,7 @@ CREATE TABLE IF NOT EXISTS trades (
     symbol TEXT NOT NULL,
     currency TEXT NOT NULL DEFAULT 'CNY',
     kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
-    action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_watch_to_hold', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust', 'add_watch')),
+    action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_watch_to_hold', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust', 'add_watch', 'delete_watch')),
     shares REAL,
     price REAL,
     amount REAL,

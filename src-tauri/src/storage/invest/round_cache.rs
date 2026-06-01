@@ -83,16 +83,18 @@ fn role_key(role: CommitteeRole) -> &'static str {
         CommitteeRole::Quant => "quant",
         CommitteeRole::Risk => "risk",
         CommitteeRole::Cio => "cio",
+        CommitteeRole::L4Officer => "l4_officer",
     }
 }
 
-/// Sort key for roles (Macro < Quant < Risk < CIO).
+/// Sort key for roles (Macro < Quant < Risk < CIO < L4).
 fn role_sort_key(role: CommitteeRole) -> u8 {
     match role {
         CommitteeRole::Macro => 0,
         CommitteeRole::Quant => 1,
         CommitteeRole::Risk => 2,
         CommitteeRole::Cio => 3,
+        CommitteeRole::L4Officer => 4,
     }
 }
 
@@ -106,5 +108,6 @@ mod tests {
         assert_eq!(role_key(CommitteeRole::Quant), "quant");
         assert_eq!(role_key(CommitteeRole::Risk), "risk");
         assert_eq!(role_key(CommitteeRole::Cio), "cio");
+        assert_eq!(role_key(CommitteeRole::L4Officer), "l4_officer");
     }
 }

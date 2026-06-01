@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v5.1.2, 2026-06-01). ETF 价格修复+事件扫描增强+simplify 审查修复。See `docs/changelog.md`.
+**Current phase:** Phase 10+ (v5.2.0, 2026-06-02). 委员会 L1-L4 策略框架升级。See `docs/changelog.md`.
 
 ## Standard workflow
 
@@ -370,6 +370,7 @@ Key phases and their status:
 | 10+ (v5.1.0) | UI 设计系统统一: 暖色暗黑固定主题+自定义标题栏+Inter 字体+移除主题/色彩方案切换+Settings 底部分隔 — CSS 变量重写/tauri.conf.json decorations:false/46 项功能入口回归通过 | [done] |
 | 10+ (v5.1.1) | Bug 修复+Chat UI 升级+代码审查优化: 标题栏权限/Python Overlay 竞态/Index 首页/消息+输入框+状态栏+右侧面板 UI/Flat token 别名/format 工具复用/recompute_notional 方法/并发价格获取/6 项 simplify 审查修复 | [done] |
 | 10+ (v5.1.2) | ETF 价格修复+事件扫描增强+simplify 审查修复: daily_api() ETF 路由/Severity::as_str()/循环合并/英文关键词/零分配截断/record_trade 自动 recalculate/notional 兜底/CIO 100 股规则 | [done] |
+| 10+ (v5.2.0) | 委员会 L1-L4 策略框架升级: 5 角色+L4 Officer/8 步 Pipeline/7 Prompt 重写/AssetContext 数据注入层/4 新工具/30+ Parser 字段/行为红灯评分/catalyst Tier 框架/Simplify 8 项审查修复 | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

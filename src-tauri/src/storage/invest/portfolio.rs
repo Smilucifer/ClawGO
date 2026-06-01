@@ -215,6 +215,7 @@ fn recalculate_holdings_inner_body(
         linked_verdict_id: Option<String>,
         notes: Option<String>,
         asset_type: Option<String>,
+        is_watch: bool, // true for add_watch entries (no shares, preserved across recalc)
     }
 
     impl MemHolding {
@@ -295,9 +296,28 @@ fn recalculate_holdings_inner_body(
                     watch_entry.entry_date = hold_entry.entry_date;
                     watch_entry.notes = Some("converted from hold".to_string());
                     watch_entry.asset_type = hold_entry.asset_type;
+                    watch_entry.is_watch = true;
                 }
             }
-            // cash_adjust and add_watch are trade-log-only; holdings are managed separately
+            "add_watch" => {
+                // Create or preserve the watch entry in the map so it survives recalculation
+                let entry = map.entry(key).or_default();
+                entry.is_watch = true;
+                if entry.name.is_none() {
+                    entry.name = Some(t.symbol.clone());
+                }
+                if let Some(p) = t.price {
+                    entry.avg_cost = p;
+                }
+                entry.entry_date = entry.entry_date.clone().or_else(|| {
+                    Some(t.created_at[..10].to_string())
+                });
+            }
+            "delete_watch" => {
+                // Remove the watch entry from the map
+                map.remove(&key);
+            }
+            // cash_adjust is trade-log-only; holdings are managed separately
             _ => {}
         }
     }
@@ -305,10 +325,12 @@ fn recalculate_holdings_inner_body(
     // 4. Write rebuilt holdings to database
     let now = chrono::Utc::now().to_rfc3339();
     for ((symbol, currency, kind), h) in &map {
-        // Skip zero-share holdings
-        if h.shares <= 0.0001 {
+        // Skip zero-share holdings (but preserve watch items which have no shares)
+        if h.shares <= 0.0001 && !h.is_watch {
             continue;
         }
+        // Watch items have no shares; write null to DB
+        let shares_val: Option<f64> = if h.is_watch { None } else { Some(h.shares) };
         conn.execute(
             "INSERT INTO holdings (symbol, currency, kind, name, notional, avg_cost, shares, entry_date, linked_verdict_id, notes, asset_type, created_at, updated_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
@@ -319,7 +341,7 @@ fn recalculate_holdings_inner_body(
                 h.name,
                 h.notional,
                 h.avg_cost,
-                h.shares,
+                shares_val,
                 h.entry_date,
                 h.linked_verdict_id,
                 h.notes,
@@ -448,6 +470,54 @@ pub fn set_cash(amount: f64) -> Result<(), String> {
         .map_err(|e| format!("set cash: {}", e))?;
         Ok(())
     })
+}
+
+/// 统计近 N 天内的交易次数
+/// symbol 为 Some 时按标的统计，为 None 时统计所有标的
+pub fn count_recent_trades(symbol: Option<&str>, days: i64) -> Result<i64, String> {
+    with_conn(|conn| {
+        let days_arg = format!("-{} days", days);
+        let result = if let Some(sym) = symbol {
+            conn.query_row(
+                "SELECT COUNT(*) FROM trades WHERE symbol = ?1 AND created_at >= datetime('now', ?2)",
+                params![sym, days_arg],
+                |row| row.get::<_, i64>(0),
+            )
+        } else {
+            conn.query_row(
+                "SELECT COUNT(*) FROM trades WHERE created_at >= datetime('now', ?1)",
+                params![days_arg],
+                |row| row.get::<_, i64>(0),
+            )
+        };
+        match result {
+            Ok(v) => Ok(v),
+            Err(e) => Err(format!("count recent trades: {}", e)),
+        }
+    })
+}
+
+/// 预计算最大回撤：当前持仓的理论最大浮亏（假设价格跌 20%）
+/// 返回值为负数，如 -0.15 表示 15% 的回撤
+pub fn max_drawdown_for_symbol(
+    _symbol: &str,
+    current_price: f64,
+    avg_cost: f64,
+    shares: f64,
+) -> f64 {
+    if shares <= 0.0 || avg_cost <= 0.0 || current_price <= 0.0 {
+        return 0.0;
+    }
+    // 假设价格跌 20%，计算该跌幅下的浮亏百分比
+    let stress_price = current_price * 0.8;
+    let stress_pnl_pct = (stress_price - avg_cost) / avg_cost;
+    // 如果当前已经浮亏超过 20%，返回实际浮亏百分比
+    let current_pnl_pct = (current_price - avg_cost) / avg_cost;
+    if current_pnl_pct < stress_pnl_pct {
+        current_pnl_pct
+    } else {
+        stress_pnl_pct
+    }
 }
 
 /// Set the initial cash balance (starting capital). Used for return calculation.

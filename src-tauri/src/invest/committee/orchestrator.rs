@@ -8,15 +8,33 @@ use super::parser::{parse_role_output, ParsedFields};
 use super::roles::{
     hard_truncate, length_constraint_suffix, load_prompt_for_round, CommitteeRole,
 };
-use super::tools::{execute_tool, role_tool_defs, tool_result_message};
+use super::tools::{execute_tool, fetch_valuation_data, role_tool_defs, tool_result_message};
 use crate::invest::llm::governor::global_governor;
 use crate::invest::llm::{
     collect_stream, CollectedResponse, InvestLlmClient, LlmConfig, Message, ProviderId, ToolDef,
 };
 use crate::invest::regime;
+use crate::tushare::client::TushareClient;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+/// 单个标的的上下文数据，注入到各角色 prompt 中
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct AssetContext {
+    pub asset_type: String,              // "stock" | "etf"
+    pub industry: Option<String>,        // tushare stock_basic → 申万二级行业
+    pub money_flow_summary: Option<String>, // 近5日主力/散户净流入摘要
+    pub pe_ttm: Option<f64>,
+    pub pb: Option<f64>,
+    pub total_mv_yi: Option<f64>,        // 总市值（亿元）
+    pub roe: Option<f64>,                // 最新季度 ROE
+    pub or_yoy: Option<f64>,             // 营收增速%
+    pub np_yoy: Option<f64>,             // 净利增速%
+    pub rating_summary: Option<String>,  // "买入15/增持3/中性1/减持0/卖出0"
+    pub risk_news: Option<String>,       // 最多5条风险新闻
+    pub turnover_rate: Option<f64>,
+}
 
 /// Callback for emitting committee streaming events.
 pub type EventEmitter = Arc<dyn Fn(CommitteeEvent) + Send + Sync>;
@@ -390,42 +408,92 @@ fn build_user_profile_context() -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Concentration helper
+// ---------------------------------------------------------------------------
+
+/// 计算指定标的的集中度百分比（该资产 notional / 总资产）
+fn concentration_for_symbol(symbol: &str, portfolio_data: &PortfolioData) -> f64 {
+    let total_notional: f64 = portfolio_data.holdings.iter()
+        .map(|h| h.notional.abs())
+        .sum();
+    if total_notional <= 0.0 {
+        return 0.0;
+    }
+    let symbol_notional: f64 = portfolio_data.holdings.iter()
+        .filter(|h| h.symbol == symbol)
+        .map(|h| h.notional.abs())
+        .sum();
+    symbol_notional / total_notional * 100.0
+}
+
+// ---------------------------------------------------------------------------
 // Per-symbol risk metrics
 // ---------------------------------------------------------------------------
 
-/// Pre-compute CONCENTRATION_PCT and PNL_PCT for a specific symbol.
-/// Returns a context string to inject into Risk R1 messages.
-/// Uses pre-loaded portfolio data to avoid redundant DB reads.
-fn build_risk_metrics_context(symbol: &str, data: &PortfolioData) -> String {
-    let holding = data.holdings.iter().find(|h| h.symbol == symbol);
+/// 构建 Risk 角色的预计算风险指标上下文
+/// 包括集中度、可用子弹、盈亏比、最大回撤、标的风险摘要
+fn build_risk_metrics_context(
+    portfolio_data: &PortfolioData,
+    symbol: &str,
+    asset_context: &AssetContext,
+) -> String {
+    let holding = portfolio_data.holdings.iter().find(|h| h.symbol == symbol);
 
-    let concentration_pct = holding
-        .map(|h| {
-            if data.total_notional > 0.0 {
-                h.notional.abs() / data.total_notional * 100.0
-            } else {
-                0.0
-            }
-        })
-        .unwrap_or(0.0);
+    let concentration_pct = concentration_for_symbol(symbol, portfolio_data);
 
-    let pnl_pct = holding
+    let (pnl_pct, current_price, avg_cost, shares) = holding
         .and_then(|h| {
             let shares = h.shares?;
             let avg_cost = h.avg_cost?;
             if shares > 0.0 && avg_cost > 0.0 {
                 let current_price = h.notional / shares;
-                Some((current_price - avg_cost) / avg_cost * 100.0)
+                let pnl = (current_price - avg_cost) / avg_cost * 100.0;
+                Some((pnl, current_price, avg_cost, shares))
             } else {
                 None
             }
         })
-        .unwrap_or(0.0);
+        .unwrap_or((0.0, 0.0, 0.0, 0.0));
 
-    format!(
-        "【预计算风险指标】\n集中度: {:.1}\n盈亏比: {:.1}\n可用子弹: {:.2}\n\n请在分析中直接使用上述预计算指标，无需重新计算。\n",
-        concentration_pct, pnl_pct, data.cash
-    )
+    // 最大回撤（假设价格跌 20%）
+    let max_dd = crate::storage::invest::portfolio::max_drawdown_for_symbol(
+        symbol, current_price, avg_cost, shares,
+    );
+
+    // 标的风险摘要
+    let mut risk_notes = Vec::new();
+    if let Some(pe) = asset_context.pe_ttm {
+        if pe > 100.0 {
+            risk_notes.push(format!("PE_TTM={:.1}（偏高）", pe));
+        }
+    }
+    if let Some(pb) = asset_context.pb {
+        if pb > 10.0 {
+            risk_notes.push(format!("PB={:.2}（偏高）", pb));
+        }
+    }
+    if let Some(or_yoy) = asset_context.or_yoy {
+        if or_yoy < 0.0 {
+            risk_notes.push(format!("营收增速{:.1}%（转负）", or_yoy));
+        }
+    }
+    if let Some(np_yoy) = asset_context.np_yoy {
+        if np_yoy < 0.0 {
+            risk_notes.push(format!("净利增速{:.1}%（转负）", np_yoy));
+        }
+    }
+
+    let mut out = format!(
+        "【预计算风险指标】\n集中度: {:.1}%\n盈亏比: {:.1}%\n可用子弹: {:.2} CNY\n最大回撤(20%假设): {:.1}%\n",
+        concentration_pct, pnl_pct, portfolio_data.cash, max_dd * 100.0
+    );
+
+    if !risk_notes.is_empty() {
+        out.push_str(&format!("标的风险: {}\n", risk_notes.join("，")));
+    }
+
+    out.push_str("\n请在分析中直接使用上述预计算指标，无需重新计算。\n");
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -519,6 +587,99 @@ async fn llm_call_with_retry(
 }
 
 // ---------------------------------------------------------------------------
+// Asset context builder
+// ---------------------------------------------------------------------------
+
+/// 构建标的上下文数据，注入到角色 prompt 中
+///
+/// 独立 API 调用通过 `tokio::join!` 并行执行，减少总耗时。
+async fn build_asset_context(
+    client: &TushareClient,
+    symbol: &str,
+    asset_type: &str,
+) -> AssetContext {
+    use crate::tushare::client::MoneyflowDc;
+
+    let today = chrono::Utc::now().format("%Y%m%d").to_string();
+    let five_days_ago = (chrono::Utc::now() - chrono::Duration::days(5))
+        .format("%Y%m%d")
+        .to_string();
+
+    // 并行调用独立的 API
+    let (valuation_result, rc_result, mf_result) = tokio::join!(
+        fetch_valuation_data(client, symbol),
+        client.report_rc(symbol, None),
+        client.moneyflow_dc(symbol, &five_days_ago, &today),
+    );
+
+    // stock_basic 只在股票时调用（条件性 API，不参与并行）
+    let industry = if asset_type == "stock" {
+        client.stock_basic(Some(symbol)).await.ok()
+            .and_then(|stocks| stocks.first().map(|s| s.industry.clone()))
+    } else {
+        None
+    };
+
+    let mut ctx = AssetContext {
+        asset_type: asset_type.to_string(),
+        industry,
+        ..Default::default()
+    };
+
+    // 处理估值数据（复用 shared helper）
+    if let Some((pe_ttm, pb, roe, turnover, total_mv_yi)) = valuation_result {
+        ctx.pe_ttm = pe_ttm;
+        ctx.pb = pb;
+        ctx.roe = roe;
+        ctx.turnover_rate = turnover;
+        ctx.total_mv_yi = total_mv_yi;
+    }
+
+    // 处理 fina_indicator 的增速字段（fetch_valuation_data 不含 or_yoy/np_yoy）
+    match client.fina_indicator(symbol, None, None, None).await {
+        Ok(rows) => {
+            if let Some(f) = rows.first() {
+                ctx.or_yoy = f.or_yoy;
+                ctx.np_yoy = f.netprofit_yoy;
+            }
+        }
+        Err(e) => {
+            log::warn!("build_asset_context: fina_indicator failed for {}: {}", symbol, e);
+        }
+    }
+
+    // 处理机构评级
+    if let Ok(rows) = rc_result {
+        if let Some(r) = rows.first() {
+            let buy = r.buy_num.unwrap_or(0.0) as i64
+                + r.strong_buy_num.unwrap_or(0.0) as i64;
+            let hold = r.hold_num.unwrap_or(0.0) as i64;
+            let reduce = r.reduce_num.unwrap_or(0.0) as i64;
+            let sell = r.sell_num.unwrap_or(0.0) as i64;
+            let total = buy + hold + reduce + sell;
+            let neutral = (total - buy - reduce - sell).max(0);
+            ctx.rating_summary = Some(format!(
+                "买入{}/增持{}/中性{}/减持{}/卖出{}",
+                buy, 0, neutral, reduce, sell
+            ));
+        }
+    }
+
+    // 处理资金流向（复用 MoneyflowDc::format_moneyflow_summary）
+    if let Ok(mf) = mf_result {
+        if !mf.is_empty() {
+            ctx.money_flow_summary = Some(format!(
+                "近{}日{}",
+                mf.len(),
+                MoneyflowDc::format_moneyflow_summary(&mf)
+            ));
+        }
+    }
+
+    ctx
+}
+
+// ---------------------------------------------------------------------------
 // Context builder
 // ---------------------------------------------------------------------------
 
@@ -532,6 +693,7 @@ fn build_context_messages(
     emergency_buffer_cny: f64,
     portfolio_summary: &str,
     regime_context: Option<&str>,
+    _asset_context: &AssetContext,
 ) -> Vec<Message> {
     if round_outputs.is_empty() {
         let mut user_msg = format!("请分析 {} 的投资机会。", symbol);
@@ -788,6 +950,145 @@ async fn run_macro_phase(
 }
 
 // ---------------------------------------------------------------------------
+// L4 Officer phase (behavioral health check)
+// ---------------------------------------------------------------------------
+
+/// 运行 L4 Officer 阶段（在 Risk R2 之后、CIO 之前）
+///
+/// L4 Officer 不参与辩论轮次，只在所有前序分析完成后执行一次行为健康度检查。
+/// Rust 端计算行为红灯评分，LLM 只负责卫语句判定、情绪评估和买点合理性。
+async fn run_l4_officer_phase(
+    client: &dyn InvestLlmClient,
+    symbol: &str,
+    config: &CommitteeConfig,
+    round_outputs: &[RoundOutput],
+    macro_signal: &str,
+    emergency_buffer_cny: f64,
+    portfolio_summary: &str,
+    regime_context: Option<&str>,
+    emitter: &Option<EventEmitter>,
+    portfolio_data: &PortfolioData,
+    asset_context: &AssetContext,
+) -> RoundOutput {
+    let role = CommitteeRole::L4Officer;
+    let si = step_index_for_role(role, 1);
+
+    if let Some(ref emit) = emitter {
+        emit(CommitteeEvent::RoleStart {
+            symbol: symbol.to_string(),
+            role,
+            round: 1,
+            step_index: si,
+        });
+    }
+
+    // 使用通用 role_phase 执行 LLM 调用
+    let output = match run_role_phase(
+        client,
+        symbol,
+        role,
+        1,
+        config,
+        round_outputs,
+        macro_signal,
+        emergency_buffer_cny,
+        portfolio_summary,
+        regime_context,
+        emitter,
+        portfolio_data,
+        asset_context,
+    )
+    .await
+    {
+        Ok(o) => o,
+        Err(e) => {
+            log::warn!("L4 Officer phase failed for {}: {}", symbol, e);
+            RoundOutput {
+                role,
+                round: 1,
+                parsed: super::parser::ParsedFields {
+                    raw_text: "[WORKER_UNAVAILABLE]".to_string(),
+                    ..Default::default()
+                },
+                latency_ms: 0,
+                tokens_used: 0,
+            }
+        }
+    };
+
+    // ── Rust 端计算行为红灯评分 ──
+    let emotional_state = output
+        .parsed
+        .l4_emotion_assessment
+        .as_deref()
+        .unwrap_or("stable");
+
+    let concentration_pct = output
+        .parsed
+        .concentration_pct
+        .or_else(|| {
+            // 从 Risk R1/R2 输出中提取集中度
+            round_outputs
+                .iter()
+                .filter(|o| o.role == CommitteeRole::Risk)
+                .rev()
+                .find_map(|o| o.parsed.concentration_pct)
+        })
+        .unwrap_or_else(|| concentration_for_symbol(symbol, portfolio_data));
+
+    let dry_powder_cny = output
+        .parsed
+        .dry_powder_cny
+        .or_else(|| {
+            // 从 Risk R1/R2 输出中提取可用子弹
+            round_outputs
+                .iter()
+                .filter(|o| o.role == CommitteeRole::Risk)
+                .rev()
+                .find_map(|o| o.parsed.dry_powder_cny)
+        })
+        .unwrap_or(emergency_buffer_cny);
+
+    // 获取近7天交易次数
+    let recent_trade_count = crate::storage::invest::portfolio::count_recent_trades(Some(symbol), 7)
+        .unwrap_or(0);
+
+    // 计算行为红灯评分
+    let (score, level) = super::parser::compute_red_light_score(
+        emotional_state,
+        concentration_pct,
+        dry_powder_cny,
+        recent_trade_count,
+    );
+
+    // 将评分写入 parsed 字段
+    let mut output = output;
+    output.parsed.execution_red_light_score = Some(score);
+
+    // 覆盖 L4 的行为红灯字段（Rust 端确定性计算优先于 LLM 输出）
+    log::info!(
+        "L4 Officer red light for {}: score={:.1}, level={}, trades_7d={}",
+        symbol,
+        score,
+        level,
+        recent_trade_count
+    );
+    output.parsed.l4_red_light = Some(level);
+
+    if let Some(ref emit) = emitter {
+        emit(CommitteeEvent::RoleComplete {
+            symbol: symbol.to_string(),
+            role,
+            round: 1,
+            summary: RoundOutputSummary::from(&output),
+            step_index: si,
+        });
+    }
+
+    output
+}
+
+// ---------------------------------------------------------------------------
 // Generic role phase (Quant, Risk, CIO)
 // ---------------------------------------------------------------------------
 
@@ -804,6 +1105,7 @@ async fn run_role_phase(
     regime_context: Option<&str>,
     emitter: &Option<EventEmitter>,
     portfolio_data: &PortfolioData,
+    asset_context: &AssetContext,
 ) -> Result<RoundOutput, String> {
     let provider = resolve_provider(config, role);
     let llm_config = build_llm_config(provider, role, config.timeout_secs, config.model_override.as_deref());
@@ -837,14 +1139,105 @@ async fn run_role_phase(
     let governor = global_governor();
     let _permit = governor.acquire(provider).await;
 
-    let mut messages = build_context_messages(round_outputs, symbol, macro_signal, emergency_buffer_cny, portfolio_summary, regime_context);
+    let mut messages = build_context_messages(round_outputs, symbol, macro_signal, emergency_buffer_cny, portfolio_summary, regime_context, asset_context);
 
-    // For Risk R1, inject pre-computed risk metrics (CONCENTRATION_PCT, PNL_PCT, DRY_POWDER_CNY)
-    if role == CommitteeRole::Risk && round == 1 {
-        let risk_ctx = build_risk_metrics_context(symbol, portfolio_data);
-        if !risk_ctx.is_empty() {
-            if let Some(last) = messages.last_mut() {
-                last.content.push_str(&format!("\n\n{}", risk_ctx));
+    // 根据角色注入 AssetContext 特定数据
+    if let Some(last) = messages.last_mut() {
+        match role {
+            CommitteeRole::Macro => {
+                // Macro: 注入行业信息（行业敏感度）
+                if let Some(ref industry) = asset_context.industry {
+                    last.content.push_str(&format!("\n\n【行业信息】{}", industry));
+                }
+            }
+            CommitteeRole::Quant => {
+                // Quant: 注入估值指标 + 资金流向
+                let mut quant_data = Vec::new();
+                if let Some(ref mf) = asset_context.money_flow_summary {
+                    quant_data.push(mf.clone());
+                }
+                if let Some(pe) = asset_context.pe_ttm {
+                    quant_data.push(format!("PE_TTM: {:.1}", pe));
+                }
+                if let Some(pb) = asset_context.pb {
+                    quant_data.push(format!("PB: {:.2}", pb));
+                }
+                if let Some(roe) = asset_context.roe {
+                    quant_data.push(format!("ROE: {:.1}%", roe));
+                }
+                if let Some(tr) = asset_context.turnover_rate {
+                    quant_data.push(format!("换手率: {:.2}%", tr));
+                }
+                if !quant_data.is_empty() {
+                    last.content.push_str(&format!(
+                        "\n\n【估值与资金数据】\n{}",
+                        quant_data.join("\n")
+                    ));
+                }
+            }
+            CommitteeRole::Risk => {
+                // Risk: 注入增速数据 + 风险新闻 + 最大回撤
+                if role == CommitteeRole::Risk && round == 1 {
+                    let risk_ctx = build_risk_metrics_context(portfolio_data, symbol, asset_context);
+                    if !risk_ctx.is_empty() {
+                        last.content.push_str(&format!("\n\n{}", risk_ctx));
+                    }
+                }
+                let mut risk_data = Vec::new();
+                if let Some(or_yoy) = asset_context.or_yoy {
+                    risk_data.push(format!("营收增速: {:.1}%", or_yoy));
+                }
+                if let Some(np_yoy) = asset_context.np_yoy {
+                    risk_data.push(format!("净利增速: {:.1}%", np_yoy));
+                }
+                if let Some(ref news) = asset_context.risk_news {
+                    risk_data.push(format!("风险新闻: {}", news));
+                }
+                if !risk_data.is_empty() {
+                    last.content.push_str(&format!(
+                        "\n\n【标的风险数据】\n{}",
+                        risk_data.join("\n")
+                    ));
+                }
+            }
+            CommitteeRole::Cio => {
+                // CIO: 注入全部 AssetContext 摘要（无原始数据）
+                let mut cio_summary = Vec::new();
+                if let Some(ref industry) = asset_context.industry {
+                    cio_summary.push(format!("行业: {}", industry));
+                }
+                if let Some(ref mf) = asset_context.money_flow_summary {
+                    cio_summary.push(format!("资金: {}", mf));
+                }
+                if let Some(pe) = asset_context.pe_ttm {
+                    cio_summary.push(format!("PE: {:.1}", pe));
+                }
+                if let Some(ref rating) = asset_context.rating_summary {
+                    cio_summary.push(format!("评级: {}", rating));
+                }
+                if !cio_summary.is_empty() {
+                    last.content.push_str(&format!(
+                        "\n\n【标的数据摘要】\n{}",
+                        cio_summary.join("\n")
+                    ));
+                }
+            }
+            CommitteeRole::L4Officer => {
+                // L4 行为官: 注入行为数据摘要（从 portfolio_data 和 asset_context）
+                let mut l4_summary = Vec::new();
+                // 计算该资产集中度
+                let conc = concentration_for_symbol(symbol, portfolio_data);
+                l4_summary.push(format!("集中度: {:.1}%", conc));
+                l4_summary.push(format!("可用子弹: {:.0}", portfolio_data.cash));
+                if let Some(ref mf) = asset_context.money_flow_summary {
+                    l4_summary.push(format!("资金: {}", mf));
+                }
+                if !l4_summary.is_empty() {
+                    last.content.push_str(&format!(
+                        "\n\n【行为数据摘要】\n{}",
+                        l4_summary.join("\n")
+                    ));
+                }
             }
         }
     }
@@ -895,6 +1288,7 @@ async fn run_debate_rounds(
     portfolio_summary: &str,
     regime_context: Option<&str>,
     portfolio_data: &PortfolioData,
+    asset_context: &AssetContext,
 ) -> Result<bool, String> {
     let max_rounds = config.debate_rounds;
     let mut converged = false;
@@ -927,6 +1321,7 @@ async fn run_debate_rounds(
                 regime_context,
                 emitter,
                 &portfolio_data,
+                asset_context,
             )
             .await?;
             *total_tokens += output.tokens_used;
@@ -965,13 +1360,14 @@ async fn run_debate_rounds(
 
 /// Run the full committee pipeline for a single symbol.
 ///
-/// Pipeline (7 steps):
+/// Pipeline (8 steps):
 /// 1. Macro (with tool-call loop) -> signal + strength
 /// 2. Regime computation (quantitative: RSI-14, MA, volatility, price quantile)
 /// 3. Debate rounds: Quant/R1 + Risk/R1, then Quant/R2 + Risk/R2, early convergence exit
-/// 4. CIO verdict
-/// 5. Post-analysis: sentinel, convergence, sanity check
-/// 6. Archive (fire-and-forget)
+/// 4. L4 Officer (behavioral health check: guard clause, emotion, red light)
+/// 5. CIO verdict
+/// 6. Post-analysis: sentinel, convergence, sanity check
+/// 7. Archive (fire-and-forget)
 ///
 /// Portfolio data is built once as a shared context block and injected into
 /// Macro and subsequent roles — it is not a separate pipeline step.
@@ -999,6 +1395,26 @@ pub async fn run_committee(
     // Load portfolio data with current prices for injection into Macro and Risk R1
     let portfolio_data = PortfolioData::load_and_refresh_prices().await;
     let portfolio_summary = build_portfolio_summary(&portfolio_data);
+
+    // 构建标的上下文数据（行业、估值、资金流向、评级等）
+    let asset_context = {
+        let asset_type = portfolio_data
+            .holdings
+            .iter()
+            .find(|h| h.symbol == symbol)
+            .and_then(|h| h.asset_type.clone())
+            .unwrap_or_else(|| "stock".to_string());
+        match TushareClient::from_settings() {
+            Ok(client) => build_asset_context(&client, symbol, &asset_type).await,
+            Err(e) => {
+                log::warn!("run_committee: TushareClient init failed, using empty AssetContext: {}", e);
+                AssetContext {
+                    asset_type,
+                    ..Default::default()
+                }
+            }
+        }
+    };
 
     // ── Step 1: Macro phase (with tool-call loop) ──────────────────────
     {
@@ -1099,10 +1515,31 @@ pub async fn run_committee(
         &portfolio_summary,
         regime_context.as_deref(),
         &portfolio_data,
+        &asset_context,
     )
     .await?;
 
-    // ── Step 4: CIO verdict ────────────────────────────────────────────
+    // ── Step 4: L4 Officer phase (behavioral health check) ────────────
+    {
+        let l4_output = run_l4_officer_phase(
+            client,
+            symbol,
+            config,
+            &round_outputs,
+            &macro_signal,
+            config.emergency_buffer_cny,
+            &portfolio_summary,
+            regime_context.as_deref(),
+            &emitter,
+            &portfolio_data,
+            &asset_context,
+        )
+        .await;
+        total_tokens += l4_output.tokens_used;
+        round_outputs.push(l4_output);
+    }
+
+    // ── Step 5: CIO verdict ────────────────────────────────────────────
     {
         let si = step_index_for_role(CommitteeRole::Cio, 1);
         if let Some(ref emit) = emitter {
@@ -1127,6 +1564,7 @@ pub async fn run_committee(
             regime_context.as_deref(),
             &emitter,
             &portfolio_data,
+            &asset_context,
         )
         .await?;
         total_tokens += cio_output.tokens_used;
@@ -1144,7 +1582,7 @@ pub async fn run_committee(
         round_outputs.push(cio_output);
     }
 
-    // ── Step 5: Post-analysis ──────────────────────────────────────────
+    // ── Step 6: Post-analysis ──────────────────────────────────────────
     let sentinel = check_sentinel(&round_outputs);
 
     let cio_parsed = round_outputs
@@ -1172,7 +1610,7 @@ pub async fn run_committee(
     let total_latency_ms = start.elapsed().as_millis() as u64;
     let reasoning = cio_parsed.raw_text.clone();
 
-    // ── Step 6: Archive (fire-and-forget) ──────────────────────────────
+    // ── Step 7: Archive (fire-and-forget) ──────────────────────────────
     // Skip archiving in dry_run mode — results are returned but not persisted.
     // Uses daily-overwrite strategy: each symbol keeps only the latest
     // verdict per calendar day.

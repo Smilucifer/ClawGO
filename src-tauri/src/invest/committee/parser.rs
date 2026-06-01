@@ -37,6 +37,50 @@ pub struct ParsedFields {
     /// Risk R2: ADJUSTED_STOP_LOSS
     pub adjusted_stop_loss: Option<String>,
 
+    // -- Macro-specific (new fields) --
+    /// 市场阶段: "主升" | "分歧" | "退潮" | "冰点" | "混沌"
+    pub market_phase: Option<String>,
+    /// 宏观敏感度: "positive" | "negative" | "neutral"
+    pub sensitivity: Option<String>,
+    /// 敏感度原因
+    pub sensitivity_reason: Option<String>,
+    /// 情绪温度: "乐观" | "中性" | "谨慎" | "恐慌"
+    pub emotion_temperature: Option<String>,
+
+    // -- Quant-specific (new fields) --
+    /// 资金流向原始文本
+    pub money_flow: Option<String>,
+    /// 买点评估: "低吸" | "突破" | "回踩" | "追高" | "不可交易"
+    pub buy_point_assessment: Option<String>,
+    /// 估值评估原始文本
+    pub valuation_assessment: Option<String>,
+
+    // -- Risk-specific (new fields) --
+    /// L4 否决: true=卫语句触发
+    pub l4_veto: Option<bool>,
+    /// 否决原因
+    pub l4_veto_reason: Option<String>,
+    /// 情绪状态: "stable" | "warning" | "danger"
+    pub emotional_state: Option<String>,
+    /// 标的风险综合
+    pub stock_risk_summary: Option<String>,
+    /// Risk R2: L4 否决复检结果
+    pub l4_veto_r2: Option<bool>,
+    /// Risk R2: 情绪重校准
+    pub emotion_recalibrated: Option<String>,
+
+    // -- L4 Officer-specific (新角色) --
+    /// 卫语句判定
+    pub l4_guard_clause: Option<bool>,
+    /// 卫语句原因
+    pub l4_guard_reason: Option<String>,
+    /// L4 情绪评估: "stable" | "warning" | "danger"
+    pub l4_emotion_assessment: Option<String>,
+    /// 行为红灯: "green" | "yellow" | "red"
+    pub l4_red_light: Option<String>,
+    /// 买点合理性
+    pub l4_buy_point_ok: Option<bool>,
+
     // -- CIO-specific --
     /// CIO: BUY / ACCUMULATE / HOLD / TRIM / SELL
     pub verdict: Option<String>,
@@ -54,12 +98,43 @@ pub struct ParsedFields {
     pub execution_plan: Option<String>,
     /// CIO: risk plan
     pub risk_plan: Option<String>,
+    /// 催化剂层级: "Tier1" | "Tier2" | "Tier3" | "无"
+    pub catalyst_tier: Option<String>,
+    /// 一句话催化剂摘要
+    pub catalyst_summary: Option<String>,
+    /// L4 检查: 止损明确
+    pub l4_check_stop_loss: Option<bool>,
+    /// L4 检查: 仓位合理
+    pub l4_check_position: Option<bool>,
+    /// L4 检查: 情绪稳定
+    pub l4_check_emotion: Option<bool>,
+    /// L4 检查: 买点合理
+    pub l4_check_buy_point: Option<bool>,
+    /// L4 执行检查通过数 (0-4)，Rust 端计算
+    pub l4_execution_checks_passed: Option<f64>,
+    /// 是否 Tier1 催化剂
+    pub is_tier1: Option<bool>,
+    /// Tier1 观察时长（小时）
+    pub tier1_watch_hours: Option<f64>,
+
+    // -- L4 行为红灯 (Rust 端计算) --
+    /// 行为红灯评分 (0-30)
+    pub execution_red_light_score: Option<f64>,
+    /// 行为红灯: score >= 20 为 true
+    pub red_light: Option<bool>,
 
     // -- Meta --
     /// Whether output was truncated by hard limit
     pub truncated: bool,
     /// Raw text (preserved for archiving)
     pub raw_text: String,
+}
+
+impl ParsedFields {
+    /// 行为红灯是否触发（从评分派生）
+    pub fn is_red_light(&self) -> Option<bool> {
+        self.execution_red_light_score.map(|s| s >= 20.0)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -79,6 +154,7 @@ pub fn parse_role_output(role: CommitteeRole, text: &str, truncated: bool) -> Pa
         CommitteeRole::Quant => parse_quant(text, &mut parsed),
         CommitteeRole::Risk => parse_risk(text, &mut parsed),
         CommitteeRole::Cio => parse_cio(text, &mut parsed),
+        CommitteeRole::L4Officer => parse_l4_officer(text, truncated, &mut parsed),
     }
 
     parsed
@@ -208,6 +284,15 @@ fn parse_macro(text: &str, parsed: &mut ParsedFields) {
     });
     // English: STRENGTH / 强度
     parsed.strength = extract_f64_any(text, &["STRENGTH", "强度"]);
+    // 市场阶段: "主升" | "分歧" | "退潮" | "冰点" | "混沌"
+    parsed.market_phase = extract_field_any(text, &["MARKET_PHASE", "市场阶段"]);
+    // 宏观敏感度: "positive" | "negative" | "neutral"
+    parsed.sensitivity = extract_field_any(text, &["SENSITIVITY", "敏感度"]);
+    // 敏感度原因
+    parsed.sensitivity_reason = extract_field_any(text, &["SENSITIVITY_REASON", "敏感度原因"]);
+    // 情绪温度: "乐观" | "中性" | "谨慎" | "恐慌"
+    parsed.emotion_temperature =
+        extract_field_any(text, &["EMOTION_TEMPERATURE", "情绪温度"]);
 }
 
 fn parse_quant(text: &str, parsed: &mut ParsedFields) {
@@ -217,6 +302,14 @@ fn parse_quant(text: &str, parsed: &mut ParsedFields) {
     parsed.strength = extract_f64_any(text, &["STRENGTH", "强度"]);
     parsed.key_data = extract_list_field_any(text, &["KEY_DATA", "关键数据"]);
     parsed.one_liner = extract_field_any(text, &["ONE_LINER", "一句话"]);
+    // 资金流向原始文本
+    parsed.money_flow = extract_field_any(text, &["MONEY_FLOW", "资金流向"]);
+    // 买点评估: "低吸" | "突破" | "回踩" | "追高" | "不可交易"
+    parsed.buy_point_assessment =
+        extract_field_any(text, &["BUY_POINT_ASSESSMENT", "买点评估"]);
+    // 估值评估原始文本
+    parsed.valuation_assessment =
+        extract_field_any(text, &["VALUATION_ASSESSMENT", "估值评估"]);
     // R2 fields — R2 overrides R1 where applicable
     apply_r2_signal_override(parsed, text);
     parsed.regime_protection_triggered = extract_bool_any(text, &["REGIME_PROTECTION_TRIGGERED", "保护触发"]);
@@ -232,10 +325,23 @@ fn parse_risk(text: &str, parsed: &mut ParsedFields) {
     parsed.one_liner = extract_field_any(text, &["ONE_LINER", "一句话"]);
     parsed.concentration_pct = extract_f64_any(text, &["CONCENTRATION_PCT", "集中度"]);
     parsed.dry_powder_cny = extract_f64_any(text, &["DRY_POWDER_CNY", "可用子弹"]);
+    // L4 否决: true=卫语句触发
+    parsed.l4_veto = extract_bool_any(text, &["L4否决", "L4_VETO"]);
+    // 否决原因
+    parsed.l4_veto_reason = extract_field_any(text, &["否决原因", "L4_VETO_REASON"]);
+    // 情绪状态: "stable" | "warning" | "danger"
+    parsed.emotional_state = extract_field_any(text, &["情绪状态", "EMOTIONAL_STATE"]);
+    // 标的风险综合
+    parsed.stock_risk_summary = extract_field_any(text, &["标的风险", "STOCK_RISK"]);
     // R2 fields — R2 overrides R1 where applicable
     apply_r2_signal_override(parsed, text);
     parsed.adjusted_stop_loss = extract_field_any(text, &["ADJUSTED_STOP_LOSS", "调整止损"]);
     parsed.reasoning = extract_field_any(text, &["REASONING", "推理"]);
+    // R2: L4 否决复检结果
+    parsed.l4_veto_r2 = extract_bool_any(text, &["L4否决复检", "L4_VETO_R2"]);
+    // R2: 情绪重校准
+    parsed.emotion_recalibrated =
+        extract_field_any(text, &["情绪重校准", "EMOTION_RECALIBRATED"]);
     // CONCENTRATION_PCT and DRY_POWDER_CNY may also appear in R2
 }
 
@@ -267,6 +373,105 @@ fn parse_cio(text: &str, parsed: &mut ParsedFields) {
     parsed.personal_note = extract_field_any(text, &["PERSONAL_NOTE", "个人备注"]);
     parsed.execution_plan = extract_field_any(text, &["EXECUTION_PLAN", "执行计划"]);
     parsed.risk_plan = extract_field_any(text, &["RISK_PLAN", "风控计划"]);
+    // 催化剂层级: "Tier1" | "Tier2" | "Tier3" | "无"
+    parsed.catalyst_tier = extract_field_any(text, &["CATALYST_TIER", "催化剂层级"]);
+    // 一句话催化剂摘要
+    parsed.catalyst_summary = extract_field_any(text, &["CATALYST_SUMMARY", "催化剂摘要"]);
+    // L4 检查: 止损明确
+    parsed.l4_check_stop_loss =
+        extract_bool_any(text, &["STOP_LOSS_CLEAR", "止损明确"]);
+    // L4 检查: 仓位合理
+    parsed.l4_check_position = extract_bool_any(text, &["POSITION_OK", "仓位合理"]);
+    // L4 检查: 情绪稳定
+    parsed.l4_check_emotion =
+        extract_bool_any(text, &["EMOTION_STABLE", "情绪稳定"]);
+    // L4 检查: 买点合理
+    parsed.l4_check_buy_point =
+        extract_bool_any(text, &["BUY_POINT_OK", "买点合理"]);
+    // 是否 Tier1 催化剂
+    parsed.is_tier1 = extract_bool_any(text, &["IS_TIER1"]);
+    // Tier1 观察时长（小时）
+    parsed.tier1_watch_hours = extract_f64_any(text, &["TIER1_WATCH_HOURS"]);
+    // L4 执行检查通过数 (0-4)，Rust 端计算
+    let checks = [
+        parsed.l4_check_stop_loss.unwrap_or(false),
+        parsed.l4_check_position.unwrap_or(false),
+        parsed.l4_check_emotion.unwrap_or(false),
+        parsed.l4_check_buy_point.unwrap_or(false),
+    ];
+    let passed = checks.iter().filter(|&&b| b).count() as f64;
+    parsed.l4_execution_checks_passed = Some(passed);
+}
+
+/// 解析 L4 行为官输出，提取行为健康度字段。
+fn parse_l4_officer(text: &str, _truncated: bool, parsed: &mut ParsedFields) {
+    // 卫语句判定
+    parsed.l4_guard_clause = extract_bool_any(text, &["卫语句", "GUARD_CLAUSE"]);
+    // 卫语句原因
+    parsed.l4_guard_reason = extract_field_any(text, &["卫语句原因", "GUARD_REASON"]);
+    // 情绪评估: "stable" | "warning" | "danger"
+    parsed.l4_emotion_assessment =
+        extract_field_any(text, &["情绪评估", "EMOTION"]);
+    // 行为红灯: "green" | "yellow" | "red"
+    parsed.l4_red_light = extract_field_any(text, &["行为红灯", "RED_LIGHT"]);
+    // 买点合理性
+    parsed.l4_buy_point_ok = extract_bool_any(text, &["买点合理", "BUY_POINT_OK"]);
+    // 推理
+    parsed.reasoning = extract_field_any(text, &["推理", "REASONING"]);
+    // L4 Officer 也输出信号和强度（兼容）
+    parsed.signal = extract_field_any(text, &["SIGNAL", "信号"]);
+    parsed.strength = extract_f64_any(text, &["STRENGTH", "强度"]);
+}
+
+/// 计算 L4 行为红灯评分（Rust 端确定性计算）
+///
+/// 评分规则：
+/// - c_score: emotional_state → stable=0, warning=5, danger=10, 其他=3
+/// - k_score: 集中度/子弹 → concentration>60%=10, >40%=6, dry_powder<1000=8, 其他=2
+/// - l_score: 近7天交易次数 → >=5=10, >=3=5, <3=0
+/// - score = c_score + k_score + l_score (0-30)
+/// - green: 0-10, yellow: 11-20, red: 21-30
+pub fn compute_red_light_score(
+    emotional_state: &str,
+    concentration_pct: f64,
+    dry_powder_cny: f64,
+    recent_trade_count_7d: i64,
+) -> (f64, String) {
+    let c_score = match emotional_state {
+        "stable" => 0.0,
+        "warning" => 5.0,
+        "danger" => 10.0,
+        _ => 3.0,
+    };
+
+    let k_score = if concentration_pct > 60.0 {
+        10.0
+    } else if concentration_pct > 40.0 {
+        6.0
+    } else if dry_powder_cny < 1000.0 {
+        8.0
+    } else {
+        2.0
+    };
+
+    let l_score = if recent_trade_count_7d >= 5 {
+        10.0
+    } else if recent_trade_count_7d >= 3 {
+        5.0
+    } else {
+        0.0
+    };
+
+    let score = c_score + k_score + l_score;
+    let level = if score <= 10.0 {
+        "green".to_string()
+    } else if score <= 20.0 {
+        "yellow".to_string()
+    } else {
+        "red".to_string()
+    };
+
+    (score, level)
 }
 
 // ---------------------------------------------------------------------------
@@ -505,5 +710,151 @@ mod tests {
         assert_eq!(parsed.strength, Some(5.0));
         assert_eq!(parsed.key_data.as_deref(), Some(&["test".to_string()][..]));
         assert_eq!(parsed.one_liner.as_deref(), Some("mixed test"));
+    }
+
+    // ── 新增字段解析测试 ─────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_macro_new_fields() {
+        let text = "SIGNAL: risk_on\nSTRENGTH: 7\n市场阶段: 主升\n敏感度: positive\n敏感度原因: 北向资金持续流入\n情绪温度: 乐观";
+        let parsed = parse_role_output(CommitteeRole::Macro, text, false);
+        assert_eq!(parsed.market_phase.as_deref(), Some("主升"));
+        assert_eq!(parsed.sensitivity.as_deref(), Some("positive"));
+        assert_eq!(parsed.sensitivity_reason.as_deref(), Some("北向资金持续流入"));
+        assert_eq!(parsed.emotion_temperature.as_deref(), Some("乐观"));
+    }
+
+    #[test]
+    fn test_parse_macro_new_fields_english() {
+        let text = "SIGNAL: risk_off\nSTRENGTH: 3\nMARKET_PHASE: 退潮\nSENSITIVITY: negative\nSENSITIVITY_REASON: trade war\nEMOTION_TEMPERATURE: 恐慌";
+        let parsed = parse_role_output(CommitteeRole::Macro, text, false);
+        assert_eq!(parsed.market_phase.as_deref(), Some("退潮"));
+        assert_eq!(parsed.sensitivity.as_deref(), Some("negative"));
+        assert_eq!(parsed.sensitivity_reason.as_deref(), Some("trade war"));
+        assert_eq!(parsed.emotion_temperature.as_deref(), Some("恐慌"));
+    }
+
+    #[test]
+    fn test_parse_quant_new_fields() {
+        let text = "REGIME: bull\nSIGNAL: bullish\nSTRENGTH: 7\n资金流向: 北向净流入\n买点评估: 低吸\n估值评估: PE 13.5 偏低";
+        let parsed = parse_role_output(CommitteeRole::Quant, text, false);
+        assert_eq!(parsed.money_flow.as_deref(), Some("北向净流入"));
+        assert_eq!(parsed.buy_point_assessment.as_deref(), Some("低吸"));
+        assert_eq!(parsed.valuation_assessment.as_deref(), Some("PE 13.5 偏低"));
+    }
+
+    #[test]
+    fn test_parse_risk_new_fields() {
+        let text = "SIGNAL: ok\nSTRENGTH: 5\nL4否决: true\n否决原因: 集中度过高\n情绪状态: warning\n标的风险: 短期波动加剧";
+        let parsed = parse_role_output(CommitteeRole::Risk, text, false);
+        assert_eq!(parsed.l4_veto, Some(true));
+        assert_eq!(parsed.l4_veto_reason.as_deref(), Some("集中度过高"));
+        assert_eq!(parsed.emotional_state.as_deref(), Some("warning"));
+        assert_eq!(parsed.stock_risk_summary.as_deref(), Some("短期波动加剧"));
+    }
+
+    #[test]
+    fn test_parse_risk_r2_new_fields() {
+        let text = "ADJUSTED_SIGNAL: concerned\nADJUSTED_STOP_LOSS: 0.90\nL4否决复检: true\n情绪重校准: stable\nREASONING: 确认否决";
+        let parsed = parse_role_output(CommitteeRole::Risk, text, false);
+        assert_eq!(parsed.l4_veto_r2, Some(true));
+        assert_eq!(parsed.emotion_recalibrated.as_deref(), Some("stable"));
+    }
+
+    #[test]
+    fn test_parse_cio_new_fields() {
+        let text = "VERDICT: ACCUMULATE\nCONFIDENCE: 0.75\nCATALYST_TIER: Tier1\nCATALYST_SUMMARY: 政策利好\nSTOP_LOSS_CLEAR: true\nPOSITION_OK: true\nEMOTION_STABLE: true\nBUY_POINT_OK: false\nIS_TIER1: true\nTIER1_WATCH_HOURS: 48";
+        let parsed = parse_role_output(CommitteeRole::Cio, text, false);
+        assert_eq!(parsed.catalyst_tier.as_deref(), Some("Tier1"));
+        assert_eq!(parsed.catalyst_summary.as_deref(), Some("政策利好"));
+        assert_eq!(parsed.l4_check_stop_loss, Some(true));
+        assert_eq!(parsed.l4_check_position, Some(true));
+        assert_eq!(parsed.l4_check_emotion, Some(true));
+        assert_eq!(parsed.l4_check_buy_point, Some(false));
+        assert_eq!(parsed.l4_execution_checks_passed, Some(3.0));
+        assert_eq!(parsed.is_tier1, Some(true));
+        assert_eq!(parsed.tier1_watch_hours, Some(48.0));
+    }
+
+    #[test]
+    fn test_parse_l4_officer() {
+        let text = "卫语句: yes\n卫语句原因: 止损线触发\n情绪评估: warning\n行为红灯: yellow\n买点合理: yes\n推理: 行为基本健康但需关注";
+        let parsed = parse_role_output(CommitteeRole::L4Officer, text, false);
+        assert_eq!(parsed.l4_guard_clause, Some(true));
+        assert_eq!(parsed.l4_guard_reason.as_deref(), Some("止损线触发"));
+        assert_eq!(parsed.l4_emotion_assessment.as_deref(), Some("warning"));
+        assert_eq!(parsed.l4_red_light.as_deref(), Some("yellow"));
+        assert_eq!(parsed.l4_buy_point_ok, Some(true));
+        assert_eq!(
+            parsed.reasoning.as_deref(),
+            Some("行为基本健康但需关注")
+        );
+    }
+
+    #[test]
+    fn test_parse_l4_officer_english() {
+        let text = "GUARD_CLAUSE: false\nGUARD_REASON: N/A\nEMOTION: stable\nRED_LIGHT: green\nBUY_POINT_OK: true\nREASONING: all clear";
+        let parsed = parse_role_output(CommitteeRole::L4Officer, text, false);
+        assert_eq!(parsed.l4_guard_clause, Some(false));
+        assert_eq!(parsed.l4_emotion_assessment.as_deref(), Some("stable"));
+        assert_eq!(parsed.l4_red_light.as_deref(), Some("green"));
+    }
+
+    #[test]
+    fn test_compute_red_light_score_green() {
+        let (score, level) = super::compute_red_light_score("stable", 20.0, 50000.0, 1);
+        assert_eq!(score, 2.0); // c=0 + k=2 + l=0
+        assert_eq!(level, "green");
+    }
+
+    #[test]
+    fn test_compute_red_light_score_yellow() {
+        let (score, level) = super::compute_red_light_score("warning", 50.0, 5000.0, 3);
+        assert_eq!(score, 16.0); // c=5 + k=6 + l=5
+        assert_eq!(level, "yellow");
+    }
+
+    #[test]
+    fn test_compute_red_light_score_red() {
+        let (score, level) = super::compute_red_light_score("danger", 70.0, 500.0, 5);
+        assert_eq!(score, 28.0); // c=10 + k=10 + l=10
+        assert_eq!(level, "red");
+    }
+
+    #[test]
+    fn test_compute_red_light_score_unknown_emotion() {
+        let (score, level) = super::compute_red_light_score("unknown", 30.0, 20000.0, 0);
+        assert_eq!(score, 5.0); // c=3 + k=2 + l=0
+        assert_eq!(level, "green");
+    }
+
+    #[test]
+    fn test_compute_red_light_score_high_concentration() {
+        // concentration > 40% but <= 60%
+        let (score, level) = super::compute_red_light_score("stable", 45.0, 10000.0, 0);
+        assert_eq!(score, 6.0); // c=0 + k=6 + l=0
+        assert_eq!(level, "green");
+    }
+
+    #[test]
+    fn test_compute_red_light_score_low_dry_powder() {
+        // concentration <= 40% but dry_powder < 1000
+        let (score, level) = super::compute_red_light_score("stable", 30.0, 500.0, 0);
+        assert_eq!(score, 8.0); // c=0 + k=8 + l=0
+        assert_eq!(level, "green");
+    }
+
+    #[test]
+    fn test_cio_execution_checks_all_pass() {
+        let text = "VERDICT: BUY\nCONFIDENCE: 0.9\nSTOP_LOSS_CLEAR: yes\nPOSITION_OK: yes\nEMOTION_STABLE: yes\nBUY_POINT_OK: yes";
+        let parsed = parse_role_output(CommitteeRole::Cio, text, false);
+        assert_eq!(parsed.l4_execution_checks_passed, Some(4.0));
+    }
+
+    #[test]
+    fn test_cio_execution_checks_none_pass() {
+        let text = "VERDICT: HOLD\nCONFIDENCE: 0.3\nSTOP_LOSS_CLEAR: no\nPOSITION_OK: no\nEMOTION_STABLE: no\nBUY_POINT_OK: no";
+        let parsed = parse_role_output(CommitteeRole::Cio, text, false);
+        assert_eq!(parsed.l4_execution_checks_passed, Some(0.0));
     }
 }

@@ -99,11 +99,74 @@ pub fn get_recent_committee_verdicts_def() -> ToolDef {
     }
 }
 
+pub fn get_moneyflow_def() -> ToolDef {
+    ToolDef {
+        name: "get_moneyflow".to_string(),
+        description: "获取个股近5日主力/散户资金流向。返回每日大单/超大单/中单/小单的买入卖出量和净流入。ETF 标的可能无数据。".to_string(),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "symbol": {
+                    "type": "string",
+                    "description": "股票代码，如 600519.SH"
+                }
+            },
+            "required": ["symbol"]
+        }),
+    }
+}
+
+pub fn get_company_info_def() -> ToolDef {
+    ToolDef {
+        name: "get_company_info".to_string(),
+        description: "获取公司估值数据：PE/PB/ROE/总市值/流通市值/换手率。用于估值评估和标的风险判断。".to_string(),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "symbol": {
+                    "type": "string",
+                    "description": "股票代码，如 600519.SH"
+                }
+            },
+            "required": ["symbol"]
+        }),
+    }
+}
+
+pub fn get_company_news_def() -> ToolDef {
+    ToolDef {
+        name: "get_company_news".to_string(),
+        description: "获取个股最新新闻（利空/减持/诉讼/业绩不及等风险事件）。返回最近5条相关新闻摘要。".to_string(),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "symbol": {
+                    "type": "string",
+                    "description": "股票代码，如 600519.SH"
+                }
+            },
+            "required": ["symbol"]
+        }),
+    }
+}
+
+pub fn get_recent_events_def() -> ToolDef {
+    ToolDef {
+        name: "get_recent_events".to_string(),
+        description: "获取最近的市场事件列表（event_scanner 输出），含事件类型、严重程度、影响分析。用于宏观催化剂感知。".to_string(),
+        parameters: json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        }),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Composite tool-def sets
 // ---------------------------------------------------------------------------
 
-/// All 5 whitelisted tools for the Macro role.
+/// All 6 whitelisted tools for the Macro role.
 pub fn macro_tool_defs() -> Vec<ToolDef> {
     vec![
         get_history_data_def(),
@@ -111,12 +174,13 @@ pub fn macro_tool_defs() -> Vec<ToolDef> {
         get_macro_snapshot_def(),
         query_dreaming_insights_def(),
         get_recent_committee_verdicts_def(),
+        get_recent_events_def(),
     ]
 }
 
 /// Role-based tool definitions. Macro gets full tools in R1 only; Quant and
 /// Risk get tools in both R1 and R2 (R2 uses them for cross-review); CIO never
-/// gets tools.
+/// gets tools; L4 Officer gets dreaming insights only.
 pub fn role_tool_defs(role: CommitteeRole, round: u8) -> Option<Vec<ToolDef>> {
     match role {
         CommitteeRole::Macro => {
@@ -126,12 +190,18 @@ pub fn role_tool_defs(role: CommitteeRole, round: u8) -> Option<Vec<ToolDef>> {
             get_history_data_def(),
             analyze_multi_timeframe_def(),
             get_recent_committee_verdicts_def(),
+            get_moneyflow_def(),
+            get_company_info_def(),
         ]),
         CommitteeRole::Risk => Some(vec![
             query_dreaming_insights_def(),
             get_recent_committee_verdicts_def(),
+            get_company_news_def(),
         ]),
         CommitteeRole::Cio => None,
+        CommitteeRole::L4Officer => Some(vec![
+            query_dreaming_insights_def(),
+        ]),
     }
 }
 
@@ -168,8 +238,44 @@ pub async fn execute_tool(
             let days = args["days"].as_i64().unwrap_or(7);
             exec_recent_verdicts(sym, days)
         }
+        "get_moneyflow" => {
+            let sym = args["symbol"].as_str().unwrap_or(symbol);
+            exec_moneyflow(sym).await
+        }
+        "get_company_info" => {
+            let sym = args["symbol"].as_str().unwrap_or(symbol);
+            exec_company_info(sym).await
+        }
+        "get_company_news" => {
+            let sym = args["symbol"].as_str().unwrap_or(symbol);
+            exec_company_news(sym).await
+        }
+        "get_recent_events" => exec_recent_events(),
         _ => Err(format!("unknown tool: {}", tool_name)),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Data helpers (shared between orchestrator and tool implementations)
+// ---------------------------------------------------------------------------
+
+/// 获取估值数据（PE/PB/ROE/换手率/市值），供多个模块复用避免重复 API 调用。
+/// 返回 (pe_ttm, pb, roe, turnover_rate_f, total_mv_yi)。
+pub async fn fetch_valuation_data(
+    client: &TushareClient,
+    symbol: &str,
+) -> Option<(Option<f64>, Option<f64>, Option<f64>, Option<f64>, Option<f64>)> {
+    let daily = client.daily_basic(symbol, None, None, None).await.ok()?;
+    let latest = daily.first()?;
+    let fina = client.fina_indicator(symbol, None, None, None).await.ok()?;
+    let latest_fina = fina.last();
+    Some((
+        latest.pe_ttm,
+        latest.pb,
+        latest_fina.and_then(|f| f.roe),
+        latest.turnover_rate_f,
+        latest.total_mv.map(|v| v / 10000.0), // 转为亿元
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -617,6 +723,133 @@ fn exec_recent_verdicts(symbol: Option<&str>, days: i64) -> Result<String, Strin
 }
 
 // ---------------------------------------------------------------------------
+// New tool implementations
+// ---------------------------------------------------------------------------
+
+/// 个股资金流向：近5日主力/散户净流入汇总
+async fn exec_moneyflow(symbol: &str) -> Result<String, String> {
+    use crate::tushare::client::MoneyflowDc;
+
+    let client = TushareClient::from_settings()?;
+    let today = chrono::Local::now().format("%Y%m%d").to_string();
+    let five_days_ago =
+        (chrono::Local::now() - chrono::Duration::days(5)).format("%Y%m%d").to_string();
+
+    let rows = client
+        .moneyflow_dc(symbol, &five_days_ago, &today)
+        .await
+        .map_err(|e| format!("moneyflow_dc failed: {}", e))?;
+
+    if rows.is_empty() {
+        return Ok("N/A（ETF 或代码错误）".to_string());
+    }
+
+    Ok(format!(
+        "【{} 近{}日资金流向】\n{}",
+        symbol,
+        rows.len(),
+        MoneyflowDc::format_moneyflow_summary(&rows)
+    ))
+}
+
+/// 公司基本信息+估值：PE/PB/ROE/总市值/换手率
+async fn exec_company_info(symbol: &str) -> Result<String, String> {
+    let client = TushareClient::from_settings()?;
+
+    let (pe_str, pb_str, roe_str, mv_str, turnover_str) =
+        match fetch_valuation_data(&client, symbol).await {
+            Some((pe, pb, roe, tr, mv)) => (
+                pe.map(|v| format!("{:.2}", v)).unwrap_or_else(|| "N/A".to_string()),
+                pb.map(|v| format!("{:.2}", v)).unwrap_or_else(|| "N/A".to_string()),
+                roe.map(|v| format!("{:.2}%", v)).unwrap_or_else(|| "N/A".to_string()),
+                mv.map(|v| format!("{:.2}亿", v)).unwrap_or_else(|| "N/A".to_string()),
+                tr.map(|v| format!("{:.2}%", v)).unwrap_or_else(|| "N/A".to_string()),
+            ),
+            None => (
+                "N/A".to_string(),
+                "N/A".to_string(),
+                "N/A".to_string(),
+                "N/A".to_string(),
+                "N/A".to_string(),
+            ),
+        };
+
+    Ok(format!(
+        "【{} 估值数据】\nPE: {}, PB: {}, ROE: {}, 总市值: {}, 换手率: {}",
+        symbol, pe_str, pb_str, roe_str, mv_str, turnover_str
+    ))
+}
+
+/// 个股风险新闻：最近5条相关新闻
+async fn exec_company_news(symbol: &str) -> Result<String, String> {
+    let client = TushareClient::from_settings()?;
+    let today = chrono::Local::now().format("%Y%m%d").to_string();
+    let thirty_days_ago =
+        (chrono::Local::now() - chrono::Duration::days(30)).format("%Y%m%d").to_string();
+
+    // 使用 major_news 获取最近新闻
+    match client
+        .major_news("mx-finance", &thirty_days_ago, &today)
+        .await
+    {
+        Ok(items) => {
+            // 按 symbol 过滤（如果 items 中包含 symbol 信息）
+            // major_news 返回的是全市场新闻，这里取最近5条
+            let recent: Vec<String> = items
+                .iter()
+                .take(5)
+                .map(|item| {
+                    format!("[{}] {} - {}", item.datetime, item.title, item.src)
+                })
+                .collect();
+
+            if recent.is_empty() {
+                Ok("暂无风险新闻".to_string())
+            } else {
+                Ok(format!(
+                    "【{} 近期新闻】\n{}",
+                    symbol,
+                    recent.join("\n")
+                ))
+            }
+        }
+        Err(e) => {
+            log::warn!("exec_company_news: major_news failed: {}", e);
+            Ok("暂无风险新闻".to_string())
+        }
+    }
+}
+
+/// 最近事件列表：event_scanner 输出
+fn exec_recent_events() -> Result<String, String> {
+    let events = crate::storage::invest::events::list_events(None, Some(20))?;
+
+    let seven_days_ago =
+        (chrono::Local::now() - chrono::Duration::days(7)).format("%Y-%m-%d").to_string();
+
+    let recent: Vec<String> = events
+        .iter()
+        .filter(|e| e.created_at >= seven_days_ago)
+        .take(10)
+        .map(|e| {
+            format!(
+                "[{}] {} | {} | {}",
+                &e.created_at[..10.min(e.created_at.len())],
+                e.event_type,
+                e.severity,
+                e.title
+            )
+        })
+        .collect();
+
+    if recent.is_empty() {
+        Ok("暂无最近事件".to_string())
+    } else {
+        Ok(format!("【近7天市场事件】\n{}", recent.join("\n")))
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -641,7 +874,7 @@ mod tests {
 
     #[test]
     fn test_macro_tool_defs_count() {
-        assert_eq!(macro_tool_defs().len(), 5);
+        assert_eq!(macro_tool_defs().len(), 6);
     }
 
     #[test]
@@ -653,12 +886,13 @@ mod tests {
         assert!(names.contains(&"get_macro_snapshot"));
         assert!(names.contains(&"query_dreaming_insights"));
         assert!(names.contains(&"get_recent_committee_verdicts"));
+        assert!(names.contains(&"get_recent_events"));
     }
 
     #[test]
     fn test_role_tool_defs_macro_r1() {
         let defs = role_tool_defs(CommitteeRole::Macro, 1).unwrap();
-        assert_eq!(defs.len(), 5);
+        assert_eq!(defs.len(), 6);
     }
 
     #[test]
@@ -669,39 +903,45 @@ mod tests {
     #[test]
     fn test_role_tool_defs_quant_r1() {
         let defs = role_tool_defs(CommitteeRole::Quant, 1).unwrap();
-        assert_eq!(defs.len(), 3);
+        assert_eq!(defs.len(), 5);
         let names: Vec<&str> = defs.iter().map(|t| t.name.as_str()).collect();
         assert!(names.contains(&"get_history_data"));
         assert!(names.contains(&"analyze_multi_timeframe"));
         assert!(names.contains(&"get_recent_committee_verdicts"));
+        assert!(names.contains(&"get_moneyflow"));
+        assert!(names.contains(&"get_company_info"));
     }
 
     #[test]
     fn test_role_tool_defs_risk_r1() {
         let defs = role_tool_defs(CommitteeRole::Risk, 1).unwrap();
-        assert_eq!(defs.len(), 2);
+        assert_eq!(defs.len(), 3);
         let names: Vec<&str> = defs.iter().map(|t| t.name.as_str()).collect();
         assert!(names.contains(&"query_dreaming_insights"));
         assert!(names.contains(&"get_recent_committee_verdicts"));
+        assert!(names.contains(&"get_company_news"));
     }
 
     #[test]
     fn test_role_tool_defs_quant_r2_has_tools() {
         let defs = role_tool_defs(CommitteeRole::Quant, 2).unwrap();
-        assert_eq!(defs.len(), 3);
+        assert_eq!(defs.len(), 5);
         let names: Vec<&str> = defs.iter().map(|t| t.name.as_str()).collect();
         assert!(names.contains(&"get_history_data"));
         assert!(names.contains(&"analyze_multi_timeframe"));
         assert!(names.contains(&"get_recent_committee_verdicts"));
+        assert!(names.contains(&"get_moneyflow"));
+        assert!(names.contains(&"get_company_info"));
     }
 
     #[test]
     fn test_role_tool_defs_risk_r2_has_tools() {
         let defs = role_tool_defs(CommitteeRole::Risk, 2).unwrap();
-        assert_eq!(defs.len(), 2);
+        assert_eq!(defs.len(), 3);
         let names: Vec<&str> = defs.iter().map(|t| t.name.as_str()).collect();
         assert!(names.contains(&"query_dreaming_insights"));
         assert!(names.contains(&"get_recent_committee_verdicts"));
+        assert!(names.contains(&"get_company_news"));
     }
 
     #[test]

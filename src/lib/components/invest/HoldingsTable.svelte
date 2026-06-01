@@ -3,10 +3,11 @@
   import { t } from '$lib/i18n/index.svelte';
   import type { Holding } from '$lib/types';
 
-  let { onSell, onConvert, onAddWatch, tushareToken }: {
+  let { onSell, onConvert, onAddWatch, onDeleteWatch, tushareToken }: {
     onSell: (h: Holding) => void;
     onConvert: (h: Holding) => void;
     onAddWatch: () => void;
+    onDeleteWatch: (h: Holding) => void;
     tushareToken: string;
   } = $props();
 
@@ -18,6 +19,10 @@
     const price = getPrice(h.symbol);
     if (price == null || h.avgCost == null || h.avgCost === 0) return null;
     return ((price - h.avgCost) / h.avgCost) * 100;
+  }
+
+  function priceDecimals(assetType: string | null): number {
+    return assetType === 'etf' ? 3 : 2;
   }
 
   function assetLabel(assetType: string | null): string {
@@ -85,8 +90,8 @@
                 </span>
               </td>
               <td class="py-2 pr-4 tabular-nums">{h.shares ?? '-'}</td>
-              <td class="py-2 pr-4 tabular-nums">{h.avgCost?.toFixed(2) ?? '-'}</td>
-              <td class="py-2 pr-4 tabular-nums">{getPrice(h.symbol)?.toFixed(2) ?? '-'}</td>
+              <td class="py-2 pr-4 tabular-nums">{h.avgCost?.toFixed(priceDecimals(h.assetType)) ?? '-'}</td>
+              <td class="py-2 pr-4 tabular-nums">{getPrice(h.symbol)?.toFixed(priceDecimals(h.assetType)) ?? '-'}</td>
               <td class="py-2 pr-4 tabular-nums">
                 {#if pnlPct !== null}
                   <span class={pnlPct >= 0 ? 'text-green-600' : 'text-red-600'}>
@@ -107,6 +112,10 @@
                     class="rounded px-2 py-0.5 text-xs hover:bg-muted"
                     onclick={() => onConvert(h)}
                   >{t('invest_convert_to_hold')}</button>
+                  <button
+                    class="ml-1 rounded px-2 py-0.5 text-xs text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30"
+                    onclick={() => onDeleteWatch(h)}
+                  >{t('invest_delete')}</button>
                 {/if}
               </td>
             </tr>

@@ -153,7 +153,7 @@
         <div class={mode === 'add_watch' ? 'col-span-2' : ''}>
           <label for="td-price" class="mb-1 block text-sm">{mode === 'add_watch' ? t('invest_watch_price') : t('invest_price')}</label>
           <div class="flex gap-1">
-            <input id="td-price" type="number" class="flex-1 rounded border bg-background px-3 py-1.5 text-sm" step="0.01" bind:value={price} />
+            <input id="td-price" type="number" class="flex-1 rounded border bg-background px-3 py-1.5 text-sm" step={assetType === 'etf' ? '0.001' : '0.01'} bind:value={price} />
             <button class="rounded bg-muted px-2 py-1.5 text-xs" onclick={fillMarketPrice}>{t('invest_market_price')}</button>
           </div>
         </div>

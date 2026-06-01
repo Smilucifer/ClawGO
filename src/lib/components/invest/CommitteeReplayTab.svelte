@@ -5,6 +5,7 @@
   import type { ArchivedDecision, RoundOutputSummary, SymbolProgress } from '$lib/stores/invest-committee-store.svelte';
   import type { MessageKey } from '$lib/i18n/types';
   import DebateBlock from './DebateBlock.svelte';
+  import { STEP_DEFS, roleToBackendIdx } from './pipeline-config';
 
   // ── Mode ───────────────────────────────────────────────────────────────────
   type ReplayMode = 'replay' | 'simulate';
@@ -22,17 +23,6 @@
   // Simulate mode state
   let simulateRounds = $state(2);
   let simulateRunning = $state(false);
-
-  // ── 7-step pipeline ────────────────────────────────────────────────────────
-  const STEP_DEFS = [
-    { key: 'macro', labelKey: 'invest_pipeline_macro' as const, color: '#8b5cf6', backendIdx: 0 },
-    { key: 'regime', labelKey: 'invest_pipeline_regime' as const, color: '#a78bfa', backendIdx: 1 },
-    { key: 'quant_r1', labelKey: 'invest_pipeline_quant_r1' as const, color: '#3b82f6', backendIdx: 2 },
-    { key: 'risk_r1', labelKey: 'invest_pipeline_risk_r1' as const, color: '#f97316', backendIdx: 3 },
-    { key: 'quant_r2', labelKey: 'invest_pipeline_quant_r2' as const, color: '#3b82f6', backendIdx: 4 },
-    { key: 'risk_r2', labelKey: 'invest_pipeline_risk_r2' as const, color: '#f97316', backendIdx: 5 },
-    { key: 'cio', labelKey: 'invest_pipeline_cio' as const, color: '#eab308', backendIdx: 6 },
-  ] as const;
 
   const ROUND_OPTIONS = [
     { value: 1, descKey: 'invest_replay_simulate_round_1' },
@@ -64,16 +54,6 @@
   const hasHoldings = $derived(allHoldings.length > 0);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-
-  function roleToBackendIdx(role: string, round: number): number {
-    if (role === 'macro') return 0;
-    if (role === 'quant' && round === 1) return 2;
-    if (role === 'risk' && round === 1) return 3;
-    if (role === 'quant') return 4;
-    if (role === 'risk') return 5;
-    if (role === 'cio') return 6;
-    return -1;
-  }
 
   function getStepState(
     symProgress: SymbolProgress | undefined,

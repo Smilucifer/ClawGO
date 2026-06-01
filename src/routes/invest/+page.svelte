@@ -112,6 +112,11 @@
   function openCash() { dialogMode = 'cash'; dialogPrefill = undefined; }
   function openConvert(h: Holding) { dialogMode = 'convert'; dialogPrefill = { symbol: h.symbol, name: h.name ?? undefined }; }
   function openAddWatch() { dialogMode = 'add_watch'; dialogPrefill = undefined; }
+  function openDeleteWatch(h: Holding) {
+    if (confirm(`${t('invest_delete')} ${h.name ?? h.symbol}?`)) {
+      investStore.deleteWatch(h.symbol);
+    }
+  }
   function closeDialog() { dialogMode = null; dialogPrefill = undefined; }
 </script>
 
@@ -162,7 +167,7 @@
         <button class="rounded bg-muted px-4 py-1.5 text-sm" onclick={() => investStore.refreshPrices(tushareToken)}>{t('invest_refresh_prices')}</button>
       </div>
 
-      <HoldingsTable onSell={openSell} onConvert={openConvert} onAddWatch={openAddWatch} {tushareToken} />
+      <HoldingsTable onSell={openSell} onConvert={openConvert} onAddWatch={openAddWatch} onDeleteWatch={openDeleteWatch} {tushareToken} />
 
       <div class="mt-6">
         <PnlChart />

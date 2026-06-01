@@ -395,6 +395,26 @@ class InvestStore {
     }
   }
 
+  async deleteWatch(symbol: string): Promise<void> {
+    try {
+      await invoke("delete_holding", { symbol, currency: "CNY", kind: "watch" });
+
+      await invoke("record_trade", {
+        id: null,
+        symbol,
+        currency: "CNY",
+        kind: "watch",
+        action: "delete_watch",
+        shares: null,
+        price: null,
+        amount: 0,
+        notes: null,
+      });
+    } finally {
+      await this.loadAll();
+    }
+  }
+
   async convertWatchToHold(
     symbol: string,
     name: string,

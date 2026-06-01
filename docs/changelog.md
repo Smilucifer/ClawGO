@@ -1,5 +1,61 @@
 # Changelog / 更新日志
 
+## v5.2.0 (2026-06-02)
+
+### 委员会 Prompt L1-L4 策略框架升级
+
+**核心变更：**
+- 新增 L4 Officer 角色（执行控制官）：卫语句判定 + 情绪评估 + 行为红灯评分 + 买点合理性检查
+- 重写全部 7 个 Prompt 模板（Macro/Quant R1/R2/Risk R1/R2/L4 Officer/CIO）
+- L1-L4 四层嵌套决策体系：L1 全局底色 → L2 催化剂 → L3 技术执行 → L4 执行控制
+- 催化剂层级框架（Tier1/Tier2/Tier3）集成到 CIO
+
+**数据层扩展：**
+- Tushare 客户端新增 4 个 API 方法：daily_basic、fina_indicator、report_rc、moneyflow_dc
+- AssetContext 结构体：PE/PB/ROE/营收增速/净利增速/机构评级/风险新闻/资金流向
+- macro_cache 扩展：涨跌停家数 + 两市成交额（15 个指标）
+- 辅助函数：count_recent_trades、max_drawdown_for_symbol
+
+**Parser 升级：**
+- ParsedFields 新增 30+ 字段（Macro/Quant/Risk/L4 Officer/CIO 各角色专用字段）
+- 新增 parse_l4_officer 解析函数
+- 新增 compute_red_light_score 确定性评分函数（0-30 → green/yellow/red）
+- hard_truncate 改进：行边界感知截断
+
+**工具扩展：**
+- 新增 4 个工具：get_moneyflow、get_company_info、get_company_news、get_recent_events
+- 角色工具分配更新：Macro(+1)、Quant(+2)、Risk(+1)、L4 Officer(1)
+
+**Pipeline 变更：**
+- 8 步 pipeline：Macro → REGIME → Quant R1/R2 → Risk R1/R2 → L4 Officer → CIO
+- L4 Officer 在 Risk R2 之后、CIO 之前执行
+- 行为红灯评分由 Rust 端确定性计算（不依赖 LLM）
+
+**前端改动：**
+- PipelineFlow.svelte：8 节点 pipeline 可视化
+- DebateBlock.svelte：L4 Officer 红色标识
+- CommitteeReplayTab/CommitteeLiveTab：8 步进度显示
+- CommitteeRolesTab：L4 Officer 角色卡片 + hard rules
+- i18n：6 个新翻译键（en + zh-CN）
+
+**字符限制变更：**
+- Macro: 400 → 600
+- Quant: 250 → 350
+- Risk: 250 → 350
+- L4 Officer: 250（新增）
+- CIO: 400 → 600
+
+**Simplify 审查修复：**
+- 提取 `MoneyflowDc::aggregate_moneyflow` + `format_moneyflow_summary` 共享 helper
+- 提取 `fetch_valuation_data` helper 消除重复 API 调用
+- `build_asset_context` API 调用并行化（tokio::join!）
+- 提取 `concentration_for_symbol` helper 统一集中度计算
+- `ParsedFields::is_red_light()` 派生方法替代冗余字段
+- 提取 `pipeline-config.ts` 共享模块消除前端 STEP_DEFS 重复
+- 合并 `count_recent_trades` / `count_all_recent_trades` 为单一函数
+
+---
+
 ## Phase 10+ (2026-06-01)
 
 ### v5.1.2 — ETF 价格修复 + 事件扫描增强 + simplify 审查修复

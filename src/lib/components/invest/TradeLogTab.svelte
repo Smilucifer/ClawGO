@@ -10,6 +10,15 @@
   let directionFilter = $state<string>('all');
   let editingTrade = $state<Trade | null>(null);
 
+  /** symbol → assetType lookup from holdings */
+  const assetTypeMap = $derived(
+    Object.fromEntries(investStore.holdings.map((h) => [h.symbol, h.assetType ?? 'stock']))
+  );
+
+  function priceDecimals(symbol: string): number {
+    return assetTypeMap[symbol] === 'etf' ? 3 : 2;
+  }
+
   const filtered = $derived(
     investStore.trades.filter((tr) => {
       if (symbolFilter && !tr.symbol.includes(symbolFilter.toUpperCase())) return false;
@@ -35,7 +44,7 @@
         tr.symbol,
         tr.action,
         tr.shares ?? '',
-        tr.price?.toFixed(2) ?? '',
+        tr.price?.toFixed(priceDecimals(tr.symbol)) ?? '',
         tr.amount?.toFixed(2) ?? '',
         (tr.notes ?? '').replace(/,/g, ';'),
       ].join(',')
@@ -98,7 +107,7 @@
                 </span>
               </td>
               <td class="py-2 pr-4 tabular-nums">{tr.shares ?? '-'}</td>
-              <td class="py-2 pr-4 tabular-nums">{tr.price?.toFixed(2) ?? '-'}</td>
+              <td class="py-2 pr-4 tabular-nums">{tr.price?.toFixed(priceDecimals(tr.symbol)) ?? '-'}</td>
               <td class="py-2 pr-4 tabular-nums">{tr.amount?.toLocaleString(undefined, { minimumFractionDigits: 2 }) ?? '-'}</td>
               <td class="py-2 text-xs text-muted-foreground">{tr.notes ?? ''}</td>
               <td class="py-2">

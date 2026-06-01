@@ -3,17 +3,7 @@
   import { investCommitteeStore } from '$lib/stores/invest-committee-store.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
   import type { SymbolProgress, RoundOutputSummary } from '$lib/stores/invest-committee-store.svelte';
-
-  // ── 7-step pipeline: Macro → REGIME → Quant R1 → Risk R1 → Quant R2 → Risk R2 → CIO ──
-  const STEP_DEFS = [
-    { key: 'macro', labelKey: 'invest_pipeline_macro' as const, color: '#8b5cf6', backendIdx: 0 },
-    { key: 'regime', labelKey: 'invest_pipeline_regime' as const, color: '#a78bfa', backendIdx: 1 },
-    { key: 'quant_r1', labelKey: 'invest_pipeline_quant_r1' as const, color: '#3b82f6', backendIdx: 2 },
-    { key: 'risk_r1', labelKey: 'invest_pipeline_risk_r1' as const, color: '#f97316', backendIdx: 3 },
-    { key: 'quant_r2', labelKey: 'invest_pipeline_quant_r2' as const, color: '#3b82f6', backendIdx: 4 },
-    { key: 'risk_r2', labelKey: 'invest_pipeline_risk_r2' as const, color: '#f97316', backendIdx: 5 },
-    { key: 'cio', labelKey: 'invest_pipeline_cio' as const, color: '#eab308', backendIdx: 6 },
-  ] as const;
+  import { STEP_DEFS, roleToBackendIdx } from './pipeline-config';
 
   let expandedSymbol = $state<string | null>(null);
   let includeWatch = $state(true);
@@ -70,16 +60,6 @@
   });
 
   // ── Helpers ──────────────────────────────────────────────────────────────
-
-  function roleToBackendIdx(role: string, round: number): number {
-    if (role === 'macro') return 0;
-    if (role === 'quant' && round === 1) return 2;
-    if (role === 'risk' && round === 1) return 3;
-    if (role === 'quant') return 4;
-    if (role === 'risk') return 5;
-    if (role === 'cio') return 6;
-    return -1;
-  }
 
   function getStepState(
     symProgress: SymbolProgress | undefined,
@@ -255,7 +235,7 @@
           </span>
         </div>
 
-        <!-- 7-step progress dots -->
+        <!-- 8-step progress dots -->
         <div class="flex shrink-0 items-center gap-0">
           {#each STEP_DEFS as step, i}
             {@const state = getStepState(p, step.backendIdx)}
