@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v5.1.0, 2026-06-01). UI 设计系统统一: 暖色暗黑主题+自定义标题栏+Inter 字体。See `docs/changelog.md`.
+**Current phase:** Phase 10+ (v5.1.1, 2026-06-01). Bug 修复+Chat UI 升级+代码审查优化。See `docs/changelog.md`.
 
 ## Standard workflow
 
@@ -368,6 +368,7 @@ Key phases and their status:
 | 10+ (v5.0.4) | Yahoo Finance 429 二次修复+扫描增强+add_watch+fund_basic: macro_refresh 并发改串行, 请求间隔统一 500ms 常量, ScanResult errors 字段+前端日志, Yahoo 兜底阈值常量化, log+push 去重, ScanResult TS 接口, add_watch action 迁移, fund_basic 客户端过滤 | [done] |
 | 10+ (v5.0.5) | 代码审查修复: Yahoo 认证加固+Tushare 代理验证+并发安全 — TushareClient URL scheme 验证/reqwest::Proxy 静默失败修复/Mutex 中毒恢复/重试末尾退避消除/ensure_session 惊群修复/Mutex→RwLock/with_token_and_proxy 新方法/resolve_local_proxy_url 共享辅助函数/代理 URL 格式验证/端口范围检查/代理函数语义改进 | [done] |
 | 10+ (v5.1.0) | UI 设计系统统一: 暖色暗黑固定主题+自定义标题栏+Inter 字体+移除主题/色彩方案切换+Settings 底部分隔 — CSS 变量重写/tauri.conf.json decorations:false/46 项功能入口回归通过 | [done] |
+| 10+ (v5.1.1) | Bug 修复+Chat UI 升级+代码审查优化: 标题栏权限/Python Overlay 竞态/Index 首页/消息+输入框+状态栏+右侧面板 UI/Flat token 别名/format 工具复用/recompute_notional 方法/并发价格获取/6 项 simplify 审查修复 | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

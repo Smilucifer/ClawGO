@@ -17,7 +17,9 @@ pub struct YahooQuote {
     pub name: String,
     pub price: f64,
     pub change: f64,
+    #[serde(alias = "change_pct")]
     pub change_pct: f64,
+    #[serde(alias = "previous_close")]
     pub previous_close: f64,
     pub timestamp: i64,
 }

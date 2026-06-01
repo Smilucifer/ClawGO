@@ -230,7 +230,7 @@ async fn exec_history_data_tushare(symbol: &str, days: usize) -> Result<String, 
         .collect::<Vec<_>>()
         .iter()
         .rev()
-        .map(|b| format!("{}:{:.2}", &b.trade_date[4..], b.close))
+        .map(|b| format!("{}:{:.3}", &b.trade_date[4..], b.close))
         .collect::<Vec<_>>()
         .join(" → ");
 
@@ -240,9 +240,9 @@ async fn exec_history_data_tushare(symbol: &str, days: usize) -> Result<String, 
 
     Ok(format!(
         "【{} 历史行情（最近{}个交易日）】\n\
-         最新收盘: {:.2} ({})\n\
-         区间涨跌: {:.2}%\n\
-         最高: {:.2} / 最低: {:.2}\n\
+         最新收盘: {:.3} ({})\n\
+         区间涨跌: {:.1}%\n\
+         最高: {:.3} / 最低: {:.3}\n\
          平均成交量: {:.0} 手\n\
          近5日K线: {}",
         symbol,
@@ -287,7 +287,7 @@ async fn exec_history_data_yahoo(symbol: &str, days: usize) -> Result<String, St
         .iter()
         .rev()
         .take(5)
-        .map(|b| format!("{}:{:.2}", if b.date.len() > 5 { &b.date[5..] } else { &b.date }, b.close))
+        .map(|b| format!("{}:{:.3}", if b.date.len() > 5 { &b.date[5..] } else { &b.date }, b.close))
         .collect::<Vec<_>>()
         .join(" → ");
 
@@ -295,9 +295,9 @@ async fn exec_history_data_yahoo(symbol: &str, days: usize) -> Result<String, St
 
     Ok(format!(
         "【{} ({}) 历史行情（最近{}日）】\n\
-         最新收盘: {:.4} ({})\n\
-         区间涨跌: {:.2}%\n\
-         最高: {:.4} / 最低: {:.4}\n\
+         最新收盘: {:.3} ({})\n\
+         区间涨跌: {:.1}%\n\
+         最高: {:.3} / 最低: {:.3}\n\
          近5日K线: {}",
         display_name,
         symbol,
@@ -401,12 +401,12 @@ async fn exec_multi_timeframe(symbol: &str) -> Result<String, String> {
 
     let mut output = format!(
         "【{} 多时间框架分析】\n\
-         MA5: {:.2} | MA20: {:.2} | MA60: {:.2}",
+         MA5: {:.3} | MA20: {:.3} | MA60: {:.3}",
         symbol, ma5, ma20, ma60
     );
 
     if let Some(m120) = ma120 {
-        output.push_str(&format!(" | MA120: {:.2}", m120));
+        output.push_str(&format!(" | MA120: {:.3}", m120));
     }
 
     output.push_str(&format!(
@@ -507,7 +507,7 @@ fn format_macro_entries(entries: &[macro_cache::MacroCacheEntry]) -> Result<Stri
     for indicator in macro_cache::ALL_INDICATORS {
         if let Some(entry) = entries.iter().find(|e| e.indicator == *indicator) {
             let value_str = match entry.value {
-                Some(v) => format!("{:.2}", v),
+                Some(v) => format!("{:.3}", v),
                 None => "N/A".to_string(),
             };
             let label = match *indicator {

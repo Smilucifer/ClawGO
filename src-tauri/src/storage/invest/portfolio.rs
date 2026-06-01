@@ -20,6 +20,14 @@ pub struct Holding {
     pub updated_at: String,
 }
 
+impl Holding {
+    /// Recompute notional from cost basis: avg_cost * shares.
+    /// Used after buy/sell/cost_edit to keep the invariant consistent.
+    pub fn recompute_notional(&mut self) {
+        self.notional = self.avg_cost.unwrap_or(0.0) * self.shares.unwrap_or(0.0);
+    }
+}
+
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Trade {
@@ -207,6 +215,12 @@ fn recalculate_holdings_inner_body(
         asset_type: Option<String>,
     }
 
+    impl MemHolding {
+        fn recompute_notional(&mut self) {
+            self.notional = self.avg_cost * self.shares;
+        }
+    }
+
     let mut map: HashMap<(String, String, String), MemHolding> = HashMap::new();
 
     // Restore preserved notional values into the in-memory map (Finding 2 fix)
@@ -232,17 +246,22 @@ fn recalculate_holdings_inner_body(
                     entry.avg_cost = if shares > 0.0 { price } else { 0.0 };
                     entry.shares = shares;
                 }
+                // Compute notional as cost basis (avg_cost * shares).
+                // Will be updated to current market value in PortfolioData::load.
+                entry.recompute_notional();
             }
             "sell" => {
                 let shares = t.shares.unwrap_or(0.0);
                 if let Some(entry) = map.get_mut(&key) {
                     entry.shares = (entry.shares - shares).max(0.0);
+                    entry.recompute_notional();
                 }
             }
             "cost_edit" => {
                 if let Some(price) = t.price {
                     if let Some(entry) = map.get_mut(&key) {
                         entry.avg_cost = price;
+                        entry.recompute_notional();
                     }
                 }
             }

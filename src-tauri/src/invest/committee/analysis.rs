@@ -192,7 +192,7 @@ pub fn cio_sanity_check(
             result.final_verdict = "HOLD".to_string();
             result.final_confidence = result.final_confidence.min(0.4);
             result.notes.push(format!(
-                "G3: 可用子弹 {:.0} < 应急储备 {:.0}，降级为HOLD",
+                "G3: 可用子弹 {:.2} < 应急储备 {:.2}，降级为HOLD",
                 dp, emergency_buffer_cny
             ));
         }

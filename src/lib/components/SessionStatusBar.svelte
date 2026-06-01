@@ -375,11 +375,11 @@
   });
 </script>
 
-<div class="border-b border-border bg-muted/50 font-mono text-xs text-foreground/70">
+<div class="border-b border-border bg-secondary font-mono text-xs text-foreground/70">
   <!-- Tier 1: Always visible (h-9) -->
   <div class="flex h-9 items-center justify-between px-3">
     <!-- Left: core info -->
-    <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+    <div class="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
       {#if onToggleSidebar}
         <button
           class="rounded p-1 -ml-1 mr-0.5 hover:bg-accent transition-colors"
@@ -399,7 +399,7 @@
         </button>
       {/if}
 
-      <!-- Pulse indicator + agent name (clickable for status) -->
+      <!-- Status dot with glow + Ready pill + agent name -->
       {#if onStatusClick}
         <button
           class="inline-flex items-center gap-1.5 shrink-0 rounded px-1 -mx-1 hover:bg-accent/50 transition-colors"
@@ -407,17 +407,22 @@
           title={t("toolActivity_tabInfo")}
         >
           <span
-            class="inline-block h-2 w-2 rounded-full {running
-              ? 'bg-green-500 animate-pulse'
+            class="status-dot inline-block h-[7px] w-[7px] rounded-full {running
+              ? 'bg-green-500'
               : 'bg-foreground/20'}"
+            style={running ? "box-shadow: 0 0 4px #22c55e80;" : ""}
           ></span>
+          <span class="status-pill inline-flex items-center px-1.5 py-px rounded-full text-[10px] font-semibold uppercase tracking-wider bg-green-500/15 text-green-400">
+            {running ? "Running" : "Ready"}
+          </span>
           <span class="text-foreground font-medium">{agent}</span>
         </button>
       {:else}
         <span
-          class="inline-block h-2 w-2 rounded-full {running
-            ? 'bg-green-500 animate-pulse'
+          class="status-dot inline-block h-[7px] w-[7px] rounded-full {running
+            ? 'bg-green-500'
             : 'bg-foreground/20'}"
+          style={running ? "box-shadow: 0 0 4px #22c55e80;" : ""}
         ></span>
       {/if}
 

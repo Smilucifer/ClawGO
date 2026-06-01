@@ -3,7 +3,7 @@
   import { getTransport } from "$lib/transport";
 
   interface SetupProgress {
-    stage: "verifying" | "ready" | "error";
+    stage: "starting" | "verifying" | "ready" | "error";
     message: string;
     error?: string | null;
   }
@@ -14,35 +14,52 @@
   let errorMsg = $state<string | null>(null);
   let fadingOut = $state(false);
 
+  function handleProgress(p: SetupProgress) {
+    stage = p.stage;
+    message = p.message;
+    errorMsg = p.error ?? null;
+
+    if (p.stage === "ready") {
+      fadingOut = true;
+      setTimeout(() => {
+        visible = false;
+        fadingOut = false;
+      }, 600);
+    } else {
+      // "starting", "verifying", "error" all show the overlay
+      visible = true;
+      fadingOut = false;
+    }
+  }
+
   onMount(() => {
     const transport = getTransport();
     let unlisten: (() => void) | undefined;
 
+    // Listen for real-time progress events
     transport
       .listen("python://setup-progress", (payload: unknown) => {
-        const p = payload as SetupProgress;
-        stage = p.stage;
-        message = p.message;
-        errorMsg = p.error ?? null;
-
-        if (p.stage === "verifying") {
-          visible = true;
-          fadingOut = false;
-        } else if (p.stage === "ready") {
-          // Start fade-out
-          fadingOut = true;
-          setTimeout(() => {
-            visible = false;
-            fadingOut = false;
-          }, 600);
-        } else if (p.stage === "error") {
-          visible = true;
-          fadingOut = false;
-        }
+        handleProgress(payload as SetupProgress);
       })
       .then((fn) => {
         unlisten = fn;
       });
+
+    // Poll current state on mount to handle race condition
+    // (backend may have emitted before frontend mounted)
+    transport.invoke("get_python_status", {}).then((status: unknown) => {
+      const s = status as { ready: boolean; progress?: SetupProgress };
+      if (s.progress) {
+        handleProgress(s.progress);
+      } else if (!s.ready) {
+        // Python is still initializing but no progress event yet — show overlay
+        visible = true;
+        stage = "starting";
+        message = "正在初始化 Python 环境...";
+      }
+    }).catch(() => {
+      // Ignore poll errors — overlay stays hidden
+    });
 
     return () => {
       unlisten?.();

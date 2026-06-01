@@ -9,14 +9,19 @@ pub struct PythonStatus {
     pub python_version: String,
     pub yfinance_version: String,
     pub error: Option<String>,
+    /// Latest progress snapshot from bootstrap (for late-joining frontend).
+    pub progress: Option<crate::python::bootstrap::ProgressSnapshot>,
 }
 
 /// Get the current Python runtime status.
 ///
 /// When the runtime is healthy, returns version info captured at init time
 /// (queried from the actual Python process, not hardcoded).
+/// Also returns the latest bootstrap progress snapshot for late-joining frontend listeners.
 #[tauri::command]
 pub async fn get_python_status() -> PythonStatus {
+    let progress = crate::python::bootstrap::get_last_progress();
+
     match crate::python::get() {
         Some(runtime) => match runtime.health_check().await {
             Ok(()) => {
@@ -29,6 +34,7 @@ pub async fn get_python_status() -> PythonStatus {
                     python_version: py,
                     yfinance_version: yf,
                     error: None,
+                    progress,
                 }
             }
             Err(e) => PythonStatus {
@@ -36,6 +42,7 @@ pub async fn get_python_status() -> PythonStatus {
                 python_version: "unknown".to_string(),
                 yfinance_version: "unknown".to_string(),
                 error: Some(e),
+                progress,
             },
         },
         None => PythonStatus {
@@ -43,6 +50,7 @@ pub async fn get_python_status() -> PythonStatus {
             python_version: "not initialized".to_string(),
             yfinance_version: "unknown".to_string(),
             error: Some("Python runtime not initialized".to_string()),
+            progress,
         },
     }
 }

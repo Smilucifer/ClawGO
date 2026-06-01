@@ -119,7 +119,7 @@ pub async fn compute_regime_for_symbol(
             "crash",
             "hold",
             format!(
-                "{symbol} in crash: price {latest:.2} < MA60 {ma60:.2}, 5-day drop {:.1}%",
+                "{symbol} in crash: price {latest:.3} < MA60 {ma60:.3}, 5-day drop {:.1}%",
                 five_day_change * 100.0
             ),
         )
@@ -128,7 +128,7 @@ pub async fn compute_regime_for_symbol(
             "uptrend",
             "momentum",
             format!(
-                "{symbol} in uptrend: price {latest:.2} > MA20 {ma20:.2} > MA60 {ma60:.2}"
+                "{symbol} in uptrend: price {latest:.3} > MA20 {ma20:.3} > MA60 {ma60:.3}"
             ),
         )
     } else if latest < ma20 && ma20 < ma60 {
@@ -136,7 +136,7 @@ pub async fn compute_regime_for_symbol(
             "downtrend",
             "defensive",
             format!(
-                "{symbol} in downtrend: price {latest:.2} < MA20 {ma20:.2} < MA60 {ma60:.2}"
+                "{symbol} in downtrend: price {latest:.3} < MA20 {ma20:.3} < MA60 {ma60:.3}"
             ),
         )
     } else if volatility < 0.35 {
@@ -144,7 +144,7 @@ pub async fn compute_regime_for_symbol(
             "range_bound",
             "mean_reversion",
             format!(
-                "{symbol} range-bound: price {latest:.2}, MA20 {ma20:.2}, MA60 {ma60:.2}, vol {:.1}%",
+                "{symbol} range-bound: price {latest:.3}, MA20 {ma20:.3}, MA60 {ma60:.3}, vol {:.1}%",
                 volatility * 100.0
             ),
         )
@@ -154,7 +154,7 @@ pub async fn compute_regime_for_symbol(
             "range_bound",
             "cautious",
             format!(
-                "{symbol} range-bound (high vol): price {latest:.2}, vol {:.1}%, mixed MA signals",
+                "{symbol} range-bound (high vol): price {latest:.3}, vol {:.1}%, mixed MA signals",
                 volatility * 100.0
             ),
         )
@@ -193,7 +193,7 @@ pub fn format_regime_context(result: &RegimeResult) -> String {
     format!(
         "REGIME: {}\n\
          REASON: {}\n\
-         INPUTS: ma20={:.2}, ma60={:.2}, volatility_ann={:.1}%, rsi14={:.1}, price_quantile_2y={:.0}%\n\
+         INPUTS: ma20={:.3}, ma60={:.3}, volatility_ann={:.1}%, rsi14={:.1}, price_quantile_2y={:.0}%\n\
          STRATEGY_HINT: {}",
         result.regime,
         result.reason,

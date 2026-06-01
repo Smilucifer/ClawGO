@@ -1975,10 +1975,10 @@
 
   <!-- Unified input container -->
   <div
-    class="rounded-xl border bg-background shadow-sm transition-colors {btwMode
+    class="rounded-xl border bg-secondary shadow-sm transition-colors {btwMode
       ? 'border-blue-500/50 shadow-[0_0_0_1px_rgba(59,130,246,0.15)]'
       : currentMode.borderCls ||
-        'border-border focus-within:border-ring/50 focus-within:shadow-[0_0_0_1px_hsl(var(--ring)/0.15)]'}"
+        'border-border focus-within:border-primary/30 focus-within:shadow-[0_0_0_1px_hsl(var(--primary)/0.15)]'}"
   >
     {#if pendingPermission}
       <div
@@ -2325,7 +2325,7 @@
         {:else}
           <button
             class="flex h-7 w-7 items-center justify-center rounded-lg transition-colors {canSend
-              ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+              ? 'bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25'
               : 'text-muted-foreground/40'}"
             onclick={handleSend}
             disabled={!canSend}

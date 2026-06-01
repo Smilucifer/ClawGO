@@ -140,14 +140,85 @@ struct PortfolioData {
 }
 
 impl PortfolioData {
-    fn load() -> Self {
-        use crate::storage::invest::portfolio::{get_cash, list_holdings};
+    /// Load portfolio data and refresh notional with current market prices.
+    /// NOTE: This function has a side effect — it writes updated notional values
+    /// back to the DB for holdings whose price changed by >0.01 CNY.
+    async fn load_and_refresh_prices() -> Self {
+        use crate::storage::invest::portfolio::{get_cash, list_holdings, upsert_holding};
+        use futures_util::StreamExt;
 
-        let holdings = list_holdings().unwrap_or_else(|e| {
+        let mut holdings = list_holdings().unwrap_or_else(|e| {
             log::warn!("portfolio: failed to list holdings: {}", e);
             Vec::new()
         });
         let cash = get_cash().unwrap_or(0.0);
+
+        // Fetch current prices with bounded concurrency (3 parallel requests)
+        if let Ok(client) = crate::tushare::client::TushareClient::from_settings() {
+            let symbols_with_idx: Vec<(usize, String, f64)> = holdings
+                .iter()
+                .enumerate()
+                .filter_map(|(i, h)| {
+                    let shares = h.shares?;
+                    if shares > 0.0 {
+                        Some((i, h.symbol.clone(), shares))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            // Collect futures into a vec first to avoid lifetime issues with async closures
+            let mut price_futures = Vec::new();
+            for (i, symbol, _shares) in &symbols_with_idx {
+                let symbol = symbol.clone();
+                let i = *i;
+                let c = client.clone();
+                price_futures.push(async move {
+                    let result = c.get_latest_price(&symbol).await;
+                    (i, result.map_err(|e| e.to_string()))
+                });
+            }
+            let prices: Vec<(usize, Result<f64, String>)> =
+                futures_util::stream::iter(price_futures)
+                    .buffer_unordered(3)
+                    .collect()
+                    .await;
+
+            for (i, result) in prices {
+                let h = &mut holdings[i];
+                let shares = h.shares.unwrap_or(0.0);
+                match result {
+                    Ok(current_price) => {
+                        let new_notional = current_price * shares;
+                        let old_notional = h.notional;
+                        if (new_notional - old_notional).abs() > 0.01 {
+                            h.notional = new_notional;
+                            if let Err(e) = upsert_holding(h) {
+                                log::warn!(
+                                    "portfolio: failed to update notional for {}: {}",
+                                    h.symbol, e
+                                );
+                            } else {
+                                log::debug!(
+                                    "portfolio: updated notional for {}: {:.0} -> {:.0}",
+                                    h.symbol, old_notional, new_notional
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "portfolio: price fetch failed for {}, keeping stale notional: {}",
+                            h.symbol, e
+                        );
+                    }
+                }
+            }
+        } else {
+            log::warn!("portfolio: tushare not configured, using stored notional values");
+        }
+
         let total_notional = holdings.iter().map(|h| h.notional.abs()).sum();
         Self { holdings, cash, total_notional }
     }
@@ -173,9 +244,9 @@ fn build_portfolio_summary(data: &PortfolioData) -> String {
                 .unwrap_or_else(|| "-".to_string());
             let avg_cost = h
                 .avg_cost
-                .map(|c| format!("{:.2}", c))
+                .map(|c| format!("{:.3}", c))
                 .unwrap_or_else(|| "-".to_string());
-            let notional = format!("{:.0}", h.notional);
+            let notional = format!("{:.2}", h.notional);
             let concentration = if data.total_notional > 0.0 {
                 format!("{:.1}%", h.notional.abs() / data.total_notional * 100.0)
             } else {
@@ -186,10 +257,10 @@ fn build_portfolio_summary(data: &PortfolioData) -> String {
                 h.symbol, name, shares, avg_cost, notional, concentration
             ));
         }
-        out.push_str(&format!("总市值: {:.0} CNY\n", data.total_notional));
+        out.push_str(&format!("总市值: {:.2} CNY\n", data.total_notional));
     }
 
-    out.push_str(&format!("现金: {:.0} CNY", data.cash));
+    out.push_str(&format!("现金: {:.2} CNY", data.cash));
 
     out
 }
@@ -335,7 +406,7 @@ fn build_risk_metrics_context(symbol: &str, data: &PortfolioData) -> String {
         .unwrap_or(0.0);
 
     format!(
-        "【预计算风险指标】\n集中度: {:.1}\n盈亏比: {:.2}\n可用子弹: {:.0}\n\n请在分析中直接使用上述预计算指标，无需重新计算。\n",
+        "【预计算风险指标】\n集中度: {:.1}\n盈亏比: {:.1}\n可用子弹: {:.2}\n\n请在分析中直接使用上述预计算指标，无需重新计算。\n",
         concentration_pct, pnl_pct, data.cash
     )
 }
@@ -454,7 +525,7 @@ fn build_context_messages(
     }
 
     let mut context = format!(
-        "【标的: {}】\nMacro SIGNAL: {}\nEmergency Buffer: {:.0} CNY\n",
+        "【标的: {}】\nMacro SIGNAL: {}\nEmergency Buffer: {:.2} CNY\n",
         symbol, macro_signal, emergency_buffer_cny
     );
     if !portfolio_summary.is_empty() {
@@ -908,8 +979,8 @@ pub async fn run_committee(
     let mut round_outputs: Vec<RoundOutput> = Vec::new();
     let mut total_tokens: u32 = 0;
 
-    // Load portfolio data once for injection into Macro and Risk R1
-    let portfolio_data = PortfolioData::load();
+    // Load portfolio data with current prices for injection into Macro and Risk R1
+    let portfolio_data = PortfolioData::load_and_refresh_prices().await;
     let portfolio_summary = build_portfolio_summary(&portfolio_data);
 
     // ── Step 1: Macro phase (with tool-call loop) ──────────────────────

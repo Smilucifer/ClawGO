@@ -2,6 +2,52 @@
 
 ## Phase 10+ (2026-06-01)
 
+### v5.1.1 — Bug 修复 + Chat UI 升级 + 代码审查优化
+
+**Bug 修复 (3 项):**
+1. **标题栏按钮修复**: `capabilities/default.json` 添加 `core:window:allow-minimize`/`allow-toggle-maximize`/`allow-close` 权限，最小化/最大化/关闭按钮恢复正常
+2. **Python Setup Overlay 竞态修复**: 兼容 `"starting"`/`"verifying"` 两种 stage；mount 后主动调用 `get_python_status` 轮询当前状态，解决后端先于前端订阅事件的竞态条件；Rust 端新增 `ProgressSnapshot` + `LAST_PROGRESS` 全局存储
+3. **Index 首页恢复**: 移除 `goto("/chat")` 重定向，重建功能性首页（Logo + 快捷操作 + 最近对话 + 功能入口网格）
+
+**Chat UI 升级 (4 项):**
+4. **消息区域**: 头像改为 30px 圆形（用户首字母 / AI ✦），移除用户消息背景色，添加 `fadeInUp` 入场动画
+5. **输入框**: 背景 `bg-secondary`，focus 边框 `border-primary/30`（金色），send 按钮 `bg-primary/15` + `border-primary/30` 样式
+6. **状态栏**: 背景 `bg-secondary`，状态点绿色 glow，新增 Running/Ready 状态 pill
+7. **右侧面板**: 背景 `bg-sidebar`，宽度 280px→300px，工具图标 4x4→7x7
+
+**CSS 设计系统桥接 (1 项):**
+8. **Flat token 别名**: `app.css` 新增 50+ CSS 变量（`--bg-base`/`--text-primary`/`--accent-color`/`--font-sans`/`--font-mono`/`--radius-*`/`--space-*`/`--duration-*`），映射 Demo 设计系统到 Tailwind HSL 变量
+
+**代码审查修复 (6 项 — /simplify 四路审查):**
+9. **Reuse**: `+page.svelte` 的 `formatTime()`/`truncate()` 改用 `$lib/utils/format` 的 `relativeTime`/`truncate`
+10. **Simplification**: `SessionStatusBar` Running/Ready pill 合并为单个元素 + 三元表达式
+11. **Simplification**: `PythonSetupOverlay.handleProgress` 三分支简化为 `if (ready) ... else ...`
+12. **Altitude**: `portfolio.rs` 三处 `entry.notional = avg_cost * shares` 提取为 `Holding::recompute_notional()` 方法
+13. **Altitude**: `orchestrator.rs` `load_with_prices()` 重命名为 `load_and_refresh_prices()`，明确写副作用语义
+14. **Efficiency**: 价格获取从 O(N) 串行 HTTP 改为 `futures_util::stream::buffer_unordered(3)` 并发，~3x 提速
+
+**涉及文件:**
+- `src-tauri/capabilities/default.json` — 窗口权限
+- `src-tauri/src/python/bootstrap.rs` — ProgressSnapshot + LAST_PROGRESS
+- `src-tauri/src/python/mod.rs` — pub bootstrap
+- `src-tauri/src/commands/python_status.rs` — progress 字段
+- `src/routes/+page.svelte` — Index 首页
+- `src/app.css` — Flat token 别名 + fadeInUp 动画 + 暖色滚动条
+- `src/lib/components/ChatMessage.svelte` — 消息 UI
+- `src/lib/components/PromptInput.svelte` — 输入框 UI
+- `src/lib/components/SessionStatusBar.svelte` — 状态栏 UI
+- `src/lib/components/ToolActivity.svelte` — 右侧面板 UI
+- `src/lib/components/PythonSetupOverlay.svelte` — 竞态修复
+- `src-tauri/src/invest/committee/orchestrator.rs` — 并发价格获取 + 重命名
+- `src-tauri/src/invest/committee/tools.rs` — 小数精度统一
+- `src-tauri/src/invest/committee/analysis.rs` — 小数精度统一
+- `src-tauri/src/invest/daily_report.rs` — 小数精度统一
+- `src-tauri/src/invest/regime.rs` — 小数精度统一
+- `src-tauri/src/invest/international.rs` — serde alias
+- `src-tauri/src/storage/invest/portfolio.rs` — recompute_notional 方法
+
+---
+
 ### v5.1.0 — UI 设计系统统一: 暖色暗黑主题 + 自定义标题栏 + Inter 字体
 
 **UI 重构 (2026-06-01):**

@@ -24,10 +24,10 @@ def quote(symbol: str) -> dict:
     return {
         "symbol": symbol,
         "name": info.get("shortName") or info.get("longName") or symbol,
-        "price": round(price, 4),
-        "change": round(change, 4),
-        "change_pct": round(change_pct, 4),
-        "previous_close": round(previous_close, 4),
+        "price": round(price, 3),
+        "change": round(change, 3),
+        "change_pct": round(change_pct, 1),
+        "previous_close": round(previous_close, 3),
         "timestamp": int(info.get("regularMarketTime", datetime.now().timestamp())),
     }
 

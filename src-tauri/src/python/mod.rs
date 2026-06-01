@@ -3,7 +3,7 @@
 //! Manages a long-lived Python subprocess (`server.py`) that handles data-fetching
 //! requests via JSON-RPC over stdin/stdout. The runtime auto-restarts on crash.
 
-mod bootstrap;
+pub mod bootstrap;
 pub mod bridge;
 
 use bridge::JsonRpcClient;

@@ -70,7 +70,7 @@ pub fn generate_daily_report(data_dir: &Path) -> Result<String, String> {
                 h.symbol,
                 h.name.as_deref().unwrap_or("-"),
                 h.shares.map(|s| s.to_string()).unwrap_or("-".into()),
-                h.avg_cost.map(|c| format!("{:.2}", c)).unwrap_or("-".into()),
+                h.avg_cost.map(|c| format!("{:.3}", c)).unwrap_or("-".into()),
                 h.notional
             ));
         }

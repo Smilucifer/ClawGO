@@ -400,9 +400,9 @@
   >
     <div class="flex items-center gap-1.5">
       {@render statusIcon(cat)}
-      <div class="flex h-4 w-4 shrink-0 items-center justify-center rounded {style.bg}">
+      <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md {style.bg}">
         <svg
-          class="h-2.5 w-2.5 {style.text}"
+          class="h-3.5 w-3.5 {style.text}"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -432,7 +432,7 @@
 {/snippet}
 
 {#if !collapsed}
-  <div class="flex h-full flex-col border-l border-border bg-muted/30" style="width: 280px;">
+  <div class="flex h-full flex-col border-l border-border bg-sidebar" style="width: 300px;">
     <!-- Header: 4 icon tabs -->
     <div class="px-2 py-1.5 border-b border-border">
       <div class="flex items-center justify-between">
@@ -824,9 +824,9 @@
             <div class="px-2.5 py-1">
               <div class="flex items-center gap-1.5">
                 {@render statusIcon(cat)}
-                <div class="flex h-4 w-4 shrink-0 items-center justify-center rounded {style.bg}">
+                <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md {style.bg}">
                   <svg
-                    class="h-2.5 w-2.5 {style.text}"
+                    class="h-3.5 w-3.5 {style.text}"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"

@@ -62,48 +62,21 @@
 </script>
 
 <div
-  class="w-full {isUser ? 'bg-muted/50' : ''}"
+  class="msg-entry w-full"
   role="group"
   onmouseenter={() => (hovered = true)}
   onmouseleave={() => (hovered = false)}
 >
   <div class="chat-content-width py-4">
-    <!-- Header: icon + name + copy button + timestamp -->
-    <div class="mb-1.5 flex items-center gap-2">
+    <!-- Header: avatar + name + copy button + timestamp -->
+    <div class="mb-1.5 flex items-center gap-3">
       {#if isUser}
-        <div class="flex h-5 w-5 items-center justify-center rounded-sm bg-primary/10 text-primary">
-          <svg
-            class="h-3 w-3"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-            <circle cx="12" cy="7" r="4" />
-          </svg>
+        <div class="msg-avatar user-avatar">
+          {(t("chat_roleYou") || "Y").charAt(0)}
         </div>
         <span class="text-sm font-semibold text-foreground">{t("chat_roleYou")}</span>
       {:else}
-        <div
-          class="flex h-5 w-5 items-center justify-center rounded-sm bg-orange-500/10 text-orange-500"
-        >
-          <svg
-            class="h-3 w-3"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path
-              d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"
-            />
-          </svg>
-        </div>
+        <div class="msg-avatar ai-avatar">&#10022;</div>
         <span class="text-sm font-semibold text-foreground">
           {assistantLabel || t("chat_roleClaude")}
         </span>
@@ -241,3 +214,29 @@
     </div>
   </div>
 </div>
+
+<style>
+  .msg-entry {
+    animation: fadeInUp var(--duration-normal, 200ms) var(--ease-out, ease-out);
+  }
+
+  .msg-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-md, 8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .msg-avatar.user-avatar {
+    background: var(--accent-muted, hsl(38 46% 62% / 0.15));
+    color: var(--accent-color, hsl(38 46% 62%));
+  }
+  .msg-avatar.ai-avatar {
+    background: rgba(201, 169, 110, 0.12);
+    color: var(--accent-color, hsl(38 46% 62%));
+  }
+</style>
