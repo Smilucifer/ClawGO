@@ -41,7 +41,7 @@ fn avg_or_zero(returns: &[f64]) -> f64 {
 
 pub async fn run_invest_pipeline(tushare_token: &str) -> Result<DreamResult, String> {
     let pipeline_start = Instant::now();
-    let client = TushareClient::new(tushare_token.to_string());
+    let client = TushareClient::with_token(tushare_token.to_string());
     let config = crate::invest::scheduler::config::load_dream_config();
 
     // Snapshot before (for rollback)

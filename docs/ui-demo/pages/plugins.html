@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClawGO — Plugins</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../design-system.css">
+  <style>
+    .plugins-header { display: flex; align-items: center; justify-content: space-between; padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border); }
+    .plugins-title { font-size: 18px; font-weight: 600; color: var(--text-primary); }
+    .plugins-search { display: flex; align-items: center; gap: var(--space-2); background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); width: 280px; }
+    .plugins-search svg { width: 16px; height: 16px; color: var(--text-tertiary); flex-shrink: 0; }
+    .plugins-search input { flex: 1; background: none; border: none; outline: none; font-size: 13px; color: var(--text-primary); }
+    .plugins-search input::placeholder { color: var(--text-tertiary); }
+
+    .plugins-content { flex: 1; overflow-y: auto; padding: var(--space-4) var(--space-5); }
+    .plugins-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--space-3); }
+    .plugin-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); transition: all var(--duration-fast); cursor: pointer; }
+    .plugin-card:hover { border-color: var(--border-accent); transform: translateY(-1px); }
+    .plugin-card-header { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+    .plugin-icon { width: 40px; height: 40px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+    .plugin-info { flex: 1; min-width: 0; }
+    .plugin-name { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+    .plugin-author { font-size: 11px; color: var(--text-tertiary); }
+    .plugin-toggle { width: 36px; height: 20px; border-radius: 10px; background: var(--bg-input); border: 1px solid var(--border); cursor: pointer; position: relative; flex-shrink: 0; transition: all var(--duration-fast); }
+    .plugin-toggle.on { background: var(--accent-muted); border-color: var(--border-accent); }
+    .plugin-toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--text-tertiary); transition: all var(--duration-fast); }
+    .plugin-toggle.on::after { left: 18px; background: var(--accent); }
+    .plugin-desc { font-size: 12px; color: var(--text-tertiary); line-height: 1.5; margin-bottom: var(--space-3); }
+    .plugin-meta { display: flex; align-items: center; gap: var(--space-3); }
+    .plugin-tag { font-size: 10px; padding: 2px 8px; border-radius: var(--radius-full); background: var(--bg-input); color: var(--text-tertiary); }
+    .plugin-version { font-size: 10px; color: var(--text-tertiary); font-family: var(--font-mono); }
+    .plugin-stars { font-size: 11px; color: var(--text-tertiary); display: flex; align-items: center; gap: 3px; }
+    .plugin-stars svg { width: 12px; height: 12px; }
+
+    .section-divider { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-5) 0 var(--space-4); }
+    .section-divider span { font-size: 12px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+    .section-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    .main-content { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    @media (max-width: 900px) { .content-panel { display: none; } }
+  </style>
+</head>
+<body>
+
+  <div class="window-chrome">
+    <div class="window-title">ClawGO — Plugins</div>
+    <div class="window-controls">
+      <button class="window-btn minimize"><svg viewBox="0 0 10 1" fill="currentColor"><rect width="10" height="1"/></svg></button>
+      <button class="window-btn maximize"><svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1"><rect x="0.5" y="0.5" width="9" height="9"/></svg></button>
+      <button class="window-btn close"><svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg></button>
+    </div>
+  </div>
+
+  <div class="app-layout">
+    <div class="sidebar">
+      <div class="icon-rail">
+        <div class="rail-icon" title="Chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+        <div class="rail-icon" title="Explorer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
+        <div class="rail-icon active" title="Plugins"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+        <div class="rail-icon" title="Invest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
+        <div class="rail-separator"></div>
+        <div class="rail-icon" title="Memory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+        <div class="rail-icon" title="Usage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
+        <div class="rail-icon" title="History"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+        <div class="rail-bottom">
+          <div class="rail-icon" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+          <div class="rail-avatar">S</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <div class="plugins-header">
+        <div class="plugins-title">Plugins & Extensions</div>
+        <div class="plugins-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" placeholder="Search plugins...">
+        </div>
+      </div>
+
+      <div class="plugins-content">
+        <div class="section-divider"><span>Active</span></div>
+        <div class="plugins-grid">
+          <div class="plugin-card">
+            <div class="plugin-card-header">
+              <div class="plugin-icon" style="background: var(--accent-muted); color: var(--accent);">📊</div>
+              <div class="plugin-info">
+                <div class="plugin-name">openInvest</div>
+                <div class="plugin-author">ClawGO Team</div>
+              </div>
+              <div class="plugin-toggle on"></div>
+            </div>
+            <div class="plugin-desc">Portfolio management with LLM committee analysis, regime detection, and dream pipeline.</div>
+            <div class="plugin-meta">
+              <span class="plugin-tag">Finance</span>
+              <span class="plugin-tag">LLM</span>
+              <span class="plugin-version">v5.0.4</span>
+            </div>
+          </div>
+          <div class="plugin-card">
+            <div class="plugin-card-header">
+              <div class="plugin-icon" style="background: rgba(138, 154, 118, 0.12); color: #8a9a76;">🔍</div>
+              <div class="plugin-info">
+                <div class="plugin-name">Code Explorer</div>
+                <div class="plugin-author">ClawGO Team</div>
+              </div>
+              <div class="plugin-toggle on"></div>
+            </div>
+            <div class="plugin-desc">File tree browser with syntax highlighting, minimap, and git integration.</div>
+            <div class="plugin-meta">
+              <span class="plugin-tag">Editor</span>
+              <span class="plugin-version">v1.0.0</span>
+            </div>
+          </div>
+          <div class="plugin-card">
+            <div class="plugin-card-header">
+              <div class="plugin-icon" style="background: rgba(201, 169, 110, 0.08); color: var(--text-secondary);">📝</div>
+              <div class="plugin-info">
+                <div class="plugin-name">Memory System</div>
+                <div class="plugin-author">ClawGO Team</div>
+              </div>
+              <div class="plugin-toggle on"></div>
+            </div>
+            <div class="plugin-desc">SQLite FTS5 powered memory with auto-extraction, hybrid search, and injection config.</div>
+            <div class="plugin-meta">
+              <span class="plugin-tag">Memory</span>
+              <span class="plugin-tag">SQLite</span>
+              <span class="plugin-version">v3.0.0</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-divider"><span>Available</span></div>
+        <div class="plugins-grid">
+          <div class="plugin-card">
+            <div class="plugin-card-header">
+              <div class="plugin-icon" style="background: rgba(168, 122, 122, 0.12); color: #a87a7a;">🌐</div>
+              <div class="plugin-info">
+                <div class="plugin-name">Web Search</div>
+                <div class="plugin-author">Community</div>
+              </div>
+              <div class="plugin-toggle"></div>
+            </div>
+            <div class="plugin-desc">Real-time web search integration with result caching and source attribution.</div>
+            <div class="plugin-meta">
+              <span class="plugin-tag">Search</span>
+              <span class="plugin-stars"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> 234</span>
+              <span class="plugin-version">v0.9.2</span>
+            </div>
+          </div>
+          <div class="plugin-card">
+            <div class="plugin-card-header">
+              <div class="plugin-icon" style="background: rgba(138, 154, 118, 0.12); color: #8a9a76;">🤖</div>
+              <div class="plugin-info">
+                <div class="plugin-name">Auto Coder</div>
+                <div class="plugin-author">Community</div>
+              </div>
+              <div class="plugin-toggle"></div>
+            </div>
+            <div class="plugin-desc">Automated code generation with test scaffolding and CI integration.</div>
+            <div class="plugin-meta">
+              <span class="plugin-tag">DevTools</span>
+              <span class="plugin-stars"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> 189</span>
+              <span class="plugin-version">v0.8.1</span>
+            </div>
+          </div>
+          <div class="plugin-card">
+            <div class="plugin-card-header">
+              <div class="plugin-icon" style="background: var(--accent-muted); color: var(--accent);">📊</div>
+              <div class="plugin-info">
+                <div class="plugin-name">Data Viz</div>
+                <div class="plugin-author">Community</div>
+              </div>
+              <div class="plugin-toggle"></div>
+            </div>
+            <div class="plugin-desc">Interactive chart generation with Chart.js, D3, and Plotly support.</div>
+            <div class="plugin-meta">
+              <span class="plugin-tag">Visualization</span>
+              <span class="plugin-stars"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> 156</span>
+              <span class="plugin-version">v0.7.0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

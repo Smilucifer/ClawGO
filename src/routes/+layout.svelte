@@ -29,6 +29,7 @@
   import DoctorPanel from "$lib/components/DoctorPanel.svelte";
   import MoreMenu from "$lib/components/MoreMenu.svelte";
   import UpdateBanner from "$lib/components/UpdateBanner.svelte";
+  import PythonSetupOverlay from "$lib/components/PythonSetupOverlay.svelte";
   import type {
     TaskRun,
     UserSettings,
@@ -66,8 +67,8 @@
   } from "$lib/stores/agent-settings-cache.svelte";
   import { canResumeNow } from "$lib/stores";
   import type { PlatformCredential } from "$lib/types";
-  import { TeamStore } from "$lib/stores/team-store.svelte";
   import { KeybindingStore } from "$lib/stores/keybindings.svelte";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
   import { getTransport } from "$lib/transport";
   import {
     t,
@@ -97,10 +98,6 @@
   let showDoctorPanel = $state(false);
   let permissionsModalOpen = $state(false);
 
-  // Team store (shared via context with /teams page)
-  const teamStore = new TeamStore();
-  setContext("teamStore", teamStore);
-
   // Keybinding store (shared via context with all pages)
   const keybindingStore = new KeybindingStore();
   setContext("keybindings", keybindingStore);
@@ -113,37 +110,13 @@
   let settings = $state<UserSettings | null>(null);
   let sidebarOpen = $state(true);
   let projectCwd = $state("");
-  type ThemeMode = "light" | "dark" | "system";
-  type ColorScheme = "warm" | "neutral";
-
-  function getInitialTheme(): ThemeMode {
-    if (typeof window === "undefined") return "dark";
-    const saved = localStorage.getItem("clawgo:theme");
-    if (saved === "light" || saved === "dark" || saved === "system") return saved;
-    return "dark";
-  }
-
-  function getInitialScheme(): ColorScheme {
-    if (typeof window === "undefined") return "warm";
-    const saved = localStorage.getItem("clawgo:colorScheme");
-    return saved === "neutral" ? "neutral" : "warm";
-  }
-
-  let themeMode = $state<ThemeMode>(getInitialTheme());
-  let colorScheme = $state<ColorScheme>(getInitialScheme());
-  let systemDark = $state(
-    typeof window !== "undefined"
-      ? window.matchMedia("(prefers-color-scheme: dark)").matches
-      : true,
-  );
-  let effectiveDark = $derived(themeMode === "system" ? systemDark : themeMode === "dark");
   let pinnedCwds = $state<string[]>([]);
   let removedCwds = $state<string[]>([]);
   let pinnedConversationKeys = $state<Set<string>>(new Set());
   let seenMessageCounts = $state<SeenMessageCounts>({});
   let seenMessageCountsLoaded = $state(false);
 
-  let panelTab = $state<"chats" | "teams">("chats");
+  let panelTab = $state<"chats" | "groupChats">("chats");
   let runSearchQuery = $state("");
   let appVersion = $state("");
 
@@ -154,7 +127,6 @@
   // ── Group chat sidebar state ──
   let groupChats = $state<GroupChatSummary[]>([]);
   let groupChatRunIndexMap = $state<Map<string, string[]>>(new Map());
-  let groupChatsExpanded = $state(true);
   let showGroupChatCreateDialog = $state(false);
   let groupChatCreateName = $state("");
   let groupChatCreateCwd = $state("");
@@ -457,13 +429,13 @@
   // Navigation items (declared before pageName derivation)
   const navItems = [
     { path: "/chat", label: () => t("nav_chat"), icon: "message" },
-    { path: "/explorer", label: () => t("nav_explorer"), icon: "folder" },
-    { path: "/plugins", label: () => t("nav_extend"), icon: "zap" },
     { path: "/invest", label: () => t("nav_invest"), icon: "trendingUp" },
+    { path: "/explorer", label: () => t("nav_explorer"), icon: "folder" },
     { path: "/memory", label: () => t("nav_memory"), icon: "book" },
-    { path: "/usage", label: () => t("nav_usage"), icon: "chart" },
     { path: "/memory-mgmt", label: () => t("nav_memoryMgmt"), icon: "database" },
+    { path: "/plugins", label: () => t("nav_extend"), icon: "zap" },
     { path: "/history", label: () => t("nav_history"), icon: "clock" },
+    { path: "/usage", label: () => t("nav_usage"), icon: "chart" },
     { path: "/settings", label: () => t("nav_settings"), icon: "settings" },
   ];
 
@@ -749,82 +721,7 @@
     // Poll for runs every 60s (fallback only — primary updates via clawgo:runs-changed event)
     const interval = setInterval(loadRuns, 60000);
 
-    // Team store: initial load + poll fallback (60s)
-    teamStore.loadTeams();
-    const teamPollInterval = setInterval(() => teamStore.loadTeams(), 60000);
-
-    // Team/task event listeners — app-level lifecycle, independent of chat page
-    type TeamUpdatePayload = { team_name: string; change: string };
-    type TaskUpdatePayload = { team_name: string; task_id: string; change: string };
-
-    let destroyed = false;
-    let unlistenTeam: (() => void) | undefined;
-    let unlistenTask: (() => void) | undefined;
-    const retryTimers: ReturnType<typeof setTimeout>[] = [];
-
-    // 首次+重试成功后都补偿同步（debounce 300ms）
-    let resyncTimer: ReturnType<typeof setTimeout> | undefined;
-    function scheduleResync() {
-      if (resyncTimer) clearTimeout(resyncTimer);
-      resyncTimer = setTimeout(() => {
-        if (!destroyed) teamStore.forceRefresh();
-      }, 300);
-    }
-
     const transport = getTransport();
-
-    function registerTeamListener<T>(
-      name: string,
-      handler: (payload: T) => void,
-      assign: (fn: () => void) => void,
-    ) {
-      function tryListen(attempt: number) {
-        transport
-          .listen<T>(name, handler)
-          .then((fn) => {
-            if (destroyed) {
-              fn();
-              return;
-            }
-            assign(fn);
-            scheduleResync();
-          })
-          .catch((e) => {
-            if (destroyed) return;
-            if (attempt < 2) {
-              const delay = (attempt + 1) * 2000; // 2s, 4s
-              dbgWarn(
-                "layout",
-                `${name} listen failed (attempt ${attempt + 1}/3), retry in ${delay}ms`,
-                e,
-              );
-              const t = setTimeout(() => tryListen(attempt + 1), delay);
-              retryTimers.push(t);
-            } else {
-              dbgWarn("layout", `${name} listen failed after 3 attempts, falling back to poll`, e);
-            }
-          });
-      }
-      tryListen(0);
-    }
-
-    registerTeamListener<TeamUpdatePayload>(
-      "team-update",
-      (payload) => {
-        dbg("layout", "team-update", payload);
-        teamStore.handleTeamUpdate(payload);
-      },
-      (fn) => (unlistenTeam = fn),
-    );
-
-    registerTeamListener<TaskUpdatePayload>(
-      "task-update",
-      (payload) => {
-        dbg("layout", "task-update", payload);
-        teamStore.handleTaskUpdate(payload);
-      },
-      (fn) => (unlistenTask = fn),
-    );
 
     // Keybinding store: load overrides + CLI bindings, register app-level callbacks
     keybindingStore.loadOverrides();
@@ -952,6 +849,7 @@
     window.addEventListener("clawgo:explorer-file-selected", onExplorerFileSelected);
 
     // Listen for run status changes (idle↔running) from backend
+    let destroyed = false;
     let unlistenStatus: (() => void) | undefined;
     transport
       .listen("clawgo:status-changed", (payload: unknown) => {
@@ -969,15 +867,10 @@
 
     return () => {
       resizeCleanup?.(); // Clean up resize drag if component unmounts mid-drag
+      destroyed = true;
       unlistenStatus?.();
       clearInterval(interval);
-      clearInterval(teamPollInterval);
       if (debounceTimer) clearTimeout(debounceTimer);
-      destroyed = true;
-      unlistenTeam?.();
-      unlistenTask?.();
-      retryTimers.forEach(clearTimeout);
-      if (resyncTimer) clearTimeout(resyncTimer);
       keybindingStore.unregisterCallback("app:toggleSidebar");
       keybindingStore.unregisterCallback("app:commandPalette");
       keybindingStore.unregisterCallback("app:newChat");
@@ -1017,8 +910,6 @@
 
   afterNavigate(({ to }) => {
     dbg("layout", "navigated to:", to?.url.pathname);
-    // Auto-switch sidebar tab when navigating to /teams
-    if (to?.url.pathname === "/teams") panelTab = "teams";
     // Sync plugin section from URL when navigating to /plugins
     if (to?.url.pathname.startsWith("/plugins")) {
       const section = to.url.searchParams.get("section");
@@ -1332,28 +1223,20 @@
 
   setContext("toggleSidebar", toggleSidebar);
 
-  function cycleTheme() {
-    const order: ThemeMode[] = ["dark", "light", "system"];
-    const idx = order.indexOf(themeMode);
-    themeMode = order[(idx + 1) % order.length];
-    dbg("layout", "theme cycled", { themeMode, effectiveDark });
+  // Window controls (Tauri custom title bar)
+  function windowMinimize() {
+    getCurrentWindow().minimize();
+  }
+  function windowMaximize() {
+    getCurrentWindow().toggleMaximize();
+  }
+  function windowClose() {
+    getCurrentWindow().close();
   }
 
-  function cycleScheme() {
-    colorScheme = colorScheme === "warm" ? "neutral" : "warm";
-    dbg("layout", "color scheme cycled", { colorScheme });
-  }
-
-  // Persist theme + apply class
+  // Theme is fixed warm dark — always apply .dark class
   $effect(() => {
-    localStorage.setItem("clawgo:theme", themeMode);
-    document.documentElement.classList.toggle("dark", effectiveDark);
-  });
-
-  // Persist color scheme + apply class
-  $effect(() => {
-    localStorage.setItem("clawgo:colorScheme", colorScheme);
-    document.documentElement.classList.toggle("scheme-neutral", colorScheme === "neutral");
+    document.documentElement.classList.add("dark");
   });
 
   // Auto-expand folder containing selected run (chats tab only)
@@ -1407,18 +1290,6 @@
   });
 
   // Note: <html lang> is set by initLocale() and switchLocale() directly.
-
-  // Listen for system preference changes
-  onMount(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    function onSystemChange(e: MediaQueryListEvent) {
-      systemDark = e.matches;
-    }
-    mq.addEventListener("change", onSystemChange);
-    // Apply initial theme
-    document.documentElement.classList.toggle("dark", effectiveDark);
-    return () => mq.removeEventListener("change", onSystemChange);
-  });
 
   function handleKeydown(e: KeyboardEvent) {
     keybindingStore.dispatch(e);
@@ -1483,13 +1354,48 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="flex h-screen overflow-hidden">
+<div class="flex flex-col h-screen overflow-hidden">
+  <!-- Custom title bar (Tauri decorations: false) -->
+  <div
+    data-tauri-drag-region
+    class="flex h-8 shrink-0 items-center justify-between px-3 select-none"
+    style="background: hsl(var(--sidebar-background)); border-bottom: 1px solid hsl(var(--sidebar-border)); -webkit-app-region: drag;"
+  >
+    <span class="text-xs font-medium" style="color: hsl(var(--muted-foreground));">ClawGO</span>
+    <div class="flex items-center" style="-webkit-app-region: no-drag;">
+      <button
+        class="flex h-6 w-8 items-center justify-center transition-colors hover:bg-white/10"
+        onclick={windowMinimize}
+        title="Minimize"
+      >
+        <svg class="h-3 w-3" viewBox="0 0 10 1" fill="currentColor" style="color: hsl(var(--muted-foreground));"><rect width="10" height="1" y="4"/></svg>
+      </button>
+      <button
+        class="flex h-6 w-8 items-center justify-center transition-colors hover:bg-white/10"
+        onclick={windowMaximize}
+        title="Maximize"
+      >
+        <svg class="h-3 w-3" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" style="color: hsl(var(--muted-foreground));"><rect x="0.5" y="0.5" width="9" height="9"/></svg>
+      </button>
+      <button
+        class="flex h-6 w-8 items-center justify-center transition-colors hover:bg-red-500/80 hover:text-white"
+        onclick={windowClose}
+        title="Close"
+      >
+        <svg class="h-3 w-3" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2" style="color: hsl(var(--muted-foreground));"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="flex flex-1 overflow-hidden">
   <!-- Sidebar: Icon Rail + Content Panel -->
   {#if sidebarOpen}
-    <aside class="flex shrink-0 bg-sidebar text-sidebar-foreground transition-all duration-200">
+    <aside class="flex shrink-0 text-sidebar-foreground transition-all duration-200"
+      style="background: hsl(var(--sidebar-background));">
       <!-- A. Icon Rail -->
       <div
-        class="flex w-[44px] flex-col items-center border-r border-sidebar-border bg-black/[0.03] dark:bg-black/20"
+        class="flex w-[44px] flex-col items-center border-r border-sidebar-border"
+        style="background: hsl(var(--sidebar-background));"
       >
         <!-- Rail logo (OC) -->
         <div class="flex h-14 w-full items-center justify-center border-b border-sidebar-border">
@@ -1498,7 +1404,7 @@
 
         <!-- Rail nav icons -->
         <nav class="flex flex-1 flex-col items-center gap-1 py-2">
-          {#each navItems as item}
+          {#each navItems.filter((i) => i.path !== "/settings") as item}
             {@const isActive = navMatches(item.path)}
             <a
               href={item.path}
@@ -1636,7 +1542,37 @@
           {/each}
         </nav>
 
-        <!-- Rail version + locale + dark mode toggle -->
+        <!-- Settings (bottom, separated by divider) -->
+        <div class="mb-auto flex flex-col items-center gap-1 pb-2">
+          <div class="w-6 border-t border-sidebar-border mb-1"></div>
+          <a
+            href="/settings"
+            class="relative flex h-9 w-9 items-center justify-center rounded-md transition-colors duration-150 no-underline
+              {navMatches('/settings')
+              ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+              : 'hover:bg-sidebar-accent/50 text-sidebar-foreground'}"
+            title={t("nav_settings")}
+          >
+            {#if navMatches("/settings")}
+              <span class="absolute left-0 top-1.5 h-5 w-[3px] rounded-r-full bg-primary"></span>
+            {/if}
+            <svg
+              class="h-[18px] w-[18px]"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              ><path
+                d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+              /><circle cx="12" cy="12" r="3" /></svg
+            >
+            <span class="sr-only">{t("nav_settings")}</span>
+          </a>
+        </div>
+
+        <!-- Rail version + locale -->
         <div class="border-t border-sidebar-border py-2">
           <div class="flex items-center justify-center pb-1">
             <button
@@ -1686,86 +1622,6 @@
               </div>
             {/if}
           </div>
-          <button
-            class="flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors duration-150"
-            onclick={cycleTheme}
-            title={themeMode === "dark"
-              ? t("layout_themeTitle_dark")
-              : themeMode === "light"
-                ? t("layout_themeTitle_light")
-                : t("layout_themeTitle_system")}
-          >
-            {#if themeMode === "dark"}
-              <!-- Moon icon (dark mode active) -->
-              <svg
-                class="h-[18px] w-[18px]"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg
-              >
-            {:else if themeMode === "light"}
-              <!-- Sun icon (light mode active) -->
-              <svg
-                class="h-[18px] w-[18px]"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                ><circle cx="12" cy="12" r="4" /><path
-                  d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"
-                /></svg
-              >
-            {:else}
-              <!-- Monitor icon (system mode active) -->
-              <svg
-                class="h-[18px] w-[18px]"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                ><rect width="20" height="14" x="2" y="3" rx="2" /><line
-                  x1="8"
-                  x2="16"
-                  y1="21"
-                  y2="21"
-                /><line x1="12" x2="12" y1="17" y2="21" /></svg
-              >
-            {/if}
-          </button>
-          <button
-            class="flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors duration-150"
-            onclick={cycleScheme}
-            title={colorScheme === "warm"
-              ? t("layout_schemeTitle_warm")
-              : t("layout_schemeTitle_neutral")}
-          >
-            <!-- Palette icon -->
-            <svg
-              class="h-[18px] w-[18px]"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              ><circle cx="13.5" cy="6.5" r=".5" fill="currentColor" /><circle
-                cx="17.5"
-                cy="10.5"
-                r=".5"
-                fill="currentColor"
-              /><circle cx="8.5" cy="7.5" r=".5" fill="currentColor" /><circle
-                cx="6.5"
-                cy="12"
-                r=".5"
-                fill="currentColor"
-              /><path
-                d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"
-              /></svg
-            >
-          </button>
         </div>
       </div>
 
@@ -2341,15 +2197,15 @@
             >
             <button
               class="relative flex-1 py-1.5 text-xs font-medium text-center transition-colors
-              {panelTab === 'teams'
+              {panelTab === 'groupChats'
                 ? 'text-sidebar-foreground border-b-2 border-primary'
                 : 'text-muted-foreground hover:text-sidebar-foreground'}"
-              onclick={() => (panelTab = "teams")}
-              >{t("sidebar_teams")}
-              {#if teamStore.teams.length > 0}
+              onclick={() => (panelTab = "groupChats")}
+              >{t("sidebar_groupChats")}
+              {#if groupChats.length > 0}
                 <span
-                  class="ml-0.5 inline-flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-teal-500/80 px-1 text-[10px] font-bold text-white"
-                  >{teamStore.teams.length}</span
+                  class="ml-0.5 inline-flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-primary/80 px-1 text-[10px] font-bold text-primary-foreground"
+                  >{groupChats.length}</span
                 >
               {/if}
             </button>
@@ -2459,81 +2315,6 @@
                   />
                 {/each}
 
-                <!-- Group Chats section -->
-                {#if groupChats.length > 0}
-                  <div class="mt-2 border-t border-sidebar-border pt-2">
-                    <button
-                      class="flex w-full items-center gap-1.5 px-2 py-1 text-xs font-medium text-muted-foreground hover:text-sidebar-foreground transition-colors"
-                      onclick={() => (groupChatsExpanded = !groupChatsExpanded)}
-                    >
-                      <svg
-                        class="h-3 w-3 shrink-0 transition-transform duration-150 {groupChatsExpanded
-                          ? 'rotate-90'
-                          : ''}"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"><path d="m9 18 6-6-6-6" /></svg
-                      >
-                      <span>{t("sidebar_groupChats")}</span>
-                      <span class="ml-auto text-[10px] text-muted-foreground/60"
-                        >{groupChats.length}</span
-                      >
-                    </button>
-                    {#if groupChatsExpanded}
-                      {#each groupChats as chat (chat.id)}
-                        <div class="group flex w-full items-center gap-1 rounded-md hover:bg-sidebar-accent/50 transition-colors">
-                          <button
-                            class="flex flex-1 min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground"
-                            onclick={() => navigateToGroupChat(chat)}
-                          >
-                            <svg
-                              class="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              stroke-width="2"
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                              ><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle
-                                cx="9"
-                                cy="7"
-                                r="4"
-                              /><path
-                                d="M22 21v-2a4 4 0 0 0-3-3.87"
-                              /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg
-                            >
-                            <span class="flex-1 min-w-0 truncate">{chat.name}</span>
-                            <span class="shrink-0 text-[10px] text-muted-foreground/60"
-                              >{chat.participant_count}</span
-                            >
-                            <span class="shrink-0 text-[10px] text-muted-foreground/60"
-                              >{relativeTime(chat.updated_at)}</span
-                            >
-                          </button>
-                          <button
-                            class="hidden group-hover:flex shrink-0 items-center justify-center h-5 w-5 rounded text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-colors"
-                            onclick={(e) => { e.stopPropagation(); deleteGroupChatHandler(chat.id); }}
-                            title="Delete group chat"
-                          >
-                            <svg
-                              class="h-3 w-3"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              stroke-width="2"
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                            ><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-                          </button>
-                        </div>
-                      {/each}
-                    {/if}
-                  </div>
-                {/if}
-
                 <!-- Open folder... -->
                 <button
                   class="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
@@ -2560,46 +2341,46 @@
                 {/if}
               </div>
             {/if}
-          {:else if panelTab === "teams"}
-            <!-- Teams list in sidebar -->
+          {:else if panelTab === "groupChats"}
+            <!-- Group Chats list in sidebar -->
             <div class="flex-1 overflow-y-auto px-2 py-1">
-              {#if teamStore.loading}
-                <div class="flex items-center justify-center py-6">
-                  <div
-                    class="h-4 w-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin"
-                  ></div>
-                </div>
-              {:else if teamStore.teams.length === 0}
+              <!-- New Group Chat button -->
+              <button
+                class="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors mb-1 border border-dashed border-sidebar-border"
+                onclick={() => (showGroupChatCreateDialog = true)}
+              >
+                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
+                <span>{t("sidebar_groupChatCreate_title")}</span>
+              </button>
+
+              {#if groupChats.length === 0}
                 <div class="flex flex-col items-center gap-1 px-3 py-6 text-center">
-                  <p class="text-xs text-muted-foreground">{t("sidebar_noActiveTeams")}</p>
-                  <p class="text-[10px] text-muted-foreground/60">{t("sidebar_startTeamHint")}</p>
+                  <p class="text-xs text-muted-foreground">{t("sidebar_noGroupChats")}</p>
                 </div>
               {:else}
-                {#each teamStore.teams as team}
-                  <button
-                    class="flex w-full flex-col gap-0.5 rounded-md px-2.5 py-2 text-left transition-colors mb-0.5
-                        {teamStore.selectedTeam === team.name
-                      ? 'bg-sidebar-accent text-sidebar-foreground'
-                      : 'hover:bg-sidebar-accent/50 text-sidebar-foreground'}"
-                    onclick={() => {
-                      teamStore.selectTeam(team.name);
-                      goto("/teams");
-                    }}
-                  >
-                    <div class="flex items-center gap-1.5">
-                      <span class="h-2 w-2 rounded-full bg-teal-500 shrink-0"></span>
-                      <span class="text-[13px] font-medium min-w-0 truncate">{team.name}</span>
-                    </div>
-                    {#if team.description}
-                      <p class="text-xs text-muted-foreground truncate pl-3.5">
-                        {team.description}
-                      </p>
-                    {/if}
-                    <div class="flex items-center gap-2 pl-3.5 text-xs text-muted-foreground">
-                      <span>{t("sidebar_members", { count: String(team.member_count) })}</span>
-                      <span>{t("sidebar_tasks", { count: String(team.task_count) })}</span>
-                    </div>
-                  </button>
+                {#each groupChats as chat (chat.id)}
+                  <div class="group flex w-full items-center gap-1 rounded-md hover:bg-sidebar-accent/50 transition-colors">
+                    <button
+                      class="flex flex-1 min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-xs text-sidebar-foreground"
+                      onclick={() => navigateToGroupChat(chat)}
+                    >
+                      <svg
+                        class="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                        ><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg
+                      >
+                      <span class="flex-1 min-w-0 truncate">{chat.name}</span>
+                      <span class="shrink-0 text-[10px] text-muted-foreground/60">{chat.participant_count}</span>
+                      <span class="shrink-0 text-[10px] text-muted-foreground/60">{relativeTime(chat.updated_at)}</span>
+                    </button>
+                    <button
+                      class="hidden group-hover:flex shrink-0 items-center justify-center h-5 w-5 rounded text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                      onclick={(e) => { e.stopPropagation(); deleteGroupChatHandler(chat.id); }}
+                      title="Delete group chat"
+                    >
+                      <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                    </button>
+                  </div>
                 {/each}
               {/if}
             </div>
@@ -2695,6 +2476,7 @@
       {@render children()}
     </main>
   </div>
+</div>
 </div>
 
 <CommandPalette
@@ -2826,3 +2608,5 @@
     </div>
   </div>
 </Modal>
+
+<PythonSetupOverlay />

@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClawGO — Explorer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../design-system.css">
+  <style>
+    .file-tree { flex: 1; overflow-y: auto; padding: var(--space-2); }
+    .tree-item { display: flex; align-items: center; gap: var(--space-2); padding: 5px var(--space-3); border-radius: var(--radius-md); cursor: pointer; font-size: 13px; color: var(--text-secondary); transition: all var(--duration-fast); }
+    .tree-item:hover { background: var(--bg-hover); }
+    .tree-item.active { background: var(--bg-active); color: var(--text-primary); }
+    .tree-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .tree-item.folder svg { color: var(--accent); opacity: 0.7; }
+    .tree-item.file svg { color: var(--text-tertiary); }
+    .tree-item.active svg { color: var(--accent); }
+    .tree-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tree-children { padding-left: var(--space-4); }
+    .tree-item .file-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; background: var(--bg-input); color: var(--text-tertiary); }
+
+    .editor-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .editor-tabs { display: flex; align-items: center; background: var(--bg-elevated); border-bottom: 1px solid var(--border); overflow-x: auto; }
+    .editor-tab { display: flex; align-items: center; gap: 6px; padding: var(--space-2) var(--space-4); font-size: 12px; color: var(--text-tertiary); border-right: 1px solid var(--border); cursor: pointer; white-space: nowrap; }
+    .editor-tab:hover { color: var(--text-secondary); background: var(--bg-hover); }
+    .editor-tab.active { color: var(--text-primary); background: var(--bg-base); border-bottom: 2px solid var(--accent); }
+    .editor-tab svg { width: 14px; height: 14px; }
+    .editor-tab .tab-close { width: 14px; height: 14px; border-radius: 3px; display: flex; align-items: center; justify-content: center; opacity: 0; cursor: pointer; }
+    .editor-tab:hover .tab-close { opacity: 0.5; }
+    .editor-tab .tab-close:hover { opacity: 1; background: var(--bg-active); }
+    .editor-tab .modified { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); opacity: 0.6; }
+
+    .breadcrumb { display: flex; align-items: center; gap: 4px; padding: var(--space-2) var(--space-4); font-size: 12px; color: var(--text-tertiary); border-bottom: 1px solid var(--border); }
+    .breadcrumb-item { cursor: pointer; }
+    .breadcrumb-item:hover { color: var(--text-secondary); }
+    .breadcrumb-item.current { color: var(--text-primary); font-weight: 500; }
+    .breadcrumb-sep { color: var(--text-tertiary); opacity: 0.5; }
+
+    .editor-content { flex: 1; overflow: auto; display: flex; }
+    .line-numbers { padding: var(--space-3) var(--space-2); text-align: right; font-family: var(--font-mono); font-size: 13px; line-height: 1.6; color: var(--text-tertiary); opacity: 0.4; user-select: none; border-right: 1px solid var(--border); min-width: 50px; }
+    .code-area { flex: 1; padding: var(--space-3) var(--space-4); font-family: var(--font-mono); font-size: 13px; line-height: 1.6; color: var(--text-secondary); overflow-x: auto; }
+    .code-area .keyword { color: var(--text-primary); }
+    .code-area .type { color: var(--accent); opacity: 0.8; }
+    .code-area .string { color: var(--accent); }
+    .code-area .comment { color: var(--text-tertiary); }
+    .code-area .line { padding: 0 var(--space-1); border-radius: 3px; }
+    .code-area .line.highlight { background: rgba(201, 169, 110, 0.08); }
+    .code-area .line-added { background: rgba(138, 154, 118, 0.1); }
+    .code-area .line-deleted { background: rgba(168, 122, 122, 0.1); }
+
+    .preview-panel { width: 360px; border-left: 1px solid var(--border); display: flex; flex-direction: column; background: var(--bg-sidebar); }
+    .preview-header { display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
+    .preview-title { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+    .preview-close { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-sm); cursor: pointer; color: var(--text-tertiary); }
+    .preview-close:hover { background: var(--bg-hover); color: var(--text-secondary); }
+    .preview-close svg { width: 14px; height: 14px; }
+    .preview-body { flex: 1; overflow-y: auto; padding: var(--space-4); }
+    .preview-section { margin-bottom: var(--space-5); }
+    .preview-label { font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: var(--space-2); }
+    .preview-stat { display: flex; justify-content: space-between; padding: var(--space-1) 0; font-size: 12px; }
+    .preview-stat .label { color: var(--text-tertiary); }
+    .preview-stat .value { font-family: var(--font-mono); color: var(--text-secondary); }
+    .preview-color { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) 0; }
+    .preview-color .swatch { width: 20px; height: 20px; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+    .preview-color .name { font-size: 12px; color: var(--text-secondary); }
+    .preview-color .hex { font-size: 11px; font-family: var(--font-mono); color: var(--text-tertiary); }
+    .minimap { position: relative; background: var(--bg-base); border-radius: var(--radius-md); overflow: hidden; height: 80px; margin-top: var(--space-2); }
+    .minimap-line { height: 2px; margin: 1px 4px; border-radius: 1px; background: var(--text-tertiary); opacity: 0.15; }
+    .minimap-line.highlight { opacity: 0.4; background: var(--accent); }
+    .minimap-viewport { position: absolute; top: 10px; left: 0; right: 0; height: 20px; border: 1px solid var(--accent); border-radius: 2px; opacity: 0.3; background: rgba(201, 169, 110, 0.05); }
+
+    @media (max-width: 1200px) { .preview-panel { display: none; } }
+    @media (max-width: 900px) { .content-panel { display: none; } }
+  </style>
+</head>
+<body>
+
+  <div class="window-chrome">
+    <div class="window-title">ClawGO — Explorer</div>
+    <div class="window-controls">
+      <button class="window-btn minimize"><svg viewBox="0 0 10 1" fill="currentColor"><rect width="10" height="1"/></svg></button>
+      <button class="window-btn maximize"><svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1"><rect x="0.5" y="0.5" width="9" height="9"/></svg></button>
+      <button class="window-btn close"><svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg></button>
+    </div>
+  </div>
+
+  <div class="app-layout">
+    <div class="sidebar">
+      <div class="icon-rail">
+        <div class="rail-icon" title="Chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+        <div class="rail-icon active" title="Explorer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
+        <div class="rail-icon" title="Plugins"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+        <div class="rail-icon" title="Invest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
+        <div class="rail-separator"></div>
+        <div class="rail-icon" title="Memory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+        <div class="rail-icon" title="Usage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
+        <div class="rail-icon" title="History"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+        <div class="rail-bottom">
+          <div class="rail-icon" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+          <div class="rail-avatar">S</div>
+        </div>
+      </div>
+
+      <div class="content-panel">
+        <div class="panel-header">
+          <span class="panel-title">Explorer</span>
+          <div class="panel-actions">
+            <button class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+            <button class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+          </div>
+        </div>
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" placeholder="Search files...">
+        </div>
+        <div class="file-tree">
+          <div class="tree-item folder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="6 9 12 15 18 9"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><span class="tree-name">src</span></div>
+          <div class="tree-children">
+            <div class="tree-item folder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="6 9 12 15 18 9"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><span class="tree-name">lib</span></div>
+            <div class="tree-children">
+              <div class="tree-item folder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="6 9 12 15 18 9"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><span class="tree-name">components</span></div>
+              <div class="tree-children">
+                <div class="tree-item file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg><span class="tree-name">ChatMessage.svelte</span><span class="file-badge">245</span></div>
+                <div class="tree-item file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg><span class="tree-name">Sidebar.svelte</span><span class="file-badge">189</span></div>
+                <div class="tree-item active file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg><span class="tree-name">GroupChatLayout.svelte</span><span class="file-badge">412</span></div>
+                <div class="tree-item file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg><span class="tree-name">GlobalMemoPanel.svelte</span><span class="file-badge">156</span></div>
+              </div>
+              <div class="tree-item folder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="6 9 12 15 18 9"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><span class="tree-name">stores</span></div>
+              <div class="tree-children">
+                <div class="tree-item file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg><span class="tree-name">session-store.svelte.ts</span><span class="file-badge">580</span></div>
+                <div class="tree-item file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg><span class="tree-name">group-chat-store.svelte.ts</span><span class="file-badge">320</span></div>
+              </div>
+            </div>
+            <div class="tree-item folder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="6 9 12 15 18 9"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><span class="tree-name">routes</span></div>
+            <div class="tree-children">
+              <div class="tree-item file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg><span class="tree-name">+layout.svelte</span></div>
+              <div class="tree-item file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg><span class="tree-name">+page.svelte</span></div>
+            </div>
+          </div>
+          <div class="tree-item file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg><span class="tree-name">app.css</span><span class="file-badge">86</span></div>
+          <div class="tree-item file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg><span class="tree-name">app.html</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="editor-area">
+      <div class="editor-tabs">
+        <div class="editor-tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="color: #c9a96e"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+          app.css
+          <span class="tab-close">×</span>
+        </div>
+        <div class="editor-tab active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="color: #c9a96e"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+          GroupChatLayout.svelte
+          <span class="modified"></span>
+          <span class="tab-close">×</span>
+        </div>
+        <div class="editor-tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="color: #c9a96e"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+          session-store.svelte.ts
+          <span class="tab-close">×</span>
+        </div>
+      </div>
+
+      <div class="breadcrumb">
+        <span class="breadcrumb-item">src</span><span class="breadcrumb-sep">/</span>
+        <span class="breadcrumb-item">lib</span><span class="breadcrumb-sep">/</span>
+        <span class="breadcrumb-item">components</span><span class="breadcrumb-sep">/</span>
+        <span class="breadcrumb-item current">GroupChatLayout.svelte</span>
+      </div>
+
+      <div class="editor-content">
+        <div class="line-numbers">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15<br>16<br>17<br>18<br>19<br>20<br>21<br>22<br>23<br>24<br>25<br>26<br>27<br>28<br>29<br>30<br>31<br>32<br>33<br>34<br>35<br>36<br>37<br>38</div>
+        <div class="code-area">
+<div class="line"><span class="comment">&lt;!-- GroupChatLayout.svelte --&gt;</span></div>
+<div class="line"><span class="comment">&lt;!-- Multi-pane workspace for group chat sessions --&gt;</span></div>
+<div class="line"></div>
+<div class="line highlight"><span class="keyword">&lt;script lang="ts"&gt;</span></div>
+<div class="line highlight">  <span class="keyword">import</span> { onMount } <span class="keyword">from</span> <span class="string">'svelte'</span>;</div>
+<div class="line highlight">  <span class="keyword">import</span> { groupChatStore } <span class="keyword">from</span> <span class="string">'$lib/stores/group-chat-store.svelte'</span>;</div>
+<div class="line highlight">  <span class="keyword">import</span> ChatMessage <span class="keyword">from</span> <span class="string">'./ChatMessage.svelte'</span>;</div>
+<div class="line highlight">  <span class="keyword">import</span> PlanPanel <span class="keyword">from</span> <span class="string">'./PlanPanel.svelte'</span>;</div>
+<div class="line highlight">  <span class="keyword">import</span> GroupChatStepper <span class="keyword">from</span> <span class="string">'./GroupChatStepper.svelte'</span>;</div>
+<div class="line"></div>
+<div class="line highlight">  <span class="keyword">let</span> { <span class="type">groupChatId</span>, <span class="type">participants</span> } = <span class="type">$props</span>&lt;{</div>
+<div class="line highlight">    <span class="type">groupChatId</span>: <span class="type">string</span>;</div>
+<div class="line highlight">    <span class="type">participants</span>: <span class="type">Participant</span>[];</div>
+<div class="line highlight">  }&gt;();</div>
+<div class="line"></div>
+<div class="line highlight">  <span class="keyword">let</span> <span class="type">showPlan</span> = <span class="type">$state</span>(<span class="keyword">false</span>);</div>
+<div class="line highlight">  <span class="keyword">let</span> <span class="type">activePanel</span> = <span class="type">$state</span>&lt;<span class="type">string</span> | <span class="keyword">null</span>&gt;(<span class="keyword">null</span>);</div>
+<div class="line highlight"><span class="keyword">&lt;/script&gt;</span></div>
+<div class="line"></div>
+<div class="line"><span class="keyword">&lt;div</span> class="group-chat-layout"<span class="keyword">&gt;</span></div>
+<div class="line">  <span class="comment">&lt;!-- Participant panels --&gt;</span></div>
+<div class="line added">  {#each participants as participant (participant.id)}</div>
+<div class="line added">    &lt;ParticipantPanel</div>
+<div class="line added">      {participant}</div>
+<div class="line added">      active={activePanel === participant.id}</div>
+<div class="line added">      on:toggle={() => togglePanel(participant.id)}</div>
+<div class="line added">    /&gt;</div>
+<div class="line added">  {/each}</div>
+<div class="line"></div>
+<div class="line">  <span class="comment">&lt;!-- Main timeline --&gt;</span></div>
+<div class="line">  &lt;div class="timeline"&gt;</div>
+<div class="line">    {#each $messages as msg (msg.id)}</div>
+<div class="line">      &lt;ChatMessage {msg} /&gt;</div>
+<div class="line">    {/each}</div>
+<div class="line">  &lt;/div&gt;</div>
+<div class="line"></div>
+<div class="line">  {#if showPlan}</div>
+<div class="line">    &lt;PlanPanel groupId={groupChatId} /&gt;</div>
+<div class="line">  {/if}</div>
+<div class="line">&lt;/div&gt;</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="preview-panel">
+      <div class="preview-header">
+        <span class="preview-title">File Details</span>
+        <div class="preview-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+      </div>
+      <div class="preview-body">
+        <div class="preview-section">
+          <div class="preview-label">Statistics</div>
+          <div class="preview-stat"><span class="label">Lines</span><span class="value">412</span></div>
+          <div class="preview-stat"><span class="label">Size</span><span class="value">12.4 KB</span></div>
+          <div class="preview-stat"><span class="label">Modified</span><span class="value">2h ago</span></div>
+          <div class="preview-stat"><span class="label">Encoding</span><span class="value">UTF-8</span></div>
+        </div>
+        <div class="preview-section">
+          <div class="preview-label">Git Status</div>
+          <div class="preview-stat"><span class="label">Status</span><span class="value" style="color: var(--accent)">Modified</span></div>
+          <div class="preview-stat"><span class="label">Branch</span><span class="value">master</span></div>
+          <div class="preview-stat"><span class="label">+Lines</span><span class="value" style="color: #8a9a76">18</span></div>
+          <div class="preview-stat"><span class="label">-Lines</span><span class="value" style="color: #a87a7a">5</span></div>
+        </div>
+        <div class="preview-section">
+          <div class="preview-label">Design Tokens</div>
+          <div class="preview-color"><div class="swatch" style="background: #c9a96e"></div><div><div class="name">Accent</div><div class="hex">#c9a96e</div></div></div>
+          <div class="preview-color"><div class="swatch" style="background: #1a1918"></div><div><div class="name">Base</div><div class="hex">#1a1918</div></div></div>
+          <div class="preview-color"><div class="swatch" style="background: #242220"></div><div><div class="name">Elevated</div><div class="hex">#242220</div></div></div>
+          <div class="preview-color"><div class="swatch" style="background: #ebe8e4"></div><div><div class="name">Text</div><div class="hex">#ebe8e4</div></div></div>
+        </div>
+        <div class="preview-section">
+          <div class="preview-label">Minimap</div>
+          <div class="minimap">
+            <div class="minimap-line" style="width: 45%"></div>
+            <div class="minimap-line" style="width: 80%"></div>
+            <div class="minimap-line highlight" style="width: 65%"></div>
+            <div class="minimap-line highlight" style="width: 50%"></div>
+            <div class="minimap-line highlight" style="width: 70%"></div>
+            <div class="minimap-line" style="width: 30%"></div>
+            <div class="minimap-line highlight" style="width: 85%"></div>
+            <div class="minimap-line highlight" style="width: 60%"></div>
+            <div class="minimap-line" style="width: 40%"></div>
+            <div class="minimap-line" style="width: 55%"></div>
+            <div class="minimap-line" style="width: 75%"></div>
+            <div class="minimap-line highlight" style="width: 45%"></div>
+            <div class="minimap-line" style="width: 60%"></div>
+            <div class="minimap-line" style="width: 35%"></div>
+            <div class="minimap-line highlight" style="width: 90%"></div>
+            <div class="minimap-line" style="width: 50%"></div>
+            <div class="minimap-line" style="width: 65%"></div>
+            <div class="minimap-line" style="width: 40%"></div>
+            <div class="minimap-viewport"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

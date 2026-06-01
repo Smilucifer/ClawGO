@@ -8,6 +8,7 @@ pub mod group_chat;
 pub mod storage;
 pub mod tushare;
 pub mod invest;
+pub mod python;
 pub mod web_server;
 
 use agent::adapter::new_actor_session_map;
@@ -87,7 +88,7 @@ pub async fn run_pnl_snapshot() -> Result<String, String> {
 
     let cash = portfolio::get_cash()?;
 
-    let client = crate::tushare::TushareClient::new(token);
+    let client = crate::tushare::TushareClient::with_token_and_proxy(token, settings.tushare_proxy_url);
     let mut holdings_value = 0.0;
     for h in &hold_items {
         if let (Some(shares), Some(_cost)) = (h.shares, h.avg_cost) {
@@ -489,6 +490,8 @@ pub fn run() {
             commands::invest::list_daily_reports,
             commands::invest::get_regime_classification,
             commands::invest::get_datasource_health,
+            commands::python_status::get_python_status,
+            commands::python_status::restart_python_runtime,
         ])
         .setup(move |app| {
             // Set up broadcast emitter (requires AppHandle, so must be in setup)
@@ -511,6 +514,18 @@ pub fn run() {
                     Err(e) => log::error!("[app] web server failed to start: {}", e),
                 }
             });
+
+            // Initialize Python runtime (embedded data server for Yahoo Finance etc.)
+            // init() handles everything: path resolution, subprocess spawn, health check,
+            // version query, and frontend progress events — no separate verify step needed.
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = python::init(&app_handle).await {
+                        log::warn!("[app] Python runtime init failed: {}", e);
+                    }
+                });
+            }
 
             // Start team file watcher for ~/.claude/teams/ and ~/.claude/tasks/
             let cancel = app.state::<CancellationToken>().inner().clone();
@@ -616,7 +631,7 @@ pub fn run() {
         tauri::async_runtime::spawn(async move {
             let settings = crate::storage::settings::get_user_settings();
             if let Some(token) = settings.tushare_token {
-                let client = crate::tushare::TushareClient::new(token);
+                let client = crate::tushare::TushareClient::with_token_and_proxy(token, settings.tushare_proxy_url);
                 let today = chrono::Local::now();
                 let start = today.format("%Y%m%d").to_string();
                 let end = (today + chrono::Duration::days(730)).format("%Y%m%d").to_string();

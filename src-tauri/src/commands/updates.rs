@@ -8,7 +8,8 @@ const GITHUB_API_URL: &str =
 
 // ── Proxy resolution (pure, testable) ──
 
-/// Returns the proxy URL string if proxy is enabled and port is valid.
+/// Returns the proxy URL string if proxy is enabled and port is in valid range (1–65535).
+#[cfg(test)]
 fn resolve_proxy_url(enabled: bool, port: u16) -> Option<String> {
     if enabled && port >= 1 {
         Some(format!("http://127.0.0.1:{}", port))
@@ -20,19 +21,20 @@ fn resolve_proxy_url(enabled: bool, port: u16) -> Option<String> {
 // ── HTTP client builder (reads proxy settings per request) ──
 
 fn build_client() -> Client {
-    let settings = crate::storage::settings::load();
     let mut builder = Client::builder()
         .timeout(Duration::from_secs(15))
         .connect_timeout(Duration::from_secs(10))
         .user_agent(format!("ClawGO/{}", env!("CARGO_PKG_VERSION")));
 
-    if let Some(proxy_url) = resolve_proxy_url(
-        settings.user.github_proxy_enabled,
-        settings.user.github_proxy_port,
-    ) {
-        if let Ok(proxy) = reqwest::Proxy::all(&proxy_url) {
-            builder = builder.proxy(proxy);
-            log::debug!("[updates] using proxy: {}", proxy_url);
+    if let Some(proxy_url) = crate::storage::settings::resolve_local_proxy_url() {
+        match reqwest::Proxy::all(&proxy_url) {
+            Ok(proxy) => {
+                builder = builder.proxy(proxy);
+                log::debug!("[updates] using proxy: {}", proxy_url);
+            }
+            Err(e) => {
+                log::warn!("[updates] invalid proxy URL '{}', proceeding without proxy: {e}", proxy_url);
+            }
         }
     }
 

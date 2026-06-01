@@ -1,0 +1,1241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClawGO — Chat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="design-system.css">
+</head>
+<body>
+
+  <div class="window-chrome">
+    <div class="window-title">ClawGO</div>
+    <div class="window-controls">
+      <button class="window-btn minimize"><svg viewBox="0 0 10 1" fill="currentColor"><rect width="10" height="1"/></svg></button>
+      <button class="window-btn maximize"><svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1"><rect x="0.5" y="0.5" width="9" height="9"/></svg></button>
+      <button class="window-btn close"><svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg></button>
+    </div>
+  </div>
+
+  <div class="app-layout">
+
+    <div class="sidebar">
+      <div class="icon-rail">
+        <!-- Chat (active) -->
+        <div class="rail-icon active" title="Chat">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
+        </div>
+        <!-- Invest -->
+        <div class="rail-icon" title="Invest">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+        </div>
+        <!-- Explorer -->
+        <div class="rail-icon" title="Explorer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+        </div>
+        <!-- Claude Memory (book) -->
+        <div class="rail-icon" title="Claude Memory">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+        </div>
+        <!-- User Memory (database) -->
+        <div class="rail-icon" title="User Memory">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+        </div>
+        <!-- Plugins -->
+        <div class="rail-icon" title="Plugins">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        </div>
+        <!-- History -->
+        <div class="rail-icon" title="History">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <!-- Usage -->
+        <div class="rail-icon" title="Usage">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+        </div>
+        <div class="rail-separator"></div>
+        <!-- Settings -->
+        <div class="rail-bottom">
+          <div class="rail-icon" title="Settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          </div>
+          <div class="rail-avatar">S</div>
+        </div>
+      </div>
+
+      <div class="content-panel">
+        <style>
+          .sidebar-tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border);
+          }
+          .sidebar-tab {
+            flex: 1;
+            padding: var(--space-2) 0;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-tertiary);
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            transition: color 0.15s, border-color 0.15s;
+          }
+          .sidebar-tab:hover { color: var(--text-secondary); background: var(--bg-hover); }
+          .sidebar-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+          .conv-list { flex: 1; overflow-y: auto; padding: var(--space-1) var(--space-2); }
+          .conv-panel { display: none; flex-direction: column; flex: 1; min-height: 0; }
+          .conv-panel.active { display: flex; }
+
+          .conv-item {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            padding: var(--space-2) var(--space-3);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all var(--duration-fast);
+          }
+          .conv-item:hover { background: var(--bg-hover); }
+          .conv-item.active { background: var(--bg-active); }
+          .conv-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            background: var(--bg-input);
+            color: var(--text-tertiary);
+            flex-shrink: 0;
+          }
+          .conv-info { flex: 1; min-width: 0; }
+          .conv-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .conv-preview {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .conv-time { font-size: 10px; color: var(--text-tertiary); flex-shrink: 0; }
+          .conv-item + .conv-item { margin-top: 2px; }
+        </style>
+
+        <div class="panel-header">
+          <span class="panel-title">Chats</span>
+          <div class="panel-actions">
+            <button class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+          </div>
+        </div>
+
+        <!-- Tabs: Private / Group -->
+        <div class="sidebar-tabs">
+          <button class="sidebar-tab active" onclick="switchSidebarTab('private')">私聊</button>
+          <button class="sidebar-tab" onclick="switchSidebarTab('group')">群聊</button>
+        </div>
+
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" placeholder="Search...">
+        </div>
+
+        <!-- Private Chats -->
+        <div id="panel-private" class="conv-panel active">
+          <div class="conv-list">
+            <div class="conv-item active">
+              <div class="conv-icon">✦</div>
+              <div class="conv-info">
+                <div class="conv-name">UI Redesign</div>
+                <div class="conv-preview">Warm unified design...</div>
+              </div>
+              <div class="conv-time">2m</div>
+            </div>
+            <div class="conv-item">
+              <div class="conv-icon">⚡</div>
+              <div class="conv-info">
+                <div class="conv-name">Fix Yahoo 429</div>
+                <div class="conv-preview">Retry with backoff</div>
+              </div>
+              <div class="conv-time">1h</div>
+            </div>
+            <div class="conv-item">
+              <div class="conv-icon">◆</div>
+              <div class="conv-info">
+                <div class="conv-name">Committee i18n</div>
+                <div class="conv-preview">Gate notes 中文化</div>
+              </div>
+              <div class="conv-time">3h</div>
+            </div>
+            <div class="conv-item">
+              <div class="conv-icon">✦</div>
+              <div class="conv-info">
+                <div class="conv-name">Memory System Refactor</div>
+                <div class="conv-preview">SQLite FTS5 migration...</div>
+              </div>
+              <div class="conv-time">1d</div>
+            </div>
+            <div class="conv-item">
+              <div class="conv-icon">⚡</div>
+              <div class="conv-info">
+                <div class="conv-name">Tushare Proxy Fix</div>
+                <div class="conv-preview">URL scheme validation</div>
+              </div>
+              <div class="conv-time">2d</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Group Chats -->
+        <div id="panel-group" class="conv-panel">
+          <div class="conv-list">
+            <div class="conv-item">
+              <div class="conv-icon" style="background: var(--accent-subtle); color: var(--accent);">A</div>
+              <div class="conv-info">
+                <div class="conv-name">Architecture Review</div>
+                <div class="conv-preview">3 participants · 12 turns</div>
+              </div>
+              <div class="conv-time">5h</div>
+            </div>
+            <div class="conv-item">
+              <div class="conv-icon" style="background: var(--accent-subtle); color: var(--accent);">D</div>
+              <div class="conv-info">
+                <div class="conv-name">Design System Debate</div>
+                <div class="conv-preview">2 participants · 8 turns</div>
+              </div>
+              <div class="conv-time">1d</div>
+            </div>
+            <div class="conv-item">
+              <div class="conv-icon" style="background: var(--accent-subtle); color: var(--accent);">R</div>
+              <div class="conv-info">
+                <div class="conv-name">Release v5.0.5 Prep</div>
+                <div class="conv-preview">4 participants · 6 turns</div>
+              </div>
+              <div class="conv-time">3d</div>
+            </div>
+          </div>
+        </div>
+
+        <script>
+          function switchSidebarTab(name) {
+            document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.conv-panel').forEach(p => p.classList.remove('active'));
+            const map = { private: 0, group: 1 };
+            document.querySelectorAll('.sidebar-tab')[map[name]].classList.add('active');
+            document.getElementById('panel-' + name).classList.add('active');
+          }
+        </script>
+      </div>
+    </div>
+
+    <div class="main-content">
+
+      <!-- Status Bar -->
+      <style>
+        .main-content { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+        .status-bar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          height: 36px;
+          padding: 0 var(--space-3);
+          background: var(--bg-elevated);
+          border-bottom: 1px solid var(--border);
+          font-family: var(--font-mono);
+          font-size: 11px;
+          color: var(--text-secondary);
+          user-select: none;
+          flex-shrink: 0;
+        }
+        .status-bar__left {
+          display: flex;
+          align-items: center;
+          gap: var(--space-2);
+          min-width: 0;
+          flex: 1;
+          overflow: hidden;
+        }
+        .status-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: var(--radius-full);
+          background: #22c55e;
+          flex-shrink: 0;
+          box-shadow: 0 0 4px #22c55e80;
+        }
+        .status-pill {
+          display: inline-flex;
+          align-items: center;
+          padding: 1px var(--space-2);
+          border-radius: var(--radius-full);
+          background: #22c55e18;
+          color: #4ade80;
+          font-size: 10px;
+          font-weight: 600;
+          letter-spacing: 0.02em;
+          line-height: 18px;
+          flex-shrink: 0;
+        }
+        .status-bar__agent {
+          display: flex;
+          align-items: center;
+          gap: var(--space-1);
+          color: var(--text-secondary);
+          min-width: 0;
+        }
+        .status-bar__agent-name { color: var(--text-primary); font-weight: 500; }
+        .status-bar__agent-sep { color: var(--text-tertiary); }
+        .status-bar__model {
+          color: var(--text-secondary);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .status-bar__center {
+          display: flex;
+          align-items: center;
+          gap: var(--space-2);
+          flex-shrink: 0;
+        }
+        .ctx-bar { display: inline-flex; align-items: center; gap: var(--space-1); }
+        .ctx-bar__track {
+          width: 48px;
+          height: 4px;
+          border-radius: var(--radius-full);
+          background: hsl(0 0% 100% / 0.08);
+          overflow: hidden;
+        }
+        .ctx-bar__fill {
+          height: 100%;
+          border-radius: var(--radius-full);
+          background: var(--accent);
+          transition: width 0.6s ease;
+        }
+        .ctx-bar__label { color: var(--text-tertiary); font-size: 10px; white-space: nowrap; }
+        .status-bar__tokens {
+          display: flex;
+          align-items: center;
+          gap: var(--space-1);
+          color: var(--text-tertiary);
+          font-size: 10px;
+          white-space: nowrap;
+        }
+        .status-bar__tokens b { color: var(--text-secondary); font-weight: 500; }
+        .status-bar__center-sep { width: 1px; height: 12px; background: var(--border); }
+        .status-bar__right {
+          display: flex;
+          align-items: center;
+          gap: var(--space-2);
+          flex-shrink: 0;
+        }
+        .status-bar__cost { color: var(--text-secondary); font-weight: 500; white-space: nowrap; }
+        .status-bar__icon-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 26px;
+          height: 26px;
+          border-radius: var(--radius-sm);
+          border: 1px solid transparent;
+          background: transparent;
+          color: var(--text-tertiary);
+          cursor: pointer;
+          transition: color 0.15s, background 0.15s, border-color 0.15s;
+          padding: 0;
+          flex-shrink: 0;
+        }
+        .status-bar__icon-btn:hover {
+          color: var(--text-primary);
+          background: hsl(0 0% 100% / 0.06);
+          border-color: var(--border);
+        }
+        .status-bar__icon-btn svg { width: 14px; height: 14px; }
+        .status-bar__icon-btn--active {
+          color: var(--accent);
+          border-color: var(--border-accent);
+          background: var(--accent-muted);
+        }
+        .status-bar__icon-btn--active:hover { color: var(--accent); }
+        .status-bar__right-sep { width: 1px; height: 16px; background: var(--border); margin: 0 var(--space-1); }
+      </style>
+
+      <div class="status-bar">
+        <div class="status-bar__left">
+          <span class="status-dot"></span>
+          <span class="status-pill">Ready</span>
+          <span class="status-bar__agent">
+            <span class="status-bar__agent-name">claude</span>
+            <span class="status-bar__agent-sep">/</span>
+            <span class="status-bar__model">sonnet-4-6</span>
+          </span>
+        </div>
+        <div class="status-bar__center">
+          <span class="ctx-bar">
+            <span class="ctx-bar__track">
+              <span class="ctx-bar__fill" style="width: 34%"></span>
+            </span>
+            <span class="ctx-bar__label">34%</span>
+          </span>
+          <span class="status-bar__center-sep"></span>
+          <span class="status-bar__tokens">In <b>38K</b> &middot; Out <b>4K</b></span>
+        </div>
+        <div class="status-bar__right">
+          <span class="status-bar__cost">$0.084</span>
+          <span class="status-bar__right-sep"></span>
+          <button class="status-bar__icon-btn" title="MCP Servers">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48 2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48 2.83-2.83"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+          <button class="status-bar__icon-btn" title="Permission Mode">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </button>
+          <button class="status-bar__icon-btn" title="More Options">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Chat Area -->
+      <style>
+        .chat-area {
+          flex: 1;
+          overflow-y: auto;
+        }
+        .msg-area {
+          max-width: 780px;
+          margin: 0 auto;
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-5);
+          padding: var(--space-6) var(--space-4);
+        }
+        .msg {
+          display: flex;
+          gap: var(--space-3);
+          animation: fadeInUp var(--duration-normal) var(--ease-out);
+        }
+        .msg-avatar {
+          width: 30px;
+          height: 30px;
+          border-radius: var(--radius-md);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          font-size: 13px;
+          font-weight: 600;
+        }
+        .msg-avatar.user-avatar { background: var(--accent-muted); color: var(--accent); }
+        .msg-avatar.ai-avatar { background: rgba(201, 169, 110, 0.12); color: var(--accent); }
+        .msg-body { flex: 1; min-width: 0; }
+        .msg-header { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1); }
+        .msg-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+        .msg-time { font-size: 11px; color: var(--text-tertiary); }
+        .msg-content { font-size: 14px; line-height: 1.65; color: var(--text-secondary); }
+        .msg-content p { margin-bottom: var(--space-3); }
+        .msg-content p:last-child { margin-bottom: 0; }
+        .msg-content strong { color: var(--text-primary); font-weight: 600; }
+        .msg-content em { font-style: italic; }
+        .msg-content code {
+          background: var(--bg-input);
+          padding: 2px 5px;
+          border-radius: 3px;
+          font-family: var(--font-mono);
+          font-size: 13px;
+          color: var(--accent);
+        }
+        .msg-content ul { margin: var(--space-2) 0; padding-left: var(--space-5); }
+        .msg-content li { margin-bottom: var(--space-1); }
+        .msg-content li::marker { color: var(--text-tertiary); }
+
+        /* Tool Card */
+        .tool-card {
+          background: var(--bg-card);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-lg);
+          margin: var(--space-3) 0;
+          overflow: hidden;
+          animation: fadeInUp var(--duration-normal) var(--ease-out);
+        }
+        .tool-card-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: var(--space-2) var(--space-3);
+          background: var(--bg-hover);
+          border-bottom: 1px solid var(--border);
+          cursor: pointer;
+          user-select: none;
+        }
+        .tool-card-header:hover { background: var(--bg-active); }
+        .tool-card-title {
+          display: flex;
+          align-items: center;
+          gap: var(--space-2);
+          font-size: 12px;
+          font-weight: 500;
+          color: var(--text-secondary);
+        }
+        .tool-card-title svg { width: 14px; height: 14px; color: var(--text-tertiary); }
+        .tool-status {
+          font-size: 10px;
+          font-weight: 500;
+          padding: 2px 8px;
+          border-radius: var(--radius-full);
+        }
+        .tool-status.success { background: var(--color-success-bg); color: var(--color-success); }
+        .tool-status.running { background: var(--accent-muted); color: var(--accent); }
+        .tool-status.error { background: var(--color-error-bg); color: var(--color-error); }
+        .tool-card-body {
+          padding: var(--space-3);
+          font-size: 12px;
+          font-family: var(--font-mono);
+          color: var(--text-tertiary);
+          line-height: 1.6;
+        }
+        .chevron {
+          width: 14px;
+          height: 14px;
+          color: var(--text-tertiary);
+          transition: transform var(--duration-fast) var(--ease-out);
+        }
+        .chevron.open { transform: rotate(90deg); }
+        .spinner {
+          width: 14px;
+          height: 14px;
+          border: 2px solid var(--border);
+          border-top-color: var(--accent);
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Code Block */
+        .code-block {
+          background: var(--bg-card);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-lg);
+          margin: var(--space-3) 0;
+          overflow: hidden;
+          animation: fadeInUp var(--duration-normal) var(--ease-out);
+        }
+        .code-block-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: var(--space-2) var(--space-3);
+          background: var(--bg-hover);
+          border-bottom: 1px solid var(--border);
+        }
+        .code-block-lang { font-size: 11px; font-weight: 500; color: var(--text-tertiary); font-family: var(--font-mono); }
+        .code-block-copy {
+          font-size: 11px;
+          color: var(--text-tertiary);
+          cursor: pointer;
+          padding: 2px 8px;
+          border-radius: var(--radius-sm);
+          border: none;
+          background: none;
+          font-family: var(--font-sans);
+          transition: all var(--duration-fast);
+        }
+        .code-block-copy:hover { color: var(--text-secondary); background: var(--bg-hover); }
+        .code-block-body {
+          padding: var(--space-3);
+          font-family: var(--font-mono);
+          font-size: 13px;
+          line-height: 1.6;
+          overflow-x: auto;
+        }
+        .code-block-body .kw { color: var(--accent); }
+        .code-block-body .fn { color: #d4a574; }
+        .code-block-body .str { color: var(--color-success); }
+        .code-block-body .cmt { color: var(--text-tertiary); font-style: italic; }
+        .code-block-body .num { color: #b89a6a; }
+        .code-block-body .type { color: #c4a882; }
+        .code-block-body .punct { color: var(--text-tertiary); }
+
+        /* Error Card */
+        .error-card {
+          background: var(--color-error-bg);
+          border: 1px solid rgba(168, 122, 122, 0.25);
+          border-radius: var(--radius-lg);
+          margin: var(--space-3) 0;
+          padding: var(--space-3) var(--space-4);
+          animation: fadeInUp var(--duration-normal) var(--ease-out);
+        }
+        .error-header { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+        .error-badge {
+          font-size: 10px;
+          font-weight: 600;
+          padding: 2px 8px;
+          border-radius: var(--radius-full);
+          background: rgba(168, 122, 122, 0.18);
+          color: var(--color-error);
+          text-transform: uppercase;
+          letter-spacing: 0.3px;
+        }
+        .error-message { font-size: 13px; color: var(--color-error); line-height: 1.5; margin-bottom: var(--space-3); }
+        .error-message code {
+          background: rgba(168, 122, 122, 0.12);
+          padding: 1px 5px;
+          border-radius: 3px;
+          font-family: var(--font-mono);
+          font-size: 12px;
+        }
+        .retry-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: var(--space-2);
+          padding: var(--space-1) var(--space-3);
+          border-radius: var(--radius-md);
+          font-size: 12px;
+          font-weight: 500;
+          color: var(--color-error);
+          background: rgba(168, 122, 122, 0.1);
+          border: 1px solid rgba(168, 122, 122, 0.25);
+          cursor: pointer;
+          transition: all var(--duration-fast) var(--ease-out);
+        }
+        .retry-btn:hover { background: rgba(168, 122, 122, 0.18); border-color: rgba(168, 122, 122, 0.4); }
+        .retry-btn svg { width: 13px; height: 13px; }
+
+        .tool-detail-row { display: flex; align-items: baseline; gap: var(--space-2); padding: var(--space-1) 0; }
+        .tool-detail-row + .tool-detail-row { border-top: 1px solid var(--border); }
+        .tool-detail-label { flex-shrink: 0; font-size: 11px; color: var(--text-tertiary); min-width: 60px; }
+        .tool-detail-value { font-size: 12px; color: var(--text-secondary); word-break: break-all; }
+        .tool-detail-value.match { color: var(--accent); }
+      </style>
+
+      <div class="chat-area">
+        <div class="msg-area">
+          <!-- 1. User Message -->
+          <div class="msg">
+            <div class="msg-avatar user-avatar">S</div>
+            <div class="msg-body">
+              <div class="msg-header">
+                <span class="msg-name">Smilucifer</span>
+                <span class="msg-time">14:32</span>
+              </div>
+              <div class="msg-content">
+                <p>帮我检查一下 <code>design-system.css</code> 里的 color token 是否和最新的组件库对齐，特别是 error 和 success 色调。</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Assistant Message (markdown) -->
+          <div class="msg">
+            <div class="msg-avatar ai-avatar">&#10022;</div>
+            <div class="msg-body">
+              <div class="msg-header">
+                <span class="msg-name">Claude</span>
+                <span class="msg-time">14:32</span>
+              </div>
+              <div class="msg-content">
+                <p>好的，我来梳理一下。当前 <code>design-system.css</code> 中的语义色调定义如下：</p>
+                <ul>
+                  <li><strong>--color-success</strong>: <code>#8a9a76</code> (warm green)</li>
+                  <li><strong>--color-error</strong>: <code>#a87a7a</code> (warm red)</li>
+                  <li><strong>--color-warning</strong>: <code>#b89a6a</code> (warm amber)</li>
+                </ul>
+                <p>这些色调已经统一在暖色系框架内，和现有的 amber/gold accent 体系<strong>保持一致</strong>。不过我注意到 success 色在深色背景上的对比度偏低，建议后续可以微调亮度。</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Tool Card — Grep (success, collapsed) -->
+          <div class="msg">
+            <div class="msg-avatar ai-avatar">&#10022;</div>
+            <div class="msg-body">
+              <div class="msg-header">
+                <span class="msg-name">Claude</span>
+                <span class="msg-time">14:33</span>
+              </div>
+              <div class="msg-content">
+                <p>让我先搜索所有引用 <code>--color-success</code> 的位置：</p>
+                <div class="tool-card">
+                  <div class="tool-card-header">
+                    <div class="tool-card-title">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                      <span>Grep</span>
+                      <span style="color: var(--text-tertiary); font-size: 11px;">--color-success</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: var(--space-2);">
+                      <span class="tool-status success">3 files</span>
+                      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                    </div>
+                  </div>
+                  <div class="tool-card-body" style="display: none;">
+                    <div class="tool-detail-row"><span class="tool-detail-label">File</span><span class="tool-detail-value">design-system.css <span class="match">:12</span></span></div>
+                    <div class="tool-detail-row"><span class="tool-detail-label">File</span><span class="tool-detail-value">src/app.css <span class="match">:45, :89</span></span></div>
+                    <div class="tool-detail-row"><span class="tool-detail-label">File</span><span class="tool-detail-value">src/lib/components/StatusIcon.svelte <span class="match">:23</span></span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. Assistant Message (with code block) -->
+          <div class="msg">
+            <div class="msg-avatar ai-avatar">&#10022;</div>
+            <div class="msg-body">
+              <div class="msg-header">
+                <span class="msg-name">Claude</span>
+                <span class="msg-time">14:34</span>
+              </div>
+              <div class="msg-content">
+                <p>找到了 3 个文件引用。建议将 success 色调的亮度从 <code>#8a9a76</code> 微调到更高对比度版本：</p>
+                <div class="code-block">
+                  <div class="code-block-header">
+                    <span class="code-block-lang">design-system.css</span>
+                    <button class="code-block-copy">Copy</button>
+                  </div>
+                  <div class="code-block-body"><span class="cmt">/* Semantic — improved contrast */</span>
+<span class="kw">:root</span> <span class="punct">{</span>
+  <span class="fn">--color-success</span><span class="punct">:</span>     <span class="str">#96a882</span><span class="punct">;</span>   <span class="cmt">/* was #8a9a76 */</span>
+  <span class="fn">--color-success-bg</span><span class="punct">:</span> <span class="str">rgba(150, 168, 130, 0.14)</span><span class="punct">;</span>
+  <span class="fn">--color-error</span><span class="punct">:</span>       <span class="str">#b08585</span><span class="punct">;</span>   <span class="cmt">/* was #a87a7a */</span>
+  <span class="fn">--color-error-bg</span><span class="punct">:</span>   <span class="str">rgba(176, 133, 133, 0.14)</span><span class="punct">;</span>
+<span class="punct">}</span></div>
+                </div>
+                <p>调整幅度控制在 5% 以内，确保暖色调的统一性不受影响。</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 5. Tool Card — Edit (running, spinner) -->
+          <div class="msg">
+            <div class="msg-avatar ai-avatar">&#10022;</div>
+            <div class="msg-body">
+              <div class="msg-header">
+                <span class="msg-name">Claude</span>
+                <span class="msg-time">14:34</span>
+              </div>
+              <div class="msg-content">
+                <p>正在应用修改：</p>
+                <div class="tool-card">
+                  <div class="tool-card-header">
+                    <div class="tool-card-title">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                      <span>Edit</span>
+                      <span style="color: var(--text-tertiary); font-size: 11px;">design-system.css</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: var(--space-2);">
+                      <span class="tool-status running">running</span>
+                      <div class="spinner"></div>
+                    </div>
+                  </div>
+                  <div class="tool-card-body">
+                    <div class="tool-detail-row">
+                      <span class="tool-detail-label">Lines</span>
+                      <span class="tool-detail-value" style="color: var(--color-success);">+2</span>
+                      <span class="tool-detail-value" style="color: var(--color-error);">-2</span>
+                    </div>
+                    <div class="tool-detail-row">
+                      <span class="tool-detail-label">Patch</span>
+                      <span class="tool-detail-value" style="font-size: 11px;">
+                        <span style="color: var(--color-error);">-  --color-success: #8a9a76;</span><br>
+                        <span style="color: var(--color-success);">+  --color-success: #96a882;</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 6. Error Card -->
+          <div class="msg">
+            <div class="msg-avatar ai-avatar">&#10022;</div>
+            <div class="msg-body">
+              <div class="msg-header">
+                <span class="msg-name">Claude</span>
+                <span class="msg-time">14:35</span>
+              </div>
+              <div class="msg-content">
+                <p>写入时遇到了文件系统错误：</p>
+                <div class="error-card">
+                  <div class="error-header">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-error)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                    <span class="error-badge">File System Error</span>
+                  </div>
+                  <div class="error-message">
+                    EBUSY: resource busy or locked &mdash; <code>design-system.css</code> is being used by another process. The file may be open in an external editor or locked by the file watcher.
+                  </div>
+                  <button class="retry-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                    Retry
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Input Area -->
+      <style>
+        .input-area {
+          padding: var(--space-3) var(--space-4) var(--space-5);
+          flex-shrink: 0;
+        }
+        .input-wrapper { max-width: 780px; margin: 0 auto; }
+
+        /* Top toolbar */
+        .input-toolbar {
+          display: flex;
+          align-items: center;
+          gap: var(--space-2);
+          margin-bottom: var(--space-2);
+          padding: 0 var(--space-1);
+        }
+        .toolbar-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 2px 10px;
+          border-radius: var(--radius-full);
+          font-size: 11px;
+          font-weight: 500;
+          color: var(--text-secondary);
+          background: var(--bg-input);
+          border: 1px solid var(--border);
+          cursor: pointer;
+          transition: all var(--duration-fast);
+        }
+        .toolbar-pill:hover { border-color: var(--border-strong); color: var(--text-primary); }
+        .toolbar-pill svg { width: 12px; height: 12px; }
+        .toolbar-pill .pill-label { color: var(--text-tertiary); margin-right: 2px; }
+        .toolbar-pill--active {
+          color: var(--accent);
+          background: var(--accent-subtle);
+          border-color: var(--border-accent);
+        }
+        .toolbar-sep { width: 1px; height: 16px; background: var(--border); margin: 0 var(--space-1); }
+
+        /* Toggle switch */
+        .toggle-switch {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 11px;
+          color: var(--text-tertiary);
+          cursor: pointer;
+          user-select: none;
+        }
+        .toggle-track {
+          width: 28px;
+          height: 15px;
+          border-radius: var(--radius-full);
+          background: var(--bg-input);
+          border: 1px solid var(--border);
+          position: relative;
+          transition: all var(--duration-fast);
+        }
+        .toggle-track.active {
+          background: var(--accent-muted);
+          border-color: var(--border-accent);
+        }
+        .toggle-thumb {
+          width: 11px;
+          height: 11px;
+          border-radius: 50%;
+          background: var(--text-tertiary);
+          position: absolute;
+          top: 1px;
+          left: 1px;
+          transition: all var(--duration-fast);
+        }
+        .toggle-track.active .toggle-thumb {
+          left: 14px;
+          background: var(--accent);
+        }
+
+        /* Input box */
+        .input-box {
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-strong);
+          border-radius: var(--radius-xl);
+          padding: var(--space-3) var(--space-4);
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-2);
+          transition: border-color var(--duration-fast);
+        }
+        .input-box:focus-within { border-color: var(--border-accent); }
+        .input-main { display: flex; align-items: flex-end; gap: var(--space-2); }
+        .input-textarea {
+          flex: 1;
+          background: none;
+          border: none;
+          outline: none;
+          font-size: 14px;
+          font-family: var(--font-sans);
+          color: var(--text-primary);
+          resize: none;
+          line-height: 1.5;
+          min-height: 24px;
+          max-height: 160px;
+        }
+        .input-textarea::placeholder { color: var(--text-tertiary); }
+        .input-actions { display: flex; align-items: center; gap: var(--space-1); }
+        .input-btn {
+          width: 30px;
+          height: 30px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: var(--radius-md);
+          color: var(--text-tertiary);
+          cursor: pointer;
+          border: none;
+          background: none;
+          transition: all var(--duration-fast);
+        }
+        .input-btn:hover { color: var(--text-secondary); background: var(--bg-hover); }
+        .input-btn svg { width: 18px; height: 18px; }
+        .send-btn {
+          width: 30px;
+          height: 30px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: var(--radius-md);
+          background: var(--accent-muted);
+          color: var(--accent);
+          cursor: pointer;
+          border: 1px solid var(--border-accent);
+          transition: all var(--duration-fast);
+        }
+        .send-btn:hover { background: rgba(201, 169, 110, 0.25); }
+        .send-btn svg { width: 16px; height: 16px; }
+
+        /* Bottom hints */
+        .input-hint {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0 var(--space-2);
+        }
+        .input-hint-text { font-size: 11px; color: var(--text-tertiary); }
+        .input-hint-text kbd {
+          background: var(--bg-input);
+          padding: 1px 5px;
+          border-radius: 3px;
+          font-size: 10px;
+          font-family: var(--font-sans);
+          border: 1px solid var(--border);
+        }
+        .input-model {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 11px;
+          color: var(--text-tertiary);
+          cursor: pointer;
+          padding: 2px 8px;
+          border-radius: var(--radius-sm);
+        }
+        .input-model:hover { background: var(--bg-hover); color: var(--text-secondary); }
+        .input-model svg { width: 12px; height: 12px; }
+      </style>
+
+      <div class="input-area">
+        <div class="input-wrapper">
+          <!-- Top toolbar -->
+          <div class="input-toolbar">
+            <button class="toolbar-pill">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 9H5a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-1a2 2 0 0 0-2-2Z"/></svg>
+              <span class="pill-label">Agent</span> Claude
+            </button>
+            <button class="toolbar-pill">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 7h.01"/></svg>
+              <span class="pill-label">Model</span> sonnet-4-6
+            </button>
+            <div class="toolbar-sep"></div>
+            <span class="toolbar-pill toolbar-pill--active">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
+              default
+            </span>
+            <div class="toolbar-sep"></div>
+            <label class="toggle-switch">
+              <span class="toggle-track active"><span class="toggle-thumb"></span></span>
+              Fast
+            </label>
+          </div>
+
+          <!-- Input box -->
+          <div class="input-box">
+            <div class="input-main">
+              <textarea class="input-textarea" rows="1" placeholder="Message Claude..."></textarea>
+              <div class="input-actions">
+                <button class="input-btn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                </button>
+                <button class="send-btn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="input-hint">
+              <span class="input-hint-text"><kbd>Enter</kbd> send · <kbd>Shift+Enter</kbd> newline</span>
+              <span class="input-model">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                sonnet-4-6
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Panel -->
+    <style>
+      .right-panel {
+        width: 300px;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-sidebar);
+        border-left: 1px solid var(--border);
+        font-family: var(--font-sans);
+        color: var(--text-primary);
+        overflow: hidden;
+        flex-shrink: 0;
+      }
+      .rp-tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+      .rp-tab {
+        flex: 1;
+        padding: var(--space-2) 0;
+        text-align: center;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--text-tertiary);
+        background: transparent;
+        border: none;
+        border-bottom: 2px solid transparent;
+        cursor: pointer;
+        transition: color 0.15s, border-color 0.15s;
+      }
+      .rp-tab:hover { color: var(--text-secondary); background: var(--bg-hover); }
+      .rp-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+      .rp-panel { display: none; flex: 1; flex-direction: column; min-height: 0; }
+      .rp-panel.active { display: flex; }
+      .rp-scroll { flex: 1; overflow-y: auto; padding: var(--space-3); min-height: 0; }
+      .rp-scroll::-webkit-scrollbar { width: 4px; }
+      .rp-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: var(--radius-full); }
+
+      /* Tool items */
+      .tool-item {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--space-2);
+        padding: var(--space-2);
+        border-radius: var(--radius-md);
+        cursor: pointer;
+        transition: background 0.12s;
+      }
+      .tool-item:hover { background: var(--bg-hover); }
+      .tool-icon {
+        flex-shrink: 0;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-sm);
+        font-size: 13px;
+        font-weight: 600;
+        font-family: var(--font-mono);
+      }
+      .tool-icon.grep  { background: var(--accent-subtle); color: var(--accent); }
+      .tool-icon.read  { background: #2d3a2d; color: #8a9a76; }
+      .tool-icon.edit  { background: #3a2d20; color: #c9a96e; }
+      .tool-icon.bash  { background: #2d2d3a; color: #8a8aaa; }
+      .tool-body { flex: 1; min-width: 0; }
+      .tool-name {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .tool-detail {
+        font-size: 11px;
+        color: var(--text-tertiary);
+        font-family: var(--font-mono);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-top: 1px;
+      }
+      .tool-time {
+        flex-shrink: 0;
+        font-size: 11px;
+        font-family: var(--font-mono);
+        color: var(--text-tertiary);
+        margin-top: 2px;
+      }
+      .tool-item + .tool-item { margin-top: var(--space-1); }
+
+      /* Bottom section */
+      .rp-bottom {
+        flex-shrink: 0;
+        border-top: 1px solid var(--border);
+        padding: var(--space-3);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-3);
+      }
+      .ctx-title {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-tertiary);
+        margin-bottom: var(--space-2);
+      }
+      .ctx-bar-track {
+        width: 100%;
+        height: 6px;
+        background: var(--bg-hover);
+        border-radius: var(--radius-full);
+        overflow: hidden;
+      }
+      .ctx-bar-fill {
+        width: 34%;
+        height: 100%;
+        background: var(--accent);
+        border-radius: var(--radius-full);
+        transition: width 0.3s ease;
+      }
+      .ctx-stats { display: flex; justify-content: space-between; margin-top: var(--space-1); }
+      .ctx-used { font-size: 12px; font-weight: 500; font-family: var(--font-mono); color: var(--accent); }
+      .ctx-total { font-size: 12px; font-family: var(--font-mono); color: var(--text-tertiary); }
+
+      /* Session Cost */
+      .cost-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-1) var(--space-3); }
+      .cost-item { display: flex; justify-content: space-between; align-items: baseline; }
+      .cost-label { font-size: 11px; color: var(--text-tertiary); }
+      .cost-value { font-size: 12px; font-family: var(--font-mono); font-weight: 500; color: var(--text-secondary); }
+      .cost-total {
+        grid-column: 1 / -1;
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-top: var(--space-1);
+        padding-top: var(--space-1);
+        border-top: 1px solid var(--border);
+      }
+      .cost-total .cost-label { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+      .cost-total .cost-value { font-size: 13px; font-weight: 700; color: var(--color-success); }
+
+      .info-placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: 1;
+        color: var(--text-tertiary);
+        font-size: 13px;
+      }
+
+      @media (max-width: 1200px) { .right-panel { display: none; } }
+      @media (max-width: 900px) { .content-panel { display: none; } }
+    </style>
+
+    <div class="right-panel">
+      <div class="rp-tabs">
+        <button class="rp-tab active" onclick="switchTab('tools')">Tools</button>
+        <button class="rp-tab" onclick="switchTab('context')">Context</button>
+        <button class="rp-tab" onclick="switchTab('info')">Info</button>
+      </div>
+
+      <!-- Tools Tab -->
+      <div id="panel-tools" class="rp-panel active">
+        <div class="rp-scroll">
+          <div class="tool-item">
+            <div class="tool-icon grep">G</div>
+            <div class="tool-body"><div class="tool-name">Grep</div><div class="tool-detail">pattern "render" in src/</div></div>
+            <div class="tool-time">1.2s</div>
+          </div>
+          <div class="tool-item">
+            <div class="tool-icon read">R</div>
+            <div class="tool-body"><div class="tool-name">Read</div><div class="tool-detail">src/lib/components/Chat.svelte</div></div>
+            <div class="tool-time">0.3s</div>
+          </div>
+          <div class="tool-item">
+            <div class="tool-icon edit">E</div>
+            <div class="tool-body"><div class="tool-name">Edit</div><div class="tool-detail">src/routes/chat/+page.svelte</div></div>
+            <div class="tool-time">0.1s</div>
+          </div>
+          <div class="tool-item">
+            <div class="tool-icon bash">$</div>
+            <div class="tool-body"><div class="tool-name">Bash</div><div class="tool-detail">cargo check --manifest-path ...</div></div>
+            <div class="tool-time">8.4s</div>
+          </div>
+          <div class="tool-item">
+            <div class="tool-icon grep">G</div>
+            <div class="tool-body"><div class="tool-name">Grep</div><div class="tool-detail">pattern "useState" in src/lib/</div></div>
+            <div class="tool-time">0.8s</div>
+          </div>
+          <div class="tool-item">
+            <div class="tool-icon read">R</div>
+            <div class="tool-body"><div class="tool-name">Read</div><div class="tool-detail">src/lib/stores/session-store.svelte.ts</div></div>
+            <div class="tool-time">0.2s</div>
+          </div>
+        </div>
+        <div class="rp-bottom">
+          <div>
+            <div class="ctx-title">Context Window</div>
+            <div class="ctx-bar-track"><div class="ctx-bar-fill"></div></div>
+            <div class="ctx-stats"><span class="ctx-used">43K</span><span class="ctx-total">/ 128K</span></div>
+          </div>
+          <div>
+            <div class="ctx-title">Session Cost</div>
+            <div class="cost-grid">
+              <div class="cost-item"><span class="cost-label">Input</span><span class="cost-value">$0.12</span></div>
+              <div class="cost-item"><span class="cost-label">Output</span><span class="cost-value">$0.08</span></div>
+              <div class="cost-item"><span class="cost-label">Cache</span><span class="cost-value">$0.03</span></div>
+              <div class="cost-item"><span class="cost-label">Tokens</span><span class="cost-value">43,218</span></div>
+              <div class="cost-total"><span class="cost-label">Total</span><span class="cost-value">$0.23</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="panel-context" class="rp-panel">
+        <div class="rp-scroll"><div class="info-placeholder">Context files &amp; sources</div></div>
+      </div>
+      <div id="panel-info" class="rp-panel">
+        <div class="rp-scroll"><div class="info-placeholder">Session details</div></div>
+      </div>
+
+      <script>
+        function switchTab(name) {
+          document.querySelectorAll('.rp-tab').forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('.rp-panel').forEach(p => p.classList.remove('active'));
+          const map = { tools: 0, context: 1, info: 2 };
+          document.querySelectorAll('.rp-tab')[map[name]].classList.add('active');
+          document.getElementById('panel-' + name).classList.add('active');
+        }
+      </script>
+    </div>
+
+  </div>
+
+</body>
+</html>

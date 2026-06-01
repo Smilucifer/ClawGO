@@ -2025,6 +2025,27 @@
               />
             </div>
           </div>
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium">{t("settings_tushare_proxy_url")}</p>
+              <p class="text-xs text-muted-foreground">{t("settings_tushare_proxy_hint")}</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <input
+                type="text"
+                class="w-64 rounded-md border bg-background px-3 py-1.5 text-sm"
+                placeholder="https://api.tushare.pro"
+                value={settings?.tushare_proxy_url ?? ""}
+                onblur={async (e) => {
+                  const val = (e.currentTarget as HTMLInputElement).value.trim();
+                  const prev = settings?.tushare_proxy_url ?? "";
+                  if (val !== prev) {
+                    await saveGeneralPatch({ tushare_proxy_url: val || undefined });
+                  }
+                }}
+              />
+            </div>
+          </div>
         </Card>
       </div>
 

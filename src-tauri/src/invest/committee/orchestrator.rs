@@ -953,12 +953,9 @@ pub async fn run_committee(
     // quantile) after Macro and inject into Quant/Risk/CIO context.
     let regime_si = 1; // step_index for REGIME node
     let regime_context: Option<String> = {
-        let regime_result = match crate::storage::settings::get_user_settings().tushare_token {
-            Some(token) => {
-                let client = crate::tushare::client::TushareClient::new(token);
-                regime::compute_regime_for_symbol(&client, symbol).await
-            }
-            None => Err("tushare_token not configured".to_string()),
+        let regime_result = match crate::tushare::client::TushareClient::from_settings() {
+            Ok(client) => regime::compute_regime_for_symbol(&client, symbol).await,
+            Err(e) => Err(e),
         };
 
         // Compute structured fields + context in one pass

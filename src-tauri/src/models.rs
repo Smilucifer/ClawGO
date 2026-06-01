@@ -372,6 +372,9 @@ pub struct UserSettings {
     /// Tushare Pro API token for market data fetching.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tushare_token: Option<String>,
+    /// Custom Tushare API proxy URL. When empty, falls back to official `api.tushare.pro`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tushare_proxy_url: Option<String>,
     /// Enable background memory dream cycle (decay, merge, archive).
     #[serde(default = "default_true")]
     pub memory_dream_enabled: bool,
@@ -554,6 +557,7 @@ impl Default for UserSettings {
             native_hooks_migrated: false,
             embedding_config: None,
             tushare_token: None,
+            tushare_proxy_url: None,
             memory_dream_enabled: true,
             updated_at: now_iso(),
         }

@@ -250,6 +250,7 @@ export interface UserSettings {
   mcp_servers?: Record<string, McpServerConfig>;
   ai_characters?: AiCharacter[];
   tushare_token?: string;
+  tushare_proxy_url?: string;
   memory_dream_enabled?: boolean;
   updated_at: string;
 }

@@ -179,7 +179,7 @@ fn find_bar<'a>(bars: &'a [crate::tushare::client::DailyBar], target_date: &str)
 /// 6. Write reviews to verdict_reviews table
 /// 7. Aggregate and return summary
 pub async fn run_verdict_review(tushare_token: &str) -> Result<VerdictReviewSummary, String> {
-    let client = TushareClient::new(tushare_token.to_string());
+    let client = TushareClient::with_token(tushare_token.to_string());
 
     // 1. Load active tracked verdicts
     let tracked = verdict_tracking::list_active_tracking()?;

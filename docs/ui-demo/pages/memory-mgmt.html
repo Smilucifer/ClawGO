@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClawGO — User Memory</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../design-system.css">
+  <style>
+    .page-header { display: flex; align-items: center; justify-content: space-between; padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border); }
+    .page-title { font-size: 18px; font-weight: 600; color: var(--text-primary); }
+
+    .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); padding: 0 var(--space-5); }
+    .tab {
+      padding: var(--space-3) var(--space-4);
+      font-size: 13px; font-weight: 500;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all var(--duration-fast);
+    }
+    .tab:hover { color: var(--text-secondary); }
+    .tab.active { color: var(--text-primary); border-bottom-color: var(--accent); }
+
+    .info-banner {
+      background: var(--accent-subtle);
+      border-bottom: 1px solid var(--border);
+      padding: var(--space-2) var(--space-5);
+      font-size: 12px;
+      color: var(--text-tertiary);
+    }
+    .info-banner a { color: var(--accent); text-decoration: none; }
+    .info-banner a:hover { text-decoration: underline; }
+
+    .content { flex: 1; overflow-y: auto; padding: var(--space-4) var(--space-5); }
+
+    .scope-filter { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); }
+    .scope-btn {
+      padding: var(--space-1) var(--space-3);
+      border-radius: var(--radius-md);
+      font-size: 12px;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      border: none;
+      background: var(--bg-input);
+      transition: all var(--duration-fast);
+    }
+    .scope-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
+    .scope-btn.active { background: var(--accent-muted); color: var(--accent); }
+
+    .memory-list { display: flex; flex-direction: column; gap: var(--space-2); }
+    .memory-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: var(--space-3) var(--space-4);
+      transition: all var(--duration-fast);
+    }
+    .memory-card:hover { border-color: var(--border-strong); }
+    .memory-card-header { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+    .memory-scope {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      background: var(--bg-input);
+      color: var(--text-tertiary);
+      font-weight: 500;
+    }
+    .memory-scope.global { background: var(--accent-muted); color: var(--accent); }
+    .memory-scope.invest { background: rgba(138, 154, 118, 0.12); color: #8a9a76; }
+    .memory-type {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      background: var(--bg-input);
+      color: var(--text-tertiary);
+    }
+    .memory-confidence {
+      font-size: 10px;
+      color: var(--text-tertiary);
+      font-family: var(--font-mono);
+    }
+    .memory-content { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+    .memory-meta { font-size: 11px; color: var(--text-tertiary); margin-top: var(--space-2); }
+
+    .empty-state {
+      text-align: center;
+      padding: var(--space-8) var(--space-4);
+      color: var(--text-tertiary);
+    }
+    .empty-state svg { width: 48px; height: 48px; margin-bottom: var(--space-3); opacity: 0.3; }
+    .empty-state p { font-size: 13px; }
+
+    .archived-list { display: flex; flex-direction: column; gap: var(--space-2); }
+    .archived-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: var(--space-3) var(--space-4);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--space-3);
+    }
+    .archived-body { flex: 1; }
+    .archived-header { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1); }
+    .archived-type {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      background: var(--bg-input);
+      color: var(--text-tertiary);
+    }
+    .archived-symbol {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      background: var(--accent-muted);
+      color: var(--accent);
+      font-family: var(--font-mono);
+    }
+    .archived-time { font-size: 10px; color: var(--text-tertiary); }
+    .archived-content { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+    .restore-btn {
+      padding: var(--space-1) var(--space-3);
+      border-radius: var(--radius-md);
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      background: var(--accent-muted);
+      color: var(--accent);
+      transition: all var(--duration-fast);
+      flex-shrink: 0;
+    }
+    .restore-btn:hover { background: rgba(201, 169, 110, 0.25); }
+
+    .main-content { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    @media (max-width: 900px) { .content-panel { display: none; } }
+  </style>
+</head>
+<body>
+
+  <div class="window-chrome">
+    <div class="window-title">ClawGO — User Memory</div>
+    <div class="window-controls">
+      <button class="window-btn minimize"><svg viewBox="0 0 10 1" fill="currentColor"><rect width="10" height="1"/></svg></button>
+      <button class="window-btn maximize"><svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1"><rect x="0.5" y="0.5" width="9" height="9"/></svg></button>
+      <button class="window-btn close"><svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg></button>
+    </div>
+  </div>
+
+  <div class="app-layout">
+    <div class="sidebar">
+      <div class="icon-rail">
+        <div class="rail-icon" title="Chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+        <div class="rail-icon" title="Explorer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
+        <div class="rail-icon" title="Plugins"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+        <div class="rail-icon" title="Invest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
+        <div class="rail-separator"></div>
+        <div class="rail-icon active" title="Memory Mgmt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+        <div class="rail-icon" title="Usage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
+        <div class="rail-icon" title="History"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+        <div class="rail-bottom">
+          <div class="rail-icon" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+          <div class="rail-avatar">S</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <div class="page-header">
+        <div class="page-title">User Memory</div>
+      </div>
+
+      <div class="tabs">
+        <div class="tab active">User Memory</div>
+        <div class="tab">Archived</div>
+      </div>
+
+      <div class="info-banner">
+        提取配置（API Endpoint / Key / Model）已移至 <a href="#">设置 &gt; Memory Extraction</a> 统一管理。记忆衰减与归档开关也位于该页面。
+      </div>
+
+      <div class="content">
+        <div class="scope-filter">
+          <button class="scope-btn active">all</button>
+          <button class="scope-btn">global</button>
+          <button class="scope-btn">project</button>
+          <button class="scope-btn">invest</button>
+        </div>
+
+        <div class="memory-list">
+          <div class="memory-card">
+            <div class="memory-card-header">
+              <span class="memory-scope global">global</span>
+              <span class="memory-type">user</span>
+            </div>
+            <div class="memory-content">用户偏好使用 Svelte 5 runes，不要使用 Svelte 4 的 reactive declarations</div>
+            <div class="memory-meta">Updated: 2026-05-30</div>
+          </div>
+
+          <div class="memory-card">
+            <div class="memory-card-header">
+              <span class="memory-scope global">global</span>
+              <span class="memory-type">feedback</span>
+            </div>
+            <div class="memory-content">大工程量任务应派发 subagent 执行，避免主上下文溢出</div>
+            <div class="memory-meta">Updated: 2026-05-28</div>
+          </div>
+
+          <div class="memory-card">
+            <div class="memory-card-header">
+              <span class="memory-scope invest">invest</span>
+              <span class="memory-type">project</span>
+            </div>
+            <div class="memory-content">openInvest 全部 Phase 1-4b + Fix Tasks 已完成 (v4.0.0+)</div>
+            <div class="memory-meta">Updated: 2026-05-25</div>
+          </div>
+
+          <div class="memory-card">
+            <div class="memory-card-header">
+              <span class="memory-scope invest">invest</span>
+              <span class="memory-type">reference</span>
+            </div>
+            <div class="memory-content">Yahoo Finance API 有 429 限流问题，需要指数退避重试，间隔 500ms</div>
+            <div class="memory-meta">Updated: 2026-05-20</div>
+          </div>
+
+          <div class="memory-card">
+            <div class="memory-card-header">
+              <span class="memory-scope global">global</span>
+              <span class="memory-type">feedback</span>
+              <span class="memory-confidence">confidence: 0.85</span>
+            </div>
+            <div class="memory-content">文档放 docs/ 下，plan 文件放 docs/superpowers/plans/</div>
+            <div class="memory-meta">Updated: 2026-05-15</div>
+          </div>
+
+          <div class="memory-card">
+            <div class="memory-card-header">
+              <span class="memory-scope global">global</span>
+              <span class="memory-type">user</span>
+            </div>
+            <div class="memory-content">Commit 使用 Conventional Commit 风格，feat:/fix:/chore: 前缀</div>
+            <div class="memory-meta">Updated: 2026-05-10</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

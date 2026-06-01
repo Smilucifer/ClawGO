@@ -711,11 +711,6 @@
   "layout_newConversation": "New conversation",
   "layout_selectProjectFolder": "Select Project Folder",
   "layout_toggleSidebar": "Toggle sidebar (Ctrl+B)",
-  "layout_themeTitle_dark": "Theme: Dark (click for Light)",
-  "layout_themeTitle_light": "Theme: Light (click for System)",
-  "layout_themeTitle_system": "Theme: System (click for Dark)",
-  "layout_schemeTitle_warm": "Color scheme: Warm (click for Neutral)",
-  "layout_schemeTitle_neutral": "Color scheme: Neutral (click for Warm)",
 
   "sidebar_skills": "Skills",
   "sidebar_mcpServers": "MCP Servers",
@@ -2174,6 +2169,8 @@
   "settings_embedding_disabled_notice": "Character memory is paused. Enable to restore semantic search. Stored memory data will not be lost.",
 
   "settings_tushare_token": "Tushare Token",
+  "settings_tushare_proxy_url": "Tushare Proxy URL",
+  "settings_tushare_proxy_hint": "Leave empty to use official api.tushare.pro. Enter a proxy URL to bypass rate limits.",
 
   "scheduler.title": "Scheduler",
   "scheduler.credits": "Credits",

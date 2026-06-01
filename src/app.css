@@ -3,105 +3,34 @@
 @tailwind utilities;
 
 @layer base {
-  /* ── Light mode ── */
+  /* ── Warm dark theme (single theme) ── */
   :root {
-    --background: 0 0% 100%;
-    --foreground: 26 24% 12%;
-    --primary: 38 86% 64%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 30 14% 93%;
-    --secondary-foreground: 26 24% 12%;
-    --muted: 30 14% 93%;
-    --muted-foreground: 0 0% 42%;
-    --accent: 30 14% 93%;
-    --accent-foreground: 26 24% 12%;
+    --background: 24 6% 10%;          /* #1a1918 */
+    --foreground: 36 23% 90%;         /* #ebe8e4 */
+    --primary: 38 46% 62%;            /* #c9a96e */
+    --primary-foreground: 24 6% 10%;  /* #1a1918 */
+    --secondary: 20 6% 14%;           /* #272422 */
+    --secondary-foreground: 36 23% 90%;
+    --muted: 20 6% 14%;               /* #272422 */
+    --muted-foreground: 24 7% 60%;    /* #9e9a96 */
+    --accent: 20 7% 16%;              /* #2a2827 */
+    --accent-foreground: 36 23% 90%;
     --destructive: 0 64% 57%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 30 8% 85%;
-    --input: 30 8% 85%;
-    --ring: 38 86% 64%;
+    --destructive-foreground: 36 23% 90%;
+    --border: 20 6% 18%;              /* #2e2c2a */
+    --input: 20 6% 18%;
+    --ring: 38 46% 62%;               /* #c9a96e */
     --radius: 0.5rem;
-    --sidebar-background: 30 10% 96%;
-    --sidebar-foreground: 26 24% 12%;
-    --sidebar-primary: 38 86% 64%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 30 14% 90%;
-    --sidebar-accent-foreground: 26 24% 12%;
-    --sidebar-border: 30 8% 88%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 26 24% 12%;
-    --sidebar-ring: 38 86% 64%;
-  }
-
-  /* ── Dark mode (primary) ── */
-  .dark {
-    --background: 0 0% 7.1%;
-    --foreground: 0 0% 93%;
-    --primary: 38 86% 64%;
-    --primary-foreground: 0 0% 7.1%;
-    --secondary: 0 0% 15.7%;
-    --secondary-foreground: 0 0% 93%;
-    --muted: 0 0% 15.7%;
-    --muted-foreground: 0 0% 54.5%;
-    --accent: 0 0% 15.7%;
-    --accent-foreground: 0 0% 93%;
-    --destructive: 0 64% 57%;
-    --destructive-foreground: 0 0% 93%;
-    --border: 0 0% 24.7%;
-    --input: 0 0% 24.7%;
-    --ring: 35 93% 77%;
-    --sidebar-background: 26 24% 12%;
-    --sidebar-foreground: 0 0% 93%;
-    --sidebar-primary: 38 86% 64%;
-    --sidebar-primary-foreground: 0 0% 7.1%;
-    --sidebar-accent: 26 15% 20%;
-    --sidebar-accent-foreground: 0 0% 93%;
-    --sidebar-border: 26 10% 18%;
-    --popover: 0 0% 12.9%;
-    --popover-foreground: 0 0% 93%;
-    --sidebar-ring: 38 86% 64%;
-  }
-
-  /* ── Neutral scheme: light ── */
-  .scheme-neutral {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 9%;
-    --secondary: 0 0% 96%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96%;
-    --muted-foreground: 0 0% 38%;
-    --accent: 0 0% 96%;
-    --accent-foreground: 0 0% 9%;
-    --border: 0 0% 88%;
-    --input: 0 0% 88%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 9%;
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 0 0% 9%;
-    --sidebar-accent: 0 0% 93%;
-    --sidebar-accent-foreground: 0 0% 9%;
-    --sidebar-border: 0 0% 90%;
-  }
-
-  /* ── Neutral scheme: dark ── */
-  .dark.scheme-neutral {
-    --background: 0 0% 8%;
-    --foreground: 0 0% 95%;
-    --secondary: 0 0% 16%;
-    --secondary-foreground: 0 0% 95%;
-    --muted: 0 0% 16%;
-    --muted-foreground: 0 0% 62%;
-    --accent: 0 0% 16%;
-    --accent-foreground: 0 0% 95%;
-    --border: 0 0% 22%;
-    --input: 0 0% 22%;
-    --popover: 0 0% 12%;
-    --popover-foreground: 0 0% 95%;
-    --sidebar-background: 0 0% 11%;
-    --sidebar-foreground: 0 0% 95%;
-    --sidebar-accent: 0 0% 18%;
-    --sidebar-accent-foreground: 0 0% 95%;
-    --sidebar-border: 0 0% 18%;
+    --sidebar-background: 20 8% 13%;  /* #211f1e */
+    --sidebar-foreground: 36 23% 90%;
+    --sidebar-primary: 38 46% 62%;
+    --sidebar-primary-foreground: 24 6% 10%;
+    --sidebar-accent: 20 7% 16%;      /* #2a2827 */
+    --sidebar-accent-foreground: 36 23% 90%;
+    --sidebar-border: 20 6% 18%;      /* #2e2c2a */
+    --popover: 20 6% 14%;             /* #272422 */
+    --popover-foreground: 36 23% 90%;
+    --sidebar-ring: 38 46% 62%;
   }
 }
 
@@ -112,8 +41,9 @@
   body {
     @apply bg-background text-foreground;
     font-family:
-      -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB",
-      "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei", sans-serif;
+      "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC",
+      "WenQuanYi Micro Hei", sans-serif;
   }
 }
 

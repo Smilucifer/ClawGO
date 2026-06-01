@@ -238,7 +238,7 @@ async fn fetch_cgb_10y(
 ///
 /// Requests are sequential with 500ms spacing to avoid Yahoo's rate limiter (429).
 async fn fetch_international() -> MacroResult {
-    let client = crate::invest::international::InternationalClient::new();
+    let client = crate::invest::international::InternationalClient::from_settings();
 
     let symbols: &[(&str, &str)] = &[
         ("^VIX", "vix"),
@@ -250,13 +250,7 @@ async fn fetch_international() -> MacroResult {
     ];
 
     let mut entries = Vec::new();
-    for (i, (yahoo_sym, indicator)) in symbols.iter().enumerate() {
-        if i > 0 {
-            tokio::time::sleep(std::time::Duration::from_millis(
-                crate::invest::international::YAHOO_REQUEST_INTERVAL_MS,
-            ))
-            .await;
-        }
+    for (yahoo_sym, indicator) in symbols.iter() {
         match client.fetch_yahoo_quote(yahoo_sym).await {
             Ok(quote) => entries.push((
                 indicator.to_string(),

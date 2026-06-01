@@ -1,0 +1,1 @@
+# ClawGO data providers package

@@ -389,7 +389,7 @@ pub async fn search_stocks(
     name: String,
     token: String,
 ) -> Result<Vec<crate::tushare::client::StockBasic>, String> {
-    let client = crate::tushare::TushareClient::new(token);
+    let client = crate::tushare::TushareClient::with_token(token);
     client.stock_basic(Some(&name)).await
 }
 
@@ -398,7 +398,7 @@ pub async fn search_etfs(
     name: String,
     token: String,
 ) -> Result<Vec<crate::tushare::client::FundBasic>, String> {
-    let client = crate::tushare::TushareClient::new(token);
+    let client = crate::tushare::TushareClient::with_token(token);
     client.fund_basic(Some(&name)).await
 }
 
@@ -407,7 +407,7 @@ pub async fn get_latest_price(
     ts_code: String,
     token: String,
 ) -> Result<f64, String> {
-    let client = crate::tushare::TushareClient::new(token);
+    let client = crate::tushare::TushareClient::with_token(token);
     client.get_latest_price(&ts_code).await
 }
 
@@ -418,7 +418,7 @@ pub async fn get_daily_bars(
     end_date: String,
     token: String,
 ) -> Result<Vec<crate::tushare::client::DailyBar>, String> {
-    let client = crate::tushare::TushareClient::new(token);
+    let client = crate::tushare::TushareClient::with_token(token);
     client.daily(&ts_code, &start_date, &end_date).await
 }
 
@@ -426,7 +426,7 @@ pub async fn get_daily_bars(
 
 #[tauri::command]
 pub async fn sync_trade_calendar(token: String) -> Result<usize, String> {
-    let client = crate::tushare::TushareClient::new(token);
+    let client = crate::tushare::TushareClient::with_token(token);
     let today = chrono::Local::now();
     let start = today.format("%Y%m%d").to_string();
     let end = (today + chrono::Duration::days(730)).format("%Y%m%d").to_string();
@@ -897,11 +897,7 @@ pub fn save_role_prompt(role: String, content: String, round: Option<u8>) -> Res
 /// Build TushareClient + LLM client + config for event scanning.
 /// Used by both the `scan_events` Tauri command and the background cron.
 pub fn build_scan_clients() -> Result<(crate::tushare::TushareClient, crate::invest::llm::client::OpenAiCompatClient, crate::invest::llm::types::LlmConfig), String> {
-    let settings = crate::storage::settings::get_user_settings();
-    let token = settings
-        .tushare_token
-        .ok_or("no tushare_token configured")?;
-    let tushare = crate::tushare::TushareClient::new(token);
+    let tushare = crate::tushare::TushareClient::from_settings()?;
 
     let config_data = get_llm_config()?;
     let client =
@@ -1147,7 +1143,7 @@ pub async fn get_regime_classification(ts_code: String, tushare_token: String) -
     use chrono::Local;
     use crate::tushare::client::TushareClient;
 
-    let client = TushareClient::new(tushare_token);
+    let client = TushareClient::with_token(tushare_token);
     let result = crate::invest::regime::compute_regime_for_symbol(&client, &ts_code).await?;
 
     let m = &result.metrics;
@@ -1190,7 +1186,7 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
     // Check Tushare
     let settings = crate::storage::settings::get_user_settings();
     if let Some(ref token) = settings.tushare_token {
-        let client = TushareClient::new(token.clone());
+        let client = TushareClient::with_token(token.clone());
         match client.get_latest_price("000001.SZ").await {
             Ok(price) => {
                 sources.push(DataSourceStatus {
@@ -1285,7 +1281,7 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
     }
 
     // Check Yahoo Finance — fetch ^VIX as a connectivity probe
-    let yahoo_client = crate::invest::international::InternationalClient::new();
+    let yahoo_client = crate::invest::international::InternationalClient::from_settings();
     match yahoo_client.fetch_yahoo_quote("^VIX").await {
         Ok(quote) => {
             sources.push(DataSourceStatus {

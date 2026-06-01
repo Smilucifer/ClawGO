@@ -172,21 +172,88 @@ pub fn get_i64(row: &[serde_json::Value], idx: usize) -> Option<i64> {
 // Client
 // ---------------------------------------------------------------------------
 
+/// Default Tushare Pro official API endpoint.
+const TUSHARE_OFFICIAL_URL: &str = "https://api.tushare.pro";
+
 /// HTTP client for the Tushare Pro API.
 #[derive(Clone)]
 pub struct TushareClient {
     token: String,
+    base_url: String,
     client: reqwest::Client,
 }
 
+/// Validate that a URL has an http/https scheme. Returns error message if invalid.
+fn validate_url_scheme(url: &str) -> Result<(), String> {
+    if url.starts_with("http://") || url.starts_with("https://") {
+        Ok(())
+    } else {
+        Err(format!(
+            "invalid URL scheme (expected http:// or https://): {url}"
+        ))
+    }
+}
+
 impl TushareClient {
-    /// Create a new client with a 30-second request timeout.
-    pub fn new(token: String) -> Self {
+    /// Create a new client with an explicit token and base URL.
+    ///
+    /// **Callers must validate `base_url` before calling** (e.g. via
+    /// `validate_url_scheme`). This constructor trusts its inputs for
+    /// flexibility; the factory methods apply validation automatically.
+    pub fn new(token: String, base_url: String) -> Self {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
             .expect("failed to build reqwest client");
-        Self { token, client }
+        Self { token, base_url, client }
+    }
+
+    /// Resolve a base URL from an optional proxy URL string.
+    /// Filters empty values, defaults to the official Tushare API, and
+    /// validates the URL scheme. On validation failure, logs a warning
+    /// and falls back to the official URL.
+    fn resolve_base_url(proxy_url: Option<&str>) -> String {
+        let raw = proxy_url
+            .filter(|u| !u.is_empty())
+            .unwrap_or(TUSHARE_OFFICIAL_URL);
+        if raw == TUSHARE_OFFICIAL_URL {
+            return raw.to_string();
+        }
+        match validate_url_scheme(raw) {
+            Ok(()) => raw.to_string(),
+            Err(e) => {
+                log::warn!("[tushare] invalid proxy URL, falling back to official: {e}");
+                TUSHARE_OFFICIAL_URL.to_string()
+            }
+        }
+    }
+
+    /// Build from `UserSettings`: reads `tushare_token` (required) and
+    /// `tushare_proxy_url` (optional, defaults to official API).
+    pub fn from_settings() -> Result<Self, String> {
+        let settings = crate::storage::settings::get_user_settings();
+        let token = settings
+            .tushare_token
+            .ok_or_else(|| "tushare_token not configured".to_string())?;
+        let base_url = Self::resolve_base_url(settings.tushare_proxy_url.as_deref());
+        validate_url_scheme(&base_url)?;
+        Ok(Self::new(token, base_url))
+    }
+
+    /// Build with an explicit token (e.g. passed from frontend) but proxy URL
+    /// from `UserSettings`. Falls back to the official API if not configured.
+    pub fn with_token(token: String) -> Self {
+        let settings = crate::storage::settings::get_user_settings();
+        let base_url = Self::resolve_base_url(settings.tushare_proxy_url.as_deref());
+        Self::new(token, base_url)
+    }
+
+    /// Build with an explicit token and an explicit proxy URL.
+    /// Avoids re-reading settings when the caller already has the proxy URL.
+    /// Falls back to the official API if `proxy_url` is `None` or empty.
+    pub fn with_token_and_proxy(token: String, proxy_url: Option<String>) -> Self {
+        let base_url = Self::resolve_base_url(proxy_url.as_deref());
+        Self::new(token, base_url)
     }
 
     // -- low-level -----------------------------------------------------------
@@ -213,7 +280,7 @@ impl TushareClient {
         for attempt in 0..max_retries {
             let resp = self
                 .client
-                .post("http://101.35.233.113:8020/")
+                .post(&self.base_url)
                 .json(&body)
                 .send()
                 .await
@@ -223,9 +290,11 @@ impl TushareClient {
 
             // Retry on 429 or 5xx
             if status.as_u16() == 429 || status.is_server_error() {
-                let backoff_ms = 1000 * (1u64 << attempt);
-                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                 last_err = Some(format!("HTTP {status} (attempt {}/{max_retries})", attempt + 1));
+                if attempt + 1 < max_retries {
+                    let backoff_ms = 1000 * (1u64 << attempt);
+                    tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                }
                 continue;
             }
 

@@ -2,6 +2,62 @@
 
 ## Phase 10+ (2026-06-01)
 
+### v5.1.0 — UI 设计系统统一: 暖色暗黑主题 + 自定义标题栏 + Inter 字体
+
+**UI 重构 (2026-06-01):**
+
+**设计系统统一 (3 项):**
+1. **暖色暗黑固定主题**: `app.css` CSS 变量全面替换为 Demo 设计系统色值 — `#1a1918` 底色、`#c9a96e` 强调色、`#ebe8e4` 文字、`#2e2c2a` 边框；移除 light mode、scheme-neutral 分支
+2. **Inter 字体全局应用**: Google Fonts Inter 作为首选字体，添加到 `app.html`；splash 页同步更新
+3. **自定义窗口标题栏**: Tauri `decorations: false` + 自定义标题栏（`data-tauri-drag-region`）含 ClawGO 标题 + 最小化/最大化/关闭按钮
+
+**功能清理 (2 项):**
+4. **移除主题切换**: 删除 `themeMode` / `colorScheme` / `cycleTheme()` / `cycleScheme()` 及相关 UI 按钮，固定暖色暗黑模式
+5. **移除色彩方案切换**: 删除 warm/neutral 方案切换，清理 5 个废弃 i18n key
+
+**侧边栏优化 (2 项):**
+6. **Settings 底部分隔**: Settings 图标移至 Icon Rail 底部，用分隔线与主导航隔开，匹配 Demo 设计
+7. **Icon Rail 样式**: 背景色统一使用 `var(--sidebar-border)` 变量
+
+**Checklist 回归: 46 项功能入口全部保留 ✓**
+
+**涉及文件:**
+- `src/app.css` — CSS 变量重写
+- `src/app.html` — Inter 字体 + 暖色 splash
+- `src-tauri/tauri.conf.json` — `decorations: false` + CSP Google Fonts
+- `src/routes/+layout.svelte` — 标题栏 + 移除主题切换 + Settings 分隔
+- `messages/en.json` / `messages/zh-CN.json` — 清理废弃 key
+
+---
+
+## Phase 10+ (2026-06-01)
+
+### v5.0.5 — 代码审查修复: Yahoo 认证加固 + Tushare 代理验证 + 并发安全
+
+**11 项代码审查修复 (2026-06-01):**
+
+**正确性 (3 项):**
+1. **TushareClient URL scheme 验证**: `new()` 公开构造函数新增 `validate_url_scheme()` 检查，`from_settings()`/`with_token()` 在使用 `tushare_proxy_url` 前验证必须以 `http://` 或 `https://` 开头，无效时 fallback 到官方 API 并 log::warn
+2. **reqwest::Proxy::all() 静默失败修复**: `InternationalClient::new()` 中无效代理 URL 从 `if let Ok` 静默跳过改为 `match` 分支 + `log::warn` 警告，用户可看到代理未生效的原因
+3. **Mutex 中毒恢复**: `InternationalClient` 所有 `.lock().unwrap()` 改为 `.unwrap_or_else(|poisoned| poisoned.into_inner())`，避免前序 panic 导致级联崩溃
+
+**可靠性 (3 项):**
+4. **重试循环末尾退避消除**: `fetch_chart_raw`/`fetch_yahoo_news`/`call_api` 三个重试循环在最后一次迭代（`attempt + 1 >= max_retries`）时跳过 sleep，避免无意义的 8s/8s/4s 等待
+5. **ensure_session 惊群效应修复**: 写锁内添加双重检查（double-checked locking），多个并发任务在 session 过期时不再各自独立 fetch cookie+crumb
+6. **Mutex → RwLock**: `InternationalClient.session` 从 `Mutex<Option<YahooSession>>` 改为 `RwLock`，快路径（session 有效时）允许多读者并发
+
+**代码质量 (5 项):**
+7. **with_token_and_proxy() 新方法**: 接受显式 `(token, proxy_url)` 参数，避免已加载 settings 的调用点（lib.rs 两处）重复读取 settings.json
+8. **resolve_local_proxy_url() 共享辅助函数**: 提取到 `storage/settings.rs`，消除 `updates.rs` 与 `international.rs` 的重复代理 URL 构建逻辑
+9. **tushare_proxy_url URL 格式验证**: `from_settings()` 和 `with_token()` 在构建 TushareClient 前验证 URL scheme，无效值 fallback 到官方 API
+10. **代理端口范围检查**: `resolve_local_proxy_url()` 使用 `u16` 类型天然限制 0–65535，`>= 1` 检查排除端口 0
+11. **代理函数语义改进**: 共享函数命名为 `resolve_local_proxy_url()` 替代各处 `resolve_proxy_url()`，语义更清晰（本地 HTTP 隧道代理）
+
+**涉及文件:**
+- 后端: `tushare/client.rs` / `invest/international.rs` / `storage/settings.rs` / `commands/updates.rs` / `lib.rs`
+
+---
+
 ### v5.0.4 — Yahoo Finance 429 二次修复 + 扫描增强 + add_watch + fund_basic
 
 **4 项修复 + 4 项代码审查改进 (2026-06-01):**

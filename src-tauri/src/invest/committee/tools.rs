@@ -197,8 +197,7 @@ async fn exec_history_data(symbol: &str, days: usize) -> Result<String, String> 
 
 /// Tushare-backed history for A-share symbols (e.g. 600519.SH).
 async fn exec_history_data_tushare(symbol: &str, days: usize) -> Result<String, String> {
-    let token = read_tushare_token()?;
-    let client = TushareClient::new(token);
+    let client = TushareClient::from_settings()?;
 
     let end_date = chrono::Local::now().format("%Y%m%d").to_string();
     let start_date =
@@ -262,7 +261,7 @@ async fn exec_history_data_tushare(symbol: &str, days: usize) -> Result<String, 
 async fn exec_history_data_yahoo(symbol: &str, days: usize) -> Result<String, String> {
     use crate::invest::international::InternationalClient;
 
-    let client = InternationalClient::new();
+    let client = InternationalClient::from_settings();
     let bars = client
         .fetch_yahoo_history(symbol, days as u32)
         .await
@@ -313,8 +312,7 @@ async fn exec_history_data_yahoo(symbol: &str, days: usize) -> Result<String, St
 }
 
 async fn exec_multi_timeframe(symbol: &str) -> Result<String, String> {
-    let token = read_tushare_token()?;
-    let client = TushareClient::new(token);
+    let client = TushareClient::from_settings()?;
 
     // Request ~2 years of data for MA120 and percentile calculations
     let end_date = chrono::Local::now().format("%Y%m%d").to_string();
@@ -487,8 +485,7 @@ async fn exec_macro_snapshot() -> Result<String, String> {
     if !cache_fresh {
         // Fallback: refresh via macro_refresh
         log::info!("exec_macro_snapshot: cache stale or empty, refreshing...");
-        let token = read_tushare_token()?;
-        let client = TushareClient::new(token);
+        let client = TushareClient::from_settings()?;
         if let Err(e) = macro_refresh::refresh_macro_cache(&client).await {
             log::warn!("exec_macro_snapshot: refresh failed: {e}, using stale cache");
         }
@@ -622,13 +619,6 @@ fn exec_recent_verdicts(symbol: Option<&str>, days: i64) -> Result<String, Strin
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-fn read_tushare_token() -> Result<String, String> {
-    let settings = crate::storage::settings::get_user_settings();
-    settings
-        .tushare_token
-        .ok_or_else(|| "tushare_token not configured".to_string())
-}
 
 /// Build a `Message` with role `"tool"` for returning tool results to the LLM.
 pub fn tool_result_message(tool_call_id: &str, result: &str) -> Message {

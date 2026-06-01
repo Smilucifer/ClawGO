@@ -1,0 +1,297 @@
+<!-- Chat Input Area — HTML snippet with embedded style block -->
+<!-- Drop this into any page that already loads design-system.css, or paste standalone. -->
+
+<style>
+  .chat-input-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    background: var(--bg-elevated);
+    transition: border-color 0.15s ease;
+  }
+  .chat-input-wrapper:focus-within {
+    border-color: var(--border-strong);
+  }
+
+  /* ── Top toolbar ─────────────────────────────── */
+  .chat-toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  .chat-toolbar-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-3);
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 999px; /* pill */
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+    white-space: nowrap;
+    user-select: none;
+  }
+  .chat-toolbar-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+  }
+
+  .chat-toolbar-btn .caret {
+    display: inline-block;
+    width: 0;
+    height: 0;
+    border-left: 3px solid transparent;
+    border-right: 3px solid transparent;
+    border-top: 4px solid currentColor;
+    margin-left: var(--space-1);
+  }
+
+  .chat-toolbar-sep {
+    width: 1px;
+    height: 16px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+
+  .chat-toolbar-label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-1) var(--space-2);
+    user-select: none;
+  }
+
+  /* Quick-mode toggle */
+  .chat-mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+  }
+  .chat-mode-toggle .toggle-track {
+    position: relative;
+    width: 32px;
+    height: 18px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    transition: background 0.15s ease, border-color 0.15s ease;
+    flex-shrink: 0;
+  }
+  .chat-mode-toggle .toggle-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    background: var(--text-tertiary);
+    border-radius: 50%;
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+  .chat-mode-toggle.active .toggle-track {
+    background: var(--accent-muted);
+    border-color: var(--accent);
+  }
+  .chat-mode-toggle.active .toggle-thumb {
+    transform: translateX(14px);
+    background: var(--accent);
+  }
+
+  /* ── Main input area ─────────────────────────── */
+  .chat-input-body {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--space-2);
+  }
+
+  .chat-textarea {
+    flex: 1;
+    resize: none;
+    min-height: 40px;
+    max-height: 160px;
+    padding: var(--space-2) var(--space-3);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--text-primary);
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    outline: none;
+    transition: border-color 0.15s ease;
+  }
+  .chat-textarea::placeholder {
+    color: var(--text-tertiary);
+  }
+  .chat-textarea:focus {
+    border-color: var(--border-accent);
+  }
+
+  .chat-input-icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+
+  .chat-attach-btn {
+    background: transparent;
+    color: var(--text-tertiary);
+  }
+  .chat-attach-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+  }
+
+  .chat-send-btn {
+    background: var(--accent);
+    color: #fff;
+  }
+  .chat-send-btn:hover {
+    background: var(--accent);
+    opacity: 0.85;
+  }
+
+  .chat-input-icon-btn svg {
+    width: 18px;
+    height: 18px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* ── Bottom hints ────────────────────────────── */
+  .chat-hints {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: var(--font-sans);
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+    user-select: none;
+  }
+  .chat-hints kbd {
+    display: inline-block;
+    padding: 1px 4px;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+  .chat-hints .model-tag {
+    font-family: var(--font-mono);
+    color: var(--text-tertiary);
+  }
+</style>
+
+<div class="chat-input-wrapper">
+
+  <!-- ── Top toolbar ───────────────────────────── -->
+  <div class="chat-toolbar">
+    <button class="chat-toolbar-btn" type="button">
+      <!-- sparkle icon -->
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg>
+      Claude
+      <span class="caret"></span>
+    </button>
+
+    <button class="chat-toolbar-btn" type="button">
+      <!-- cube icon -->
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0022 16z"/><polyline points="7.5 4.21 12 6.81 16.5 4.21"/><polyline points="7.5 19.79 7.5 14.6 3 12"/><polyline points="21 12 16.5 14.6 16.5 19.79"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+      sonnet-4-6
+      <span class="caret"></span>
+    </button>
+
+    <span class="chat-toolbar-label">default</span>
+
+    <div class="chat-mode-toggle" role="switch" aria-checked="false" tabindex="0">
+      <span>Fast</span>
+      <span class="toggle-track"><span class="toggle-thumb"></span></span>
+    </div>
+  </div>
+
+  <!-- ── Main input area ───────────────────────── -->
+  <div class="chat-input-body">
+    <textarea
+      class="chat-textarea"
+      rows="1"
+      placeholder="Send a message..."
+      aria-label="Chat message input"
+    ></textarea>
+
+    <!-- Attachment (paperclip) -->
+    <button class="chat-input-icon-btn chat-attach-btn" type="button" title="Attach file">
+      <svg viewBox="0 0 24 24">
+        <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+      </svg>
+    </button>
+
+    <!-- Send (arrow) -->
+    <button class="chat-input-icon-btn chat-send-btn" type="button" title="Send message">
+      <svg viewBox="0 0 24 24">
+        <line x1="22" y1="2" x2="11" y2="13"/>
+        <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- ── Bottom hints ──────────────────────────── -->
+  <div class="chat-hints">
+    <span>
+      <kbd>Enter</kbd> send &nbsp;&middot;&nbsp; <kbd>Shift</kbd>+<kbd>Enter</kbd> newline
+    </span>
+    <span class="model-tag">claude-sonnet-4-6</span>
+  </div>
+</div>
+
+<!-- ── Auto-resize textarea ─────────────────────── -->
+<script>
+  (() => {
+    const ta = document.querySelector('.chat-textarea');
+    if (!ta) return;
+    const autoResize = () => {
+      ta.style.height = 'auto';
+      ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
+    };
+    ta.addEventListener('input', autoResize);
+
+    // Toggle quick-mode pill
+    const toggle = document.querySelector('.chat-mode-toggle');
+    if (toggle) {
+      toggle.addEventListener('click', () => toggle.classList.toggle('active'));
+      toggle.addEventListener('keydown', (e) => {
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          toggle.classList.toggle('active');
+        }
+      });
+    }
+  })();
+</script>

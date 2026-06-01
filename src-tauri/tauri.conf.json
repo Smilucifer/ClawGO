@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegui/nicegui/main/.github/schemas/tauri-v2.json",
   "productName": "Claw GO",
-  "version": "5.0.4",
+  "version": "5.1.0",
   "identifier": "com.clawgo.desktop",
   "build": {
     "frontendDist": "../build",
@@ -20,11 +20,12 @@
         "resizable": true,
         "fullscreen": false,
         "maximized": true,
-        "dragDropEnabled": true
+        "dragDropEnabled": true,
+        "decorations": false
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://api.anthropic.com https://*.anthropic.com; font-src 'self' data:"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://api.anthropic.com https://*.anthropic.com https://fonts.googleapis.com https://fonts.gstatic.com; font-src 'self' data: https://fonts.gstatic.com"
     }
   },
   "bundle": {
@@ -36,6 +37,12 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "resources": [
+      "python-runtime/python/*",
+      "python-runtime/python/**/*",
+      "python-runtime/scripts/*",
+      "python-runtime/scripts/**/*"
     ],
     "category": "DeveloperTool",
     "shortDescription": "AI-assisted vibe coding desktop app",

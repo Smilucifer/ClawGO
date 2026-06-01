@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClawGO — History</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../design-system.css">
+  <style>
+    .history-header { display: flex; align-items: center; justify-content: space-between; padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border); }
+    .history-title { font-size: 18px; font-weight: 600; color: var(--text-primary); }
+    .history-actions { display: flex; gap: var(--space-2); }
+    .history-search { display: flex; align-items: center; gap: var(--space-2); background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); width: 300px; }
+    .history-search svg { width: 16px; height: 16px; color: var(--text-tertiary); flex-shrink: 0; }
+    .history-search input { flex: 1; background: none; border: none; outline: none; font-size: 13px; color: var(--text-primary); }
+    .history-search input::placeholder { color: var(--text-tertiary); }
+
+    .btn { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font-size: 12px; font-weight: 500; cursor: pointer; border: none; transition: all var(--duration-fast); }
+    .btn-primary { background: var(--accent-muted); color: var(--accent); border: 1px solid var(--border-accent); }
+    .btn-primary:hover { background: rgba(201, 169, 110, 0.25); }
+    .btn-ghost { background: none; color: var(--text-secondary); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--bg-hover); }
+
+    .filter-bar { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--border); }
+    .filter-pill { padding: 4px 12px; border-radius: var(--radius-full); font-size: 12px; color: var(--text-tertiary); cursor: pointer; border: 1px solid transparent; transition: all var(--duration-fast); }
+    .filter-pill:hover { color: var(--text-secondary); background: var(--bg-hover); }
+    .filter-pill.active { color: var(--accent); background: var(--accent-muted); border-color: var(--border-accent); }
+
+    .history-content { flex: 1; overflow-y: auto; padding: var(--space-3) var(--space-5); }
+    .history-group { margin-bottom: var(--space-5); }
+    .history-group-header { font-size: 12px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: var(--space-3); padding: 0 var(--space-2); }
+    .history-item { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3); border-radius: var(--radius-lg); cursor: pointer; transition: all var(--duration-fast); margin-bottom: var(--space-1); }
+    .history-item:hover { background: var(--bg-hover); }
+    .history-item-icon { width: 36px; height: 36px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px; font-weight: 600; }
+    .history-item-body { flex: 1; min-width: 0; }
+    .history-item-header { display: flex; align-items: center; gap: var(--space-2); margin-bottom: 2px; }
+    .history-item-title { font-size: 14px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .history-item-preview { font-size: 12px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
+    .history-item-meta { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-1); }
+    .history-item-badge { font-size: 10px; padding: 2px 8px; border-radius: var(--radius-full); background: var(--bg-input); color: var(--text-tertiary); font-family: var(--font-mono); }
+    .history-item-time { font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; }
+    .history-item-cwd { font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
+
+    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: var(--space-8); text-align: center; }
+    .empty-state svg { width: 48px; height: 48px; color: var(--text-tertiary); opacity: 0.4; margin-bottom: var(--space-3); }
+    .empty-state .title { font-size: 14px; font-weight: 500; color: var(--text-secondary); margin-bottom: var(--space-1); }
+    .empty-state .desc { font-size: 12px; color: var(--text-tertiary); }
+
+    .main-content { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    @media (max-width: 900px) { .content-panel { display: none; } }
+  </style>
+</head>
+<body>
+
+  <div class="window-chrome">
+    <div class="window-title">ClawGO — History</div>
+    <div class="window-controls">
+      <button class="window-btn minimize"><svg viewBox="0 0 10 1" fill="currentColor"><rect width="10" height="1"/></svg></button>
+      <button class="window-btn maximize"><svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1"><rect x="0.5" y="0.5" width="9" height="9"/></svg></button>
+      <button class="window-btn close"><svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg></button>
+    </div>
+  </div>
+
+  <div class="app-layout">
+    <div class="sidebar">
+      <div class="icon-rail">
+        <div class="rail-icon" title="Chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+        <div class="rail-icon" title="Explorer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
+        <div class="rail-icon" title="Plugins"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+        <div class="rail-icon" title="Invest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
+        <div class="rail-separator"></div>
+        <div class="rail-icon" title="Memory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+        <div class="rail-icon" title="Usage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
+        <div class="rail-icon active" title="History"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+        <div class="rail-bottom">
+          <div class="rail-icon" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+          <div class="rail-avatar">S</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <div class="history-header">
+        <div class="history-title">Session History</div>
+        <div class="history-actions">
+          <div class="history-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" placeholder="Search sessions...">
+          </div>
+          <button class="btn btn-ghost">Refresh</button>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <span class="filter-pill active">All</span>
+        <span class="filter-pill">Chat</span>
+        <span class="filter-pill">Group Chat</span>
+        <span class="filter-pill">Research</span>
+        <span class="filter-pill" style="margin-left: auto; font-size: 11px; color: var(--text-tertiary);">47 sessions</span>
+      </div>
+
+      <div class="history-content">
+        <div class="history-group">
+          <div class="history-group-header">Today</div>
+          <div class="history-item">
+            <div class="history-item-icon" style="background: var(--accent-muted); color: var(--accent);">✦</div>
+            <div class="history-item-body">
+              <div class="history-item-header">
+                <span class="history-item-title">UI Redesign — warm unified design system</span>
+              </div>
+              <div class="history-item-preview">参考现有 ClawGO 的琥珀/金色主色调，设计统一的暖色系 UI...</div>
+              <div class="history-item-meta">
+                <span class="history-item-badge">claude-sonnet-4-6</span>
+                <span class="history-item-cwd">D:\ClaudeWorkspace\Code\ClawGO</span>
+              </div>
+            </div>
+            <div class="history-item-time">14:32</div>
+          </div>
+          <div class="history-item">
+            <div class="history-item-icon" style="background: rgba(138, 154, 118, 0.12); color: #8a9a76;">⚡</div>
+            <div class="history-item-body">
+              <div class="history-item-header">
+                <span class="history-item-title">Fix Yahoo Finance 429 rate limiting</span>
+              </div>
+              <div class="history-item-preview">fetch_chart_raw 和 fetch_yahoo_news 增加重试 3 次 + 指数退避...</div>
+              <div class="history-item-meta">
+                <span class="history-item-badge">claude-sonnet-4-6</span>
+                <span class="history-item-cwd">D:\ClaudeWorkspace\Code\ClawGO</span>
+              </div>
+            </div>
+            <div class="history-item-time">12:15</div>
+          </div>
+          <div class="history-item">
+            <div class="history-item-icon" style="background: rgba(201, 169, 110, 0.08); color: var(--text-secondary);">◆</div>
+            <div class="history-item-body">
+              <div class="history-item-header">
+                <span class="history-item-title">Committee i18n + REGIME display</span>
+              </div>
+              <div class="history-item-preview">Gate notes 和归档报告中文化，RegimeStep 事件扩展...</div>
+              <div class="history-item-meta">
+                <span class="history-item-badge">claude-sonnet-4-6</span>
+                <span class="history-item-cwd">D:\ClaudeWorkspace\Code\ClawGO</span>
+              </div>
+            </div>
+            <div class="history-item-time">10:42</div>
+          </div>
+        </div>
+
+        <div class="history-group">
+          <div class="history-group-header">Yesterday</div>
+          <div class="history-item">
+            <div class="history-item-icon" style="background: rgba(168, 122, 122, 0.12); color: #a87a7a;">✦</div>
+            <div class="history-item-body">
+              <div class="history-item-header">
+                <span class="history-item-title">Code review: 15 fixes across 9 dimensions</span>
+              </div>
+              <div class="history-item-preview">数据完整性、UI 正确性、死代码清理等 15 项修复...</div>
+              <div class="history-item-meta">
+                <span class="history-item-badge">claude-opus-4-8</span>
+                <span class="history-item-cwd">D:\ClaudeWorkspace\Code\ClawGO</span>
+              </div>
+            </div>
+            <div class="history-item-time">23:18</div>
+          </div>
+          <div class="history-item">
+            <div class="history-item-icon" style="background: var(--accent-muted); color: var(--accent);">◆</div>
+            <div class="history-item-body">
+              <div class="history-item-header">
+                <span class="history-item-title">Group Chat: Architecture Review roundtable</span>
+              </div>
+              <div class="history-item-preview">3 participants debating the new storage layer design...</div>
+              <div class="history-item-meta">
+                <span class="history-item-badge">multi-provider</span>
+                <span class="history-item-cwd">D:\ClaudeWorkspace\Code\ClawGO</span>
+              </div>
+            </div>
+            <div class="history-item-time">19:05</div>
+          </div>
+          <div class="history-item">
+            <div class="history-item-icon" style="background: rgba(138, 154, 118, 0.12); color: #8a9a76;">✦</div>
+            <div class="history-item-body">
+              <div class="history-item-header">
+                <span class="history-item-title">openInvest Phase 5: committee tools + prompts</span>
+              </div>
+              <div class="history-item-preview">角色精简 7→4 enum, Regime 模块 RSI-14/价格分位数...</div>
+              <div class="history-item-meta">
+                <span class="history-item-badge">claude-sonnet-4-6</span>
+                <span class="history-item-cwd">D:\ClaudeWorkspace\Code\ClawGO</span>
+              </div>
+            </div>
+            <div class="history-item-time">15:30</div>
+          </div>
+        </div>
+
+        <div class="history-group">
+          <div class="history-group-header">This Week</div>
+          <div class="history-item">
+            <div class="history-item-icon" style="background: rgba(201, 169, 110, 0.08); color: var(--text-secondary);">✦</div>
+            <div class="history-item-body">
+              <div class="history-item-header">
+                <span class="history-item-title">Memory system refactor: SQLite FTS5</span>
+              </div>
+              <div class="history-item-preview">移除 LanceDB + petgraph + Embedding API，迁移到 SQLite FTS5...</div>
+              <div class="history-item-meta">
+                <span class="history-item-badge">claude-sonnet-4-6</span>
+                <span class="history-item-cwd">D:\ClaudeWorkspace\Code\ClawGO</span>
+              </div>
+            </div>
+            <div class="history-item-time">Wed</div>
+          </div>
+          <div class="history-item">
+            <div class="history-item-icon" style="background: rgba(168, 122, 122, 0.12); color: #a87a7a;">⚡</div>
+            <div class="history-item-body">
+              <div class="history-item-header">
+                <span class="history-item-title">1M context window: per-provider AUTO_COMPACT</span>
+              </div>
+              <div class="history-item-preview">AUTO_COMPACT_WINDOW 前端进度条静态映射 + fallback...</div>
+              <div class="history-item-meta">
+                <span class="history-item-badge">claude-haiku-4-5</span>
+                <span class="history-item-cwd">D:\ClaudeWorkspace\Code\ClawGO</span>
+              </div>
+            </div>
+            <div class="history-item-time">Tue</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

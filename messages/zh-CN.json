@@ -711,11 +711,6 @@
   "layout_newConversation": "新对话",
   "layout_selectProjectFolder": "选择项目文件夹",
   "layout_toggleSidebar": "切换侧边栏 (Ctrl+B)",
-  "layout_themeTitle_dark": "主题：深色（点击切换为浅色）",
-  "layout_themeTitle_light": "主题：浅色（点击切换为跟随系统）",
-  "layout_themeTitle_system": "主题：跟随系统（点击切换为深色）",
-  "layout_schemeTitle_warm": "配色：暖色（点击切换为中性灰）",
-  "layout_schemeTitle_neutral": "配色：中性灰（点击切换为暖色）",
 
   "sidebar_skills": "技能",
   "sidebar_mcpServers": "MCP 服务器",
@@ -2174,6 +2169,8 @@
   "settings_embedding_disabled_notice": "角色记忆已暂停。启用后可恢复语义搜索。已存储的记忆数据不会丢失。",
 
   "settings_tushare_token": "Tushare 数据令牌",
+  "settings_tushare_proxy_url": "Tushare 代理地址",
+  "settings_tushare_proxy_hint": "留空使用官方 api.tushare.pro，填写自建代理地址可绕过限流",
 
   "scheduler.title": "调度器",
   "scheduler.credits": "额度",

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClawGO — Usage</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../design-system.css">
+  <style>
+    .usage-header { display: flex; align-items: center; justify-content: space-between; padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border); }
+    .usage-title { font-size: 18px; font-weight: 600; color: var(--text-primary); }
+    .usage-subtitle { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+
+    .usage-content { flex: 1; overflow-y: auto; padding: var(--space-4) var(--space-5); }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-3); margin-bottom: var(--space-5); }
+    .stat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); }
+    .stat-icon { width: 32px; height: 32px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; margin-bottom: var(--space-2); }
+    .stat-icon svg { width: 18px; height: 18px; }
+    .stat-icon.tokens { background: var(--accent-muted); color: var(--accent); }
+    .stat-icon.cost { background: rgba(138, 154, 118, 0.12); color: #8a9a76; }
+    .stat-icon.sessions { background: rgba(201, 169, 110, 0.08); color: var(--text-secondary); }
+    .stat-icon.time { background: rgba(168, 122, 122, 0.12); color: #a87a7a; }
+    .stat-value { font-size: 28px; font-weight: 700; font-family: var(--font-mono); color: var(--text-primary); margin-bottom: 2px; }
+    .stat-label { font-size: 12px; color: var(--text-tertiary); }
+    .stat-change { font-size: 11px; font-family: var(--font-mono); margin-top: var(--space-1); }
+    .stat-change.up { color: #8a9a76; }
+    .stat-change.down { color: #a87a7a; }
+
+    .heatmap-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); margin-bottom: var(--space-5); }
+    .heatmap-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-4); }
+    .heatmap-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+    .heatmap-legend { display: flex; align-items: center; gap: var(--space-2); font-size: 11px; color: var(--text-tertiary); }
+    .heatmap-legend .swatch { width: 12px; height: 12px; border-radius: 2px; }
+    .heatmap-grid { display: grid; grid-template-columns: 30px repeat(7, 1fr); gap: 2px; }
+    .heatmap-day { font-size: 10px; color: var(--text-tertiary); text-align: center; padding: 4px 0; }
+    .heatmap-week { font-size: 10px; color: var(--text-tertiary); display: flex; align-items: center; justify-content: flex-end; padding-right: 4px; }
+    .heatmap-cell { aspect-ratio: 1; border-radius: 3px; transition: all var(--duration-fast); cursor: pointer; }
+    .heatmap-cell:hover { outline: 1px solid var(--accent); outline-offset: 1px; }
+    .heatmap-cell.l0 { background: var(--bg-input); }
+    .heatmap-cell.l1 { background: rgba(201, 169, 110, 0.12); }
+    .heatmap-cell.l2 { background: rgba(201, 169, 110, 0.25); }
+    .heatmap-cell.l3 { background: rgba(201, 169, 110, 0.4); }
+    .heatmap-cell.l4 { background: rgba(201, 169, 110, 0.6); }
+
+    .model-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); margin-bottom: var(--space-5); }
+    .model-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-4); }
+    .model-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+    .model-item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) 0; }
+    .model-name { font-size: 13px; color: var(--text-primary); width: 120px; flex-shrink: 0; }
+    .model-bar-bg { flex: 1; height: 8px; background: var(--bg-input); border-radius: 4px; overflow: hidden; }
+    .model-bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+    .model-tokens { font-size: 12px; font-family: var(--font-mono); color: var(--text-tertiary); width: 80px; text-align: right; flex-shrink: 0; }
+    .model-cost { font-size: 12px; font-family: var(--font-mono); color: var(--text-secondary); width: 60px; text-align: right; flex-shrink: 0; }
+
+    .balance-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); }
+    .balance-header { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: var(--space-4); }
+    .balance-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); }
+    .balance-card { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-3); text-align: center; }
+    .balance-provider { font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: var(--space-1); }
+    .balance-amount { font-size: 20px; font-weight: 700; font-family: var(--font-mono); color: var(--text-primary); }
+    .balance-detail { font-size: 11px; color: var(--text-tertiary); margin-top: var(--space-1); }
+    .balance-bar { height: 3px; background: var(--bg-input); border-radius: 2px; margin-top: var(--space-2); overflow: hidden; }
+    .balance-bar-fill { height: 100%; border-radius: 2px; }
+
+    .main-content { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    @media (max-width: 900px) { .content-panel { display: none; } .stats-grid { grid-template-columns: repeat(2, 1fr); } .balance-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+  <div class="window-chrome">
+    <div class="window-title">ClawGO — Usage</div>
+    <div class="window-controls">
+      <button class="window-btn minimize"><svg viewBox="0 0 10 1" fill="currentColor"><rect width="10" height="1"/></svg></button>
+      <button class="window-btn maximize"><svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1"><rect x="0.5" y="0.5" width="9" height="9"/></svg></button>
+      <button class="window-btn close"><svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg></button>
+    </div>
+  </div>
+
+  <div class="app-layout">
+    <div class="sidebar">
+      <div class="icon-rail">
+        <div class="rail-icon" title="Chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+        <div class="rail-icon" title="Explorer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
+        <div class="rail-icon" title="Plugins"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+        <div class="rail-icon" title="Invest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
+        <div class="rail-separator"></div>
+        <div class="rail-icon" title="Memory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+        <div class="rail-icon active" title="Usage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
+        <div class="rail-icon" title="History"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+        <div class="rail-bottom">
+          <div class="rail-icon" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+          <div class="rail-avatar">S</div>
+        </div>
+      </div>
+
+      <div class="content-panel">
+        <div class="panel-header">
+          <span class="panel-title">Usage</span>
+        </div>
+        <div class="file-tree">
+          <div class="tree-item active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg><span class="tree-name">Overview</span></div>
+          <div class="tree-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span class="tree-name">Balance</span></div>
+          <div class="tree-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg><span class="tree-name">Reports</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <div class="usage-header">
+        <div>
+          <div class="usage-title">Usage Overview</div>
+          <div class="usage-subtitle">June 2026 · Billing period: Jun 1 — Jun 30</div>
+        </div>
+      </div>
+
+      <div class="usage-content">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon tokens"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/></svg></div>
+            <div class="stat-value">2.4M</div>
+            <div class="stat-label">Total Tokens</div>
+            <div class="stat-change up">+18% vs last month</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon cost"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+            <div class="stat-value">$12.84</div>
+            <div class="stat-label">Total Cost</div>
+            <div class="stat-change up">+24% vs last month</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon sessions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+            <div class="stat-value">47</div>
+            <div class="stat-label">Sessions</div>
+            <div class="stat-change down">-5% vs last month</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+            <div class="stat-value">8.2h</div>
+            <div class="stat-label">Active Time</div>
+            <div class="stat-change up">+12% vs last month</div>
+          </div>
+        </div>
+
+        <div class="heatmap-section">
+          <div class="heatmap-header">
+            <div class="heatmap-title">Activity Heatmap</div>
+            <div class="heatmap-legend">
+              Less
+              <div class="swatch" style="background: var(--bg-input)"></div>
+              <div class="swatch" style="background: rgba(201, 169, 110, 0.12)"></div>
+              <div class="swatch" style="background: rgba(201, 169, 110, 0.25)"></div>
+              <div class="swatch" style="background: rgba(201, 169, 110, 0.4)"></div>
+              <div class="swatch" style="background: rgba(201, 169, 110, 0.6)"></div>
+              More
+            </div>
+          </div>
+          <div class="heatmap-grid">
+            <div class="heatmap-day"></div>
+            <div class="heatmap-day">Mon</div>
+            <div class="heatmap-day">Tue</div>
+            <div class="heatmap-day">Wed</div>
+            <div class="heatmap-day">Thu</div>
+            <div class="heatmap-day">Fri</div>
+            <div class="heatmap-day">Sat</div>
+            <div class="heatmap-day">Sun</div>
+
+            <div class="heatmap-week">W1</div>
+            <div class="heatmap-cell l2"></div><div class="heatmap-cell l3"></div><div class="heatmap-cell l1"></div>
+            <div class="heatmap-cell l4"></div><div class="heatmap-cell l2"></div><div class="heatmap-cell l0"></div><div class="heatmap-cell l1"></div>
+
+            <div class="heatmap-week">W2</div>
+            <div class="heatmap-cell l3"></div><div class="heatmap-cell l4"></div><div class="heatmap-cell l2"></div>
+            <div class="heatmap-cell l3"></div><div class="heatmap-cell l1"></div><div class="heatmap-cell l0"></div><div class="heatmap-cell l0"></div>
+
+            <div class="heatmap-week">W3</div>
+            <div class="heatmap-cell l1"></div><div class="heatmap-cell l2"></div><div class="heatmap-cell l4"></div>
+            <div class="heatmap-cell l3"></div><div class="heatmap-cell l4"></div><div class="heatmap-cell l2"></div><div class="heatmap-cell l1"></div>
+
+            <div class="heatmap-week">W4</div>
+            <div class="heatmap-cell l3"></div><div class="heatmap-cell l2"></div><div class="heatmap-cell l3"></div>
+            <div class="heatmap-cell l4"></div><div class="heatmap-cell l2"></div><div class="heatmap-cell l1"></div><div class="heatmap-cell l0"></div>
+          </div>
+        </div>
+
+        <div class="model-section">
+          <div class="model-header">
+            <div class="model-title">Usage by Model</div>
+          </div>
+          <div class="model-item">
+            <span class="model-name">Sonnet 4.6</span>
+            <div class="model-bar-bg"><div class="model-bar-fill" style="width: 65%; background: var(--accent)"></div></div>
+            <span class="model-tokens">1.56M</span>
+            <span class="model-cost">$7.82</span>
+          </div>
+          <div class="model-item">
+            <span class="model-name">Opus 4.8</span>
+            <div class="model-bar-bg"><div class="model-bar-fill" style="width: 22%; background: #8a9a76"></div></div>
+            <span class="model-tokens">528K</span>
+            <span class="model-cost">$3.96</span>
+          </div>
+          <div class="model-item">
+            <span class="model-name">Haiku 4.5</span>
+            <div class="model-bar-bg"><div class="model-bar-fill" style="width: 10%; background: var(--text-tertiary)"></div></div>
+            <span class="model-tokens">240K</span>
+            <span class="model-cost">$0.72</span>
+          </div>
+          <div class="model-item">
+            <span class="model-name">DeepSeek V3</span>
+            <div class="model-bar-bg"><div class="model-bar-fill" style="width: 3%; background: var(--text-tertiary)"></div></div>
+            <span class="model-tokens">72K</span>
+            <span class="model-cost">$0.34</span>
+          </div>
+        </div>
+
+        <div class="balance-section">
+          <div class="balance-header">Provider Balances</div>
+          <div class="balance-grid">
+            <div class="balance-card">
+              <div class="balance-provider">DeepSeek</div>
+              <div class="balance-amount">¥186.40</div>
+              <div class="balance-detail">Remaining from ¥200</div>
+              <div class="balance-bar"><div class="balance-bar-fill" style="width: 93%; background: #8a9a76"></div></div>
+            </div>
+            <div class="balance-card">
+              <div class="balance-provider">MiMo Pro</div>
+              <div class="balance-amount">¥42.80</div>
+              <div class="balance-detail">Remaining from ¥100</div>
+              <div class="balance-bar"><div class="balance-bar-fill" style="width: 43%; background: var(--accent)"></div></div>
+            </div>
+            <div class="balance-card">
+              <div class="balance-provider">GLM</div>
+              <div class="balance-amount">¥8.20</div>
+              <div class="balance-detail">Remaining from ¥50</div>
+              <div class="balance-bar"><div class="balance-bar-fill" style="width: 16%; background: #a87a7a"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

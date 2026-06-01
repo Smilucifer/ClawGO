@@ -22,6 +22,7 @@ pub mod memos;
 pub mod onboarding;
 pub mod plugins;
 pub mod preview;
+pub mod python_status;
 pub mod group_chat;
 pub mod runs;
 pub mod screenshot;

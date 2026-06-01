@@ -256,7 +256,7 @@ pub async fn scan_events(
             raw_events.len()
         );
         sources_scanned.push("yahoo_finance_news".to_string());
-        let yahoo_client = InternationalClient::new();
+        let yahoo_client = InternationalClient::from_settings();
         let yahoo_items = yahoo_client.fetch_china_finance_news(15).await;
         if yahoo_items.is_empty() {
             log::info!("Yahoo Finance news returned 0 items");

@@ -62,7 +62,7 @@ pub async fn dispatch_job(id: &str) -> Result<String, String> {
             let tushare_token = settings
                 .tushare_token
                 .ok_or("no tushare_token configured for macro_refresh")?;
-            let client = TushareClient::new(tushare_token);
+            let client = TushareClient::with_token(tushare_token);
             crate::invest::macro_refresh::refresh_macro_cache(&client).await
         }
         _ => Err(format!("Unknown job: {}", id)),

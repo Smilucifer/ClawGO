@@ -571,6 +571,7 @@ pub fn update_user_settings(patch: serde_json::Value) -> Result<UserSettings, St
     apply_hashmap_field(&mut all.user.hooks, &patch, "hooks")?;
     apply_hashmap_field(&mut all.user.enabled_plugins, &patch, "enabled_plugins")?;
     apply_optional_string_empty_as_none(&mut all.user.tushare_token, &patch, "tushare_token");
+    apply_optional_string_empty_as_none(&mut all.user.tushare_proxy_url, &patch, "tushare_proxy_url");
     all.user.updated_at = crate::models::now_iso();
     save(&all)?;
     Ok(all.user)
@@ -587,6 +588,17 @@ fn apply_string_field(target: &mut String, patch: &serde_json::Value, key: &str)
 fn apply_optional_string_field(target: &mut Option<String>, patch: &serde_json::Value, key: &str) {
     if let Some(v) = patch.get(key) {
         *target = v.as_str().map(|s| s.to_string());
+    }
+}
+
+/// Build a local proxy URL (`http://127.0.0.1:{port}`) from user settings.
+/// Returns `None` if proxy is disabled or port is out of valid range (1–65535).
+pub fn resolve_local_proxy_url() -> Option<String> {
+    let settings = get_user_settings();
+    if settings.github_proxy_enabled && settings.github_proxy_port >= 1 {
+        Some(format!("http://127.0.0.1:{}", settings.github_proxy_port))
+    } else {
+        None
     }
 }
 
