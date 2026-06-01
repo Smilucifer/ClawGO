@@ -15,7 +15,7 @@ src-tauri/gen/
 
 # Embedded Python runtime (built by scripts/build-python-env.bat)
 src-tauri/python-runtime/python/
-src-tauri/python-runtime/scripts/__pycache__/
+__pycache__/
 
 # OS files
 .DS_Store

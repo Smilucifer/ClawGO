@@ -50,6 +50,34 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install protoc --no-progress
 
+      - name: Setup embedded Python runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $pythonVersion = "3.13.13"
+          $releaseTag = "20260510"
+          $targetDir = "src-tauri/python-runtime"
+          $pythonDir = "$targetDir/python"
+          $url = "https://github.com/astral-sh/python-build-standalone/releases/download/$releaseTag/cpython-$pythonVersion+${releaseTag}-x86_64-pc-windows-msvc-install_only.tar.gz"
+
+          if (Test-Path "$pythonDir/python.exe") {
+            Write-Host "Python already exists, skipping download."
+          } else {
+            New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+            Write-Host "Downloading Python $pythonVersion..."
+            curl -L -o "$env:TEMP/python-build-standalone.tar.gz" $url
+            Write-Host "Extracting..."
+            tar xzf "$env:TEMP/python-build-standalone.tar.gz" -C $targetDir
+            if (-not (Test-Path "$pythonDir/python.exe")) {
+              Write-Error "python.exe not found after extraction"
+              exit 1
+            }
+          }
+
+          Write-Host "Installing yfinance + orjson..."
+          & "$pythonDir/python.exe" -m pip install --no-warn-script-location yfinance orjson
+          Write-Host "Python runtime ready."
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
