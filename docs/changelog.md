@@ -2,6 +2,30 @@
 
 ## Phase 10+ (2026-06-01)
 
+### v5.1.2 — ETF 价格修复 + 事件扫描增强 + simplify 审查修复
+
+**Bug 修复 (3 项):**
+1. **ETF 价格获取修复**: `tushare/client.rs` 新增 `daily_api()` 模板方法，ETF 代码前缀（159/510/512/515/588/150/500/501/160-164）自动路由到 `fund_daily` API，`daily()` 和 `get_latest_price()` 共享逻辑
+2. **事件扫描增强**: `event_scanner.rs` 新增英文关键词（tariff/sanctions/federal reserve/cpi/gdp 等 HIGH+MEDIUM 共 21 词），支持全球事件检测（美联储降息/贸易战/CPI 等）
+3. **record_trade 持仓一致性**: `portfolio.rs` 的 `record_trade()` 插入交易后自动调用 `recalculate_holdings_inner()`，消除手动操作导致持仓不更新的问题
+
+**Simplify 审查修复 (6 项):**
+4. **Reuse**: `is_etf_code()` + 内联 if/else → `daily_api()` 模板方法消除重复分支
+5. **Reuse**: `Severity` match 块提取为 `as_str()` 方法
+6. **Simplification**: 诊断日志循环 + 保存循环合并为单循环
+7. **Efficiency**: `chars().take(40).collect::<String>()` → `floor_char_boundary(40)` 零分配截断
+8. **Efficiency**: `e.to_string().contains("UNIQUE")` → `e.contains("UNIQUE")` 避免冗余分配
+9. **Altitude**: `orchestrator.rs` notional=0 时从 avg_cost×shares 兜底计算 + CIO Prompt 100 股倍数规则
+
+**涉及文件:**
+- `src-tauri/src/tushare/client.rs` — daily_api() ETF 路由
+- `src-tauri/src/invest/event_scanner.rs` — Severity::as_str()/循环合并/英文关键词/零分配截断
+- `src-tauri/src/invest/committee/orchestrator.rs` — notional 兜底计算
+- `src-tauri/src/invest/committee/roles.rs` — CIO Prompt 100 股规则
+- `src-tauri/src/storage/invest/portfolio.rs` — record_trade 自动 recalculate
+
+---
+
 ### v5.1.1 — Bug 修复 + Chat UI 升级 + 代码审查优化
 
 **Bug 修复 (3 项):**

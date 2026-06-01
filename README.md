@@ -255,7 +255,7 @@ Current limitations:
 
 ## 开发 / Development
 
-当前版本：**v2.5.0** · Current version: **v2.5.0**
+当前版本：**v5.1.2** · Current version: **v5.1.2**
 
 ```bash
 npm install
