@@ -114,6 +114,8 @@ pub fn record_trade(t: &Trade) -> Result<(), String> {
             params![t.id, t.symbol, t.currency, t.kind, t.action, t.shares, t.price, t.amount, t.notes, t.created_at],
         )
         .map_err(|e| format!("record trade: {}", e))?;
+        // Recalculate holdings after inserting trade (consistent with delete_trade/update_trade)
+        recalculate_holdings_inner(conn)?;
         Ok(())
     })
 }

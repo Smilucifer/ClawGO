@@ -12,6 +12,16 @@ pub enum Severity {
     Low,
 }
 
+impl Severity {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::High => "high",
+            Self::Medium => "medium",
+            Self::Low => "low",
+        }
+    }
+}
+
 /// Result of LLM normalization for a single event.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -43,12 +53,19 @@ const HIGH_KEYWORDS: &[&str] = &[
     "央行", "降准", "降息", "加息", "MLF", "LPR", "逆回购",
     "暴跌", "熔断", "ST", "退市", "暂停上市", "重大违法",
     "关税", "制裁", "禁令", "反垄断", "行业整顿",
+    // English equivalents for global events
+    "tariff", "sanctions", "interest rate", "federal reserve",
+    "cpi", "gdp", "unemployment", "yield curve", "inflation",
+    "default", "bankruptcy", "trade war", "trade tension",
 ];
 
 const MEDIUM_KEYWORDS: &[&str] = &[
     "财报", "业绩预告", "净利润", "营收",
     "增持", "减持", "回购", "定增", "分红",
     "产能", "订单", "并购", "重组",
+    // English equivalents
+    "earnings", "revenue", "dividend", "buyback",
+    "merger", "acquisition", "downgrade", "debt", "credit",
 ];
 
 /// Classify severity by keyword matching.
@@ -110,7 +127,7 @@ pub async fn normalize_events(
         Ok(s) => s,
         Err(e) => {
             log::warn!("Event normalizer LLM call failed: {}, falling back to rule-based", e);
-            return raw_events.iter().map(|ev| fallback_normalize(ev)).collect();
+            return raw_events.iter().map(fallback_normalize).collect();
         }
     };
 
@@ -314,9 +331,21 @@ pub async fn scan_events(
 
     // 6. Save to DB (dedup by source+title via INSERT OR IGNORE)
     let mut saved = 0usize;
+    fn short(s: &str) -> &str { &s[..s.floor_char_boundary(40)] }
     for (ev, norm) in filtered_events.iter().zip(normalized.iter()) {
+
+        // Log LLM classification for diagnostics
+        log::debug!(
+            "  [normalize] '{}' => severity={}, stance={}, claim='{}'",
+            short(&ev.title),
+            norm.severity.as_str().to_ascii_uppercase(),
+            norm.stance,
+            norm.one_line_claim
+        );
+
         // Skip events the LLM reclassified as LOW (pre-filter only keeps HIGH/MEDIUM)
         if norm.severity == Severity::Low {
+            log::debug!("  [skip] '{}' — LLM classified as LOW", short(&ev.title));
             continue;
         }
         let symbols_str = norm.affected_symbols.join(",");
@@ -336,12 +365,7 @@ pub async fn scan_events(
             } else {
                 Some(symbols_str)
             },
-            severity: match norm.severity {
-                Severity::High => "high",
-                Severity::Medium => "medium",
-                Severity::Low => "low",
-            }
-            .to_string(),
+            severity: norm.severity.as_str().to_string(),
             stance: norm.stance.clone(),
             triggered: false,
             trigger_verdict_id: None,
@@ -351,7 +375,9 @@ pub async fn scan_events(
             Ok(()) => saved += 1,
             Err(e) => {
                 // Duplicate key errors are expected (dedup)
-                if !e.to_string().contains("UNIQUE") {
+                if e.contains("UNIQUE") {
+                    log::debug!("  [dedup] '{}' — already exists", short(&ev.title));
+                } else {
                     log::warn!("Failed to save event '{}': {}", ev.title, e);
                 }
             }
@@ -399,7 +425,7 @@ fn parse_normalized_response(content: &str, raw_events: &[RawEvent]) -> Vec<Norm
         }
         Err(e) => {
             log::warn!("Failed to parse normalizer response: {}, falling back to rule-based", e);
-            raw_events.iter().map(|ev| fallback_normalize(ev)).collect()
+            raw_events.iter().map(fallback_normalize).collect()
         }
     }
 }

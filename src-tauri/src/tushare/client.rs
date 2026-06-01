@@ -322,7 +322,23 @@ impl TushareClient {
 
     // -- high-level helpers --------------------------------------------------
 
-    /// Fetch daily bars (日线行情) for a stock within a date range.
+    /// 根据 ts_code 前缀选择 Tushare 日线 API。
+    /// ETF/基金用 `fund_daily`，股票用 `daily`。
+    fn daily_api(ts_code: &str) -> &'static str {
+        let prefix = ts_code.split('.').next().unwrap_or("");
+        if matches!(
+            prefix.get(..3).unwrap_or(""),
+            "159" | "510" | "512" | "515" | "588" | "150" | "500" | "501"
+                | "160" | "161" | "162" | "163" | "164"
+        ) {
+            "fund_daily"
+        } else {
+            "daily"
+        }
+    }
+
+    /// Fetch daily bars (日线行情) for a stock or ETF within a date range.
+    /// Automatically selects `fund_daily` for ETF codes and `daily` for stocks.
     pub async fn daily(
         &self,
         ts_code: &str,
@@ -335,7 +351,7 @@ impl TushareClient {
             "end_date": end_date,
         });
 
-        let resp = self.call_api("daily", params, "").await?;
+        let resp = self.call_api(Self::daily_api(ts_code), params, "").await?;
         let fields = &resp.data.fields;
 
         let ts_code_idx = fields.iter().position(|f| f == "ts_code");
@@ -469,11 +485,12 @@ impl TushareClient {
         Ok(funds)
     }
 
-    /// Get the latest close price for a given stock.
+    /// Get the latest close price for a given stock or ETF.
+    /// Automatically selects `fund_daily` for ETF codes and `daily` for stocks.
     pub async fn get_latest_price(&self, ts_code: &str) -> Result<f64, String> {
         let resp = self
             .call_api(
-                "daily",
+                Self::daily_api(ts_code),
                 serde_json::json!({ "ts_code": ts_code }),
                 "ts_code,trade_date,close",
             )

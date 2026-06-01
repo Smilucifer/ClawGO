@@ -219,6 +219,23 @@ impl PortfolioData {
             log::warn!("portfolio: tushare not configured, using stored notional values");
         }
 
+        // Fallback: if notional is 0 but avg_cost and shares are available,
+        // compute notional from cost basis. This handles the case where
+        // record_trade was called without triggering recalculate_holdings.
+        for h in &mut holdings {
+            if h.notional.abs() < 0.01 {
+                if let (Some(avg_cost), Some(shares)) = (h.avg_cost, h.shares) {
+                    if avg_cost > 0.0 && shares > 0.0 {
+                        h.notional = avg_cost * shares;
+                        log::debug!(
+                            "portfolio: fallback notional for {}: {:.2} (avg_cost={:.4} * shares={:.0})",
+                            h.symbol, h.notional, avg_cost, shares
+                        );
+                    }
+                }
+            }
+        }
+
         let total_notional = holdings.iter().map(|h| h.notional.abs()).sum();
         Self { holdings, cash, total_notional }
     }
