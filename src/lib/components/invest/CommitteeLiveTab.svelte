@@ -35,11 +35,11 @@
     const ret = invest.totalReturnPct;
 
     let maxHolding = { name: '', pct: 0 };
-    if (hv > 0) {
+    if (total > 0) {
       for (const h of invest.holdHoldings) {
         const price = invest.priceMap[h.symbol]?.close;
         const val = price && h.shares ? price * h.shares : h.notional || 0;
-        const pct = (val / hv) * 100;
+        const pct = (val / total) * 100;
         if (pct > maxHolding.pct) {
           maxHolding = { name: h.name || h.symbol, pct };
         }

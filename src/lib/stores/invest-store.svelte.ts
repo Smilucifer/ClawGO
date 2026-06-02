@@ -6,6 +6,7 @@ import type {
   Verdict,
   Strategy,
   PriceQuote,
+  RealtimeQuote,
   InvestEvent,
   ScanStatus,
   ScanResult,
@@ -76,7 +77,7 @@ class InvestStore {
 
   totalReturnPct = $derived(
     this.totalCostBasis > 0
-      ? ((this.totalAssets - this.totalCostBasis) / this.totalCostBasis) * 100
+      ? ((this.holdingsMarketValue - this.totalCostBasis) / this.totalCostBasis) * 100
       : 0,
   );
 
@@ -165,42 +166,30 @@ class InvestStore {
     const syms = this.holdings.map((h) => h.symbol);
     if (syms.length === 0 || !tushareToken) return;
 
-    // Merge new prices into existing map (preserve cached prices for failed fetches)
-    const updated = { ...this.priceMap };
-    for (const sym of syms) {
-      try {
-        const bars = await invoke<
-          Array<{
-            tsCode: string;
-            close: number;
-            change: number;
-            pctChg: number;
-            vol: number;
-            amount: number;
-          }>
-        >("get_daily_bars", {
-          tsCode: sym,
-          startDate: "",
-          endDate: "",
-          token: tushareToken,
-        });
-        if (bars.length > 0) {
-          const latest = bars[0];
-          updated[sym] = {
-            tsCode: latest.tsCode,
-            name: "",
-            close: latest.close,
-            change: latest.change,
-            pctChg: latest.pctChg,
-            vol: latest.vol,
-            amount: latest.amount,
+    try {
+      const quotes = await invoke<RealtimeQuote[]>("get_realtime_quotes", {
+        tsCodes: syms,
+        token: tushareToken,
+      });
+      // Merge new prices into existing map (preserve cached prices for failed fetches)
+      const updated = { ...this.priceMap };
+      for (const q of quotes) {
+        if (q.close > 0) {
+          updated[q.tsCode] = {
+            tsCode: q.tsCode,
+            name: q.name,
+            close: q.close,
+            change: q.preClose > 0 ? q.close - q.preClose : 0,
+            pctChg: q.preClose > 0 ? ((q.close - q.preClose) / q.preClose) * 100 : 0,
+            vol: q.vol,
+            amount: q.amount,
           };
         }
-      } catch {
-        // Keep existing cached price for this symbol
       }
+      this.priceMap = updated;
+    } catch (e) {
+      console.warn('[invest] refreshPrices failed:', e);
     }
-    this.priceMap = updated;
   }
 
   async searchStocks(
@@ -232,7 +221,6 @@ class InvestStore {
     assetType?: string,
   ): Promise<void> {
     const amount = qty * price;
-    const now = new Date().toISOString();
 
     await invoke("record_trade", {
       id: null,
@@ -246,42 +234,10 @@ class InvestStore {
       notes: null,
     });
 
-    const existing = this.holdHoldings.find((h) => h.symbol === symbol);
-    if (existing && existing.shares != null && existing.shares > 0 && existing.avgCost != null) {
-      const newShares = existing.shares + qty;
-      const newAvgCost =
-        (existing.avgCost * existing.shares + price * qty) / newShares;
-      await invoke("update_holding", {
-        symbol,
-        currency: "CNY",
-        kind: "hold",
-        name: name || existing.name,
-        notional: 0,
-        avgCost: newAvgCost,
-        shares: newShares,
-        entryDate: existing.entryDate,
-        linkedVerdictId: existing.linkedVerdictId,
-        notes: existing.notes,
-        assetType: assetType ?? existing.assetType ?? "stock",
-      });
-    } else {
-      await invoke("add_holding", {
-        symbol,
-        currency: "CNY",
-        kind: "hold",
-        name,
-        notional: 0,
-        avgCost: price,
-        shares: qty,
-        entryDate: now.split("T")[0],
-        linkedVerdictId: null,
-        notes: null,
-        assetType: assetType ?? "stock",
-      });
-    }
+    // record_trade triggers recalculate_holdings_inner which fully rebuilds
+    // the holdings table — no need for a separate add_holding/update_holding call.
 
     await invoke("update_cash", { available: this.cash - amount });
-    this.cash = this.cash - amount;
 
     await this.loadAll();
   }
@@ -309,27 +265,10 @@ class InvestStore {
       notes: null,
     });
 
-    const remaining = currentShares - qty;
-    if (remaining <= 0.0001) {
-      await invoke("delete_holding", { symbol, currency: "CNY", kind: "hold" });
-    } else {
-      await invoke("update_holding", {
-        symbol,
-        currency: "CNY",
-        kind: "hold",
-        name: existing.name,
-        notional: 0,
-        avgCost: existing.avgCost,
-        shares: remaining,
-        entryDate: existing.entryDate,
-        linkedVerdictId: existing.linkedVerdictId,
-        notes: existing.notes,
-        assetType: existing.assetType ?? "stock",
-      });
-    }
+    // record_trade triggers recalculate_holdings_inner which fully rebuilds
+    // the holdings table — no need for a separate delete_holding/update_holding call.
 
     await invoke("update_cash", { available: this.cash + amount });
-    this.cash = this.cash + amount;
 
     await this.loadAll();
   }

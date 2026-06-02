@@ -422,6 +422,17 @@ pub async fn get_daily_bars(
     client.daily(&ts_code, &start_date, &end_date).await
 }
 
+/// 批量获取实时行情。股票用 `rt_k`（盘中最新价），ETF 降级到 `fund_daily`。
+#[tauri::command]
+pub async fn get_realtime_quotes(
+    ts_codes: Vec<String>,
+    token: String,
+) -> Result<Vec<crate::tushare::client::RealtimeQuote>, String> {
+    let client = crate::tushare::TushareClient::with_token(token);
+    let refs: Vec<&str> = ts_codes.iter().map(|s| s.as_str()).collect();
+    client.realtime_quotes(&refs).await
+}
+
 // ── Trade Calendar Sync ──────────────────────────────────────────────────
 
 #[tauri::command]

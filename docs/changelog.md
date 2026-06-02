@@ -1,5 +1,46 @@
 # Changelog / 更新日志
 
+## v5.2.4 (2026-06-02)
+
+### 批量实时行情 API + 交易流程简化 + 返回率计算修复
+
+**新功能 (2 项):**
+1. **`get_realtime_quotes` 批量行情 API**: 新增 Tauri 命令 + `TushareClient::realtime_quotes()`，股票用 `rt_k`（盘中最新价），ETF 自动降级到 `fund_daily`；前端 `refreshPrices` 从逐符号循环改为单次批量调用，N 个持仓从 N 次 IPC 降为 1 次
+2. **`RealtimeQuote` 类型**: Rust `RealtimeQuote` struct + TypeScript `RealtimeQuote` interface，字段包括 tsCode/name/open/high/low/close/preClose/vol/amount/tradeTime
+
+**Bug 修复 (2 项):**
+3. **`totalReturnPct` 计算修复**: 从 `totalAssets`（含现金）改为 `holdingsMarketValue`（仅持仓市值），收益率不再受现金余额稀释
+4. **`CommitteeLiveTab` 最大持仓计算修复**: `maxHolding` 百分比基数从 `hv`（旧变量）改为 `total`，修复持仓集中度显示为 0 的问题
+
+**交易流程简化 (2 项):**
+5. **`buyStock` 移除手动 holding CRUD**: 不再手动调用 `add_holding`/`update_holding`，依赖 `record_trade` 触发 `recalculate_holdings_inner` 自动重建持仓表
+6. **`sellStock` 移除手动 holding CRUD**: 不再手动调用 `delete_holding`/`update_holding`，同上
+
+**CSS 设计系统 (1 项):**
+7. **`--text-secondary` / `--text-tertiary` token**: `app.css` 新增两个暖色文字层次变量（`hsl(24 8% 72%)` / `hsl(24 7% 58%)`），invest 组件中非主要文本的对比度提升
+
+**CI 修复 (1 项):**
+8. **macOS/Windows CI build 修复**: `python-runtime/python/` 被 `.gitignore` 忽略导致 fresh checkout 后 Tauri resource glob 零匹配报错；所有 Python setup step 提前创建 `.gitkeep` 哨兵文件 + `curl -fSL` 让 HTTP 错误显式失败
+
+**Simplify 审查修复 (3 项):**
+9. **Efficiency**: `realtime_quotes` 双重迭代 → `partition` 单次遍历
+10. **Efficiency**: ETF/stock fallback 串行 HTTP → `futures::future::join_all` 并发请求，多 ETF 场景延迟从 O(N×RTT) 降至 O(max RTT)
+11. **Simplification**: `buyStock`/`sellStock` 移除 `this.cash` 死赋值（`loadAll()` 立即覆盖）
+
+**涉及文件:**
+- `src-tauri/src/tushare/client.rs` — `RealtimeQuote` + `realtime_quotes()` + `parse_realtime_quotes()` + `fallback_daily_quote()`
+- `src-tauri/src/commands/invest.rs` — `get_realtime_quotes` Tauri command
+- `src-tauri/src/lib.rs` — command registration
+- `src/lib/types.ts` — `RealtimeQuote` interface
+- `src/lib/stores/invest-store.svelte.ts` — `refreshPrices` 批量重写 + buyStock/sellStock 简化 + totalReturnPct 修复 + 死赋值清理
+- `src/lib/components/invest/CommitteeLiveTab.svelte` — maxHolding 计算修复
+- `src/lib/components/invest/TradeDialog.svelte` — `data-invest-scope` 属性
+- `src/app.css` — `--text-secondary` / `--text-tertiary`
+- `.github/workflows/ci.yml` — Python setup `.gitkeep` + `curl -fSL`
+- `.github/workflows/release.yml` — Python setup `.gitkeep` + `curl -fSL`
+
+---
+
 ## v5.2.3 (2026-06-02)
 
 ### /invest UI 修复 + 委员会 3 子页布局重构

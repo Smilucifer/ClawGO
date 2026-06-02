@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v5.2.3, 2026-06-02). /invest UI 修复 + 委员会 3 子页布局重构（CSS token 作用域 + Replay/Archive/Tools 重写 + 5 项 simplify）。See `docs/changelog.md`.
+**Current phase:** Phase 10+ (v5.2.4, 2026-06-02). 批量实时行情 API + 交易流程简化 + 返回率计算修复（realtime_quotes 批量调用 + buyStock/sellStock 移除手动 holding CRUD + totalReturnPct holdingsMarketValue + 3 项 simplify）。See `docs/changelog.md`.
 
 ## Standard workflow
 
@@ -374,6 +374,7 @@ Key phases and their status:
 | 10+ (v5.2.1) | Memory Extraction 设置迁移+全局记忆文件扩展+委员会 7 项改进(成本基准收益率/交易过滤/ConfirmDialog/Dream 修复/事件中文化/策略注入 Risk/L4 Officer 工具面板)+6 i18n keys | [done] |
 | 10+ (v5.2.2) | /invest 全模块 UI 设计系统统一: 28 文件(27 组件+1 页面)暖色暗黑迁移/5 Tab+14 子 Tab+6 通用组件/CSS 变量映射/Badge 重设计/tab 导航重写/svelte-check+ESLint+Build 全通过 | [done] |
 | 10+ (v5.2.3) | /invest UI 修复+委员会 3 子页布局重构: [data-invest-scope] CSS token 作用域覆盖(--accent 金色/--color-error 暖红/--bg-input 输入层次)/CommitteeReplayTab 250px 双栏重写/CommitteeArchiveTab 双栏+verdict regex/CommitteeToolsTab 9×5 访问矩阵真表格/抽 invest-verdict.ts+pipeline-config ROLE_COLORS+getStepState/5 项 simplify 审查修复(verdictMap 预计算/loadGen race fix/死代码清理) | [done] |
+| 10+ (v5.2.4) | 批量实时行情 API+交易流程简化+返回率计算修复: get_realtime_quotes 批量 IPC(rt_k+fund_daily 降级)/refreshPrices N→1 次调用/buyStock+sellStock 移除手动 holding CRUD(依赖 record_trade recalculate)/totalReturnPct holdingsMarketValue/maxHolding 修复/--text-secondary+--text-tertiary/3 项 simplify(partition+join_all 并发+死赋值清理) | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

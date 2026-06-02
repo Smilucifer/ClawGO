@@ -94,6 +94,10 @@
     --accent: hsl(var(--primary));
     --accent-foreground: var(--bg-base);
 
+    /* Boost text contrast for inactive tabs, secondary buttons, labels */
+    --text-secondary: hsl(24 8% 72%);
+    --text-tertiary: hsl(24 7% 58%);
+
     /* Warm muted error (vs shadcn vivid red) — SELL badge, danger buttons, error states */
     --color-error: #a87a7a;
     --color-error-bg: rgba(168, 122, 122, 0.12);

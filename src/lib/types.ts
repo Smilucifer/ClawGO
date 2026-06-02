@@ -1809,6 +1809,20 @@ export interface PriceQuote {
   amount: number;
 }
 
+/** Raw real-time quote from Tushare `rt_k` API (or `fund_daily` fallback for ETFs). */
+export interface RealtimeQuote {
+  tsCode: string;
+  name: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  preClose: number;
+  vol: number;
+  amount: number;
+  tradeTime: string;
+}
+
 // ── Invest types (Phase 3c: Event Watch) ──
 
 export interface InvestEvent {

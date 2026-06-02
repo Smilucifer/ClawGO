@@ -84,7 +84,7 @@
   }
 </script>
 
-<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" data-invest-scope>
   <div class="w-full max-w-md rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-6 shadow-lg">
     <h2 class="mb-4 text-lg font-semibold text-[var(--text-primary)]">
       {mode === 'edit' ? t('invest_trade_edit') : mode === 'buy' ? t('invest_confirm_buy') : mode === 'sell' ? t('invest_confirm_sell') : mode === 'convert' ? t('invest_convert_to_hold') : mode === 'add_watch' ? t('invest_add_watch') : t('invest_edit_cash')}

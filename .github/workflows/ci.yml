@@ -141,12 +141,15 @@ jobs:
           $pythonDir = "$targetDir/python"
           $url = "https://github.com/astral-sh/python-build-standalone/releases/download/$releaseTag/cpython-$pythonVersion+${releaseTag}-x86_64-pc-windows-msvc-install_only.tar.gz"
 
+          # Ensure directory exists so Tauri resource glob always matches
+          New-Item -ItemType Directory -Force -Path $pythonDir | Out-Null
+          New-Item -ItemType File -Force -Path "$pythonDir/.gitkeep" | Out-Null
+
           if (Test-Path "$pythonDir/python.exe") {
             Write-Host "Python already exists, skipping download."
           } else {
-            New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
             Write-Host "Downloading Python $pythonVersion..."
-            curl -L -o "$env:TEMP/python-build-standalone.tar.gz" $url
+            curl -fSL -o "$env:TEMP/python-build-standalone.tar.gz" $url
             Write-Host "Extracting..."
             tar xzf "$env:TEMP/python-build-standalone.tar.gz" -C $targetDir
             if (-not (Test-Path "$pythonDir/python.exe")) {
@@ -215,12 +218,15 @@ jobs:
           PYTHON_DIR="$TARGET_DIR/python"
           URL="https://github.com/astral-sh/python-build-standalone/releases/download/${RELEASE_TAG}/cpython-${PYTHON_VERSION}+${RELEASE_TAG}-aarch64-apple-darwin-install_only.tar.gz"
 
+          # Ensure directory exists so Tauri resource glob always matches
+          mkdir -p "$PYTHON_DIR"
+          touch "$PYTHON_DIR/.gitkeep"
+
           if [ -f "$PYTHON_DIR/bin/python3" ]; then
             echo "Python already exists, skipping download."
           else
-            mkdir -p "$TARGET_DIR"
             echo "Downloading Python $PYTHON_VERSION..."
-            curl -L -o /tmp/python-build-standalone.tar.gz "$URL"
+            curl -fSL -o /tmp/python-build-standalone.tar.gz "$URL"
             echo "Extracting..."
             tar xzf /tmp/python-build-standalone.tar.gz -C "$TARGET_DIR"
             if [ ! -f "$PYTHON_DIR/bin/python3" ]; then

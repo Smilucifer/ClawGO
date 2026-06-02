@@ -454,6 +454,7 @@ pub fn run() {
             commands::invest::search_etfs,
             commands::invest::get_latest_price,
             commands::invest::get_daily_bars,
+            commands::invest::get_realtime_quotes,
             commands::invest::sync_trade_calendar,
             commands::invest::migrate_legacy_portfolio,
             commands::invest::get_llm_config,
