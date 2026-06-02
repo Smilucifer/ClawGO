@@ -1,5 +1,46 @@
 # Changelog / 更新日志
 
+## v5.2.9 (2026-06-03)
+
+### 腾讯行情 API 集成 + ETF 价格修复 + asset_type 全链路修复 + 代码审查优化
+
+**腾讯行情 API 集成 (3 项):**
+1. **`tencent_quotes` 模块**: 新建 `src-tauri/src/tencent_quotes.rs`，实现 `fetch_quotes()` 批量获取实时行情；API `http://qt.gtimg.cn/q={symbols}` 免费、无需认证、支持 ETF+股票批量查询；响应 `~` 分隔字段解析（name/close/pre_close/open/high/low/vol/amount/trade_time）
+2. **`realtime_quotes` 优先腾讯**: TushareClient::realtime_quotes() 调用链改为 腾讯 API → 部分成功降级 → Tushare rt_k → fund_daily/daily fallback 四层降级；腾讯完全成功时直接返回，部分成功时对缺失符号降级到 Tushare
+3. **共享 `reqwest::Client`**: `fetch_quotes` 接受 `&reqwest::Client` 参数复用 TushareClient 的连接池，避免每次调用创建新 TLS 客户端的 ~5-15ms 开销
+
+**ETF 价格显示修复 (2 项):**
+4. **`resolve_close_idx` 辅助方法**: 提取统一的价格列定位函数，优先 `price_field(ts_code)`（ETF→adj_nav, 股票→close），兜底 `"close"`；`daily()`、`fallback_daily_quote()`、`get_latest_price()` 三处调用统一
+5. **`get_latest_price` fallback 修复**: fields 字符串从 `{pf}` 改为 `{pf},close`，`resolve_close_idx` 替代无兜底的 `position(|f| f == pf)`，解决 ETF 调用 `adj_nav` 字段不存在时的错误
+
+**asset_type 全链路修复 (5 项):**
+6. **`Trade.asset_type` 字段**: Trade 结构体新增 `asset_type: Option<String>`；SQLite trades 表新增 `asset_type TEXT` 列；DB migration 自动从 holdings 回填现有交易
+7. **`update_trade` SQL 修复**: UPDATE 语句从 11 参数补齐至 12 参数（补 `asset_type=?12`），修复编辑交易时 asset_type 丢失的 bug
+8. **`resolve_asset_type()` 推导函数**: 优先使用 trade 提供的值，兜底从 symbol 前缀推导（`is_etf_symbol`）；buy/add_watch/convert_watch_to_hold 三处统一调用
+9. **前端 `assetType` 透传**: `recordTrade`/`updateTrade`/`buyStock`/`sellStock`/`addToWatch`/`convertWatchToHold` 6 处 IPC 调用补齐 `assetType` 参数；TradeDialog `add_trade` 模式传入 `assetType`
+10. **`is_etf_symbol` 共享函数**: 提取到 `storage/invest/mod.rs` 作为 `pub fn`，`portfolio.rs` 和 `tushare::client.rs` 统一调用，消除 13 项 ETF 前缀列表的重复维护风险
+
+**Simplify 审查修复 (6 项):**
+11. **移除重复 `RealtimeQuote` 结构体**: `tencent_quotes.rs` 删除本地 `RealtimeQuote`，直接使用 `tushare::client::RealtimeQuote`，消除 ~32 行冗余代码和手动字段映射
+12. **`fetch_quotes` 复用 client**: 改为接受 `&reqwest::Client` 参数，不再每次调用创建新客户端
+13. **`is_etf_symbol` 共享化**: ETF 前缀匹配逻辑从 2 处独立实现收敛为 1 个共享函数
+14. **`parse_quote_line` 长度守卫修复**: 最小字段数从 `<33` 改为 `<38`，修复访问 `parts[37]` 时的潜在 panic
+15. **部分成功降级**: 腾讯返回数 < 请求数时自动对缺失符号降级到 Tushare，不再静默丢弃
+16. **`RealtimeQuote` 注释更新**: doc comment 从 "via rt_k API" 更新为 "Sources: Tencent API (primary) or Tushare rt_k (fallback)"
+
+**涉及文件:**
+- `src-tauri/src/tencent_quotes.rs` — 新建，腾讯行情 API 客户端
+- `src-tauri/src/tushare/client.rs` — realtime_quotes 腾讯优先 + resolve_close_idx + is_etf_code 委托共享函数 + 注释更新
+- `src-tauri/src/storage/invest/portfolio.rs` — asset_type 字段 + resolve_asset_type + is_etf_symbol 改用共享函数
+- `src-tauri/src/storage/invest/mod.rs` — trades 表 asset_type 迁移 + pub is_etf_symbol
+- `src-tauri/src/commands/invest.rs` — record_trade/update_trade 补 asset_type 参数
+- `src-tauri/src/lib.rs` — 注册 tencent_quotes 模块
+- `src/lib/stores/invest-store.svelte.ts` — 6 处 IPC 补 assetType
+- `src/lib/components/invest/TradeDialog.svelte` — add_trade 模式传入 assetType
+- `src/lib/types.ts` — Trade 接口补 assetType
+
+---
+
 ## v5.2.8 (2026-06-03)
 
 ### invest DB 迁移修复 + Watch 价格刷新 + 委员会 Bug 修复 + 代码审查优化

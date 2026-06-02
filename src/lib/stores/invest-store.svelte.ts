@@ -277,6 +277,7 @@ class InvestStore {
       notes: null,
       name: name || null,
       tradeDate: tradeDate || null,
+      assetType: assetType || null,
     });
 
     // record_trade triggers recalculate_holdings_inner which fully rebuilds
@@ -310,6 +311,7 @@ class InvestStore {
       notes: null,
       name: existing.name || null,
       tradeDate: null,
+      assetType: existing.assetType || null,
     });
 
     // record_trade triggers recalculate_holdings_inner which fully rebuilds
@@ -377,6 +379,7 @@ class InvestStore {
         notes: null,
         name: name || null,
         tradeDate: null,
+        assetType: assetType ?? "stock",
       });
     } finally {
       await this.loadAll();
@@ -462,6 +465,7 @@ class InvestStore {
         notes: null,
         name: name || null,
         tradeDate: null,
+        assetType: watchHolding?.assetType ?? "stock",
       });
 
       await invoke("update_cash", { available: this.cash - amount });
@@ -519,6 +523,7 @@ class InvestStore {
     notes: string | null;
     name?: string | null;
     tradeDate?: string | null;
+    assetType?: string | null;
   }): Promise<void> {
     await invoke("update_trade", {
       id: trade.id,
@@ -532,6 +537,7 @@ class InvestStore {
       notes: trade.notes,
       name: trade.name ?? null,
       tradeDate: trade.tradeDate ?? null,
+      assetType: trade.assetType ?? null,
     });
     await this.loadAll();
   }
@@ -653,6 +659,7 @@ class InvestStore {
     notes?: string | null;
     name?: string | null;
     tradeDate?: string | null;
+    assetType?: string | null;
   }): Promise<void> {
     await invoke("record_trade", {
       id: null,
@@ -666,6 +673,7 @@ class InvestStore {
       notes: trade.notes ?? null,
       name: trade.name ?? null,
       tradeDate: trade.tradeDate ?? null,
+      assetType: trade.assetType ?? null,
     });
     await this.loadAll();
   }

@@ -1755,6 +1755,8 @@ export interface Trade {
   name: string | null;
   /** User-specified trade date (YYYY-MM-DD). Falls back to createdAt */
   tradeDate: string | null;
+  /** Asset type: "stock" or "etf". Propagated to holdings during recalculation. */
+  assetType: string | null;
 }
 
 export interface PnlSnapshot {

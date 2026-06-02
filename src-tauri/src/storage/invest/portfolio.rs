@@ -1,6 +1,14 @@
-use super::with_conn;
+use super::{is_etf_symbol, with_conn};
 use rusqlite::{params, Connection};
 use std::collections::HashMap;
+
+/// 根据 symbol 推导 asset_type：优先使用 trade 提供的值，兜底从 symbol 前缀推导。
+fn resolve_asset_type(t: &Trade) -> String {
+    t.asset_type
+        .clone()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| if is_etf_symbol(&t.symbol) { "etf" } else { "stock" }.to_string())
+}
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,10 +53,12 @@ pub struct Trade {
     pub name: Option<String>,
     /// User-specified trade date (YYYY-MM-DD). Falls back to created_at.
     pub trade_date: Option<String>,
+    /// Asset type: "stock" or "etf". Propagated to holdings during recalculation.
+    pub asset_type: Option<String>,
 }
 
 /// Canonical column list for SELECT queries on the trades table.
-const TRADE_COLUMNS: &str = "id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date";
+const TRADE_COLUMNS: &str = "id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date, asset_type";
 
 /// Map a DB row to a Trade struct. Used by all SELECT queries.
 fn trade_from_row(row: &rusqlite::Row) -> rusqlite::Result<Trade> {
@@ -65,6 +75,7 @@ fn trade_from_row(row: &rusqlite::Row) -> rusqlite::Result<Trade> {
         created_at: row.get(9)?,
         name: row.get(10)?,
         trade_date: row.get(11)?,
+        asset_type: row.get(12)?,
     })
 }
 
@@ -135,8 +146,8 @@ pub fn delete_holding(symbol: &str, currency: &str, kind: &str) -> Result<(), St
 pub fn record_trade(t: &Trade) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute(
-            "INSERT INTO trades (id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-            params![t.id, t.symbol, t.currency, t.kind, t.action, t.shares, t.price, t.amount, t.notes, t.created_at, t.name, t.trade_date],
+            "INSERT INTO trades (id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date, asset_type) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            params![t.id, t.symbol, t.currency, t.kind, t.action, t.shares, t.price, t.amount, t.notes, t.created_at, t.name, t.trade_date, t.asset_type],
         )
         .map_err(|e| format!("record trade: {}", e))?;
         // Recalculate holdings after inserting trade (consistent with delete_trade/update_trade)
@@ -260,7 +271,7 @@ fn recalculate_holdings_inner_body(
                 let _amount = t.amount.unwrap_or(shares * price);
                 let entry = map.entry(key).or_default();
                 if entry.asset_type.is_none() {
-                    entry.asset_type = Some("stock".to_string());
+                    entry.asset_type = Some(resolve_asset_type(t));
                 }
                 // Preserve name from trade (set on first buy)
                 if entry.name.is_none() {
@@ -330,7 +341,7 @@ fn recalculate_holdings_inner_body(
                 let entry = map.entry(key).or_default();
                 entry.is_watch = true;
                 if entry.asset_type.is_none() {
-                    entry.asset_type = Some("stock".to_string());
+                    entry.asset_type = Some(resolve_asset_type(t));
                 }
                 // Preserve name from trade (preferred) or existing entry
                 if entry.name.is_none() {
@@ -409,8 +420,8 @@ pub fn update_trade(t: &Trade) -> Result<(), String> {
     with_conn(|conn| {
         let changed = conn
             .execute(
-                "UPDATE trades SET symbol=?2, currency=?3, kind=?4, action=?5, shares=?6, price=?7, amount=?8, notes=?9, name=?10, trade_date=?11 WHERE id=?1",
-                params![t.id, t.symbol, t.currency, t.kind, t.action, t.shares, t.price, t.amount, t.notes, t.name, t.trade_date],
+                "UPDATE trades SET symbol=?2, currency=?3, kind=?4, action=?5, shares=?6, price=?7, amount=?8, notes=?9, name=?10, trade_date=?11, asset_type=?12 WHERE id=?1",
+                params![t.id, t.symbol, t.currency, t.kind, t.action, t.shares, t.price, t.amount, t.notes, t.name, t.trade_date, t.asset_type],
             )
             .map_err(|e| format!("update trade: {}", e))?;
         if changed == 0 {

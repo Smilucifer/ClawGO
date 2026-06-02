@@ -109,6 +109,7 @@
           notes: notes || null,
           name: name || null,
           tradeDate: tradeDate || null,
+          assetType,
         });
         // Update cash balance
         const newCash = tradeAction === 'buy'

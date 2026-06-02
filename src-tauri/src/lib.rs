@@ -7,6 +7,7 @@ pub mod process_ext;
 pub mod group_chat;
 pub mod storage;
 pub mod tushare;
+pub mod tencent_quotes;
 pub mod invest;
 pub mod python;
 pub mod web_server;

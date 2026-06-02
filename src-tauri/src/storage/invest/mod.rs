@@ -18,6 +18,17 @@ use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
 
+/// 根据 ts_code/symbol 前缀判断是否为 ETF/基金。
+/// 前缀列表与 `TushareClient::daily_api` 保持同步。
+pub fn is_etf_symbol(symbol: &str) -> bool {
+    let prefix = symbol.split('.').next().unwrap_or("");
+    matches!(
+        prefix.get(..3).unwrap_or(""),
+        "159" | "510" | "512" | "515" | "588" | "150" | "500" | "501"
+            | "160" | "161" | "162" | "163" | "164"
+    )
+}
+
 static DB: Mutex<Option<Connection>> = Mutex::new(None);
 
 /// Resolve the invest.db path, creating the parent directory if needed.
@@ -131,9 +142,10 @@ fn init_db_inner(db_path: &Path) -> Result<Connection, String> {
             notes TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             name TEXT,
-            trade_date TEXT
+            trade_date TEXT,
+            asset_type TEXT
         );
-        INSERT OR IGNORE INTO trades_new (id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date) SELECT id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date FROM trades;
+        INSERT OR IGNORE INTO trades_new (id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date, asset_type) SELECT id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date, asset_type FROM trades;
         DROP TABLE IF EXISTS trades;
         ALTER TABLE trades_new RENAME TO trades;
         COMMIT;"
@@ -208,6 +220,14 @@ fn init_db_inner(db_path: &Path) -> Result<Connection, String> {
     if !has_column(&conn, "trades", "trade_date") {
         conn.execute_batch("ALTER TABLE trades ADD COLUMN trade_date TEXT;")
             .map_err(|e| format!("Failed to add trade_date column to trades: {}", e))?;
+    }
+    if !has_column(&conn, "trades", "asset_type") {
+        conn.execute_batch("ALTER TABLE trades ADD COLUMN asset_type TEXT;")
+            .map_err(|e| format!("Failed to add asset_type column to trades: {}", e))?;
+        // Backfill: set asset_type from holdings for existing trades
+        conn.execute_batch(
+            "UPDATE trades SET asset_type = (SELECT h.asset_type FROM holdings h WHERE h.symbol = trades.symbol AND h.currency = trades.currency AND h.kind = trades.kind) WHERE asset_type IS NULL AND action IN ('buy', 'add_watch', 'convert_watch_to_hold');"
+        ).map_err(|e| format!("backfill trade asset_type: {}", e))?;
     }
 
     log::info!("invest.db initialized at {:?}", db_path);
@@ -300,7 +320,8 @@ CREATE TABLE IF NOT EXISTS trades (
     notes TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     name TEXT,
-    trade_date TEXT
+    trade_date TEXT,
+    asset_type TEXT
 );
 
 CREATE TABLE IF NOT EXISTS cash (

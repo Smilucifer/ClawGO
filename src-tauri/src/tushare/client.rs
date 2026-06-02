@@ -36,7 +36,7 @@ pub struct DailyBar {
     pub amount: f64,
 }
 
-/// A real-time quote (实时行情, via `rt_k` API).
+/// A real-time quote (实时行情). Sources: Tencent API (primary) or Tushare `rt_k` (fallback).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RealtimeQuote {
@@ -438,12 +438,7 @@ impl TushareClient {
     /// 根据 ts_code 前缀选择 Tushare 日线 API。
     /// ETF/基金用 `fund_daily`，股票用 `daily`。
     fn daily_api(ts_code: &str) -> &'static str {
-        let prefix = ts_code.split('.').next().unwrap_or("");
-        if matches!(
-            prefix.get(..3).unwrap_or(""),
-            "159" | "510" | "512" | "515" | "588" | "150" | "500" | "501"
-                | "160" | "161" | "162" | "163" | "164"
-        ) {
+        if crate::storage::invest::is_etf_symbol(ts_code) {
             "fund_daily"
         } else {
             "daily"
@@ -452,17 +447,27 @@ impl TushareClient {
 
     /// 判断 ts_code 是否为 ETF/基金代码。
     fn is_etf_code(ts_code: &str) -> bool {
-        Self::daily_api(ts_code) == "fund_daily"
+        crate::storage::invest::is_etf_symbol(ts_code)
     }
 
-    /// 返回日线 API 中代表"价格"的字段名。
-    /// 股票 `daily` 使用 `close`；ETF/基金 `fund_daily` 使用 `adj_nav`（复权单位净值）。
+    /// 返回日线 API 中代表"价格"的首选字段名。
+    /// 股票 `daily` 使用 `close`；ETF/基金 `fund_daily` 优先 `adj_nav`（复权单位净值），但部分接口可能返回 `close`。
     fn price_field(ts_code: &str) -> &'static str {
         if Self::is_etf_code(ts_code) {
             "adj_nav"
         } else {
             "close"
         }
+    }
+
+    /// 在日线响应字段中定位价格列索引。
+    /// 优先使用 `price_field(ts_code)`（ETF→adj_nav, 股票→close），找不到则兜底 `"close"`。
+    /// 注意：`parse_realtime_quotes` 中的优先级相反（close 优先, adj_nav 兜底），不要合并。
+    fn resolve_close_idx(fields: &[String], ts_code: &str) -> Option<usize> {
+        fields
+            .iter()
+            .position(|f| f == Self::price_field(ts_code))
+            .or_else(|| fields.iter().position(|f| f == "close"))
     }
 
     /// Fetch daily bars (日线行情) for a stock or ETF within a date range.
@@ -487,7 +492,7 @@ impl TushareClient {
         let open_idx = fields.iter().position(|f| f == "open");
         let high_idx = fields.iter().position(|f| f == "high");
         let low_idx = fields.iter().position(|f| f == "low");
-        let close_idx = fields.iter().position(|f| f == Self::price_field(ts_code));
+        let close_idx = Self::resolve_close_idx(fields, ts_code);
         let pre_close_idx = fields.iter().position(|f| f == "pre_close");
         let change_idx = fields.iter().position(|f| f == "change");
         let pct_chg_idx = fields.iter().position(|f| f == "pct_chg");
@@ -681,9 +686,9 @@ impl TushareClient {
             }
         }
 
-        // 2) 降级到日线：stock → daily(close)；ETF → fund_daily(adj_nav)
+        // 2) 降级到日线：stock → daily(close)；ETF → fund_daily(adj_nav 或 close)
         let pf = Self::price_field(ts_code);
-        let fields_str = format!("ts_code,trade_date,{pf}");
+        let fields_str = format!("ts_code,trade_date,{pf},close");
         let resp = self
             .call_api(
                 Self::daily_api(ts_code),
@@ -693,10 +698,8 @@ impl TushareClient {
             .await?;
 
         let fields = &resp.data.fields;
-        let price_idx = fields
-            .iter()
-            .position(|f| f == pf)
-            .ok_or_else(|| format!("field '{pf}' not found in response"))?;
+        let price_idx = Self::resolve_close_idx(fields, ts_code)
+            .ok_or_else(|| format!("price field not found in response for {ts_code}"))?;
 
         resp.data
             .items
@@ -717,6 +720,43 @@ impl TushareClient {
     ) -> Result<Vec<RealtimeQuote>, String> {
         if ts_codes.is_empty() {
             return Ok(vec![]);
+        }
+
+        // ── 优先尝试腾讯行情 API (免费、无需认证、支持 ETF) ───
+        match crate::tencent_quotes::fetch_quotes(&self.client, ts_codes).await {
+            Ok(quotes) if quotes.len() >= ts_codes.len() => {
+                log::info!(
+                    "tencent quotes success: got {} quotes for {} symbols",
+                    quotes.len(),
+                    ts_codes.len()
+                );
+                return Ok(quotes);
+            }
+            Ok(quotes) if !quotes.is_empty() => {
+                // 部分成功：对缺失的符号降级到 Tushare
+                let returned: std::collections::HashSet<&str> =
+                    quotes.iter().map(|q| q.ts_code.as_str()).collect();
+                let missing: Vec<&str> = ts_codes
+                    .iter()
+                    .filter(|c| !returned.contains(*c))
+                    .copied()
+                    .collect();
+                log::info!(
+                    "tencent partial: {}/{} quotes, {} missing -> tushare fallback",
+                    quotes.len(),
+                    ts_codes.len(),
+                    missing.len()
+                );
+                let mut all = quotes;
+                all.extend(self.fallback_many(&missing).await);
+                return Ok(all);
+            }
+            Ok(_) => {
+                log::info!("tencent quotes returned empty, falling back to tushare");
+            }
+            Err(e) => {
+                log::warn!("tencent quotes failed: {e}, falling back to tushare");
+            }
         }
 
         // Partition into stocks vs ETFs in a single pass
@@ -829,7 +869,7 @@ impl TushareClient {
     }
 
     /// 降级方案：通过 `daily`/`fund_daily` 获取最新一条日线作为实时价替代。
-    /// 对于 ETF/基金，`fund_daily` 没有 `close` 字段，使用 `adj_nav`（复权单位净值）代替。
+    /// 对于 ETF/基金，`fund_daily` 可能返回 `adj_nav` 或 `close`，优先前者但兜底后者。
     async fn fallback_daily_quote(&self, ts_code: &str) -> Result<RealtimeQuote, String> {
         let resp = self
             .call_api(
@@ -844,7 +884,7 @@ impl TushareClient {
         let open_idx = fields.iter().position(|f| f == "open");
         let high_idx = fields.iter().position(|f| f == "high");
         let low_idx = fields.iter().position(|f| f == "low");
-        let close_idx = fields.iter().position(|f| f == Self::price_field(ts_code));
+        let close_idx = Self::resolve_close_idx(fields, ts_code);
         let pre_close_idx = fields.iter().position(|f| f == "pre_close");
         let vol_idx = fields.iter().position(|f| f == "vol");
         let amount_idx = fields.iter().position(|f| f == "amount");
