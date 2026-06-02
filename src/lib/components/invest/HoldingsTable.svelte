@@ -77,7 +77,7 @@
           <th class="px-[var(--space-4)] py-[var(--space-2)] text-left text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_cost_price')}</th>
           <th class="px-[var(--space-4)] py-[var(--space-2)] text-left text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_current_price')}</th>
           <th class="px-[var(--space-4)] py-[var(--space-2)] text-left text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_pnl_pct')}</th>
-          <th class="px-[var(--space-4)] py-[var(--space-2)] text-left text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_trade_action')}</th>
+          <th class="px-[var(--space-4)] py-[var(--space-2)] text-left text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_actions')}</th>
         </tr>
       </thead>
       <tbody>

@@ -1,37 +1,49 @@
 <script lang="ts">
   import { t } from '$lib/i18n/index.svelte';
-  import { investCommitteeStore, type ToolCallRecord } from '$lib/stores/invest-committee-store.svelte';
+  import { investCommitteeStore } from '$lib/stores/invest-committee-store.svelte';
+  import type { MessageKey } from '$lib/i18n/types';
+  import { ROLE_COLORS } from './pipeline-config';
 
   const store = investCommitteeStore;
 
-  // ── Static role→tool mapping (mirrors src-tauri/src/invest/committee/tools.rs) ──
+  // ── 9-tool × 5-role access matrix
+  // Source of truth: src-tauri/src/invest/committee/tools.rs:184-206
+  // (Macro: R1 only; Quant/Risk: R1+R2 same toolset; L4: query_dreaming_insights only; CIO: no tools)
+  type RoleKey = 'macro' | 'quant' | 'risk' | 'l4_officer' | 'cio';
 
-  interface ToolDef {
+  interface MatrixRow {
     name: string;
-    desc: string;
+    descKey: string;
+    access: Record<RoleKey, string>; // '' = no access; 'R1' / 'R1+R2' / '✓' = access label
   }
 
-  const ALL_TOOLS: ToolDef[] = [
-    { name: 'get_history_data', desc: '获取指定股票的历史行情数据（日线）' },
-    { name: 'analyze_multi_timeframe', desc: '对股票进行多时间框架技术分析（5日/20日/60日）' },
-    { name: 'get_macro_snapshot', desc: '获取A股宏观指标快照' },
-    { name: 'query_dreaming_insights', desc: '查询投资洞察和历史裁决' },
-    { name: 'get_recent_committee_verdicts', desc: '获取近期委员会裁决记录' },
+  const TOOLS_MATRIX: MatrixRow[] = [
+    { name: 'get_history_data',              descKey: 'invest_tool_history_desc',
+      access: { macro: 'R1', quant: 'R1+R2', risk: '',      l4_officer: '',  cio: '' } },
+    { name: 'analyze_multi_timeframe',       descKey: 'invest_tool_mtf_desc',
+      access: { macro: 'R1', quant: 'R1+R2', risk: '',      l4_officer: '',  cio: '' } },
+    { name: 'get_macro_snapshot',            descKey: 'invest_tool_macro_desc',
+      access: { macro: 'R1', quant: '',      risk: '',      l4_officer: '',  cio: '' } },
+    { name: 'query_dreaming_insights',       descKey: 'invest_tool_dreaming_desc',
+      access: { macro: 'R1', quant: '',      risk: 'R1+R2', l4_officer: '✓', cio: '' } },
+    { name: 'get_recent_committee_verdicts', descKey: 'invest_tool_verdicts_desc',
+      access: { macro: 'R1', quant: 'R1+R2', risk: 'R1+R2', l4_officer: '',  cio: '' } },
+    { name: 'get_recent_events',             descKey: 'invest_tool_events_desc',
+      access: { macro: 'R1', quant: '',      risk: '',      l4_officer: '',  cio: '' } },
+    { name: 'get_moneyflow',                 descKey: 'invest_tool_moneyflow_desc',
+      access: { macro: '',   quant: 'R1+R2', risk: '',      l4_officer: '',  cio: '' } },
+    { name: 'get_company_info',              descKey: 'invest_tool_company_info_desc',
+      access: { macro: '',   quant: 'R1+R2', risk: '',      l4_officer: '',  cio: '' } },
+    { name: 'get_company_news',              descKey: 'invest_tool_company_news_desc',
+      access: { macro: '',   quant: '',      risk: 'R1+R2', l4_officer: '',  cio: '' } },
   ];
 
-  interface RoleToolAccess {
-    role: string;
-    label: string;
-    tools: string[];
-    r2Note?: string;
-  }
-
-  const ROLE_ACCESS: RoleToolAccess[] = [
-    { role: 'macro', label: '宏观分析师 (Macro)', tools: ['get_history_data', 'analyze_multi_timeframe', 'get_macro_snapshot', 'query_dreaming_insights', 'get_recent_committee_verdicts'], r2Note: 'R2 不可用工具' },
-    { role: 'quant', label: '量化分析师 (Quant)', tools: ['get_history_data', 'analyze_multi_timeframe', 'get_recent_committee_verdicts'], r2Note: 'R1+R2 均可用' },
-    { role: 'risk', label: '风控官 (Risk)', tools: ['query_dreaming_insights', 'get_recent_committee_verdicts'], r2Note: 'R1+R2 均可用' },
-    { role: 'l4_officer', label: 'L4 行为官 (L4 Officer)', tools: ['query_dreaming_insights'], r2Note: '仅此一个工具' },
-    { role: 'cio', label: '首席投资官 (CIO)', tools: [], r2Note: '禁止调用工具' },
+  const ROLE_COLUMNS: { key: RoleKey; label: string; color: string }[] = [
+    { key: 'macro',      label: 'Macro',     color: ROLE_COLORS.macro },
+    { key: 'quant',      label: 'Quant',     color: ROLE_COLORS.quant },
+    { key: 'risk',       label: 'Risk',      color: ROLE_COLORS.risk },
+    { key: 'l4_officer', label: 'L4',        color: ROLE_COLORS.l4_officer },
+    { key: 'cio',        label: 'CIO',       color: ROLE_COLORS.cio },
   ];
 
   // ── State ──
@@ -76,37 +88,13 @@
     }
   }
 
-  function formatResult(raw: string | undefined): string {
-    if (!raw) return '-';
-    // Truncate long results for display
-    return raw.length > 200 ? raw.slice(0, 200) + '...' : raw;
-  }
-
-  function truncateResult(raw: string | undefined): string {
-    if (!raw) return '';
-    return raw;
-  }
-
   function roleLabel(role: string): string {
-    switch (role) {
-      case 'macro': return 'Macro';
-      case 'quant': return 'Quant';
-      case 'risk': return 'Risk';
-      case 'l4_officer': return 'L4 Officer';
-      case 'cio': return 'CIO';
-      default: return role;
-    }
+    return ROLE_COLUMNS.find((c) => c.key === role)?.label ?? role;
   }
 
-  function roleColor(role: string): string {
-    switch (role) {
-      case 'macro': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
-      case 'quant': return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
-      case 'risk': return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
-      case 'l4_officer': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
-      case 'cio': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
-      default: return 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400';
-    }
+  function roleBadgeStyle(role: string): string {
+    const col = ROLE_COLUMNS.find((c) => c.key === role)?.color ?? '#6b7280';
+    return `background:${col}26; color:${col};`;
   }
 </script>
 
@@ -130,48 +118,61 @@
   <!-- KPI cards -->
   <div class="grid grid-cols-3 gap-[var(--space-3)]">
     <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-3)] text-center">
-      <div class="text-[22px] font-bold font-[var(--font-mono)] text-[var(--text-primary)]">{totalCalls}</div>
+      <div class="font-[var(--font-mono)] text-[22px] font-bold text-[var(--text-primary)]">{totalCalls}</div>
       <div class="text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_tools_total_calls')}</div>
     </div>
     <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-3)] text-center">
-      <div class="text-[22px] font-bold font-[var(--font-mono)] {successRate >= 0.9 ? 'text-[#8a9a76]' : successRate >= 0.7 ? 'text-[#b89a6a]' : 'text-[#a87a7a]'}">
+      <div class="font-[var(--font-mono)] text-[22px] font-bold {successRate >= 0.9 ? 'text-[var(--color-success)]' : successRate >= 0.7 ? 'text-[var(--color-warning)]' : 'text-[var(--color-error)]'}">
         {totalCalls > 0 ? `${(successRate * 100).toFixed(0)}%` : '-'}
       </div>
       <div class="text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_tools_success_rate')}</div>
     </div>
     <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-3)] text-center">
-      <div class="text-[22px] font-bold font-[var(--font-mono)] text-[var(--text-primary)]">{totalCalls > 0 ? `${avgLatency}ms` : '-'}</div>
+      <div class="font-[var(--font-mono)] text-[22px] font-bold text-[var(--text-primary)]">{totalCalls > 0 ? `${avgLatency}ms` : '-'}</div>
       <div class="text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_tools_avg_latency')}</div>
     </div>
   </div>
 
-  <!-- Role → Tool Access mapping -->
+  <!-- Role × Tool access matrix -->
   <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)]">
-    <div class="border-b border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-4)] py-[var(--space-2)] text-[13px] font-medium text-[var(--text-primary)]">{t('invest_tools_role_mapping')}</div>
-    <div class="p-[var(--space-4)] space-y-[var(--space-3)]">
-      {#each ROLE_ACCESS as access}
-        <div class="flex items-start gap-[var(--space-3)]">
-          <span class="inline-block min-w-[120px] shrink-0 rounded-[var(--radius-md)] px-2 py-0.5 text-[11px] font-medium {roleColor(access.role)}">
-            {access.label}
-          </span>
-          <div class="flex-1">
-            {#if access.tools.length > 0}
-              <div class="flex flex-wrap gap-1">
-                {#each access.tools as toolName}
-                  <span class="inline-block rounded-[var(--radius-md)] bg-[var(--bg-input)] px-2 py-0.5 text-[11px] font-[var(--font-mono)] text-[var(--text-secondary)]">
-                    {toolName}
-                  </span>
-                {/each}
-              </div>
-            {:else}
-              <span class="text-[11px] text-[var(--text-tertiary)] italic">{t('invest_tools_none')}</span>
-            {/if}
-            {#if access.r2Note}
-              <div class="mt-1 text-[11px] text-[var(--text-tertiary)]">{access.r2Note}</div>
-            {/if}
-          </div>
-        </div>
-      {/each}
+    <div class="border-b border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-4)] py-[var(--space-2)] text-[13px] font-medium text-[var(--text-primary)]">
+      {t('invest_tools_matrix_title')}
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-[12px]">
+        <thead>
+          <tr class="border-b border-[var(--border)]">
+            <th class="px-[var(--space-3)] py-[var(--space-2)] text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+              {t('invest_tools_col_tool')}
+            </th>
+            {#each ROLE_COLUMNS as col}
+              <th class="px-[var(--space-2)] py-[var(--space-2)] text-center text-[11px] font-medium uppercase tracking-wider" style="color:{col.color}">
+                {col.label}
+              </th>
+            {/each}
+          </tr>
+        </thead>
+        <tbody>
+          {#each TOOLS_MATRIX as row}
+            <tr class="border-b border-[var(--border)] last:border-0 hover:bg-[var(--bg-hover)]">
+              <td class="px-[var(--space-3)] py-[var(--space-2)]">
+                <div class="font-[var(--font-mono)] text-[12px] text-[var(--text-primary)]">{row.name}</div>
+                <div class="text-[11px] text-[var(--text-tertiary)]">{t(row.descKey as MessageKey)}</div>
+              </td>
+              {#each ROLE_COLUMNS as col}
+                {@const v = row.access[col.key]}
+                <td class="px-[var(--space-2)] py-[var(--space-2)] text-center font-[var(--font-mono)] text-[11px]">
+                  {#if v}
+                    <span class="text-[var(--color-success)]">✓ {v}</span>
+                  {:else}
+                    <span class="text-[var(--text-tertiary)]">✗</span>
+                  {/if}
+                </td>
+              {/each}
+            </tr>
+          {/each}
+        </tbody>
+      </table>
     </div>
   </div>
 
@@ -179,14 +180,14 @@
   {#if store.toolCallHistory.length > 0}
     <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)]">
       <div class="border-b border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-4)] py-[var(--space-2)] text-[13px] font-medium text-[var(--text-primary)]">{t('invest_tools_by_role')}</div>
-      <div class="p-[var(--space-4)] grid grid-cols-4 gap-[var(--space-3)]">
-        {#each ROLE_ACCESS as access}
-          {@const stats = roleStats.get(access.role)}
+      <div class="grid grid-cols-5 gap-[var(--space-3)] p-[var(--space-4)]">
+        {#each ROLE_COLUMNS as col}
+          {@const stats = roleStats.get(col.key)}
           <div class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-2)] text-center">
-            <div class="text-[11px] font-medium {roleColor(access.role)} inline-block rounded-[var(--radius-md)] px-1.5 py-0.5 mb-1">
-              {roleLabel(access.role)}
+            <div class="mb-1 inline-block rounded-[var(--radius-md)] px-1.5 py-0.5 text-[11px] font-medium" style={roleBadgeStyle(col.key)}>
+              {col.label}
             </div>
-            <div class="text-[18px] font-bold font-[var(--font-mono)] text-[var(--text-primary)]">{stats?.calls ?? 0}</div>
+            <div class="font-[var(--font-mono)] text-[18px] font-bold text-[var(--text-primary)]">{stats?.calls ?? 0}</div>
             <div class="text-[11px] text-[var(--text-tertiary)]">
               {#if stats && stats.errors > 0}
                 <span class="text-[var(--color-error)]">{stats.errors} err</span>
@@ -202,7 +203,7 @@
 
   <!-- Tool call history -->
   <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)]">
-    <div class="border-b border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-4)] py-[var(--space-2)] flex items-center justify-between">
+    <div class="flex items-center justify-between border-b border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-4)] py-[var(--space-2)]">
       <span class="text-[13px] font-medium text-[var(--text-primary)]">{t('invest_tools_history')}</span>
       {#if store.toolCallHistory.length > 0}
         <select
@@ -210,8 +211,8 @@
           bind:value={roleFilter}
         >
           <option value="all">All Roles</option>
-          {#each ROLE_ACCESS as access}
-            <option value={access.role}>{roleLabel(access.role)}</option>
+          {#each ROLE_COLUMNS as col}
+            <option value={col.key}>{col.label}</option>
           {/each}
         </select>
       {/if}
@@ -225,38 +226,36 @@
       <div class="max-h-96 overflow-y-auto">
         {#each filteredHistory as record, i}
           <div class="border-b border-[var(--border)] last:border-0">
-            <!-- Summary row (clickable) -->
             <button
               class="flex w-full items-center gap-2 px-[var(--space-4)] py-[var(--space-2)] text-left text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
               onclick={() => (expandedIndex = expandedIndex === i ? null : i)}
             >
-              <span class="inline-block rounded-[var(--radius-md)] px-1.5 py-0.5 text-[11px] font-medium {roleColor(record.role)}">
+              <span class="inline-block rounded-[var(--radius-md)] px-1.5 py-0.5 text-[11px] font-medium" style={roleBadgeStyle(record.role)}>
                 {roleLabel(record.role)}
               </span>
               <span class="font-[var(--font-mono)] text-[11px] text-[var(--text-secondary)]">{record.toolName}</span>
-              <span class="ml-auto text-[11px] text-[var(--text-tertiary)] font-[var(--font-mono)]">{record.latencyMs}ms</span>
-              <span class="inline-block h-2 w-2 rounded-full {record.success ? 'bg-[#8a9a76]' : 'bg-[#a87a7a]'}"></span>
+              <span class="ml-auto font-[var(--font-mono)] text-[11px] text-[var(--text-tertiary)]">{record.latencyMs}ms</span>
+              <span class="inline-block h-2 w-2 rounded-full {record.success ? 'bg-[var(--color-success)]' : 'bg-[var(--color-error)]'}"></span>
               <svg class="h-3 w-3 text-[var(--text-tertiary)] transition-transform {expandedIndex === i ? 'rotate-90' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M9 18l6-6-6-6" />
               </svg>
             </button>
 
-            <!-- Expanded details -->
             {#if expandedIndex === i}
-              <div class="border-t border-[var(--border)] bg-[var(--bg-hover)] px-[var(--space-4)] py-[var(--space-3)] space-y-2 text-[11px]">
+              <div class="space-y-2 border-t border-[var(--border)] bg-[var(--bg-hover)] px-[var(--space-4)] py-[var(--space-3)] text-[11px]">
                 <div>
                   <span class="font-medium text-[var(--text-tertiary)]">{t('invest_tools_arguments')}: </span>
                   <span class="font-[var(--font-mono)] text-[var(--text-secondary)]">{formatArgs(record.arguments)}</span>
                 </div>
                 <div>
                   <span class="font-medium text-[var(--text-tertiary)]">{t('invest_tools_result')}: </span>
-                  <span class="{record.success ? 'text-[#8a9a76]' : 'text-[#a87a7a]'}">
+                  <span class={record.success ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]'}>
                     {t(record.success ? 'invest_tools_success' : 'invest_tools_error')}
                   </span>
                 </div>
                 {#if record.result}
-                  <div class="rounded-[var(--radius-md)] bg-[var(--bg-input)] p-2 font-[var(--font-mono)] text-[11px] text-[var(--text-secondary)] whitespace-pre-wrap max-h-40 overflow-y-auto">
-                    {truncateResult(record.result)}
+                  <div class="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-[var(--radius-md)] bg-[var(--bg-input)] p-2 font-[var(--font-mono)] text-[11px] text-[var(--text-secondary)]">
+                    {record.result}
                   </div>
                 {/if}
                 <div class="text-[var(--text-tertiary)]">

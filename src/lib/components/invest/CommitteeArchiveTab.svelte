@@ -3,6 +3,7 @@
   import { investCommitteeStore } from '$lib/stores/invest-committee-store.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
   import type { ArchivedDecision } from '$lib/stores/invest-committee-store.svelte';
+  import { getVerdictBadgeStyle, parseVerdictFromContent } from '$lib/utils/invest-verdict';
 
   let symbol = $state('');
   let days = $state(14);
@@ -11,6 +12,14 @@
   let selectedDate = $state<string | null>(null);
 
   const selected = $derived(archives.find((a) => a.date === selectedDate) ?? null);
+
+  // Pre-compute verdicts once per archives change — avoids re-running regex
+  // on every selectedDate click for the entire list.
+  const verdictMap = $derived.by(() => {
+    const map = new Map<string, string | null>();
+    for (const a of archives) map.set(a.date, parseVerdictFromContent(a.content));
+    return map;
+  });
 
   // Combined HOLD + WATCH list for dropdown
   const symbolOptions = $derived(
@@ -46,24 +55,22 @@
   }
 </script>
 
-<div class="flex h-full gap-4">
-  <!-- Left panel: list -->
-  <div class="w-64 shrink-0 flex flex-col gap-3">
-    <div class="flex items-end gap-2">
-      <div class="flex-1">
-        <label class="mb-1 block text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_archive_symbol_label')}</label>
-        <select
-          class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-[13px] text-[var(--text-primary)]"
-          bind:value={symbol}
-        >
-          <option value="">{t('invest_archive_empty')}</option>
-          {#each symbolOptions as opt}
-            <option value={opt.symbol}>{opt.label}</option>
-          {/each}
-        </select>
-      </div>
+<div class="archive-grid grid h-full gap-[var(--space-4)]">
+  <!-- Left panel: query + list -->
+  <aside class="flex flex-col gap-[var(--space-3)] rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-3)]">
+    <!-- Symbol selector + query button -->
+    <div class="flex items-center gap-[var(--space-2)]">
+      <select
+        class="flex-1 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-2)] py-[6px] text-[12px] text-[var(--text-primary)]"
+        bind:value={symbol}
+      >
+        <option value="">{t('invest_archive_symbol_label')}</option>
+        {#each symbolOptions as opt}
+          <option value={opt.symbol}>{opt.label}</option>
+        {/each}
+      </select>
       <button
-        class="rounded-[var(--radius-md)] bg-[var(--accent)] px-3 py-1.5 text-[13px] font-medium text-[#1a1918] disabled:opacity-40 transition-opacity"
+        class="rounded-[var(--radius-md)] bg-[var(--accent)] px-[var(--space-3)] py-[6px] text-[12px] font-medium text-[var(--bg-base)] transition-opacity hover:opacity-90 disabled:opacity-40"
         disabled={loading || !symbol.trim()}
         onclick={load}
       >
@@ -71,46 +78,88 @@
       </button>
     </div>
 
-    {#if archives.length > 0}
-      <div class="flex flex-col gap-1">
-        {#each archives as archive}
-          <button
-            class="flex w-full items-center justify-between rounded-[var(--radius-md)] border px-3 py-2 text-left text-[13px] transition-colors"
-            class:border-[var(--accent)]={selectedDate === archive.date}
-            class:bg-[var(--accent-muted)]={selectedDate === archive.date}
-            class:border-[var(--border)]={selectedDate !== archive.date}
-            class:text-[var(--text-primary)]={selectedDate === archive.date}
-            class:text-[var(--text-secondary)]={selectedDate !== archive.date}
-            onclick={() => (selectedDate = archive.date)}
-          >
-            <span class="font-medium">{archive.date}</span>
-            <span class="text-[11px] text-[var(--text-tertiary)]" title={archive.symbol}>{symLabel(archive.symbol)}</span>
-          </button>
-        {/each}
-      </div>
-    {:else}
-      <div class="py-4 text-center text-[11px] text-[var(--text-tertiary)]">
-        {t('invest_archive_empty')}
-      </div>
-    {/if}
-  </div>
+    <!-- Days selector -->
+    <div class="flex items-center gap-[var(--space-2)] text-[11px] text-[var(--text-tertiary)]">
+      <span>{t('invest_replay_days')}:</span>
+      <input
+        type="number"
+        min="1"
+        max="90"
+        class="w-16 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-0.5 text-[11px] text-[var(--text-primary)]"
+        bind:value={days}
+      />
+    </div>
+
+    <!-- Archive list -->
+    <div class="flex-1 overflow-y-auto">
+      {#if archives.length > 0}
+        <div class="space-y-0.5">
+          {#each archives as archive}
+            {@const v = verdictMap.get(archive.date) ?? null}
+            <button
+              class="flex w-full items-center justify-between rounded-[var(--radius-md)] border px-[var(--space-2)] py-[var(--space-1)] text-left text-[12px] transition-colors"
+              class:border-[var(--accent)]={selectedDate === archive.date}
+              class:bg-[var(--accent-muted)]={selectedDate === archive.date}
+              class:border-transparent={selectedDate !== archive.date}
+              class:hover:bg-[var(--bg-hover)]={selectedDate !== archive.date}
+              onclick={() => (selectedDate = archive.date)}
+            >
+              <span class="font-[var(--font-mono)] text-[var(--text-secondary)]">{archive.date}</span>
+              {#if v}
+                <span class="rounded-[var(--radius-sm)] px-1.5 py-0.5 text-[9px] font-bold" style={getVerdictBadgeStyle(v)}>
+                  {v}
+                </span>
+              {/if}
+            </button>
+          {/each}
+        </div>
+      {:else if loading}
+        <div class="py-4 text-center text-[11px] text-[var(--text-tertiary)]">
+          {t('invest_replay_loading')}
+        </div>
+      {:else}
+        <div class="py-4 text-center text-[11px] text-[var(--text-tertiary)]">
+          {t('invest_archive_empty')}
+        </div>
+      {/if}
+    </div>
+  </aside>
 
   <!-- Right panel: detail -->
-  <div class="flex-1 overflow-auto">
+  <section class="overflow-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)]">
     {#if selected}
-      <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-4">
-        <div class="mb-2 flex items-center justify-between">
-          <span class="text-[13px] font-semibold text-[var(--text-primary)]" title={selected.symbol}>{symLabel(selected.symbol)}</span>
-          <span class="text-[11px] text-[var(--text-tertiary)]">{selected.date}</span>
-        </div>
-        <div class="max-h-[60vh] overflow-y-auto whitespace-pre-wrap font-[var(--font-mono)] text-[13px] text-[var(--text-secondary)] leading-relaxed">
-          {selected.content}
-        </div>
+      {@const v = verdictMap.get(selected.date) ?? null}
+      <div class="mb-[var(--space-3)] flex items-center gap-[var(--space-3)]">
+        <span class="text-[14px] font-semibold text-[var(--text-primary)]" title={selected.symbol}>
+          {symLabel(selected.symbol)}
+        </span>
+        <span class="font-[var(--font-mono)] text-xs text-[var(--text-secondary)]">{selected.symbol}</span>
+        <span class="text-xs text-[var(--text-tertiary)]">— {selected.date}</span>
+        {#if v}
+          <span class="ml-auto rounded-[var(--radius-full)] px-3 py-1 text-[11px] font-bold" style={getVerdictBadgeStyle(v)}>
+            {v}
+          </span>
+        {/if}
+      </div>
+      <div class="max-h-[60vh] overflow-y-auto whitespace-pre-wrap font-[var(--font-mono)] text-[13px] leading-[1.7] text-[var(--text-secondary)]">
+        {selected.content}
       </div>
     {:else}
       <div class="flex h-full items-center justify-center text-[13px] text-[var(--text-tertiary)]">
         {t('invest_archive_select')}
       </div>
     {/if}
-  </div>
+  </section>
 </div>
+
+<style>
+  .archive-grid {
+    grid-template-columns: 250px 1fr;
+    min-height: 500px;
+  }
+  @media (max-width: 768px) {
+    .archive-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

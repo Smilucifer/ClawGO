@@ -120,7 +120,7 @@
   function closeDialog() { dialogMode = null; dialogPrefill = undefined; }
 </script>
 
-<div class="flex h-full flex-col bg-[var(--bg-base)]">
+<div class="flex h-full flex-col bg-[var(--bg-base)]" data-invest-scope>
   <!-- Header -->
   <div class="border-b border-[var(--border)] px-[var(--space-4)] pt-[var(--space-4)]">
     <h1 class="mb-[var(--space-1)] text-[22px] font-bold text-[var(--text-primary)]">{t('nav_invest')}</h1>

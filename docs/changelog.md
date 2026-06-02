@@ -1,5 +1,38 @@
 # Changelog / 更新日志
 
+## v5.2.3 (2026-06-02)
+
+### /invest UI 修复 + 委员会 3 子页布局重构
+
+v5.2.2 的"全模块 UI 设计系统统一"在两个层面没做干净：CSS token 语义跟 shadcn 冲突导致按钮文字看不见，3 个委员会子页（Replay / Archive / Tools）布局没按 mockup 重写。本次完整修复。
+
+**CSS token 作用域修复（根因）：**
+- `src/app.css` 的 `--accent` 是 shadcn 的暗灰 `#2a2827`（neutral surface），但 v5.2.2 的 28 个 invest 组件把 `var(--accent)` 当成金色品牌色用，导致 `bg-[var(--accent)] text-[var(--bg-base)]` 变成"暗灰底+暗色字"
+- 新增 `[data-invest-scope]` 选择器，仅在 `/invest` 路由子树覆盖关键 token：`--accent` → 金色 `hsl(var(--primary))`、`--color-error` → 暖灰红 `#a87a7a`、`--bg-input` → `#2e2c29`（比 card 亮一档恢复输入框层次）、`--bg-card` / `--bg-elevated` / `--bg-sidebar` 精确对齐 demo design-system.css
+- `/chat` `/settings` `/history` 等其他路由保持 shadcn 原语义不变
+
+**3 个委员会子页布局重构：**
+- **Replay**：250px 标的列表 + 历史日期 / 1fr 报告内容 双栏（参照 mockup `invest-v2.html:849-880`）；replay 模式自动加载、simulate 模式独立流式
+- **Archive**：左 250px 查询面板（symbol select + days input + 日期列表带 verdict badge）/ 右 1fr Markdown 详情；verdict badge regex 从 content 解析（BUY/ACCUMULATE/HOLD/TRIM/SELL/WATCH）
+- **Tools**：9 工具 × 5 角色访问矩阵真表格，数据严格对照后端 `src-tauri/src/invest/committee/tools.rs:184-206` `role_tool_defs()`
+
+**Simplify 审查（4 路并行 + 5 项修复）：**
+- 抽出 `src/lib/utils/invest-verdict.ts` — `getVerdictBadgeStyle()` + `parseVerdictFromContent()`，统一 Live/Replay/Archive 三处独立实现，修复 HOLD 颜色不一致（LiveTab 用 `#c9a96e` 硬色，其他用 `var(--accent)` token，统一到后者）
+- 抽出 `pipeline-config.ts` 新增 `ROLE_COLORS` / `getStepState()` / `getRoundForStep()` — Live 和 Replay byte-for-byte 重复的本地实现合并；ToolsTab 配色从 `{macro:#3b82f6, quant:#8b5cf6, risk:#f59e0b, cio:#10b981}`（与 DebateBlock/pipeline-config 不一致，macro/quant 颠倒）改用统一 `ROLE_COLORS`
+- ToolsTab 死代码清理：`truncateResult()` 是 identity 函数 → 删除；`roleLabel()` 5-case switch → `ROLE_COLUMNS.find()` 一行
+- ArchiveTab 性能：`$derived.by` 预计算 `verdictMap: Map<date, verdict>`，从"每次 selectedDate 点击都跑全列表 regex"降到"archives 改变才计算一次"
+- ReplayTab race 修复：`$effect` 自动加载加 `loadGen` 计数器，快速切换标的时丢弃 stale 响应
+
+**i18n：** 11 个新 key — 9 个 `invest_tool_*_desc`（工具中英文描述）+ `invest_tools_matrix_title` + `invest_tools_col_tool` + `invest_filter_all`；顺手把 `invest_trade_action`（不存在）改成已存在的 `invest_actions`，`invest_cio_verdict` 改成 `invest_replay_cio_verdict`
+
+**修改文件清单：**
+- 新增：`src/lib/utils/invest-verdict.ts`
+- 修改：`src/app.css`、`src/routes/invest/+page.svelte`、`src/lib/components/invest/pipeline-config.ts`、`CommitteeLiveTab.svelte`、`CommitteeReplayTab.svelte`、`CommitteeArchiveTab.svelte`、`CommitteeToolsTab.svelte`、`HoldingsTable.svelte`、`messages/en.json`、`messages/zh-CN.json`
+
+**验证：** svelte-check ✅（剩 3 个 errors 全是 CodeEditor.svelte:413 旧 bug，与本次无关）/ i18n:check ✅ 0 errors / Build ✅ 34s / cargo check ✅
+
+---
+
 ## v5.2.2 (2026-06-02)
 
 ### /invest 全模块 UI 设计系统统一

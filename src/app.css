@@ -85,6 +85,27 @@
     --duration-fast: 120ms;
     --duration-normal: 200ms;
   }
+
+  /* invest module: align with design-system.css demo palette.
+     Scoped overrides only — keeps shadcn semantics intact on /chat, /settings, /history.
+     Activated by `data-invest-scope` attribute on the route root element. */
+  [data-invest-scope] {
+    /* Brand gold accent (vs shadcn neutral #2a2827) */
+    --accent: hsl(var(--primary));
+    --accent-foreground: var(--bg-base);
+
+    /* Warm muted error (vs shadcn vivid red) — SELL badge, danger buttons, error states */
+    --color-error: #a87a7a;
+    --color-error-bg: rgba(168, 122, 122, 0.12);
+
+    /* Input one shade lighter than card — restores form layering */
+    --bg-input: #2e2c29;
+
+    /* Exact demo palette (1-2% lightness alignment) */
+    --bg-card: #242220;
+    --bg-elevated: #242220;
+    --bg-sidebar: #1e1d1b;
+  }
 }
 
 @layer base {

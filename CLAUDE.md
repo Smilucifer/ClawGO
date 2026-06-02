@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v5.2.2, 2026-06-02). /invest 全模块 UI 设计系统统一（28 文件）。See `docs/changelog.md`.
+**Current phase:** Phase 10+ (v5.2.3, 2026-06-02). /invest UI 修复 + 委员会 3 子页布局重构（CSS token 作用域 + Replay/Archive/Tools 重写 + 5 项 simplify）。See `docs/changelog.md`.
 
 ## Standard workflow
 
@@ -373,6 +373,7 @@ Key phases and their status:
 | 10+ (v5.2.0) | 委员会 L1-L4 策略框架升级: 5 角色+L4 Officer/8 步 Pipeline/7 Prompt 重写/AssetContext 数据注入层/4 新工具/30+ Parser 字段/行为红灯评分/catalyst Tier 框架/Simplify 8 项审查修复 | [done] |
 | 10+ (v5.2.1) | Memory Extraction 设置迁移+全局记忆文件扩展+委员会 7 项改进(成本基准收益率/交易过滤/ConfirmDialog/Dream 修复/事件中文化/策略注入 Risk/L4 Officer 工具面板)+6 i18n keys | [done] |
 | 10+ (v5.2.2) | /invest 全模块 UI 设计系统统一: 28 文件(27 组件+1 页面)暖色暗黑迁移/5 Tab+14 子 Tab+6 通用组件/CSS 变量映射/Badge 重设计/tab 导航重写/svelte-check+ESLint+Build 全通过 | [done] |
+| 10+ (v5.2.3) | /invest UI 修复+委员会 3 子页布局重构: [data-invest-scope] CSS token 作用域覆盖(--accent 金色/--color-error 暖红/--bg-input 输入层次)/CommitteeReplayTab 250px 双栏重写/CommitteeArchiveTab 双栏+verdict regex/CommitteeToolsTab 9×5 访问矩阵真表格/抽 invest-verdict.ts+pipeline-config ROLE_COLORS+getStepState/5 项 simplify 审查修复(verdictMap 预计算/loadGen race fix/死代码清理) | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

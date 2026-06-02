@@ -2,8 +2,8 @@
   import { t } from '$lib/i18n/index.svelte';
   import { investCommitteeStore } from '$lib/stores/invest-committee-store.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
-  import type { SymbolProgress, RoundOutputSummary } from '$lib/stores/invest-committee-store.svelte';
-  import { STEP_DEFS, roleToBackendIdx } from './pipeline-config';
+  import { STEP_DEFS, getStepState, getRoundForStep } from './pipeline-config';
+  import { getVerdictBadgeStyle } from '$lib/utils/invest-verdict';
 
   let expandedSymbol = $state<string | null>(null);
   let includeWatch = $state(true);
@@ -60,44 +60,7 @@
   });
 
   // ── Helpers ──────────────────────────────────────────────────────────────
-
-  function getStepState(
-    symProgress: SymbolProgress | undefined,
-    backendIdx: number,
-  ): 'pending' | 'active' | 'done' | 'error' {
-    if (!symProgress) return 'pending';
-    if (backendIdx === -1) return pipelineStarted ? 'done' : 'pending';
-
-    if (symProgress.activeStep === backendIdx) return 'active';
-
-    for (const round of symProgress.completedRounds) {
-      if (roleToBackendIdx(round.role, round.round) === backendIdx) return 'done';
-    }
-
-    if (symProgress.done && !symProgress.error) return 'done';
-    if (symProgress.error && backendIdx >= symProgress.completedSteps) return 'error';
-
-    return 'pending';
-  }
-
-  function getRoundForStep(
-    symProgress: SymbolProgress | undefined,
-    backendIdx: number,
-  ): RoundOutputSummary | undefined {
-    if (!symProgress) return undefined;
-    return symProgress.completedRounds.find(
-      (r) => roleToBackendIdx(r.role, r.round) === backendIdx,
-    );
-  }
-
-  function getVerdictBadgeStyle(verdict: string): string {
-    if (verdict === 'BUY') return 'background:rgba(138,154,118,0.2); color:#8a9a76;';
-    if (verdict === 'ACCUMULATE') return 'background:rgba(59,130,246,0.2); color:#3b82f6;';
-    if (verdict === 'HOLD') return 'background:rgba(201,169,110,0.15); color:#c9a96e;';
-    if (verdict === 'TRIM') return 'background:rgba(245,158,11,0.2); color:#f59e0b;';
-    if (verdict === 'SELL') return 'background:rgba(168,122,122,0.2); color:#a87a7a;';
-    return 'background:var(--bg-input); color:var(--text-tertiary);';
-  }
+  // getStepState / getRoundForStep / getVerdictBadgeStyle 已抽到共享模块
 
   async function runAll() {
     const syms = allAssets.map((a) => a.symbol);
@@ -216,7 +179,7 @@
         <!-- 8-step progress dots -->
         <div class="ml-auto mr-[var(--space-3)] flex shrink-0 items-center gap-[6px]">
           {#each STEP_DEFS as step}
-            {@const state = getStepState(p, step.backendIdx)}
+            {@const state = getStepState(p, step.backendIdx, pipelineStarted)}
             <div
               class="flex h-[22px] w-[22px] items-center justify-center rounded-full text-[9px] font-bold transition-all {state === 'done' ? '' : state === 'active' ? 'animate-pulse' : ''}"
               style={state === 'done'
@@ -251,7 +214,7 @@
       {#if isExpanded}
         <div class="space-y-[var(--space-2)] border-t border-[var(--border)] px-[var(--space-4)] pb-[var(--space-4)] pt-[var(--space-3)]">
           {#each STEP_DEFS as step}
-            {@const state = getStepState(p, step.backendIdx)}
+            {@const state = getStepState(p, step.backendIdx, pipelineStarted)}
             {@const round = getRoundForStep(p, step.backendIdx)}
 
             <div class="rounded-[var(--radius-md)] bg-[var(--bg-input)] p-[var(--space-3)]">
@@ -311,7 +274,7 @@
           {#if result}
             <div class="mt-[var(--space-3)] rounded-[var(--radius-lg)] border-2 border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)]">
               <div class="mb-[var(--space-3)] flex items-center gap-[var(--space-3)]">
-                <span class="text-[14px] font-bold text-[var(--text-primary)]">👔 {t('invest_cio_verdict')}</span>
+                <span class="text-[14px] font-bold text-[var(--text-primary)]">👔 {t('invest_replay_cio_verdict')}</span>
                 <span
                   class="rounded-[var(--radius-full)] px-[14px] py-1 text-[14px] font-bold"
                   style={getVerdictBadgeStyle(result.finalVerdict)}
