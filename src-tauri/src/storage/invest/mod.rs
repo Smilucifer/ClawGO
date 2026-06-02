@@ -8,6 +8,7 @@ pub mod portfolio;
 pub mod round_cache;
 pub mod scheduler;
 pub mod strategy;
+pub mod stock_data_cache;
 pub mod user_profile;
 pub mod verdict_reviews;
 pub mod verdict_tracking;
@@ -161,6 +162,9 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
 
     // Migration: create macro_cache table (use local conn, DB not yet in static)
     macro_cache::create_table(&conn)?;
+
+    // Migration: create stock_data_cache table (permanent per-symbol data cache)
+    stock_data_cache::create_table(&conn)?;
 
     // FTS5 virtual table for domain_insights full-text search
     conn.execute_batch(

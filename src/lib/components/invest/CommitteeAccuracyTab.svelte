@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from '$lib/i18n/index.svelte';
   import { getTransport } from '$lib/transport';
+  import { investStore } from '$lib/stores/invest-store.svelte';
 
   const invoke = <T,>(cmd: string, args?: Record<string, unknown>) =>
     getTransport().invoke<T>(cmd, args);
@@ -39,6 +40,9 @@
     hit: boolean;
     flatThreshold?: number;
   }
+
+  /** symbol → Chinese name lookup from holdings */
+  const nameMap = $derived(new Map(investStore.holdings.filter(h => h.name).map(h => [h.symbol, h.name!])));
 
   let summary = $state<ReviewSummary | null>(null);
   let detail = $state<ReviewEntry[]>([]);
@@ -224,7 +228,7 @@
           <tbody>
             {#each detail as d}
               <tr class="border-b border-[var(--border)] last:border-0">
-                <td class="px-[var(--space-3)] py-[var(--space-2)] font-[var(--font-mono)] text-[var(--text-primary)]">{d.symbol}</td>
+                <td class="px-[var(--space-3)] py-[var(--space-2)] text-[var(--text-primary)]" title={d.symbol}>{nameMap.get(d.symbol) ?? d.symbol}</td>
                 <td class="px-[var(--space-3)] py-[var(--space-2)]">{d.verdictDate}</td>
                 <td class="px-[var(--space-3)] py-[var(--space-2)]">{d.verdictType}</td>
                 <td class="px-[var(--space-3)] py-[var(--space-2)] text-right">{d.windowDays}d</td>

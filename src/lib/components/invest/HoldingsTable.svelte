@@ -85,8 +85,10 @@
           {@const pnlPct = h.kind === 'hold' ? getPnlPct(h) : null}
           <tr class="border-b border-[var(--border)] transition-colors last:border-b-0 hover:bg-[var(--bg-hover)]">
             <td class="px-[var(--space-4)] py-[var(--space-3)]">
-              <span class="text-[13px] font-semibold text-[var(--text-primary)] font-[var(--font-mono)]">{h.symbol}</span>
-              <span class="ml-[var(--space-2)] text-[12px] text-[var(--text-secondary)]">{h.name ?? ''}</span>
+              <span class="text-[13px] font-semibold text-[var(--text-primary)]" title={h.symbol}>{h.name || h.symbol}</span>
+              {#if h.name}
+                <span class="ml-[var(--space-2)] text-[11px] font-[var(--font-mono)] text-[var(--text-tertiary)]">{h.symbol}</span>
+              {/if}
             </td>
             <td class="px-[var(--space-4)] py-[var(--space-3)]">
               {#if h.kind === 'hold'}

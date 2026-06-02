@@ -22,6 +22,9 @@
     return assetTypeMap[symbol] === 'etf' ? 3 : 2;
   }
 
+  /** symbol → Chinese name lookup from holdings */
+  const nameMap = $derived(new Map(investStore.holdings.filter(h => h.name).map(h => [h.symbol, h.name!])));
+
   const filtered = $derived(
     investStore.trades.filter((tr) => {
       if (!showSystemActions && SYSTEM_ACTIONS.has(tr.action)) return false;
@@ -108,7 +111,7 @@
           {#each filtered as tr}
             <tr class="border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--bg-hover)] transition-colors">
               <td class="px-[var(--space-3)] py-[var(--space-2)] text-[12px] text-[var(--text-secondary)]">{new Date(tr.createdAt).toLocaleDateString()}</td>
-              <td class="px-[var(--space-3)] py-[var(--space-2)] font-medium text-[var(--text-primary)]">{tr.symbol}</td>
+              <td class="px-[var(--space-3)] py-[var(--space-2)] font-medium text-[var(--text-primary)]" title={tr.symbol}>{nameMap.get(tr.symbol) ?? tr.symbol}</td>
               <td class="px-[var(--space-3)] py-[var(--space-2)]">
                 <span class={tr.action === 'buy' ? 'text-[var(--color-error)]' : 'text-[var(--color-success)]'}>
                   {tr.action.toUpperCase()}

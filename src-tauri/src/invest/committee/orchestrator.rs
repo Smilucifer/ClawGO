@@ -8,12 +8,13 @@ use super::parser::{parse_role_output, ParsedFields};
 use super::roles::{
     hard_truncate, length_constraint_suffix, load_prompt_for_round, CommitteeRole,
 };
-use super::tools::{execute_tool, fetch_valuation_data, role_tool_defs, tool_result_message};
+use super::tools::{execute_tool, role_tool_defs, tool_result_message};
 use crate::invest::llm::governor::global_governor;
 use crate::invest::llm::{
     collect_stream, CollectedResponse, InvestLlmClient, LlmConfig, Message, ProviderId, ToolDef,
 };
 use crate::invest::regime;
+use crate::storage::invest::stock_data_cache;
 use crate::tushare::client::TushareClient;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -34,6 +35,14 @@ pub struct AssetContext {
     pub rating_summary: Option<String>,  // "买入15/增持3/中性1/减持0/卖出0"
     pub risk_news: Option<String>,       // 最多5条风险新闻
     pub turnover_rate: Option<f64>,
+
+    // ── 8 段补充字段 ──
+    pub circ_mv_yi: Option<f64>,         // 流通市值（亿元）
+    pub roa: Option<f64>,                // ROA%
+    pub debt_to_assets: Option<f64>,     // 资产负债率%
+    pub latest_close: Option<f64>,       // 最新价（rt_k 实时，不缓存）
+    pub pre_close: Option<f64>,          // 昨收价
+    pub data_quality: Vec<String>,       // 缺失字段清单，如 ["PE=N/A", "评级=N/A"]
 }
 
 /// Callback for emitting committee streaming events.
@@ -598,6 +607,146 @@ async fn build_asset_context(
     symbol: &str,
     asset_type: &str,
 ) -> AssetContext {
+    use crate::tushare::client::{DailyBasic, FinaIndicator, ReportRc};
+
+    let mut data_quality: Vec<String> = Vec::new();
+
+    // ── 1. 尝试从 cache 读取所有数据类型 ──
+    let mut cache_entries = stock_data_cache::load_all_latest_for_symbol(symbol)
+        .unwrap_or_default();
+    let has_all = cache_entries.len() >= 3;
+
+    // ── 2. Cache miss → 刷新，只在刷新后重新读取 ──
+    if !has_all {
+        if let Err(e) = refresh_asset_data(client, symbol, asset_type).await {
+            log::warn!("build_asset_context: refresh failed for {}: {}", symbol, e);
+        }
+        cache_entries = stock_data_cache::load_all_latest_for_symbol(symbol)
+            .unwrap_or_default();
+    }
+
+    let find_json = |dt: &str| -> Option<String> {
+        cache_entries.iter().find(|(t, _, _)| t == dt).map(|(_, _, j)| j.clone())
+    };
+
+    // ── 3. 实时价：每次都从 rt_k 获取（不缓存） ──
+    let (latest_close, pre_close) = match client.realtime_quotes(&[symbol]).await {
+        Ok(quotes) => {
+            if let Some(q) = quotes.first() {
+                (Some(q.close), Some(q.pre_close))
+            } else {
+                data_quality.push("最新价=N/A".to_string());
+                (None, None)
+            }
+        }
+        Err(e) => {
+            log::warn!("build_asset_context: realtime_quotes failed for {}: {}", symbol, e);
+            data_quality.push("最新价=N/A".to_string());
+            (None, None)
+        }
+    };
+
+    // ── 4. 解析 daily_basic（typed deserialization）──
+    let (pe_ttm, pb, turnover_rate, total_mv_yi, circ_mv_yi) =
+        if let Some(json) = find_json("daily_basic") {
+            if let Ok(b) = serde_json::from_str::<DailyBasic>(&json) {
+                (
+                    b.pe_ttm,
+                    b.pb,
+                    b.turnover_rate_f.or(b.turnover_rate),
+                    b.total_mv.map(|v| v / 10000.0),
+                    b.circ_mv.map(|v| v / 10000.0),
+                )
+            } else {
+                data_quality.push("PE=N/A".to_string());
+                (None, None, None, None, None)
+            }
+        } else {
+            data_quality.push("PE=N/A".to_string());
+            (None, None, None, None, None)
+        };
+
+    // ── 5. 解析 fina_indicator（typed deserialization）──
+    let (roe, roa, or_yoy, np_yoy, debt_to_assets) =
+        if let Some(json) = find_json("fina_indicator") {
+            if let Ok(f) = serde_json::from_str::<FinaIndicator>(&json) {
+                (f.roe, f.roa, f.or_yoy, f.netprofit_yoy, f.debt_to_assets)
+            } else {
+                (None, None, None, None, None)
+            }
+        } else {
+            data_quality.push("财务指标=N/A".to_string());
+            (None, None, None, None, None)
+        };
+
+    // ── 6. 解析 report_rc（typed deserialization）──
+    let rating_summary = if let Some(json) = find_json("report_rc") {
+        if let Ok(r) = serde_json::from_str::<ReportRc>(&json) {
+            let buy = r.buy_num.unwrap_or(0.0) as i64 + r.strong_buy_num.unwrap_or(0.0) as i64;
+            let hold = r.hold_num.unwrap_or(0.0) as i64;
+            let reduce = r.reduce_num.unwrap_or(0.0) as i64;
+            let sell = r.sell_num.unwrap_or(0.0) as i64;
+            let total = buy + hold + reduce + sell;
+            let neutral = (total - buy - reduce - sell).max(0);
+            Some(format!("买入{}/增持{}/中性{}/减持{}/卖出{}", buy, 0, neutral, reduce, sell))
+        } else {
+            data_quality.push("评级=N/A".to_string());
+            None
+        }
+    } else {
+        data_quality.push("评级=N/A".to_string());
+        None
+    };
+
+    // ── 7. 解析 moneyflow_dc ──
+    let money_flow_summary = find_json("moneyflow_dc").and_then(|json| {
+        serde_json::from_str::<serde_json::Value>(&json).ok()
+            .and_then(|v| v["summary"].as_str().map(|s| s.to_string()))
+    });
+
+    // ── 8. 解析 industry ──
+    let industry = if let Some(json) = find_json("industry") {
+        serde_json::from_str::<serde_json::Value>(&json)
+            .ok()
+            .and_then(|v| v["industry"].as_str().map(|s| s.to_string()))
+    } else if asset_type == "etf" {
+        None
+    } else {
+        data_quality.push("行业=N/A".to_string());
+        None
+    };
+
+    AssetContext {
+        asset_type: asset_type.to_string(),
+        industry,
+        money_flow_summary,
+        pe_ttm,
+        pb,
+        total_mv_yi,
+        roe,
+        or_yoy,
+        np_yoy,
+        rating_summary,
+        risk_news: None, // 由 get_company_news tool 获取，不缓存
+        turnover_rate,
+        circ_mv_yi,
+        roa,
+        debt_to_assets,
+        latest_close,
+        pre_close,
+        data_quality,
+    }
+}
+
+/// 批量刷新标的数据到 stock_data_cache。
+///
+/// 并行调用 tushare API，结果写入永久缓存。
+/// ETF 标的自动跳过 stock_basic 和 report_rc（无数据）。
+async fn refresh_asset_data(
+    client: &TushareClient,
+    symbol: &str,
+    asset_type: &str,
+) -> Result<(), String> {
     use crate::tushare::client::MoneyflowDc;
 
     let today = chrono::Utc::now().format("%Y%m%d").to_string();
@@ -605,78 +754,66 @@ async fn build_asset_context(
         .format("%Y%m%d")
         .to_string();
 
-    // 并行调用独立的 API
-    let (valuation_result, rc_result, mf_result) = tokio::join!(
-        fetch_valuation_data(client, symbol),
+    // 并行调用独立 API
+    let (basic_result, fina_result, rc_result, mf_result) = tokio::join!(
+        client.daily_basic(symbol, None, None, None),
+        client.fina_indicator(symbol, None, None, None),
         client.report_rc(symbol, None),
         client.moneyflow_dc(symbol, &five_days_ago, &today),
     );
 
-    // stock_basic 只在股票时调用（条件性 API，不参与并行）
-    let industry = if asset_type == "stock" {
-        client.stock_basic(Some(symbol)).await.ok()
-            .and_then(|stocks| stocks.first().map(|s| s.industry.clone()))
-    } else {
-        None
-    };
+    // ── 批量写入缓存（单事务，一次 fsync）──
+    // (data_type, data_date, value_json) — symbol is constant
+    let mut entries: Vec<(String, String, String)> = Vec::new();
 
-    let mut ctx = AssetContext {
-        asset_type: asset_type.to_string(),
-        industry,
-        ..Default::default()
-    };
-
-    // 处理估值数据（复用 shared helper）
-    if let Some((pe_ttm, pb, roe, turnover, total_mv_yi)) = valuation_result {
-        ctx.pe_ttm = pe_ttm;
-        ctx.pb = pb;
-        ctx.roe = roe;
-        ctx.turnover_rate = turnover;
-        ctx.total_mv_yi = total_mv_yi;
-    }
-
-    // 处理 fina_indicator 的增速字段（fetch_valuation_data 不含 or_yoy/np_yoy）
-    match client.fina_indicator(symbol, None, None, None).await {
-        Ok(rows) => {
-            if let Some(f) = rows.first() {
-                ctx.or_yoy = f.or_yoy;
-                ctx.np_yoy = f.netprofit_yoy;
+    if let Ok(basics) = &basic_result {
+        if let Some(latest) = basics.first() {
+            if let Ok(json) = serde_json::to_string(latest) {
+                entries.push(("daily_basic".into(), latest.trade_date.clone(), json));
             }
         }
-        Err(e) => {
-            log::warn!("build_asset_context: fina_indicator failed for {}: {}", symbol, e);
+    }
+    if let Ok(finas) = &fina_result {
+        if let Some(latest) = finas.first() {
+            if let Ok(json) = serde_json::to_string(latest) {
+                let date = latest.end_date.clone().unwrap_or_else(|| today.clone());
+                entries.push(("fina_indicator".into(), date, json));
+            }
         }
     }
-
-    // 处理机构评级
-    if let Ok(rows) = rc_result {
-        if let Some(r) = rows.first() {
-            let buy = r.buy_num.unwrap_or(0.0) as i64
-                + r.strong_buy_num.unwrap_or(0.0) as i64;
-            let hold = r.hold_num.unwrap_or(0.0) as i64;
-            let reduce = r.reduce_num.unwrap_or(0.0) as i64;
-            let sell = r.sell_num.unwrap_or(0.0) as i64;
-            let total = buy + hold + reduce + sell;
-            let neutral = (total - buy - reduce - sell).max(0);
-            ctx.rating_summary = Some(format!(
-                "买入{}/增持{}/中性{}/减持{}/卖出{}",
-                buy, 0, neutral, reduce, sell
-            ));
+    if let Ok(rcs) = &rc_result {
+        if let Some(latest) = rcs.first() {
+            if let Ok(json) = serde_json::to_string(latest) {
+                let date = latest.report_date.clone().unwrap_or_else(|| today.clone());
+                entries.push(("report_rc".into(), date, json));
+            }
         }
     }
-
-    // 处理资金流向（复用 MoneyflowDc::format_moneyflow_summary）
-    if let Ok(mf) = mf_result {
+    if let Ok(mf) = &mf_result {
         if !mf.is_empty() {
-            ctx.money_flow_summary = Some(format!(
-                "近{}日{}",
-                mf.len(),
-                MoneyflowDc::format_moneyflow_summary(&mf)
-            ));
+            let summary = MoneyflowDc::format_moneyflow_summary(mf);
+            let summary_json = serde_json::json!({ "summary": summary, "days": mf.len() });
+            entries.push(("moneyflow_dc".into(), today.clone(), summary_json.to_string()));
+        }
+    }
+    if asset_type == "stock" {
+        if let Ok(stocks) = client.stock_basic(Some(symbol)).await {
+            if let Some(s) = stocks.first() {
+                let json = serde_json::json!({ "industry": s.industry });
+                entries.push(("industry".into(), today.clone(), json.to_string()));
+            }
         }
     }
 
-    ctx
+    if !entries.is_empty() {
+        let batch: Vec<(&str, &str, &str, &str)> = entries
+            .iter()
+            .map(|(dt, date, json)| (symbol, dt.as_str(), date.as_str(), json.as_str()))
+            .collect();
+        let _ = stock_data_cache::batch_upsert(&batch);
+    }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -903,6 +1040,7 @@ async fn run_macro_phase(
     config: &CommitteeConfig,
     portfolio_summary: &str,
     emitter: &Option<EventEmitter>,
+    asset_context: &AssetContext,
 ) -> Result<(RoundOutput, u32), String> {
     let role = CommitteeRole::Macro;
     let provider = resolve_provider(config, role);
@@ -911,7 +1049,7 @@ async fn run_macro_phase(
     let asset_name = get_asset_name(symbol).unwrap_or_else(|| symbol.to_string());
     let system_prompt = format!(
         "{}{}",
-        load_prompt_for_round(role, 1, &asset_name, symbol),
+        load_prompt_for_round(role, 1, &asset_name, symbol, asset_context),
         length_constraint_suffix(role)
     );
     let tool_defs = role_tool_defs(role, 1);
@@ -1114,7 +1252,7 @@ async fn run_role_phase(
     let asset_name = get_asset_name(symbol).unwrap_or_else(|| symbol.to_string());
     let mut system_prompt = format!(
         "{}{}",
-        load_prompt_for_round(role, round, &asset_name, symbol),
+        load_prompt_for_round(role, round, &asset_name, symbol, asset_context),
         length_constraint_suffix(role)
     );
 
@@ -1136,108 +1274,46 @@ async fn run_role_phase(
         }
     }
 
+    // CIO: inject asset data summary + data quality into system prompt
+    if role == CommitteeRole::Cio {
+        let mut cio_data = Vec::new();
+        if let Some(ref industry) = asset_context.industry {
+            cio_data.push(format!("行业: {}", industry));
+        }
+        if let Some(ref mf) = asset_context.money_flow_summary {
+            cio_data.push(format!("资金: {}", mf));
+        }
+        if let Some(pe) = asset_context.pe_ttm {
+            cio_data.push(format!("PE: {:.1}", pe));
+        }
+        if let Some(ref rating) = asset_context.rating_summary {
+            cio_data.push(format!("评级: {}", rating));
+        }
+        if !cio_data.is_empty() {
+            system_prompt.push_str(&format!(
+                "\n\n【标的数据摘要】\n{}",
+                cio_data.join("\n")
+            ));
+        }
+        if !asset_context.data_quality.is_empty() {
+            system_prompt.push_str(&format!(
+                "\n\n【数据质量警告】以下字段缺失，请在置信度评估中考虑：\n{}",
+                asset_context.data_quality.join("，")
+            ));
+        }
+    }
+
     let governor = global_governor();
     let _permit = governor.acquire(provider).await;
 
     let mut messages = build_context_messages(round_outputs, symbol, macro_signal, emergency_buffer_cny, portfolio_summary, regime_context, asset_context);
 
-    // 根据角色注入 AssetContext 特定数据
-    if let Some(last) = messages.last_mut() {
-        match role {
-            CommitteeRole::Macro => {
-                // Macro: 注入行业信息（行业敏感度）
-                if let Some(ref industry) = asset_context.industry {
-                    last.content.push_str(&format!("\n\n【行业信息】{}", industry));
-                }
-            }
-            CommitteeRole::Quant => {
-                // Quant: 注入估值指标 + 资金流向
-                let mut quant_data = Vec::new();
-                if let Some(ref mf) = asset_context.money_flow_summary {
-                    quant_data.push(mf.clone());
-                }
-                if let Some(pe) = asset_context.pe_ttm {
-                    quant_data.push(format!("PE_TTM: {:.1}", pe));
-                }
-                if let Some(pb) = asset_context.pb {
-                    quant_data.push(format!("PB: {:.2}", pb));
-                }
-                if let Some(roe) = asset_context.roe {
-                    quant_data.push(format!("ROE: {:.1}%", roe));
-                }
-                if let Some(tr) = asset_context.turnover_rate {
-                    quant_data.push(format!("换手率: {:.2}%", tr));
-                }
-                if !quant_data.is_empty() {
-                    last.content.push_str(&format!(
-                        "\n\n【估值与资金数据】\n{}",
-                        quant_data.join("\n")
-                    ));
-                }
-            }
-            CommitteeRole::Risk => {
-                // Risk: 注入增速数据 + 风险新闻 + 最大回撤
-                if role == CommitteeRole::Risk && round == 1 {
-                    let risk_ctx = build_risk_metrics_context(portfolio_data, symbol, asset_context);
-                    if !risk_ctx.is_empty() {
-                        last.content.push_str(&format!("\n\n{}", risk_ctx));
-                    }
-                }
-                let mut risk_data = Vec::new();
-                if let Some(or_yoy) = asset_context.or_yoy {
-                    risk_data.push(format!("营收增速: {:.1}%", or_yoy));
-                }
-                if let Some(np_yoy) = asset_context.np_yoy {
-                    risk_data.push(format!("净利增速: {:.1}%", np_yoy));
-                }
-                if let Some(ref news) = asset_context.risk_news {
-                    risk_data.push(format!("风险新闻: {}", news));
-                }
-                if !risk_data.is_empty() {
-                    last.content.push_str(&format!(
-                        "\n\n【标的风险数据】\n{}",
-                        risk_data.join("\n")
-                    ));
-                }
-            }
-            CommitteeRole::Cio => {
-                // CIO: 注入全部 AssetContext 摘要（无原始数据）
-                let mut cio_summary = Vec::new();
-                if let Some(ref industry) = asset_context.industry {
-                    cio_summary.push(format!("行业: {}", industry));
-                }
-                if let Some(ref mf) = asset_context.money_flow_summary {
-                    cio_summary.push(format!("资金: {}", mf));
-                }
-                if let Some(pe) = asset_context.pe_ttm {
-                    cio_summary.push(format!("PE: {:.1}", pe));
-                }
-                if let Some(ref rating) = asset_context.rating_summary {
-                    cio_summary.push(format!("评级: {}", rating));
-                }
-                if !cio_summary.is_empty() {
-                    last.content.push_str(&format!(
-                        "\n\n【标的数据摘要】\n{}",
-                        cio_summary.join("\n")
-                    ));
-                }
-            }
-            CommitteeRole::L4Officer => {
-                // L4 行为官: 注入行为数据摘要（从 portfolio_data 和 asset_context）
-                let mut l4_summary = Vec::new();
-                // 计算该资产集中度
-                let conc = concentration_for_symbol(symbol, portfolio_data);
-                l4_summary.push(format!("集中度: {:.1}%", conc));
-                l4_summary.push(format!("可用子弹: {:.0}", portfolio_data.cash));
-                if let Some(ref mf) = asset_context.money_flow_summary {
-                    l4_summary.push(format!("资金: {}", mf));
-                }
-                if !l4_summary.is_empty() {
-                    last.content.push_str(&format!(
-                        "\n\n【行为数据摘要】\n{}",
-                        l4_summary.join("\n")
-                    ));
-                }
+    // Risk R1: 注入组合层面风险指标（集中度/浮盈/回撤）到 user message
+    if role == CommitteeRole::Risk && round == 1 {
+        if let Some(last) = messages.last_mut() {
+            let risk_ctx = build_risk_metrics_context(portfolio_data, symbol, asset_context);
+            if !risk_ctx.is_empty() {
+                last.content.push_str(&format!("\n\n{}", risk_ctx));
             }
         }
     }
@@ -1429,7 +1505,7 @@ pub async fn run_committee(
         }
 
         let (macro_output, macro_tokens) =
-            run_macro_phase(client, symbol, config, &portfolio_summary, &emitter).await?;
+            run_macro_phase(client, symbol, config, &portfolio_summary, &emitter, &asset_context).await?;
         total_tokens += macro_tokens;
 
         if let Some(ref emit) = emitter {

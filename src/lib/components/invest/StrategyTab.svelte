@@ -5,6 +5,9 @@
 
   let { tushareToken }: { tushareToken: string } = $props();
 
+  /** symbol → Chinese name lookup from holdings */
+  const nameMap = $derived(new Map(investStore.holdings.filter(h => h.name).map(h => [h.symbol, h.name!])));
+
   let editing = $state(false);
   let editName = $state('');
   let editMaxSinglePct = $state<number | null>(null);
@@ -140,8 +143,8 @@
           {#if s.targets && s.targets.length > 0}
             <div class="mt-2 flex flex-wrap gap-2">
               {#each s.targets as target}
-                <span class="rounded-[var(--radius-full)] bg-[var(--accent-muted)] px-3 py-1 text-[11px] font-bold text-[var(--accent)]">
-                  {target.symbol} {target.targetPct}%
+                <span class="rounded-[var(--radius-full)] bg-[var(--accent-muted)] px-3 py-1 text-[11px] font-bold text-[var(--accent)]" title={target.symbol}>
+                  {target.name || nameMap.get(target.symbol) || target.symbol} {target.targetPct}%
                 </span>
               {/each}
             </div>

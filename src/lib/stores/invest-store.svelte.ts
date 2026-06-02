@@ -17,6 +17,22 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   return getTransport().invoke<T>(cmd, args);
 }
 
+/** Check if A-share market is currently in trading hours (9:15-11:30 or 13:00-15:00 CST, weekdays) */
+function isMarketOpen(): boolean {
+  const now = new Date();
+  // Convert to CST (UTC+8)
+  const utcHour = now.getUTCHours();
+  const utcMin = now.getUTCMinutes();
+  const cstMinutes = ((utcHour + 8) % 24) * 60 + utcMin;
+  const day = now.getUTCDay(); // 0=Sun, 6=Sat
+  // Weekday check (Mon-Fri); day 0 and 6 are weekends
+  if (day === 0 || day === 6) return false;
+  // Morning session: 9:15 - 11:30 (555 - 690 minutes)
+  if (cstMinutes >= 555 && cstMinutes <= 690) return true;
+  // Afternoon session: 13:00 - 15:00 (780 - 900 minutes)
+  return cstMinutes >= 780 && cstMinutes <= 900;
+}
+
 class InvestStore {
   // ── State ────────────────────────────────────────────────────────────
   holdings = $state<Holding[]>([]);
@@ -32,6 +48,8 @@ class InvestStore {
 
   /** Live price cache: tsCode → PriceQuote */
   priceMap = $state<Record<string, PriceQuote>>({});
+  /** Last successful price refresh timestamp (ms) */
+  lastRefreshAt = $state<number>(0);
 
   // ── Event Watch State ───────────────────────────────────────────────
   events = $state<InvestEvent[]>([]);
@@ -48,6 +66,19 @@ class InvestStore {
   watchHoldings = $derived(this.holdings.filter((h) => h.kind === "watch"));
   holdCount = $derived(this.holdHoldings.length);
   watchCount = $derived(this.watchHoldings.length);
+
+  /** Symbol → Chinese name lookup from holdings + price cache */
+  nameMap = $derived.by(() => {
+    const map = new Map<string, string>();
+    for (const h of this.holdings) {
+      if (h.name) map.set(h.symbol, h.name);
+    }
+    // Enrich from price cache (rt_k returns name)
+    for (const [code, q] of Object.entries(this.priceMap)) {
+      if (q.name && !map.has(code)) map.set(code, q.name);
+    }
+    return map;
+  });
 
   /** All holdings merged into one list: HOLD first, then WATCH, sorted by name */
   mergedHoldings = $derived(
@@ -166,6 +197,9 @@ class InvestStore {
     const syms = this.holdings.map((h) => h.symbol);
     if (syms.length === 0 || !tushareToken) return;
 
+    // Skip rt_k API calls outside A-share trading hours (9:15-11:30, 13:00-15:00 CST, weekdays only)
+    if (!isMarketOpen()) return;
+
     try {
       const quotes = await invoke<RealtimeQuote[]>("get_realtime_quotes", {
         tsCodes: syms,
@@ -187,6 +221,7 @@ class InvestStore {
         }
       }
       this.priceMap = updated;
+      this.lastRefreshAt = Date.now();
     } catch (e) {
       console.warn('[invest] refreshPrices failed:', e);
     }

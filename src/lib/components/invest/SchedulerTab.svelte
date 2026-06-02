@@ -92,6 +92,11 @@
 
   async function saveCron(jobId: string) {
     error = null;
+    editCronValue = editCronValue.trim().replace(/[^0-9a-zA-Z\s\*\/\,\-]/g, '');
+    if (!editCronValue) {
+      error = t('invest_scheduler_save_failed', { error: 'Cron expression cannot be empty' });
+      return;
+    }
     try {
       await invoke('update_cron_schedule', { id: jobId, cronExpr: editCronValue });
       editingJob = null;

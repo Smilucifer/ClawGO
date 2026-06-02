@@ -145,9 +145,9 @@ pub fn load_prompt(role: CommitteeRole) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|_| role.default_prompt().to_string())
 }
 
-/// Load the prompt for a specific round, with `{{asset_name}}` and
-/// `{{asset_symbol}}` placeholder replacement.
+/// Load the prompt for a specific round, with placeholder replacement.
 ///
+/// Replaces all `{{placeholder}}` tokens with actual values from `AssetContext`.
 /// - Macro and CIO always use the same prompt regardless of round.
 /// - Quant uses `QUANT_PROMPT` for R1, `QUANT_R2_PROMPT` for R2+.
 /// - Risk uses `RISK_PROMPT` for R1, `RISK_R2_PROMPT` for R2+.
@@ -158,6 +158,7 @@ pub fn load_prompt_for_round(
     round: u8,
     asset_name: &str,
     asset_symbol: &str,
+    asset_context: &crate::invest::committee::orchestrator::AssetContext,
 ) -> String {
     let round_enum = if round <= 1 { Round::R1 } else { Round::R2 };
     let filename = match role {
@@ -176,8 +177,30 @@ pub fn load_prompt_for_round(
         (CommitteeRole::Cio, _) => CIO_PROMPT.to_string(),
         (CommitteeRole::L4Officer, _) => L4_OFFICER_PROMPT.to_string(),
     });
+
+    let fmt = |v: Option<f64>, decimals: usize| -> String {
+        v.map(|v| format!("{:.1$}", v, decimals))
+            .unwrap_or_else(|| "N/A".to_string())
+    };
+
     raw.replace("{{asset_name}}", asset_name)
         .replace("{{asset_symbol}}", asset_symbol)
+        .replace("{{asset_type}}", &asset_context.asset_type)
+        .replace("{{industry}}", asset_context.industry.as_deref().unwrap_or("N/A"))
+        .replace("{{pe_ttm}}", &fmt(asset_context.pe_ttm, 1))
+        .replace("{{pb}}", &fmt(asset_context.pb, 2))
+        .replace("{{roe}}", &fmt(asset_context.roe, 1))
+        .replace("{{turnover_rate}}", &fmt(asset_context.turnover_rate, 2))
+        .replace("{{money_flow_summary}}", asset_context.money_flow_summary.as_deref().unwrap_or("N/A"))
+        .replace("{{latest_close}}", &fmt(asset_context.latest_close, 2))
+        .replace("{{pre_close}}", &fmt(asset_context.pre_close, 2))
+        .replace("{{circ_mv_yi}}", &fmt(asset_context.circ_mv_yi, 2))
+        .replace("{{roa}}", &fmt(asset_context.roa, 2))
+        .replace("{{debt_to_assets}}", &fmt(asset_context.debt_to_assets, 1))
+        .replace("{{or_yoy}}", &fmt(asset_context.or_yoy, 1))
+        .replace("{{np_yoy}}", &fmt(asset_context.np_yoy, 1))
+        .replace("{{rating_summary}}", asset_context.rating_summary.as_deref().unwrap_or("N/A"))
+        .replace("{{total_mv_yi}}", &fmt(asset_context.total_mv_yi, 2))
 }
 
 /// Save a custom prompt for a role to disk, using round-aware filename mapping
@@ -392,6 +415,15 @@ const RISK_PROMPT: &str = r#"你是投资委员会的 Risk Officer，专门评�
 - `get_recent_committee_verdicts(symbol="{{asset_symbol}}", n=5)` → 上次同资产委员会决策，看决策一致性
 - `get_company_news(symbol="{{asset_symbol}}")` → 个股风险新闻（利空/减持/诉讼/业绩不及等）
 
+**资产上下文**（系统注入，直接引用，禁止自补）：
+- 标的类型: {{asset_type}}
+- 所属行业: {{industry}}
+- 最新价: {{latest_close}}（昨收: {{pre_close}}）
+- 估值: PE={{pe_ttm}}, PB={{pb}}, ROE={{roe}}%, 换手率={{turnover_rate}}%
+- 财务: ROA={{roa}}%, 营收增速={{or_yoy}}%, 净利增速={{np_yoy}}%, 负债率={{debt_to_assets}}%
+- 市值: 总市值={{total_mv_yi}}亿, 流通市值={{circ_mv_yi}}亿
+- 机构评级: {{rating_summary}}
+
 **核心关注（你独有的视角）**：
 1. **集中度**: 该资产已占总资产多少 %？参考 PWM 行业标准（单一资产建议 ≤25-35%，>50% 即为超配）
 2. **子弹**: 可用现金还剩多少？是否有钱加仓
@@ -583,6 +615,11 @@ const L4_OFFICER_PROMPT: &str = r#"你是投资委员会的 L4 执行控制官�
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::invest::committee::orchestrator::AssetContext;
+
+    fn default_ctx() -> AssetContext {
+        AssetContext::default()
+    }
 
     #[test]
     fn test_role_all_count() {
@@ -675,7 +712,7 @@ mod tests {
 
     #[test]
     fn test_load_prompt_for_round_quant_r1() {
-        let prompt = load_prompt_for_round(CommitteeRole::Quant, 1, "沪深300ETF", "000300.SH");
+        let prompt = load_prompt_for_round(CommitteeRole::Quant, 1, "沪深300ETF", "000300.SH", &default_ctx());
         assert!(prompt.contains("量化技术分析师"));
         assert!(prompt.contains("REGIME"));
         assert!(prompt.contains("沪深300ETF"));
@@ -684,7 +721,7 @@ mod tests {
 
     #[test]
     fn test_load_prompt_for_round_quant_r2() {
-        let prompt = load_prompt_for_round(CommitteeRole::Quant, 2, "沪深300ETF", "000300.SH");
+        let prompt = load_prompt_for_round(CommitteeRole::Quant, 2, "沪深300ETF", "000300.SH", &default_ctx());
         assert!(prompt.contains("cross-challenge"));
         assert!(prompt.contains("REGIME"));
         assert!(prompt.contains("调整信号"));
@@ -692,7 +729,7 @@ mod tests {
 
     #[test]
     fn test_load_prompt_for_round_risk_r1() {
-        let prompt = load_prompt_for_round(CommitteeRole::Risk, 1, "贵州茅台", "600519.SH");
+        let prompt = load_prompt_for_round(CommitteeRole::Risk, 1, "贵州茅台", "600519.SH", &default_ctx());
         assert!(prompt.contains("Risk Officer"));
         assert!(prompt.contains("集中度"));
         assert!(prompt.contains("贵州茅台"));
@@ -701,7 +738,7 @@ mod tests {
 
     #[test]
     fn test_load_prompt_for_round_risk_r2() {
-        let prompt = load_prompt_for_round(CommitteeRole::Risk, 2, "贵州茅台", "600519.SH");
+        let prompt = load_prompt_for_round(CommitteeRole::Risk, 2, "贵州茅台", "600519.SH", &default_ctx());
         assert!(prompt.contains("cross-challenge"));
         assert!(prompt.contains("调整信号"));
     }
@@ -709,8 +746,8 @@ mod tests {
     #[test]
     fn test_load_prompt_for_round_macro() {
         // Macro uses same prompt regardless of round
-        let p1 = load_prompt_for_round(CommitteeRole::Macro, 1, "test", "test");
-        let p2 = load_prompt_for_round(CommitteeRole::Macro, 2, "test", "test");
+        let p1 = load_prompt_for_round(CommitteeRole::Macro, 1, "test", "test", &default_ctx());
+        let p2 = load_prompt_for_round(CommitteeRole::Macro, 2, "test", "test", &default_ctx());
         assert_eq!(p1, p2);
         assert!(p1.contains("宏观分析师"));
     }
@@ -718,8 +755,8 @@ mod tests {
     #[test]
     fn test_load_prompt_for_round_cio() {
         // CIO uses same prompt regardless of round
-        let p1 = load_prompt_for_round(CommitteeRole::Cio, 1, "test", "test");
-        let p2 = load_prompt_for_round(CommitteeRole::Cio, 2, "test", "test");
+        let p1 = load_prompt_for_round(CommitteeRole::Cio, 1, "test", "test", &default_ctx());
+        let p2 = load_prompt_for_round(CommitteeRole::Cio, 2, "test", "test", &default_ctx());
         assert_eq!(p1, p2);
         assert!(p1.contains("首席投资官"));
         assert!(p1.contains("裁决"));
@@ -727,7 +764,7 @@ mod tests {
 
     #[test]
     fn test_load_prompt_for_round_placeholder_replacement() {
-        let prompt = load_prompt_for_round(CommitteeRole::Quant, 1, "招商银行", "600036.SH");
+        let prompt = load_prompt_for_round(CommitteeRole::Quant, 1, "招商银行", "600036.SH", &default_ctx());
         assert!(prompt.contains("招商银行"));
         assert!(prompt.contains("600036.SH"));
         assert!(!prompt.contains("{{asset_name}}"));

@@ -2,6 +2,7 @@ use crate::invest::committee::roles::CommitteeRole;
 use crate::invest::llm::types::{Message, ToolDef};
 use crate::invest::macro_refresh;
 use crate::storage::invest::macro_cache;
+use crate::storage::invest::stock_data_cache;
 use crate::tushare::client::TushareClient;
 use serde_json::json;
 
@@ -727,11 +728,26 @@ fn exec_recent_verdicts(symbol: Option<&str>, days: i64) -> Result<String, Strin
 // ---------------------------------------------------------------------------
 
 /// 个股资金流向：近5日主力/散户净流入汇总
+/// Cache-first: 当天缓存有效；miss 时 fallback 到 API。
 async fn exec_moneyflow(symbol: &str) -> Result<String, String> {
+    let today = chrono::Local::now().format("%Y%m%d").to_string();
+
+    // Cache-first: 当天的数据直接用
+    if let Ok(Some((date, json, _))) = stock_data_cache::load_latest(symbol, "moneyflow_dc") {
+        if date == today {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&json) {
+                if let Some(summary) = v["summary"].as_str() {
+                    let days = v["days"].as_u64().unwrap_or(5);
+                    return Ok(format!("【{} 近{}日资金流向】\n{}", symbol, days, summary));
+                }
+            }
+        }
+    }
+
+    // Fallback: API
     use crate::tushare::client::MoneyflowDc;
 
     let client = TushareClient::from_settings()?;
-    let today = chrono::Local::now().format("%Y%m%d").to_string();
     let five_days_ago =
         (chrono::Local::now() - chrono::Duration::days(5)).format("%Y%m%d").to_string();
 
@@ -752,32 +768,56 @@ async fn exec_moneyflow(symbol: &str) -> Result<String, String> {
     ))
 }
 
-/// 公司基本信息+估值：PE/PB/ROE/总市值/换手率
-async fn exec_company_info(symbol: &str) -> Result<String, String> {
-    let client = TushareClient::from_settings()?;
-
-    let (pe_str, pb_str, roe_str, mv_str, turnover_str) =
-        match fetch_valuation_data(&client, symbol).await {
-            Some((pe, pb, roe, tr, mv)) => (
-                pe.map(|v| format!("{:.2}", v)).unwrap_or_else(|| "N/A".to_string()),
-                pb.map(|v| format!("{:.2}", v)).unwrap_or_else(|| "N/A".to_string()),
-                roe.map(|v| format!("{:.2}%", v)).unwrap_or_else(|| "N/A".to_string()),
-                mv.map(|v| format!("{:.2}亿", v)).unwrap_or_else(|| "N/A".to_string()),
-                tr.map(|v| format!("{:.2}%", v)).unwrap_or_else(|| "N/A".to_string()),
-            ),
-            None => (
-                "N/A".to_string(),
-                "N/A".to_string(),
-                "N/A".to_string(),
-                "N/A".to_string(),
-                "N/A".to_string(),
-            ),
-        };
-
-    Ok(format!(
+/// Format valuation data into a standard output string.
+fn format_valuation(
+    symbol: &str,
+    pe: Option<f64>,
+    pb: Option<f64>,
+    roe: Option<f64>,
+    total_mv_yi: Option<f64>,
+    turnover: Option<f64>,
+) -> String {
+    let fmt = |v: Option<f64>, suffix: &str| -> String {
+        v.map(|v| format!("{:.2}{}", v, suffix)).unwrap_or_else(|| "N/A".into())
+    };
+    format!(
         "【{} 估值数据】\nPE: {}, PB: {}, ROE: {}, 总市值: {}, 换手率: {}",
-        symbol, pe_str, pb_str, roe_str, mv_str, turnover_str
-    ))
+        symbol,
+        fmt(pe, ""),
+        fmt(pb, ""),
+        fmt(roe, "%"),
+        total_mv_yi.map(|v| format!("{:.2}亿", v)).unwrap_or_else(|| "N/A".into()),
+        fmt(turnover, "%"),
+    )
+}
+
+/// 公司基本信息+估值：PE/PB/ROE/总市值/换手率
+/// Cache-first: 先从 stock_data_cache 读取，miss 时 fallback 到 API。
+async fn exec_company_info(symbol: &str) -> Result<String, String> {
+    use crate::tushare::client::DailyBasic;
+
+    // Cache-first: 用 load_all_latest_for_symbol 避免多次 DB 查询
+    let entries = stock_data_cache::load_all_latest_for_symbol(symbol).unwrap_or_default();
+    let find_json = |dt: &str| -> Option<String> {
+        entries.iter().find(|(t, _, _)| t == dt).map(|(_, _, j)| j.clone())
+    };
+
+    if let Some(json) = find_json("daily_basic") {
+        if let Ok(b) = serde_json::from_str::<DailyBasic>(&json) {
+            let roe = find_json("fina_indicator")
+                .and_then(|fj| serde_json::from_str::<serde_json::Value>(&fj).ok())
+                .and_then(|fv| fv["roe"].as_f64());
+            let total_mv_yi = b.total_mv.map(|v| v / 10000.0);
+            let turnover = b.turnover_rate_f.or(b.turnover_rate);
+            return Ok(format_valuation(symbol, b.pe_ttm, b.pb, roe, total_mv_yi, turnover));
+        }
+    }
+
+    // Fallback: API
+    let client = TushareClient::from_settings()?;
+    let (pe, pb, roe, turnover, mv) = fetch_valuation_data(&client, symbol).await
+        .unwrap_or((None, None, None, None, None));
+    Ok(format_valuation(symbol, pe, pb, roe, mv, turnover))
 }
 
 /// 个股风险新闻：最近5条相关新闻

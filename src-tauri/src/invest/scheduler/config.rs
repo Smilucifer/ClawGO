@@ -121,14 +121,16 @@ pub fn toggle_job(id: &str, enabled: bool) -> Result<(), String> {
 
 /// Update a single job's cron expression and persist.
 pub fn update_cron(id: &str, cron_expr: &str) -> Result<(), String> {
-    // Validate cron expression
-    cron::Schedule::from_str(cron_expr).map_err(|e| format!("Invalid cron: {e}"))?;
+    // Validate cron expression (trim whitespace and stray characters)
+    let cleaned = cron_expr.trim();
+    let cleaned: String = cleaned.chars().filter(|c| c.is_ascii_alphanumeric() || " */,-".contains(*c)).collect();
+    cron::Schedule::from_str(&cleaned).map_err(|e| format!("Invalid cron: {e}"))?;
     let mut jobs = load_jobs();
     let job = jobs
         .iter_mut()
         .find(|j| j.id == id)
         .ok_or_else(|| format!("Job '{}' not found", id))?;
-    job.cron_expr = cron_expr.to_string();
+    job.cron_expr = cleaned;
     save_jobs(&jobs)
 }
 
@@ -167,9 +169,16 @@ pub fn load_dream_config() -> super::super::dreaming::DreamConfig {
 
 /// Save dream config: pipeline params to dream_config.json, scheduler state via save_jobs.
 pub fn save_dream_config(config: &super::super::dreaming::DreamConfig) -> Result<(), String> {
-    // Validate cron expression
-    if !config.invest_cron.is_empty() {
-        cron::Schedule::from_str(&config.invest_cron)
+    // Validate cron expression (trim and strip stray characters)
+    let cleaned_cron: String = if config.invest_cron.is_empty() {
+        String::new()
+    } else {
+        config.invest_cron.trim().chars()
+            .filter(|c| c.is_ascii_alphanumeric() || " */,-".contains(*c))
+            .collect()
+    };
+    if !cleaned_cron.is_empty() {
+        cron::Schedule::from_str(&cleaned_cron)
             .map_err(|e| format!("Invalid cron expression: {e}"))?;
     }
 
@@ -190,7 +199,7 @@ pub fn save_dream_config(config: &super::super::dreaming::DreamConfig) -> Result
     let mut jobs = load_jobs();
     if let Some(j) = jobs.iter_mut().find(|j| j.id == "dream_invest") {
         j.enabled = config.invest_enabled;
-        j.cron_expr = config.invest_cron.clone();
+        j.cron_expr = cleaned_cron;
     }
     save_jobs(&jobs)
 }

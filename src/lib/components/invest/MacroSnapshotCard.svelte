@@ -50,7 +50,7 @@
       {/if}
       <div class="flex items-center gap-[var(--space-2)]">
         <span class="flex-1 text-[12px] text-[var(--text-tertiary)]">{t('invest_macro_from')}</span>
-        <span class="text-[11px] font-[var(--font-mono)] text-[var(--text-secondary)]">{latestVerdict.symbol}</span>
+        <span class="text-[11px] text-[var(--text-secondary)]" title={latestVerdict.symbol}>{latestVerdict.name || latestVerdict.symbol}</span>
       </div>
       <div class="flex items-center gap-[var(--space-2)]">
         <span class="flex-1 text-[12px] text-[var(--text-tertiary)]">{t('invest_macro_signal')}</span>

@@ -172,9 +172,9 @@
                 onclick={() => (symbol = h.symbol)}
               >
                 <span class="truncate">
-                  <span class="font-[var(--font-mono)] text-[11px] opacity-70">{h.symbol}</span>
-                  {#if h.name && h.name !== h.symbol}
-                    <span class="ml-1">{h.name}</span>
+                  <span class="font-medium">{h.name || h.symbol}</span>
+                  {#if h.name}
+                    <span class="ml-1 font-[var(--font-mono)] text-[10px] opacity-50">{h.symbol}</span>
                   {/if}
                 </span>
                 <span class="ml-2 shrink-0 rounded-[var(--radius-sm)] px-1.5 py-0.5 text-[9px] font-semibold {h.kind === 'HOLD' ? 'bg-[rgba(138,154,118,0.15)] text-[#8a9a76]' : 'bg-[var(--accent-muted)] text-[var(--accent)]'}">

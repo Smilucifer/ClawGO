@@ -1,5 +1,48 @@
 # Changelog / 更新日志
 
+## v5.2.5 (2026-06-02)
+
+### 委员会数据缓存 + 8 段注入优化 + 前端名称显示
+
+**核心架构 (3 项):**
+1. **`stock_data_cache` 永久缓存表**: invest.db 新增 `(symbol, data_type, data_date)` 三元主键表，存储 daily_basic/fina_indicator/report_rc/moneyflow_dc/industry 5 类数据，永久保留不设 TTL；`batch_upsert` 单事务写入，5 次 fsync 降为 1 次
+2. **`build_asset_context()` 重写为 cache-first**: 先查 DB → miss 调 `refresh_asset_data()` 批量 API 回写 → `realtime_quotes(rt_k)` 获取盘中实时价（不缓存）；JSON 解析从 `serde_json::Value` 无类型访问改为 `DailyBasic`/`FinaIndicator`/`ReportRc` typed 反序列化，编译期检查字段名
+3. **`load_prompt_for_round()` 统一占位符替换**: 接收 `&AssetContext` 参数，一次性替换 17 个 `{{placeholder}}`；删除 `run_role_phase` 中 5 个角色的 ~100 行重复 user message 追加块
+
+**委员会 Prompt 注入 (2 项):**
+4. **Risk prompt 资产上下文**: 新增完整 `**资产上下文**` 段，包含最新价/昨收/PE/PB/ROE/ROA/营收增速/净利增速/负债率/总市值/流通市值/机构评级，全部从 AssetContext 占位符注入，不再通过 user message 追加
+5. **CIO 数据质量警告**: system prompt 末尾追加 `【数据质量警告】` 列出缺失字段，CIO 据此调低置信度
+
+**工具层优化 (2 项):**
+6. **`exec_company_info` cache-first**: 先查 `stock_data_cache::load_all_latest_for_symbol`（单次 DB 查询），miss 才调 API；提取 `format_valuation()` 共享函数消除缓存/API 两路径的格式化重复
+7. **`exec_moneyflow` cache-first**: 当天缓存直接返回，miss 调 API
+
+**前端优化 (4 项):**
+8. **持仓/交易/策略中文名显示**: HoldingsTable/TradeLogTab/StrategyTab/CommitteeAccuracyTab/CommitteeReplayTab/MacroSnapshotCard 统一用 `nameMap` 显示中文名（`h.name || h.symbol`），symbol 降为 monospace 副文本 + title tooltip
+9. **InvestStore.nameMap**: `$derived` 计算 `Map<symbol, name>`，合并 holdings + priceMap 双源
+10. **盘中交易时段检测**: `isMarketOpen()` 判断 A 股交易时段（9:15-11:30 / 13:00-15:00 CST 工作日），盘外跳过 `rt_k` 调用避免无效 API 请求
+11. **`lastRefreshAt` 时间戳**: 记录最近一次成功刷新时间
+
+**Cron 表达式清理 (2 项):**
+12. **前端 sanitize**: DreamingConfigPanel + SchedulerTab 保存前 trim + 正则过滤非 cron 字符
+13. **后端 sanitize**: `update_cron` + `save_dream_config` trim + 过滤，防止非法字符写入
+
+**Simplify 审查修复 (6 项):**
+14. **Bug**: `data_quality` PE=N/A 重复推送 → 删除 post-parse 守卫，只保留 cache-miss 时推送
+15. **Efficiency**: `load_all_latest_for_symbol` 双调用 → `mut` 变量复用，只在 refresh 后重读
+16. **Simplification**: 7 元素 tuple 含死变量 `_close_from_daily` → 删除，tuple 缩为 5 元素
+17. **Reuse**: `serde_json::Value` 无类型解析 → typed `DailyBasic`/`FinaIndicator`/`ReportRc` 反序列化
+18. **Reuse**: `exec_company_info` 两路径重复格式化 → `format_valuation()` 共享函数
+19. **Efficiency**: `refresh_asset_data` 5 次独立 `upsert_cache` → `batch_upsert` 单事务
+
+**涉及文件:**
+- 新增：`src-tauri/src/storage/invest/stock_data_cache.rs`
+- 修改：`src-tauri/src/storage/invest/mod.rs`、`src-tauri/src/invest/committee/orchestrator.rs`、`src-tauri/src/invest/committee/roles.rs`、`src-tauri/src/invest/committee/tools.rs`、`src-tauri/src/invest/scheduler/config.rs`、`src/lib/stores/invest-store.svelte.ts`、6 个 invest Svelte 组件
+
+**验证：** cargo check ✅ 0 warning / npm build ✅
+
+---
+
 ## v5.2.4 (2026-06-02)
 
 ### 批量实时行情 API + 交易流程简化 + 返回率计算修复
