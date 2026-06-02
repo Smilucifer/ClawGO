@@ -203,9 +203,9 @@ class InvestStore {
     const syms = this.holdings.map((h) => h.symbol);
     if (syms.length === 0 || !tushareToken) return;
 
-    // After hours, only fetch if we don't already have cached prices.
-    // The backend falls back to daily close, which doesn't change — no point re-fetching.
-    if (!isMarketOpen() && this.lastRefreshAt > 0 && Object.keys(this.priceMap).length > 0) return;
+    // After hours, skip only if every current holding already has a cached price.
+    // A newly added watch item without a price entry must still be fetched.
+    if (!isMarketOpen() && this.lastRefreshAt > 0 && syms.every((s) => s in this.priceMap)) return;
 
     try {
       const quotes = await invoke<RealtimeQuote[]>("get_realtime_quotes", {
@@ -380,6 +380,22 @@ class InvestStore {
       });
     } finally {
       await this.loadAll();
+      // Pre-populate price cache so the watch item shows a price immediately
+      // without waiting for the next refreshPrices cycle (especially important
+      // when the market is closed and the isMarketOpen guard would skip).
+      if (price > 0) {
+        const updated = { ...this.priceMap };
+        updated[symbol] = {
+          tsCode: symbol,
+          name,
+          close: price,
+          change: 0,
+          pctChg: 0,
+          vol: 0,
+          amount: 0,
+        };
+        this.priceMap = updated;
+      }
     }
   }
 

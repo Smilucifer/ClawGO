@@ -624,8 +624,9 @@ pub fn run() {
     }
 
     // Initialize invest database (holdings, trades, verdicts, events, scheduler).
+    // Failure is non-fatal: with_conn/with_conn_mut will retry via lazy init.
     if let Err(e) = crate::storage::invest::init_db(&data_dir) {
-        log::warn!("Failed to init invest DB: {}", e);
+        log::error!("Failed to init invest DB at startup (will retry on first access): {}", e);
     }
 
     // Sync trade calendar on startup (non-blocking).

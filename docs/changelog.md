@@ -1,5 +1,42 @@
 # Changelog / 更新日志
 
+## v5.2.8 (2026-06-02)
+
+### invest DB 迁移修复 + Watch 价格刷新 + 代码审查优化
+
+**迁移修复 (3 项):**
+1. **`trades_new` 列数修复**: 3 处迁移块的 `CREATE TABLE trades_new` 从 10 列补齐至 12 列（补 `name TEXT, trade_date TEXT`），解决 `SELECT * FROM trades` 返回 12 值但目标表仅 10 列导致的 `has 10 columns but 12 values were supplied` 错误
+2. **显式列名列表**: 所有迁移的 `INSERT ... SELECT *` 替换为显式 12 列名列表，消除列顺序依赖
+3. **`CREATE_TABLES_SQL` 同步**: 首次建库的 trades 表定义同步补上 `name TEXT, trade_date TEXT`，避免新库 schema 与代码 INSERT 12 列不一致
+
+**Fallback 机制 (3 项):**
+4. **`init_with_fallback`**: 包装 `init_db_inner`，迁移失败时自动删除 `.db` + `-wal` + `-shm` 文件后重试一次，用户无需手动删除残缺数据库
+5. **`delete_db_files` 辅助函数**: 统一清理 SQLite 主文件及 WAL/SHM 侧文件，供 fallback 和 lazy init 复用
+6. **Lazy init 路由统一**: `with_conn` / `with_conn_mut` 的 lazy init 路径同样走 `init_with_fallback`，保证任何入口初始化失败都能自愈
+
+**Watch 价格刷新修复 (2 项):**
+7. **`refreshPrices` 收盘守卫修复**: `Object.keys(this.priceMap).length > 0` 改为 `syms.every(s => s in this.priceMap)`，只要任一持仓没缓存就不跳过，解决新 watch 项在收盘后永远拿不到价格的 bug
+8. **`addToWatch` 价格预填**: 添加 watch 后立即将用户输入的价格写入 `priceMap`，不等下一次刷新周期，解决添加后显示"—"的问题
+
+**Bug 修复 (1 项):**
+9. **EventWatchTab 类型修复**: `t()` 的 `scanResult` 参数 `fetched`/`filtered`/`saved` 从 `number` 包装为 `String()`，修复 3 个 `svelte-check` 类型错误
+
+**Simplify 审查修复 (6 项):**
+10. **`invest_db_path` 提取**: db_path 构建从 3 处重复收敛为 1 个 helper，`ensure_dir` 错误处理统一（lazy init 路径不再静默吞错）
+11. **`ensure_conn` 提取**: `with_conn` / `with_conn_mut` 的 7 行 lazy init 块收敛为 `ensure_conn(&mut guard)` 单行调用
+12. **`has_column` 提取**: 5 处 `pragma_table_info` 列检查迁移块从 6-8 行收敛为 `if !has_column(&conn, table, col)`，返回类型统一为 `bool`
+13. **冗余迁移块删除**: 迁移块 2（add_watch）和迁移块 3（delete_watch）删除 — 第一个迁移块已包含全部 8 个 action，后续为无用 no-op，每次冷启动多跑 2 个空事务
+14. **`delete_db_files` 简化**: `["", "-wal", "-shm"]` + 条件分支改为 `["db", "db-wal", "db-shm"]` 直接迭代
+15. **`init_db` 签名调整**: `data_dir` 参数改为 `_data_dir`（内部通过 `invest_db_path()` 获取），统一路径来源
+
+**涉及文件:**
+- `src-tauri/src/storage/invest/mod.rs` — 迁移修复 + fallback + 6 项 simplify（invest_db_path/ensure_conn/has_column/迁移块删除）
+- `src-tauri/src/lib.rs` — 启动日志级别
+- `src/lib/stores/invest-store.svelte.ts` — refreshPrices 守卫 + addToWatch 价格预填
+- `src/lib/components/invest/EventWatchTab.svelte` — String() 类型包装
+
+---
+
 ## v5.2.6 (2026-06-02)
 
 ### 持仓名称持久化 + 收盘价格修复 + 代码搜索 + 数据初始化 + 持仓编辑 + 手动交易

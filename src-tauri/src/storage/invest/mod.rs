@@ -20,12 +20,72 @@ use std::sync::Mutex;
 
 static DB: Mutex<Option<Connection>> = Mutex::new(None);
 
-pub fn init_db(data_dir: &Path) -> Result<(), String> {
+/// Resolve the invest.db path, creating the parent directory if needed.
+fn invest_db_path() -> Result<std::path::PathBuf, String> {
+    let data_dir = crate::storage::data_dir();
     let invest_dir = data_dir.join("invest");
     crate::storage::ensure_dir(&invest_dir).map_err(|e| format!("create invest dir: {}", e))?;
-    let db_path = invest_dir.join("invest.db");
+    Ok(invest_dir.join("invest.db"))
+}
 
-    let conn = Connection::open(&db_path)
+/// Initialize the invest database and store the connection in the static `DB`.
+/// Called once at app startup from `lib.rs`.
+pub fn init_db(_data_dir: &Path) -> Result<(), String> {
+    let db_path = invest_db_path()?;
+    let conn = init_with_fallback(&db_path)?;
+    let mut guard = DB.lock().map_err(|e| format!("lock db: {}", e))?;
+    *guard = Some(conn);
+    Ok(())
+}
+
+/// Open and migrate the DB; if it fails, delete the file (incl. WAL/SHM)
+/// and retry once with a fresh database.
+fn init_with_fallback(db_path: &Path) -> Result<Connection, String> {
+    match init_db_inner(db_path) {
+        Ok(conn) => Ok(conn),
+        Err(e) => {
+            log::warn!("invest DB init failed ({}), deleting and retrying with fresh DB", e);
+            delete_db_files(db_path);
+            init_db_inner(db_path)
+                .map_err(|e2| format!("invest DB retry also failed: {}", e2))
+        }
+    }
+}
+
+/// Remove the SQLite database file and its WAL/SHM sidecars.
+fn delete_db_files(db_path: &Path) {
+    for ext in ["db", "db-wal", "db-shm"] {
+        let p = db_path.with_extension(ext);
+        if p.exists() {
+            let _ = std::fs::remove_file(&p);
+        }
+    }
+}
+
+/// Lazy-init helper: ensure the static `DB` guard holds a live connection.
+/// Called by `with_conn` and `with_conn_mut` when the guard is `None`.
+fn ensure_conn(guard: &mut Option<Connection>) -> Result<(), String> {
+    log::warn!("invest DB was not initialized, attempting lazy init");
+    let db_path = invest_db_path()?;
+    let conn = init_with_fallback(&db_path)?;
+    *guard = Some(conn);
+    Ok(())
+}
+
+/// Check whether a table column exists.
+fn has_column(conn: &Connection, table: &str, col: &str) -> bool {
+    conn.query_row(
+        &format!("SELECT COUNT(*) FROM pragma_table_info('{}') WHERE name='{}'", table, col),
+        [],
+        |r| r.get::<_, i64>(0),
+    )
+    .unwrap_or(0)
+        > 0
+}
+
+/// Core initialization: open DB, run migrations, return the Connection.
+fn init_db_inner(db_path: &Path) -> Result<Connection, String> {
+    let conn = Connection::open(db_path)
         .map_err(|e| format!("open invest.db: {}", e))?;
 
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")
@@ -35,33 +95,15 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
         .map_err(|e| format!("create tables: {}", e))?;
 
     // Migration: add stance column to events table if missing
-    {
-        let has_stance: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM pragma_table_info('events') WHERE name='stance'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap_or(0);
-        if has_stance == 0 {
-            conn.execute_batch("ALTER TABLE events ADD COLUMN stance TEXT DEFAULT 'neutral';")
-                .map_err(|e| format!("Failed to add stance column: {}", e))?;
-        }
+    if !has_column(&conn, "events", "stance") {
+        conn.execute_batch("ALTER TABLE events ADD COLUMN stance TEXT DEFAULT 'neutral';")
+            .map_err(|e| format!("Failed to add stance column: {}", e))?;
     }
 
     // Migration: add asset_type column to holdings table if missing
-    {
-        let has_asset_type: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM pragma_table_info('holdings') WHERE name='asset_type'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap_or(0);
-        if has_asset_type == 0 {
-            conn.execute_batch("ALTER TABLE holdings ADD COLUMN asset_type TEXT NOT NULL DEFAULT 'stock';")
-                .map_err(|e| format!("Failed to add asset_type column: {}", e))?;
-        }
+    if !has_column(&conn, "holdings", "asset_type") {
+        conn.execute_batch("ALTER TABLE holdings ADD COLUMN asset_type TEXT NOT NULL DEFAULT 'stock';")
+            .map_err(|e| format!("Failed to add asset_type column: {}", e))?;
     }
 
     // Add UNIQUE index on (source, title) for event dedup
@@ -70,8 +112,11 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
     )
     .map_err(|e| format!("Failed to add events dedup index: {}", e))?;
 
-    // Migrate trades table to include 'cash_adjust' action.
-    // SQLite doesn't support ALTER CHECK, so we rebuild the table.
+    // Migrate trades table: rebuild to include name/trade_date columns and
+    // the complete action CHECK constraint (including cash_adjust/add_watch/delete_watch).
+    // SQLite doesn't support ALTER CHECK, so we rebuild via trades_new.
+    // On an old DB that already has name/trade_date, this is a no-op.
+    // On a DB with a mismatched schema, init_with_fallback will wipe and retry.
     conn.execute_batch(
         "BEGIN;
         CREATE TABLE IF NOT EXISTS trades_new (
@@ -79,77 +124,20 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
             symbol TEXT NOT NULL,
             currency TEXT NOT NULL DEFAULT 'CNY',
             kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
-            action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_watch_to_hold', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust', 'add_watch')),
+            action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_watch_to_hold', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust', 'add_watch', 'delete_watch')),
             shares REAL,
             price REAL,
             amount REAL,
             notes TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            name TEXT,
+            trade_date TEXT
         );
-        INSERT OR IGNORE INTO trades_new SELECT * FROM trades;
+        INSERT OR IGNORE INTO trades_new (id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date) SELECT id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date FROM trades;
         DROP TABLE IF EXISTS trades;
         ALTER TABLE trades_new RENAME TO trades;
         COMMIT;"
     ).map_err(|e| format!("migrate trades table: {}", e))?;
-
-    // Migration: add 'add_watch' action to trades CHECK constraint.
-    conn.execute_batch(
-        "BEGIN;
-        CREATE TABLE IF NOT EXISTS trades_new (
-            id TEXT PRIMARY KEY,
-            symbol TEXT NOT NULL,
-            currency TEXT NOT NULL DEFAULT 'CNY',
-            kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
-            action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_watch_to_hold', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust', 'add_watch')),
-            shares REAL,
-            price REAL,
-            amount REAL,
-            notes TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        INSERT OR IGNORE INTO trades_new SELECT * FROM trades;
-        DROP TABLE IF EXISTS trades;
-        ALTER TABLE trades_new RENAME TO trades;
-        COMMIT;"
-    ).map_err(|e| format!("migrate trades add_watch action: {}", e))?;
-
-    // Migration: add 'delete_watch' action to trades CHECK constraint.
-    {
-        let has_delete_watch: i32 = conn.query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('trades') WHERE name='action'",
-            [],
-            |r| r.get(0),
-        ).unwrap_or(0);
-        // Only migrate if the trades table exists and doesn't already have delete_watch
-        if has_delete_watch > 0 {
-            let check: String = conn.query_row(
-                "SELECT sql FROM sqlite_master WHERE type='table' AND name='trades'",
-                [],
-                |r| r.get(0),
-            ).unwrap_or_default();
-            if !check.contains("delete_watch") {
-                conn.execute_batch(
-                    "BEGIN;
-                    CREATE TABLE IF NOT EXISTS trades_new (
-                        id TEXT PRIMARY KEY,
-                        symbol TEXT NOT NULL,
-                        currency TEXT NOT NULL DEFAULT 'CNY',
-                        kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
-                        action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_watch_to_hold', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust', 'add_watch', 'delete_watch')),
-                        shares REAL,
-                        price REAL,
-                        amount REAL,
-                        notes TEXT,
-                        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-                    );
-                    INSERT OR IGNORE INTO trades_new SELECT * FROM trades;
-                    DROP TABLE IF EXISTS trades;
-                    ALTER TABLE trades_new RENAME TO trades;
-                    COMMIT;"
-                ).map_err(|e| format!("migrate trades delete_watch action: {}", e))?;
-            }
-        }
-    }
 
     // Migration: create verdict_reviews table (use local conn, DB not yet in static)
     verdict_reviews::create_table(&conn)?;
@@ -189,78 +177,41 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
     ).map_err(|e| format!("create domain_insights_fts triggers: {e}"))?;
 
     // Migration: add name column to verdicts table if missing
-    {
-        let has_name: i32 = conn.query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('verdicts') WHERE name='name'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
-        if has_name == 0 {
-            conn.execute_batch("ALTER TABLE verdicts ADD COLUMN name TEXT;")
-                .map_err(|e| format!("Failed to add name column to verdicts: {}", e))?;
-        }
+    if !has_column(&conn, "verdicts", "name") {
+        conn.execute_batch("ALTER TABLE verdicts ADD COLUMN name TEXT;")
+            .map_err(|e| format!("Failed to add name column to verdicts: {}", e))?;
     }
 
     // Migration: add initial_balance column to cash table if missing
-    {
-        let has_initial: i32 = conn.query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('cash') WHERE name='initial_balance'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
-        if has_initial == 0 {
-            conn.execute_batch("ALTER TABLE cash ADD COLUMN initial_balance REAL;")
-                .map_err(|e| format!("Failed to add initial_balance column: {}", e))?;
-        }
+    if !has_column(&conn, "cash", "initial_balance") {
+        conn.execute_batch("ALTER TABLE cash ADD COLUMN initial_balance REAL;")
+            .map_err(|e| format!("Failed to add initial_balance column: {}", e))?;
     }
 
     // Migration: add family_support column to user_profile table if missing
-    {
-        let has_col: i32 = conn.query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('user_profile') WHERE name='family_support'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
-        if has_col == 0 {
-            conn.execute_batch("ALTER TABLE user_profile ADD COLUMN family_support TEXT;")
-                .map_err(|e| format!("Failed to add family_support column: {}", e))?;
-        }
+    if !has_column(&conn, "user_profile", "family_support") {
+        conn.execute_batch("ALTER TABLE user_profile ADD COLUMN family_support TEXT;")
+            .map_err(|e| format!("Failed to add family_support column: {}", e))?;
     }
 
-    // Migration: add name and trade_date columns to trades table if missing
-    {
-        let mut stmt = conn
-            .prepare("SELECT name FROM pragma_table_info('trades')")
-            .map_err(|e| format!("prepare column check: {}", e))?;
-        let cols: Vec<String> = stmt
-            .query_map([], |r| r.get(0))
-            .map_err(|e| format!("query columns: {}", e))?
-            .filter_map(|r| r.ok())
-            .collect();
-        let has_name = cols.iter().any(|c| c == "name");
-        let has_trade_date = cols.iter().any(|c| c == "trade_date");
-
-        if !has_name {
-            conn.execute_batch("ALTER TABLE trades ADD COLUMN name TEXT;")
-                .map_err(|e| format!("Failed to add name column to trades: {}", e))?;
-            // Backfill name from current holdings
-            conn.execute_batch(
-                "UPDATE trades SET name = (SELECT h.name FROM holdings h WHERE h.symbol = trades.symbol AND h.currency = trades.currency AND h.kind = trades.kind AND h.name IS NOT NULL) WHERE name IS NULL AND action IN ('buy', 'add_watch', 'convert_watch_to_hold');"
-            ).map_err(|e| format!("backfill trade names: {}", e))?;
-        }
-        if !has_trade_date {
-            conn.execute_batch("ALTER TABLE trades ADD COLUMN trade_date TEXT;")
-                .map_err(|e| format!("Failed to add trade_date column to trades: {}", e))?;
-        }
+    // Migration: add name and trade_date columns to trades table if missing.
+    // NOTE: the trades rebuild migration above already creates trades with these
+    // columns. This block handles DBs where trades was created by CREATE_TABLES_SQL
+    // (which already includes name/trade_date) but the rebuild was skipped.
+    if !has_column(&conn, "trades", "name") {
+        conn.execute_batch("ALTER TABLE trades ADD COLUMN name TEXT;")
+            .map_err(|e| format!("Failed to add name column to trades: {}", e))?;
+        conn.execute_batch(
+            "UPDATE trades SET name = (SELECT h.name FROM holdings h WHERE h.symbol = trades.symbol AND h.currency = trades.currency AND h.kind = trades.kind AND h.name IS NOT NULL) WHERE name IS NULL AND action IN ('buy', 'add_watch', 'convert_watch_to_hold');"
+        ).map_err(|e| format!("backfill trade names: {}", e))?;
+    }
+    if !has_column(&conn, "trades", "trade_date") {
+        conn.execute_batch("ALTER TABLE trades ADD COLUMN trade_date TEXT;")
+            .map_err(|e| format!("Failed to add trade_date column to trades: {}", e))?;
     }
 
-    let mut guard = DB.lock().map_err(|e| format!("lock db: {}", e))?;
-    *guard = Some(conn);
     log::info!("invest.db initialized at {:?}", db_path);
-    Ok(())
+    Ok(conn)
 }
 
 /// Clear all invest tables for data re-initialization.
@@ -299,8 +250,11 @@ pub fn with_conn<F, R>(f: F) -> Result<R, String>
 where
     F: FnOnce(&Connection) -> Result<R, String>,
 {
-    let guard = DB.lock().map_err(|e| format!("lock invest db: {}", e))?;
-    let conn = guard.as_ref().ok_or_else(|| "invest.db not initialized".to_string())?;
+    let mut guard = DB.lock().unwrap_or_else(|e| e.into_inner());
+    if guard.is_none() {
+        ensure_conn(&mut *guard)?;
+    }
+    let conn = guard.as_ref().unwrap(); // safe: just ensured Some
     f(conn)
 }
 
@@ -308,8 +262,11 @@ pub fn with_conn_mut<F, R>(f: F) -> Result<R, String>
 where
     F: FnOnce(&mut Connection) -> Result<R, String>,
 {
-    let mut guard = DB.lock().map_err(|e| format!("lock invest db: {}", e))?;
-    let conn = guard.as_mut().ok_or_else(|| "invest.db not initialized".to_string())?;
+    let mut guard = DB.lock().unwrap_or_else(|e| e.into_inner());
+    if guard.is_none() {
+        ensure_conn(&mut *guard)?;
+    }
+    let conn = guard.as_mut().unwrap(); // safe: just ensured Some
     f(conn)
 }
 
@@ -341,7 +298,9 @@ CREATE TABLE IF NOT EXISTS trades (
     price REAL,
     amount REAL,
     notes TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    name TEXT,
+    trade_date TEXT
 );
 
 CREATE TABLE IF NOT EXISTS cash (

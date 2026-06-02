@@ -125,9 +125,9 @@
       {:else}
         <span class="text-[var(--text-secondary)]">
           {t('invest.eventWatch.scanResult', {
-            fetched: store.lastScanResult.fetched,
-            filtered: store.lastScanResult.filtered,
-            saved: store.lastScanResult.saved,
+            fetched: String(store.lastScanResult.fetched),
+            filtered: String(store.lastScanResult.filtered),
+            saved: String(store.lastScanResult.saved),
           })}
         </span>
       {/if}
