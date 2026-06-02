@@ -29,7 +29,7 @@ pub fn default_jobs() -> Vec<CronJob> {
         CronJob {
             id: "pnl_snapshot".into(),
             name: "PnL 快照".into(),
-            cron_expr: "30 9,11 * * 1-5".into(),
+            cron_expr: "0 30 9,11 * * 1-5".into(),
             interval_min: None,
             enabled: true,
             requires_trading_day: true,
@@ -41,7 +41,7 @@ pub fn default_jobs() -> Vec<CronJob> {
         CronJob {
             id: "verdict_review".into(),
             name: "Verdict Review".into(),
-            cron_expr: "0 17 * * 1-5".into(),
+            cron_expr: "0 0 17 * * 1-5".into(),
             interval_min: None,
             enabled: true,
             requires_trading_day: true,
@@ -53,7 +53,7 @@ pub fn default_jobs() -> Vec<CronJob> {
         CronJob {
             id: "event_scan".into(),
             name: "Event Watch 扫描".into(),
-            cron_expr: "*/30 8-22 * * 1-5".into(),
+            cron_expr: "0 */30 8-22 * * 1-5".into(),
             interval_min: None,
             enabled: true,
             requires_trading_day: false,
@@ -65,7 +65,7 @@ pub fn default_jobs() -> Vec<CronJob> {
         CronJob {
             id: "dream_invest".into(),
             name: "Dreaming (投资)".into(),
-            cron_expr: "0 3 * * *".into(),
+            cron_expr: "0 0 3 * * *".into(),
             interval_min: None,
             enabled: false,
             requires_trading_day: true,
@@ -77,7 +77,7 @@ pub fn default_jobs() -> Vec<CronJob> {
         CronJob {
             id: "daily_report".into(),
             name: "每日报告".into(),
-            cron_expr: "0 22 * * 1-5".into(),
+            cron_expr: "0 0 22 * * 1-5".into(),
             interval_min: None,
             enabled: true,
             requires_trading_day: true,
@@ -89,7 +89,7 @@ pub fn default_jobs() -> Vec<CronJob> {
         CronJob {
             id: "macro_refresh".into(),
             name: "宏观指标缓存刷新".into(),
-            cron_expr: "*/15 8-22 * * 1-5".into(),
+            cron_expr: "0 */15 8-22 * * 1-5".into(),
             interval_min: None,
             enabled: true,
             requires_trading_day: true,

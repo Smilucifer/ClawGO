@@ -455,6 +455,16 @@ impl TushareClient {
         Self::daily_api(ts_code) == "fund_daily"
     }
 
+    /// 返回日线 API 中代表"价格"的字段名。
+    /// 股票 `daily` 使用 `close`；ETF/基金 `fund_daily` 使用 `adj_nav`（复权单位净值）。
+    fn price_field(ts_code: &str) -> &'static str {
+        if Self::is_etf_code(ts_code) {
+            "adj_nav"
+        } else {
+            "close"
+        }
+    }
+
     /// Fetch daily bars (日线行情) for a stock or ETF within a date range.
     /// Automatically selects `fund_daily` for ETF codes and `daily` for stocks.
     pub async fn daily(
@@ -477,7 +487,7 @@ impl TushareClient {
         let open_idx = fields.iter().position(|f| f == "open");
         let high_idx = fields.iter().position(|f| f == "high");
         let low_idx = fields.iter().position(|f| f == "low");
-        let close_idx = fields.iter().position(|f| f == "close");
+        let close_idx = fields.iter().position(|f| f == Self::price_field(ts_code));
         let pre_close_idx = fields.iter().position(|f| f == "pre_close");
         let change_idx = fields.iter().position(|f| f == "change");
         let pct_chg_idx = fields.iter().position(|f| f == "pct_chg");
@@ -654,34 +664,51 @@ impl TushareClient {
         Ok(funds)
     }
 
-    /// Get the latest close price for a given stock or ETF.
-    /// Automatically selects `fund_daily` for ETF codes and `daily` for stocks.
+    /// Get the latest price for a given stock or ETF.
+    /// 盘中尝试 `rt_k` 实时行情；失败或非盘中降级到日线收盘价。
     pub async fn get_latest_price(&self, ts_code: &str) -> Result<f64, String> {
+        // 1) 尝试 rt_k 获取盘中实时价（股票和场内 ETF 均支持）
+        if let Ok(resp) = self
+            .call_api("rt_k", serde_json::json!({ "ts_code": ts_code }), "")
+            .await
+        {
+            if let Some(price) = Self::parse_realtime_quotes(&resp)
+                .into_iter()
+                .find(|q| q.close > 0.0)
+                .map(|q| q.close)
+            {
+                return Ok(price);
+            }
+        }
+
+        // 2) 降级到日线：stock → daily(close)；ETF → fund_daily(adj_nav)
+        let pf = Self::price_field(ts_code);
+        let fields_str = format!("ts_code,trade_date,{pf}");
         let resp = self
             .call_api(
                 Self::daily_api(ts_code),
                 serde_json::json!({ "ts_code": ts_code }),
-                "ts_code,trade_date,close",
+                &fields_str,
             )
             .await?;
 
         let fields = &resp.data.fields;
-        let close_idx = fields
+        let price_idx = fields
             .iter()
-            .position(|f| f == "close")
-            .ok_or("field 'close' not found in response")?;
+            .position(|f| f == pf)
+            .ok_or_else(|| format!("field '{pf}' not found in response"))?;
 
         resp.data
             .items
             .first()
-            .and_then(|row| get_f64(row, close_idx))
+            .and_then(|row| get_f64(row, price_idx))
             .ok_or_else(|| format!("no daily data for {ts_code}"))
     }
 
     /// 批量获取实时行情（盘中最新价）。
     ///
     /// - 股票：使用 `rt_k` 接口（返回盘中最新价）
-    /// - ETF/基金：`rt_k` 可能不支持，降级到 `fund_daily`（返回前一交易日结算价）
+    /// - ETF/基金：先尝试 `rt_k`，失败再降级到 `fund_daily`（前一交易日净值）
     ///
     /// 返回的 `RealtimeQuote.close` 始终是最新的可用价格。
     pub async fn realtime_quotes(
@@ -698,43 +725,51 @@ impl TushareClient {
 
         let mut results: Vec<RealtimeQuote> = Vec::new();
 
-        // ── Stocks via rt_k ────────────────────────────────────────────
-        if !stock_codes.is_empty() {
-            let codes_str = stock_codes.join(",");
+        // ── Stocks + ETFs: try rt_k, fall back to daily for missing ───
+        for codes in [stock_codes, etf_codes] {
+            if codes.is_empty() {
+                continue;
+            }
+            let codes_str = codes.join(",");
+            let mut handled = Vec::new();
             match self
                 .call_api("rt_k", serde_json::json!({ "ts_code": codes_str }), "")
                 .await
             {
                 Ok(resp) => {
-                    results.extend(Self::parse_realtime_quotes(&resp));
+                    let quotes = Self::parse_realtime_quotes(&resp);
+                    for q in &quotes {
+                        handled.push(q.ts_code.clone());
+                    }
+                    results.extend(quotes);
                 }
                 Err(e) => {
-                    log::warn!("rt_k failed for stocks, falling back to daily: {e}");
-                    let futs: Vec<_> = stock_codes
-                        .iter()
-                        .map(|c| self.fallback_daily_quote(c))
-                        .collect();
-                    for quote in futures_util::future::join_all(futs).await {
-                        if let Ok(q) = quote {
-                            results.push(q);
-                        }
-                    }
+                    log::warn!("rt_k failed, falling back to daily: {e}");
                 }
             }
-        }
-
-        // ── ETFs via fund_daily (rt_k likely unsupported) ──────────────
-        let etf_futs: Vec<_> = etf_codes
-            .iter()
-            .map(|c| self.fallback_daily_quote(c))
-            .collect();
-        for quote in futures_util::future::join_all(etf_futs).await {
-            if let Ok(q) = quote {
-                results.push(q);
-            }
+            // Fall back for any codes not returned by rt_k
+            let missing: Vec<&str> = codes
+                .iter()
+                .filter(|c| !handled.iter().any(|h| h == *c))
+                .copied()
+                .collect();
+            results.extend(self.fallback_many(&missing).await);
         }
 
         Ok(results)
+    }
+
+    /// 批量降级：并发调用 `fallback_daily_quote`，忽略失败项。
+    async fn fallback_many(&self, codes: &[&str]) -> Vec<RealtimeQuote> {
+        if codes.is_empty() {
+            return Vec::new();
+        }
+        let futs: Vec<_> = codes.iter().map(|c| self.fallback_daily_quote(c)).collect();
+        futures_util::future::join_all(futs)
+            .await
+            .into_iter()
+            .filter_map(|r| r.ok())
+            .collect()
     }
 
     /// Parse `rt_k` API response into `RealtimeQuote` list.
@@ -745,7 +780,10 @@ impl TushareClient {
         let open_idx = fields.iter().position(|f| f == "open");
         let high_idx = fields.iter().position(|f| f == "high");
         let low_idx = fields.iter().position(|f| f == "low");
-        let close_idx = fields.iter().position(|f| f == "close");
+        let close_idx = fields
+            .iter()
+            .position(|f| f == "close")
+            .or_else(|| fields.iter().position(|f| f == "adj_nav"));
         let pre_close_idx = fields.iter().position(|f| f == "pre_close");
         let vol_idx = fields.iter().position(|f| f == "vol");
         let amount_idx = fields.iter().position(|f| f == "amount");
@@ -777,6 +815,7 @@ impl TushareClient {
     }
 
     /// 降级方案：通过 `daily`/`fund_daily` 获取最新一条日线作为实时价替代。
+    /// 对于 ETF/基金，`fund_daily` 没有 `close` 字段，使用 `adj_nav`（复权单位净值）代替。
     async fn fallback_daily_quote(&self, ts_code: &str) -> Result<RealtimeQuote, String> {
         let resp = self
             .call_api(
@@ -791,7 +830,7 @@ impl TushareClient {
         let open_idx = fields.iter().position(|f| f == "open");
         let high_idx = fields.iter().position(|f| f == "high");
         let low_idx = fields.iter().position(|f| f == "low");
-        let close_idx = fields.iter().position(|f| f == "close");
+        let close_idx = fields.iter().position(|f| f == Self::price_field(ts_code));
         let pre_close_idx = fields.iter().position(|f| f == "pre_close");
         let vol_idx = fields.iter().position(|f| f == "vol");
         let amount_idx = fields.iter().position(|f| f == "amount");

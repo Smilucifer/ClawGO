@@ -162,7 +162,7 @@ fn spawn_event_scanner_cron() {
 async fn run_event_scan_once() -> Result<crate::invest::event_scanner::ScanResult, String> {
     let (tushare, client, llm_config) = crate::commands::invest::build_scan_clients()?;
 
-    crate::invest::event_scanner::scan_events(&tushare, &client, &llm_config, None).await
+    crate::invest::event_scanner::scan_events(&tushare, &client, &llm_config, None, crate::invest::event_scanner::DEFAULT_LANGUAGE).await
 }
 
 pub fn run() {

@@ -46,6 +46,7 @@ pub fn create_table_if_not_exists() -> Result<(), String> {
 
 /// Register a verdict for automatic daily price tracking.
 /// Called when a verdict is archived by the committee.
+/// Deduplicates: same (symbol, verdict_date) keeps only one active tracking entry.
 pub fn start_tracking(
     verdict_id: &str,
     symbol: &str,
@@ -53,6 +54,24 @@ pub fn start_tracking(
     verdict_date: &str,
 ) -> Result<(), String> {
     with_conn_mut(|conn| {
+        // Check if there is already an active tracking for this (symbol, date)
+        let existing: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM verdict_tracking WHERE symbol = ?1 AND verdict_date = ?2 AND status = 'active' LIMIT 1",
+                params![symbol, verdict_date],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if existing.is_some() {
+            // Already tracking this symbol for this date — skip duplicate
+            log::info!(
+                "Skipping duplicate tracking: symbol={} date={} verdict_id={}",
+                symbol, verdict_date, verdict_id
+            );
+            return Ok(());
+        }
+
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         conn.execute(
             "INSERT INTO verdict_tracking (verdict_id, symbol, verdict_type, verdict_date, status, created_at)

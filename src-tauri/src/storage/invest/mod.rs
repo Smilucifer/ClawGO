@@ -263,6 +263,38 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Clear all invest tables for data re-initialization.
+/// Uses sqlite_master to enumerate all user tables (no hardcoded list).
+pub fn clear_all_invest_data() -> Result<(), String> {
+    with_conn_mut(|conn| {
+        let tx = conn.transaction().map_err(|e| format!("begin tx: {}", e))?;
+
+        // Collect all non-internal tables
+        let tables: Vec<String> = {
+            let mut stmt = tx
+                .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite%'")
+                .map_err(|e| format!("prepare: {}", e))?;
+            let rows = stmt
+                .query_map([], |r| r.get::<_, String>(0))
+                .map_err(|e| format!("query: {}", e))?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
+
+        // Delete all rows from each table
+        for table in &tables {
+            tx.execute(&format!("DELETE FROM [{}]", table), [])
+                .map_err(|e| format!("delete from {}: {}", table, e))?;
+        }
+        // Reset all autoincrement counters
+        tx.execute("DELETE FROM sqlite_sequence", [])
+            .map_err(|e| format!("reset sqlite_sequence: {}", e))?;
+
+        tx.commit().map_err(|e| format!("commit: {}", e))?;
+        log::info!("All {} invest tables cleared", tables.len());
+        Ok(())
+    })
+}
+
 pub fn with_conn<F, R>(f: F) -> Result<R, String>
 where
     F: FnOnce(&Connection) -> Result<R, String>,

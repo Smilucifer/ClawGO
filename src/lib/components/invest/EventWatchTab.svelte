@@ -115,6 +115,25 @@
     </div>
   </div>
 
+  <!-- Scan result feedback -->
+  {#if store.lastScanResult}
+    <div class="flex items-center gap-3 px-[var(--space-4)] py-[var(--space-1)] text-[11px] border-b border-[var(--border)]/50 {store.lastScanResult.errors.length > 0 ? 'bg-[var(--color-warning-bg)]/30' : 'bg-[var(--color-success-bg)]/20'}">
+      {#if store.lastScanResult.errors.length > 0}
+        <span class="text-[var(--color-warning)]">
+          {t('invest.eventWatch.scanErrors')}: {store.lastScanResult.errors.join('; ')}
+        </span>
+      {:else}
+        <span class="text-[var(--text-secondary)]">
+          {t('invest.eventWatch.scanResult', {
+            fetched: store.lastScanResult.fetched,
+            filtered: store.lastScanResult.filtered,
+            saved: store.lastScanResult.saved,
+          })}
+        </span>
+      {/if}
+    </div>
+  {/if}
+
   <!-- Filters -->
   <div class="flex items-center gap-2 px-[var(--space-4)] py-[var(--space-2)] border-b border-[var(--border)]">
     <!-- Time window -->

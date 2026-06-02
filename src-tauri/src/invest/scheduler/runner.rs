@@ -25,6 +25,7 @@ pub async fn dispatch_job(id: &str) -> Result<String, String> {
                 &llm_client,
                 &llm_config,
                 None,
+                crate::invest::event_scanner::DEFAULT_LANGUAGE,
             )
             .await?;
             Ok(format!(

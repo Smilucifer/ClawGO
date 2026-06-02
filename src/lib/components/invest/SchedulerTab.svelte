@@ -107,14 +107,19 @@
   }
 
   function humanCron(expr: string): string {
+    // Normalize: if 6-field (seconds prefix), drop the first field for display
+    const parts = expr.trim().split(/\s+/);
+    const normalized = parts.length === 6 ? parts.slice(1).join(' ') : expr;
     const map: Record<string, string> = {
       '30 9,11 * * 1-5': 'Weekdays 9:30, 11:00',
       '0 13,15 * * 1-5': 'Weekdays 13:00, 15:00',
       '0 17 * * 1-5': 'Weekdays 17:00',
       '*/30 8-22 * * 1-5': 'Weekdays every 30min (8-22h)',
       '0 3 * * *': 'Daily 03:00',
+      '*/15 8-22 * * 1-5': 'Weekdays every 15min (8-22h)',
+      '0 22 * * 1-5': 'Weekdays 22:00',
     };
-    return map[expr] || expr;
+    return map[normalized] || map[expr] || expr;
   }
 
   function statusColor(status?: string): string {

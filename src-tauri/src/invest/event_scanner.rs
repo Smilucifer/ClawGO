@@ -82,8 +82,11 @@ pub fn classify_severity(title: &str, body: &str) -> Option<Severity> {
 
 // ── LLM normalization ──
 
-/// Default system prompt for event normalization.
-const DEFAULT_NORMALIZER_PROMPT: &str = r#"你是一个A股财经新闻分析师。对以下新闻/公告进行结构化提取。
+/// Default language for backend-initiated scans (no frontend context).
+pub const DEFAULT_LANGUAGE: &str = "zh-CN";
+
+/// Default system prompt for event normalization (Chinese).
+const DEFAULT_NORMALIZER_PROMPT_ZH: &str = r#"你是一个A股财经新闻分析师。对以下新闻/公告进行结构化提取。
 
 对每条新闻输出一个JSON数组，每个元素包含：
 - one_line_claim: 一句话摘要（≤30字）
@@ -93,6 +96,26 @@ const DEFAULT_NORMALIZER_PROMPT: &str = r#"你是一个A股财经新闻分析师
 
 只输出JSON数组，不要其他文字。"#;
 
+/// Default system prompt for event normalization (English).
+const DEFAULT_NORMALIZER_PROMPT_EN: &str = r#"You are an A-share financial news analyst. Extract structured data from the following news/announcements.
+
+Output a JSON array, each element containing:
+- one_line_claim: one-line summary (≤50 chars)
+- stance: bullish / bearish / neutral
+- severity: high / medium / low
+- affected_symbols: array of A-share stock codes (6-digit format, e.g. "600519")
+
+Output only the JSON array, no other text."#;
+
+/// Get the default normalizer prompt for the given language.
+pub fn default_normalizer_prompt(language: &str) -> &'static str {
+    if language.starts_with("en") {
+        DEFAULT_NORMALIZER_PROMPT_EN
+    } else {
+        DEFAULT_NORMALIZER_PROMPT_ZH
+    }
+}
+
 /// Normalize a batch of raw events using LLM.
 /// Returns normalized results in the same order as input.
 /// Falls back to rule-based severity on parse failure.
@@ -100,7 +123,7 @@ pub async fn normalize_events(
     client: &dyn InvestLlmClient,
     config: &LlmConfig,
     raw_events: &[RawEvent],
-    system_prompt: Option<&str>,
+    system_prompt: &str,
 ) -> Vec<NormalizedEvent> {
     if raw_events.is_empty() {
         return vec![];
@@ -119,7 +142,7 @@ pub async fn normalize_events(
         ));
     }
 
-    let system = system_prompt.unwrap_or(DEFAULT_NORMALIZER_PROMPT);
+    let system = system_prompt;
     let messages = vec![Message::user(items)];
 
     // Call LLM
@@ -156,6 +179,7 @@ pub async fn scan_events(
     llm_client: &dyn InvestLlmClient,
     llm_config: &LlmConfig,
     normalizer_prompt: Option<&str>,
+    language: &str,
 ) -> Result<ScanResult, String> {
     use chrono::{Local, Duration as ChronoDuration};
 
@@ -327,7 +351,8 @@ pub async fn scan_events(
     }
 
     // 5. Normalize via LLM
-    let normalized = normalize_events(llm_client, llm_config, &filtered_events, normalizer_prompt).await;
+    let effective_prompt = normalizer_prompt.unwrap_or_else(|| default_normalizer_prompt(language));
+    let normalized = normalize_events(llm_client, llm_config, &filtered_events, effective_prompt).await;
 
     // 6. Save to DB (dedup by source+title via INSERT OR IGNORE)
     let mut saved = 0usize;

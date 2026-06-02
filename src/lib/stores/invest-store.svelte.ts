@@ -1,4 +1,5 @@
 import { getTransport } from "$lib/transport";
+import { currentLocale } from "$lib/i18n/index.svelte";
 import type {
   Holding,
   Trade,
@@ -60,6 +61,7 @@ class InvestStore {
   });
   scanStatus = $state<ScanStatus | null>(null);
   isScanning = $state<boolean>(false);
+  lastScanResult = $state<ScanResult | null>(null);
 
   // ── Derived ──────────────────────────────────────────────────────────
   holdHoldings = $derived(this.holdings.filter((h) => h.kind === "hold"));
@@ -563,12 +565,15 @@ class InvestStore {
   async triggerScan(): Promise<void> {
     this.error = null;
     this.isScanning = true;
+    this.lastScanResult = null;
     try {
       const result = await invoke<ScanResult>("scan_events", {
         normalizerPrompt: null,
+        language: currentLocale(),
       });
+      this.lastScanResult = result;
       if (result.errors && result.errors.length > 0) {
-        console.warn("scan warnings:", result.errors);
+        console.debug("scan warnings:", result.errors);
       }
       // Refresh events and status after scan (parallel)
       await Promise.all([this.fetchEvents(), this.fetchScanStatus()]);

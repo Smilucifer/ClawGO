@@ -9,35 +9,59 @@
 2. **`recalculate_holdings_inner` 名称恢复**: buy/add_watch 操作从 `trade.name` 设置持仓名称，确保卖出后名称不丢失；convert_watch_to_hold 保留已有名称
 3. **`investStore.nameMap` 三源合并**: `$derived` 计算 `Map<symbol, name>`，合并 holdings + priceMap + trades 三源，所有组件统一使用（替代 4 处本地 nameMap）
 
-**价格修复 (1 项):**
+**价格修复 (2 项):**
 4. **`refreshPrices` 智能守卫**: 移除 `isMarketOpen()` 硬拦截，改为"收盘后已有缓存则跳过"策略 — 首次收盘后获取一次日线收盘价，后续 60s 轮询自动跳过，避免重复 API 调用
+5. **ETF 实时价格修复**: `get_latest_price` 先尝试 `rt_k` 盘中实时价（股票+场内 ETF 均支持），失败再降级到 `daily`/`fund_daily`；`fund_daily` 无 `close` 字段，统一使用 `price_field()` 映射到 `adj_nav`（复权单位净值）；`realtime_quotes` stock/ETF 路径统一为"rt_k 批量→跟踪 missing→fallback"循环，提取 `fallback_many` 辅助方法；`parse_realtime_quotes` 增加 `adj_nav` fallback
 
 **股票搜索增强 (2 项):**
-5. **`stock_basic` ts_code 精确匹配**: 检测 6 位数字+可选 `.SH`/`.SZ` 格式后优先查 `ts_code` 参数，失败再 fallback 到 name 模糊搜索和 symbol 搜索
-6. **`fund_basic` 代码匹配**: ETF 搜索同时匹配 `ts_code` 和基金名称（支持输入 `510300` 直接定位 ETF）
+6. **`stock_basic` ts_code 精确匹配**: 检测 6 位数字+可选 `.SH`/`.SZ` 格式后优先查 `ts_code` 参数，失败再 fallback 到 name 模糊搜索和 symbol 搜索
+7. **`fund_basic` 代码匹配**: ETF 搜索同时匹配 `ts_code` 和基金名称（支持输入 `510300` 直接定位 ETF）
 
 **新功能 (3 项):**
-7. **`init_invest_data` 命令**: 系统页新增数据初始化按钮，一键同步交易日历（2 年）+设置初始余额
-8. **持仓编辑**: HoldingsTable 新增编辑按钮，支持修改持仓的买入日期/成本价/数量/备注（通过 `update_holding` 命令）
-9. **手动添加交易**: TradeLogTab 新增"手动添加交易"按钮，支持买入/卖出方向选择+自定义日期+备注
+8. **`init_invest_data` 命令**: 系统页新增数据初始化按钮，一键同步交易日历（2 年）+设置初始余额
+9. **持仓编辑**: HoldingsTable 新增编辑按钮，支持修改持仓的买入日期/成本价/数量/备注（通过 `update_holding` 命令）
+10. **手动添加交易**: TradeLogTab 新增"手动添加交易"按钮，支持买入/卖出方向选择+自定义日期+备注
 
 **UI 改进 (3 项):**
-10. **TradeDialog 重构**: 新增 `add_trade`/`edit_holding` 两种模式；所有交易操作传入 `name`/`tradeDate`；`title`/`needsSearch`/`canSubmit` 提取为 `$derived` 派生值
-11. **TradeLogTab 增强**: 使用 `investStore.nameMap`（含卖出后名称）；表格显示"中文名 + 代码"双行；CSV 导出增加名称列；`tradeDate()` helper 复用
-12. **CommitteeArchiveTab/CommitteeAccuracyTab/StrategyTab**: 统一使用 `investStore.nameMap` 替代本地 nameMap，卖出后的标的也能显示中文名
+11. **TradeDialog 重构**: 新增 `add_trade`/`edit_holding` 两种模式；所有交易操作传入 `name`/`tradeDate`；`title`/`needsSearch`/`canSubmit` 提取为 `$derived` 派生值
+12. **TradeLogTab 增强**: 使用 `investStore.nameMap`（含卖出后名称）；表格显示"中文名 + 代码"双行；CSV 导出增加名称列；`tradeDate()` helper 复用
+13. **CommitteeArchiveTab/CommitteeAccuracyTab/StrategyTab**: 统一使用 `investStore.nameMap` 替代本地 nameMap，卖出后的标的也能显示中文名
 
-**Simplify 审查修复 (6 项):**
-13. **Reuse**: `add_trade`/`edit_holding` 移除动态 `import('$lib/transport')`，改为 `recordTrade()`/`updateHoldingMeta()` store 方法
-14. **Efficiency**: `refreshPrices` 收盘后智能守卫（已有缓存则跳过），`isMarketOpen()` 不再是死代码
-15. **Altitude**: `looks_like_code` 检测从脆弱字符检测改为精确 6 位数字+.SH/.SZ 匹配
-16. **Simplification**: `portfolio.rs` 提取 `TRADE_COLUMNS` 常量+`trade_from_row()` 辅助函数，消除 3 处 12 列重复
-17. **Simplification**: `mod.rs` 合并两处 `pragma_table_info` 迁移块为一次查询
-18. **Simplification**: `TradeLogTab` CSV 导出复用 `tradeDate()` helper
+**Simplify 审查修复 (12 项):**
+14. **Reuse**: `add_trade`/`edit_holding` 移除动态 `import('$lib/transport')`，改为 `recordTrade()`/`updateHoldingMeta()` store 方法
+15. **Efficiency**: `refreshPrices` 收盘后智能守卫（已有缓存则跳过），`isMarketOpen()` 不再是死代码
+16. **Altitude**: `looks_like_code` 检测从脆弱字符检测改为精确 6 位数字+.SH/.SZ 匹配
+17. **Simplification**: `portfolio.rs` 提取 `TRADE_COLUMNS` 常量+`trade_from_row()` 辅助函数，消除 3 处 12 列重复
+18. **Simplification**: `mod.rs` 合并两处 `pragma_table_info` 迁移块为一次查询
+19. **Simplification**: `TradeLogTab` CSV 导出复用 `tradeDate()` helper
+20. **Reuse**: `daily()`/`fallback_daily_quote()` 统一使用 `price_field()` 替代 inline `.or_else(|| adj_nav)` 重复
+21. **Simplification**: `get_latest_price()` rt_k 路径 4 层嵌套改为 `parse_realtime_quotes()` + `find()`，2 行
+22. **Simplification+Altitude**: Stock/ETF `realtime_quotes` 两段重复 try-then-fallback 合并为统一循环
+23. **Reuse**: 提取 `fallback_many()` 辅助方法，消除 stock/ETF 两处 `join_all(fallback_daily_quote)` 重复
+24. **Efficiency**: ETF `HashSet<String>` 改为 `Vec<String>` + `any()`，小集合无需哈希开销
+25. **Altitude**: `parse_realtime_quotes` 增加 `adj_nav` fallback，ETF rt_k 响应也能正确解析
+
+**Bug 修复 (5 项 + 7 项审查修复):**
+26. **数据初始化重写**: `init_invest_data` 改为清空所有 invest 表 → 同步交易日历 → 设初始余额；`clear_all_invest_data` 从 `sqlite_master` 动态枚举表名（无硬编码列表），单事务批量删除，`sqlite_sequence` 全量重置
+27. **命中率统计单位**: `verdict_tracking::start_tracking` 增加 `(symbol, verdict_date)` 去重 — 同日同 symbol 的多个 CIO 裁决只追踪一条
+28. **Cron 6 字段修复**: 全部 6 个默认定时任务 cron 表达式从 5 字段 UNIX 格式修正为 6 字段（补秒字段）；`cron` crate v0.15 要求秒字段，此前所有定时任务静默跳过未执行
+29. **事件扫描语言感知**: `scan_events` 增加 `language` 参数，LLM 归一化 prompt 按语言切换（中/英文）；前端 `triggerScan` 传递 `currentLocale()`
+30. **扫描结果反馈**: `triggerScan` 保存 `ScanResult`，EventWatchTab 展示扫描完成摘要（条数统计/错误信息）
+
+**Simplify 审查修复 (7 项):**
+31. **Altitude**: `clear_all_invest_data` 改为 `conn.transaction()` + `sqlite_master` 动态表名，消除硬编码列表 + 缺 `trade_calendar` + `sqlite_sequence` 漂移
+32. **Simplification**: `humanCron` 按字段数（5 vs 6）判断替代 regex `/^0\s+/` 误匹配
+33. **Reuse**: `"zh-CN"` 提取为 `event_scanner::DEFAULT_LANGUAGE` 常量，3 处调用统一引用
+34. **Simplification**: `normalize_events` 签名 `Option<&str>` → `&str`，消除双层默认
+35. **Simplification**: 扫描警告 `console.warn` → `console.debug`（UI 已展示）
+36. **Simplification**: 初始化成功后清空余额输入框
+37. **Altitude**: `text-[#b89a6a]` → `text-[var(--color-warning)]` 设计系统一致性
 
 **涉及文件:**
-- 修改：`src-tauri/src/storage/invest/portfolio.rs`、`mod.rs`、`src-tauri/src/commands/invest.rs`、`src-tauri/src/tushare/client.rs`、`src-tauri/src/lib.rs`
+- 修改：`src-tauri/src/storage/invest/portfolio.rs`、`mod.rs`、`verdict_tracking.rs`、`src-tauri/src/commands/invest.rs`、`src-tauri/src/tushare/client.rs`、`src-tauri/src/lib.rs`
+- 修改：`src-tauri/src/invest/event_scanner.rs`、`src-tauri/src/invest/scheduler/mod.rs`、`runner.rs`
 - 修改：`src/lib/stores/invest-store.svelte.ts`、`src/lib/types.ts`、`src/routes/invest/+page.svelte`
-- 修改：`src/lib/components/invest/TradeDialog.svelte`、`TradeLogTab.svelte`、`HoldingsTable.svelte`、`CommitteeArchiveTab.svelte`、`CommitteeAccuracyTab.svelte`、`StrategyTab.svelte`
+- 修改：`src/lib/components/invest/TradeDialog.svelte`、`TradeLogTab.svelte`、`HoldingsTable.svelte`、`CommitteeArchiveTab.svelte`、`CommitteeAccuracyTab.svelte`、`StrategyTab.svelte`、`EventWatchTab.svelte`、`SchedulerTab.svelte`
 - 修改：`messages/en.json`、`messages/zh-CN.json`
 
 ---

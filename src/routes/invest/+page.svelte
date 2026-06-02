@@ -71,6 +71,7 @@
   let confirmDeleteWatch = $state<{ open: boolean; symbol: string; name: string }>({ open: false, symbol: '', name: '' });
   let initLoading = $state(false);
   let initResult = $state<string | null>(null);
+  let initBalance = $state('');
 
   const invoke = <T,>(cmd: string, args?: Record<string, unknown>) =>
     getTransport().invoke<T>(cmd, args);
@@ -245,23 +246,33 @@
             <div class="text-[13px] font-semibold text-[var(--text-primary)]">{t('invest_data_init')}</div>
             <div class="text-[11px] text-[var(--text-tertiary)]">{t('invest_data_init_desc')}</div>
           </div>
-          <button
-            class="rounded-[var(--radius-md)] bg-[var(--accent)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] font-medium text-[var(--bg-base)] transition-colors hover:opacity-90 disabled:opacity-40"
-            disabled={!tushareToken || initLoading}
-            onclick={async () => {
-              initLoading = true;
-              initResult = null;
-              try {
-                initResult = await investStore.initInvestData(tushareToken);
-              } catch (e) {
-                initResult = String(e);
-              } finally {
-                initLoading = false;
-              }
-            }}
-          >
-            {initLoading ? '...' : t('invest_data_init_btn')}
-          </button>
+          <div class="flex items-center gap-2">
+            <input
+              type="number"
+              placeholder={t('invest_data_init_balance')}
+              bind:value={initBalance}
+              class="w-36 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+            />
+            <button
+              class="rounded-[var(--radius-md)] bg-[var(--accent)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] font-medium text-[var(--bg-base)] transition-colors hover:opacity-90 disabled:opacity-40"
+              disabled={!tushareToken || initLoading}
+              onclick={async () => {
+                initLoading = true;
+                initResult = null;
+                try {
+                  const bal = initBalance ? parseFloat(initBalance) : undefined;
+                  initResult = await investStore.initInvestData(tushareToken, bal);
+                  if (!initResult.startsWith('Err')) initBalance = '';
+                } catch (e) {
+                  initResult = String(e);
+                } finally {
+                  initLoading = false;
+                }
+              }}
+            >
+              {initLoading ? '...' : t('invest_data_init_btn')}
+            </button>
+          </div>
         </div>
         {#if initResult !== null}
           <p class="mt-2 text-[11px] text-[var(--text-secondary)]">{initResult}</p>

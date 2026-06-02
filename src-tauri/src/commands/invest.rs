@@ -525,7 +525,7 @@ pub async fn migrate_legacy_portfolio() -> Result<String, String> {
 
 // ── Data Initialization ──────────────────────────────────────────────────────
 
-/// Initialize invest data: sync trade calendar and optionally set initial balance.
+/// Initialize invest data: clear all tables, sync trade calendar, set initial balance.
 /// Returns a summary of what was initialized.
 #[tauri::command]
 pub async fn init_invest_data(
@@ -534,15 +534,18 @@ pub async fn init_invest_data(
 ) -> Result<String, String> {
     let mut steps = Vec::new();
 
-    // 1. Sync trade calendar
+    // 1. Clear all invest tables
+    crate::storage::invest::clear_all_invest_data()?;
+    steps.push("cleared all tables".to_string());
+
+    // 2. Sync trade calendar
     match sync_trade_calendar(token).await {
         Ok(count) => steps.push(format!("trade_calendar: {} days", count)),
         Err(e) => steps.push(format!("trade_calendar: failed ({})", e)),
     }
 
-    // 2. Set initial balance if provided
+    // 3. Set initial balance if provided
     if let Some(balance) = initial_balance {
-        // Update both available cash and initial balance
         portfolio::set_cash(balance)?;
         portfolio::set_initial_cash(balance)?;
         steps.push(format!("initial_balance: ¥{:.2}", balance));
@@ -973,14 +976,17 @@ pub fn build_scan_clients() -> Result<(crate::tushare::TushareClient, crate::inv
 #[tauri::command]
 pub async fn scan_events(
     normalizer_prompt: Option<String>,
+    language: Option<String>,
 ) -> Result<crate::invest::event_scanner::ScanResult, String> {
     let (tushare, client, llm_config) = build_scan_clients()?;
+    let lang = language.as_deref().unwrap_or(crate::invest::event_scanner::DEFAULT_LANGUAGE);
 
     crate::invest::event_scanner::scan_events(
         &tushare,
         &client,
         &llm_config,
         normalizer_prompt.as_deref(),
+        lang,
     )
     .await
 }
