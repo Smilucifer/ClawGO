@@ -81,7 +81,7 @@
 
 <div class="space-y-[var(--space-3)]">
   <!-- ── Top action bar ─────────────────────────────────────────────────── -->
-  <div class="flex items-center justify-between rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-3)]">
+  <div class="flex items-center justify-between rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-3)]">
     <div class="flex items-center gap-[var(--space-3)]">
       <button
         class="flex items-center gap-[var(--space-2)] rounded-[var(--radius-md)] bg-[rgba(138,154,118,0.15)] px-[var(--space-4)] py-[var(--space-2)] text-[12px] font-medium text-[#8a9a76] transition-colors hover:bg-[rgba(138,154,118,0.25)] disabled:cursor-not-allowed disabled:opacity-40"
@@ -110,7 +110,7 @@
 
   <!-- ── Portfolio summary card ─────────────────────────────────────────── -->
   {#if holdCount > 0}
-    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)]">
+    <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-4)]">
       <div class="mb-[var(--space-3)] text-[14px] font-semibold text-[var(--text-primary)]">
         {t('invest_committee_portfolio_summary')}
       </div>
@@ -152,7 +152,7 @@
 
   <!-- ── Empty state ────────────────────────────────────────────────────── -->
   {#if allAssets.length === 0 && !store.streaming}
-    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-8)] text-center text-[12px] text-[var(--text-tertiary)]">
+    <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-8)] text-center text-[12px] text-[var(--text-tertiary)]">
       {t('invest_committee_no_holdings')}
     </div>
   {/if}
@@ -163,7 +163,7 @@
     {@const result = store.results.find((r) => r.symbol === asset.symbol)}
     {@const isExpanded = expandedSymbol === asset.symbol}
 
-    <div class="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] transition-colors">
+    <div class="overflow-hidden rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] transition-colors">
       <!-- Card header (clickable) -->
       <button
         class="flex w-full items-center gap-[var(--space-3)] px-[var(--space-4)] py-[var(--space-3)] text-left transition-colors hover:bg-[var(--bg-hover)]"
@@ -212,7 +212,7 @@
 
       <!-- ── Expanded body ──────────────────────────────────────────────── -->
       {#if isExpanded}
-        <div class="space-y-[var(--space-2)] border-t border-[var(--border)] px-[var(--space-4)] pb-[var(--space-4)] pt-[var(--space-3)]">
+        <div class="space-y-[var(--space-2)] border-t border-border px-[var(--space-4)] pb-[var(--space-4)] pt-[var(--space-3)]">
           {#each STEP_DEFS as step}
             {@const state = getStepState(p, step.backendIdx, pipelineStarted)}
             {@const round = getRoundForStep(p, step.backendIdx)}
@@ -234,7 +234,7 @@
               <!-- Step body -->
               {#if state === 'active'}
                 <div class="flex items-center gap-[var(--space-2)] text-[12px] text-[var(--text-secondary)]">
-                  <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-[var(--border)] border-t-[#3b82f6]"></span>
+                  <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-border border-t-[#3b82f6]"></span>
                   {t('invest_debate_waiting_llm')}
                 </div>
               {:else if round?.parsed?.rawText}
@@ -272,7 +272,7 @@
 
           <!-- ── CIO Verdict Card ────────────────────────────────────────── -->
           {#if result}
-            <div class="mt-[var(--space-3)] rounded-[var(--radius-lg)] border-2 border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)]">
+            <div class="mt-[var(--space-3)] rounded-[var(--radius-lg)] border-2 border-border bg-[var(--bg-card)] p-[var(--space-4)]">
               <div class="mb-[var(--space-3)] flex items-center gap-[var(--space-3)]">
                 <span class="text-[14px] font-bold text-[var(--text-primary)]">👔 {t('invest_replay_cio_verdict')}</span>
                 <span

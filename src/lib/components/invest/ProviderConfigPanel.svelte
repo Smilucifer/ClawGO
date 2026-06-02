@@ -95,7 +95,7 @@
   });
 </script>
 
-<div class="mb-4 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)]">
+<div class="mb-4 rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)]">
   <button
     class="flex w-full items-center justify-between px-[var(--space-4)] py-[var(--space-2)] text-[13px] font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
     onclick={() => (expanded = !expanded)}
@@ -110,7 +110,7 @@
   </button>
 
   {#if expanded}
-    <div class="border-t border-[var(--border)] px-[var(--space-4)] py-[var(--space-3)]">
+    <div class="border-t border-border px-[var(--space-4)] py-[var(--space-3)]">
       {#if investCommitteeStore.configLoading}
         <div class="text-[13px] text-[var(--text-secondary)]">Loading...</div>
       {:else if config}
@@ -120,7 +120,7 @@
             {t('invest_committee_provider')}
           </label>
           <select
-            class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
+            class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
             value={config.selectedProvider}
             onchange={handleProviderChange}
           >
@@ -132,7 +132,7 @@
 
         <!-- Selected provider settings -->
         {#if selectedProvider}
-          <div class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] p-[var(--space-3)]">
+          <div class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] p-[var(--space-3)]">
             <div class="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
               {selectedProvider.providerId}
             </div>
@@ -141,7 +141,7 @@
             </label>
             <input
               type="password"
-              class="mb-2 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
+              class="mb-2 w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-card)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
               value={selectedProvider.apiKey}
               oninput={handleApiKeyInput}
             />
@@ -151,7 +151,7 @@
             </label>
             <input
               type="text"
-              class="mb-2 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
+              class="mb-2 w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-card)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
               value={selectedProvider.baseUrl}
               oninput={handleBaseUrlInput}
             />
@@ -161,7 +161,7 @@
             </label>
             <input
               type="text"
-              class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
+              class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-card)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
               value={selectedProvider.defaultModel}
               oninput={handleModelInput}
             />
@@ -175,7 +175,7 @@
               {t('invest_committee_debate_rounds')}
             </label>
             <select
-              class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
+              class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
               value={config.debateRounds}
               onchange={handleRoundsChange}
             >
@@ -191,7 +191,7 @@
             </label>
             <input
               type="number"
-              class="w-28 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] font-[var(--font-mono)] text-[var(--text-primary)]"
+              class="w-28 rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] font-[var(--font-mono)] text-[var(--text-primary)]"
               value={config.emergencyBufferCny}
               min={0}
               step={10000}

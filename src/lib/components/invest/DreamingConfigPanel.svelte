@@ -147,7 +147,7 @@
     <p class="text-[var(--text-secondary)]">{t('invest_dreaming_loadingConfig')}</p>
   {:else if config}
     <!-- Config section -->
-    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-3">
+    <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-4 space-y-3">
       <h4 class="text-sm font-medium text-[var(--text-primary)]">{t('invest_dreaming_configuration')}</h4>
 
       {#if !isInvest}
@@ -180,7 +180,7 @@
         <div class="flex items-center gap-2">
           <label class="text-xs text-[var(--text-secondary)] w-20">{t('invest_dreaming_cron')}</label>
           <input
-            class="flex-1 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-xs font-[var(--font-mono)] text-[var(--text-primary)]"
+            class="flex-1 rounded-[var(--radius-sm)] border border-border bg-[var(--bg-input)] px-2 py-1 text-xs font-[var(--font-mono)] text-[var(--text-primary)]"
             bind:value={config!.investCron}
           />
         </div>
@@ -189,7 +189,7 @@
           <label class="text-xs text-[var(--text-secondary)] w-20">{t('invest_dreaming_intervalMin')}</label>
           <input
             type="number"
-            class="w-24 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-xs text-[var(--text-primary)] opacity-50"
+            class="w-24 rounded-[var(--radius-sm)] border border-border bg-[var(--bg-input)] px-2 py-1 text-xs text-[var(--text-primary)] opacity-50"
             disabled
             bind:value={config!.userMemoryIntervalMin}
           />
@@ -200,7 +200,7 @@
         <label class="text-xs text-[var(--text-secondary)] w-20">{t('invest_dreaming_lookback')}</label>
         <input
           type="number"
-          class="w-24 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-xs text-[var(--text-primary)]"
+          class="w-24 rounded-[var(--radius-sm)] border border-border bg-[var(--bg-input)] px-2 py-1 text-xs text-[var(--text-primary)]"
           bind:value={config!.lookbackDays}
         />
         <span class="text-xs text-[var(--text-tertiary)]">{t('invest_dreaming_days')}</span>
@@ -211,7 +211,7 @@
         <input
           type="number"
           step="0.05"
-          class="w-24 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-xs text-[var(--text-primary)]"
+          class="w-24 rounded-[var(--radius-sm)] border border-border bg-[var(--bg-input)] px-2 py-1 text-xs text-[var(--text-primary)]"
           bind:value={config!.minScore}
         />
       </div>
@@ -220,7 +220,7 @@
         <label class="text-xs text-[var(--text-secondary)] w-20">{t('invest_dreaming_minCount')}</label>
         <input
           type="number"
-          class="w-24 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-xs text-[var(--text-primary)]"
+          class="w-24 rounded-[var(--radius-sm)] border border-border bg-[var(--bg-input)] px-2 py-1 text-xs text-[var(--text-primary)]"
           bind:value={config!.minCount}
         />
       </div>
@@ -245,7 +245,7 @@
 
     <!-- Last result -->
     {#if lastResult}
-      <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-2">
+      <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-4 space-y-2">
         <h4 class="text-sm font-medium text-[var(--text-primary)]">{t('invest_dreaming_lastResult')}</h4>
         <div class="grid grid-cols-3 gap-2 text-center text-xs">
           <div class="rounded-[var(--radius-sm)] bg-[var(--color-success)]/10 p-2">
@@ -280,14 +280,14 @@
     {/if}
 
     <!-- Trace list -->
-    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-2">
+    <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-4 space-y-2">
       <h4 class="text-sm font-medium text-[var(--text-primary)]">{t('invest_dreaming_recentTraces')}</h4>
       {#if traces.length === 0}
         <p class="text-xs text-[var(--text-secondary)]">{t('invest_dreaming_noTraces')}</p>
       {:else}
         <div class="max-h-60 space-y-2 overflow-y-auto">
           {#each traces as trace}
-            <div class="flex items-center justify-between rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2 text-xs">
+            <div class="flex items-center justify-between rounded-[var(--radius-sm)] border border-border bg-[var(--bg-card)] px-3 py-2 text-xs">
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
                   <span class={statusColor(trace.status)}>{trace.status}</span>

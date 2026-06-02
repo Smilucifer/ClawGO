@@ -39,9 +39,9 @@
   }
 </script>
 
-<div class="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)]">
+<div class="overflow-hidden rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)]">
   <!-- Header -->
-  <div class="flex items-center justify-between border-b border-[var(--border)] px-[var(--space-4)] py-[var(--space-3)]">
+  <div class="flex items-center justify-between border-b border-border px-[var(--space-4)] py-[var(--space-3)]">
     <h3 class="text-[14px] font-semibold text-[var(--text-primary)]">{t('invest_holdings_value')}</h3>
     <div class="flex items-center gap-[var(--space-2)]">
       <div class="flex gap-[var(--space-1)]">
@@ -59,7 +59,7 @@
         >{t('invest_status_watch')} ({investStore.watchCount})</button>
       </div>
       <button
-        class="ml-[var(--space-2)] rounded-[var(--radius-md)] border border-[var(--border)] bg-transparent px-[var(--space-3)] py-1 text-[11px] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+        class="ml-[var(--space-2)] rounded-[var(--radius-md)] border border-border bg-transparent px-[var(--space-3)] py-1 text-[11px] text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
         onclick={onAddWatch}
       >+ {t('invest_add_watch')}</button>
     </div>
@@ -70,7 +70,7 @@
   {:else}
     <table class="w-full">
       <thead>
-        <tr class="border-b border-[var(--border)]">
+        <tr class="border-b border-border">
           <th class="px-[var(--space-4)] py-[var(--space-2)] text-left text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_trade_stock')}</th>
           <th class="px-[var(--space-4)] py-[var(--space-2)] text-left text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_status')}</th>
           <th class="px-[var(--space-4)] py-[var(--space-2)] text-left text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_asset_type')}</th>
@@ -84,7 +84,7 @@
       <tbody>
         {#each filteredHoldings as h}
           {@const pnlPct = h.kind === 'hold' ? getPnlPct(h) : null}
-          <tr class="border-b border-[var(--border)] transition-colors last:border-b-0 hover:bg-[var(--bg-hover)]">
+          <tr class="border-b border-border transition-colors last:border-b-0 hover:bg-[var(--bg-hover)]">
             <td class="px-[var(--space-4)] py-[var(--space-3)]">
               <span class="text-[13px] font-semibold text-[var(--text-primary)]" title={h.symbol}>{h.name || h.symbol}</span>
               {#if h.name}
@@ -119,7 +119,7 @@
             </td>
             <td class="px-[var(--space-4)] py-[var(--space-3)]">
               <button
-                class="rounded-[var(--radius-md)] border border-[var(--border)] bg-transparent px-[8px] py-[2px] text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
+                class="rounded-[var(--radius-md)] border border-border bg-transparent px-[8px] py-[2px] text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
                 onclick={() => onEdit(h)}
               >{t('invest_edit')}</button>
               {#if h.kind === 'hold'}

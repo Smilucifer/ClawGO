@@ -22,7 +22,7 @@
 </script>
 
 <div
-  class="debate-block rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-3)]"
+  class="debate-block rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-3)]"
   style="border-left: 3px solid {roleColor};"
 >
   <!-- Header -->

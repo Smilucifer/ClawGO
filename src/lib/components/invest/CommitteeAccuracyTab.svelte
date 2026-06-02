@@ -140,11 +140,11 @@
   {:else}
     <!-- KPI Cards -->
     <div class="grid grid-cols-3 gap-[var(--space-4)]">
-      <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)] text-center">
+      <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-4)] text-center">
         <div class="text-[24px] font-bold text-[var(--text-primary)] font-[var(--font-mono)]">{summary.totalVerdicts}</div>
         <div class="text-[11px] text-[var(--text-tertiary)]">{t('invest_accuracy_total_verdicts')}</div>
       </div>
-      <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)] text-center">
+      <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-4)] text-center">
         <div class="text-[24px] font-bold font-[var(--font-mono)] {hitColor(summary.overallHitRate)}">{pct(summary.overallHitRate)}</div>
         <div class="text-[11px] text-[var(--text-tertiary)]">{t('invest_accuracy_overall_hit_rate')}</div>
       </div>
@@ -162,8 +162,8 @@
     {/if}
 
     <!-- By Window -->
-    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)]">
-      <div class="border-b border-[var(--border)] bg-[var(--bg-hover)] px-[var(--space-4)] py-[var(--space-2)] text-[13px] font-medium text-[var(--text-secondary)]">{t('invest_accuracy_by_window')}</div>
+    <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)]">
+      <div class="border-b border-border bg-[var(--bg-hover)] px-[var(--space-4)] py-[var(--space-2)] text-[13px] font-medium text-[var(--text-secondary)]">{t('invest_accuracy_by_window')}</div>
       <div class="p-[var(--space-4)] flex flex-col gap-[var(--space-3)]">
         {#each [...summary.byWindow].sort((a, b) => a.windowDays - b.windowDays) as w}
           <div class="flex items-center gap-[var(--space-3)]">
@@ -181,11 +181,11 @@
     </div>
 
     <!-- By Verdict Type -->
-    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)]">
-      <div class="border-b border-[var(--border)] bg-[var(--bg-hover)] px-[var(--space-4)] py-[var(--space-2)] text-[13px] font-medium text-[var(--text-secondary)]">{t('invest_accuracy_by_verdict')}</div>
+    <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)]">
+      <div class="border-b border-border bg-[var(--bg-hover)] px-[var(--space-4)] py-[var(--space-2)] text-[13px] font-medium text-[var(--text-secondary)]">{t('invest_accuracy_by_verdict')}</div>
       <table class="w-full text-[13px]">
         <thead>
-          <tr class="border-b border-[var(--border)] text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+          <tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
             <th class="px-[var(--space-4)] py-[var(--space-2)]">{t('invest_accuracy_type')}</th>
             <th class="px-[var(--space-4)] py-[var(--space-2)] text-right">{t('invest_accuracy_count')}</th>
             <th class="px-[var(--space-4)] py-[var(--space-2)] text-right">1d</th>
@@ -195,7 +195,7 @@
         </thead>
         <tbody>
           {#each [...summary.byVerdict].sort((a, b) => b.sampleCount - a.sampleCount) as v}
-            <tr class="border-b border-[var(--border)] last:border-0">
+            <tr class="border-b border-border last:border-0">
               <td class="px-[var(--space-4)] py-[var(--space-2)] font-medium text-[var(--text-primary)]">{v.verdictType}</td>
               <td class="px-[var(--space-4)] py-[var(--space-2)] text-right font-[var(--font-mono)]">{v.sampleCount}</td>
               <td class="px-[var(--space-4)] py-[var(--space-2)] text-right font-[var(--font-mono)] {hitColor(v.hitRate1d)}">{pct(v.hitRate1d)}</td>
@@ -213,10 +213,10 @@
     </button>
 
     {#if showDetail && detail.length > 0}
-      <div class="max-h-80 overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)]">
+      <div class="max-h-80 overflow-y-auto rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)]">
         <table class="w-full text-[11px]">
           <thead>
-            <tr class="border-b border-[var(--border)] bg-[var(--bg-hover)] text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+            <tr class="border-b border-border bg-[var(--bg-hover)] text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
               <th class="px-[var(--space-3)] py-[var(--space-2)]">{t('invest_accuracy_symbol')}</th>
               <th class="px-[var(--space-3)] py-[var(--space-2)]">{t('invest_accuracy_date')}</th>
               <th class="px-[var(--space-3)] py-[var(--space-2)]">{t('invest_accuracy_verdict')}</th>
@@ -227,7 +227,7 @@
           </thead>
           <tbody>
             {#each detail as d}
-              <tr class="border-b border-[var(--border)] last:border-0">
+              <tr class="border-b border-border last:border-0">
                 <td class="px-[var(--space-3)] py-[var(--space-2)] text-[var(--text-primary)]" title={d.symbol}>{nameMap.get(d.symbol) ?? d.symbol}</td>
                 <td class="px-[var(--space-3)] py-[var(--space-2)]">{d.verdictDate}</td>
                 <td class="px-[var(--space-3)] py-[var(--space-2)]">{d.verdictType}</td>

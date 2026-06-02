@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from '$lib/i18n/index.svelte';
   import { getTransport } from '$lib/transport';
+  import { investStore } from '$lib/stores/invest-store.svelte';
 
   const invoke = <T,>(cmd: string, args?: Record<string, unknown>) =>
     getTransport().invoke<T>(cmd, args);
@@ -82,7 +83,11 @@
     triggering = jobId;
     try {
       await invoke('trigger_cron_job', { id: jobId });
-      await loadJobs();
+      // Parallel: refresh scheduler list + targeted invest store data
+      const storeRefresh = jobId === 'pnl_snapshot' ? investStore.refreshPnlSnapshots()
+        : jobId === 'verdict_review' || jobId === 'dream_invest' ? investStore.loadAll()
+        : Promise.resolve();
+      await Promise.all([loadJobs(), storeRefresh]);
     } catch (e) {
       error = t('invest_scheduler_job_failed', { error: String(e) });
     } finally {
@@ -148,10 +153,10 @@
         <button class="ml-2 text-[11px] hover:underline text-[var(--text-secondary)]" onclick={() => (error = null)}>{t('invest_scheduler_dismiss')}</button>
       </div>
     {/if}
-    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] overflow-hidden">
+    <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] overflow-hidden">
       <table class="w-full text-[13px]">
         <thead>
-          <tr class="border-b border-[var(--border)] bg-[var(--bg-hover)] text-left">
+          <tr class="border-b border-border bg-[var(--bg-hover)] text-left">
             <th class="p-[var(--space-3)] text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_scheduler_job_name')}</th>
             <th class="p-[var(--space-3)] text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_scheduler_cron_expr')}</th>
             <th class="p-[var(--space-3)] text-center text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_scheduler_status')}</th>
@@ -161,7 +166,7 @@
         </thead>
         <tbody>
           {#each jobs as job}
-            <tr class="border-b border-[var(--border)] last:border-0 hover:bg-[var(--bg-hover)] transition-colors">
+            <tr class="border-b border-border last:border-0 hover:bg-[var(--bg-hover)] transition-colors">
               <td class="p-[var(--space-3)]">
                 <div class="font-medium text-[var(--text-primary)]">{job.name}</div>
                 <div class="text-[11px] text-[var(--text-secondary)]">{job.description}</div>
@@ -170,7 +175,7 @@
                 {#if editingJob === job.id}
                   <div class="flex items-center gap-[var(--space-2)]">
                     <input
-                      class="w-40 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[12px] text-[var(--text-primary)]"
+                      class="w-40 rounded-[var(--radius-sm)] border border-border bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[12px] text-[var(--text-primary)]"
                       bind:value={editCronValue}
                     />
                     <button
@@ -241,7 +246,7 @@
     </div>
 
     {#if expandedJob}
-      <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)]">
+      <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-4)]">
         <h4 class="mb-[var(--space-2)] text-[13px] font-medium text-[var(--text-primary)]">{t('invest_scheduler_logs_for', { job: expandedJob })}</h4>
         {#if logs.length === 0}
           <p class="text-[12px] text-[var(--text-tertiary)]">{t('invest_scheduler_no_logs')}</p>

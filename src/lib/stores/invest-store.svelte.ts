@@ -502,6 +502,11 @@ class InvestStore {
     this.pnlSnapshots = this.pnlSnapshots.filter((s) => s.id !== id);
   }
 
+  /** Lightweight refresh — fetch only pnl_snapshots without full loadAll(). */
+  async refreshPnlSnapshots(): Promise<void> {
+    this.pnlSnapshots = await invoke<PnlSnapshot[]>("get_pnl_snapshots", { limit: 80 });
+  }
+
   async updateTrade(trade: {
     id: string;
     symbol: string;

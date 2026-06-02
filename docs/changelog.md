@@ -1,8 +1,8 @@
 # Changelog / 更新日志
 
-## v5.2.8 (2026-06-02)
+## v5.2.8 (2026-06-03)
 
-### invest DB 迁移修复 + Watch 价格刷新 + 代码审查优化
+### invest DB 迁移修复 + Watch 价格刷新 + 委员会 Bug 修复 + 代码审查优化
 
 **迁移修复 (3 项):**
 1. **`trades_new` 列数修复**: 3 处迁移块的 `CREATE TABLE trades_new` 从 10 列补齐至 12 列（补 `name TEXT, trade_date TEXT`），解决 `SELECT * FROM trades` 返回 12 值但目标表仅 10 列导致的 `has 10 columns but 12 values were supplied` 错误
@@ -18,8 +18,10 @@
 7. **`refreshPrices` 收盘守卫修复**: `Object.keys(this.priceMap).length > 0` 改为 `syms.every(s => s in this.priceMap)`，只要任一持仓没缓存就不跳过，解决新 watch 项在收盘后永远拿不到价格的 bug
 8. **`addToWatch` 价格预填**: 添加 watch 后立即将用户输入的价格写入 `priceMap`，不等下一次刷新周期，解决添加后显示"—"的问题
 
-**Bug 修复 (1 项):**
+**Bug 修复 (3 项):**
 9. **EventWatchTab 类型修复**: `t()` 的 `scanResult` 参数 `fetched`/`filtered`/`saved` 从 `number` 包装为 `String()`，修复 3 个 `svelte-check` 类型错误
+10. **ETF 实时价格 `adj_nav` fallback**: `rt_k` 接口对 ETF 返回 `close=0` 时自动 fallback 到 `adj_nav`（复权单位净值）；仅 `close > 0` 时标记为已处理，确保未命中 ETF 正确降级到 `fund_daily`
+11. **PnL 快照手动触发后前端不刷新**: `SchedulerTab.runNow()` 触发 `pnl_snapshot` 后未刷新 `investStore.pnlSnapshots`，导致 PnL 历史页显示为空。修复：新增 `refreshPnlSnapshots()` 轻量方法（1 次 IPC 替代 `loadAll` 的 7 次），按 job 类型定向刷新 + `loadJobs` 并行化
 
 **Simplify 审查修复 (6 项):**
 10. **`invest_db_path` 提取**: db_path 构建从 3 处重复收敛为 1 个 helper，`ensure_dir` 错误处理统一（lazy init 路径不再静默吞错）
@@ -29,11 +31,32 @@
 14. **`delete_db_files` 简化**: `["", "-wal", "-shm"]` + 条件分支改为 `["db", "db-wal", "db-shm"]` 直接迭代
 15. **`init_db` 签名调整**: `data_dir` 参数改为 `_data_dir`（内部通过 `invest_db_path()` 获取），统一路径来源
 
+**Simplify 审查修复 (3 项):**
+16. **`refreshPnlSnapshots()` 轻量方法**: store 新增单独刷新 pnl_snapshots 的方法，避免 `loadAll()` 的 7 次 IPC 全量加载
+17. **SchedulerTab 按 job 类型定向刷新**: `pnl_snapshot` → `refreshPnlSnapshots()`（1 IPC），`verdict_review`/`dream_invest` → `loadAll()`，其他 job → 不刷新
+18. **`loadJobs` + store 刷新并行化**: `Promise.all([loadJobs(), storeRefresh])` 替代顺序 await，减少手动触发延迟
+
+**委员会 Bug 修复 (2 项):**
+19. **Quant R1 资金流向无数据**: `build_asset_context()` 缓存完整性检查从粗粒度 `cache_entries.len() >= 3` 升级为按数据类型逐一检查（`has_daily_basic`/`has_fina`/`has_moneyflow`）；核心数据齐全但 `moneyflow_dc` 缺失时调用定向 `refresh_moneyflow_cache()` 针对性刷新；刷新失败时日志提示检查 Tushare API 权限；股票无资金流向时自动添加 `"资金流向=N/A"` 数据质量警告
+20. **Risk R1 集中度不一致**: 后端集中度公式 `个股市值 / 总持仓市值 × 100`（不含现金）改为 `个股市值 / (总持仓市值 + 现金) × 100`，与前端 `CommitteeLiveTab` 的 `totalAssets` 分母对齐；`build_portfolio_summary` 组合概览表集中度列同步修正
+
+**Simplify 审查修复 (6 项):**
+21. **`PortfolioData::total_assets()` 方法**: `total_notional + cash` 公式收敛为单一来源，消除 `build_portfolio_summary` 和 `concentration_for_symbol` 中的重复计算
+22. **`refresh_moneyflow_cache()` 辅助函数**: 从 `build_asset_context` 提取 40 行内联资金流向刷新逻辑，减少函数嵌套深度
+23. **内存追加代替 DB 重读**: `refresh_moneyflow_cache` 成功后直接 `entries.push()` 而非 `load_all_latest_for_symbol()` 重新查询 SQLite
+24. **单次 `chrono::Utc::now()` 调用**: 修复 `today`/`five_days_ago` 中重复调用导致潜在时钟跨越
+25. **`has_type` 闭包**: 3 处 `cache_entries.iter().any(|(t, _, _)| t == "xxx")` 收敛为 `let has_type = |t| ...; has_type("xxx")` 模式
+26. **`concentration_for_symbol` 简化**: 直接使用 `portfolio_data.total_assets()` 替代本地计算 `total_notional + cash`
+
 **涉及文件:**
 - `src-tauri/src/storage/invest/mod.rs` — 迁移修复 + fallback + 6 项 simplify（invest_db_path/ensure_conn/has_column/迁移块删除）
 - `src-tauri/src/lib.rs` — 启动日志级别
-- `src/lib/stores/invest-store.svelte.ts` — refreshPrices 守卫 + addToWatch 价格预填
+- `src-tauri/src/tushare/client.rs` — ETF rt_k adj_nav fallback + handled 守卫
+- `src-tauri/src/invest/committee/orchestrator.rs` — Quant 资金流向修复 + Risk 集中度修复 + 6 项 simplify
+- `src/lib/stores/invest-store.svelte.ts` — refreshPrices 守卫 + addToWatch 价格预填 + refreshPnlSnapshots()
 - `src/lib/components/invest/EventWatchTab.svelte` — String() 类型包装
+- `src/lib/components/invest/SchedulerTab.svelte` — PnL 快照刷新 + 按 job 类型定向刷新 + 并行化
+- `src/lib/components/invest/*.svelte`（25 文件）— CSS `border-[var(--border)]` → `border-border` 统一
 
 ---
 

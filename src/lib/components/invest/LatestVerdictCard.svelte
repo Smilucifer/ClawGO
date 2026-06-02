@@ -26,7 +26,7 @@
   }
 </script>
 
-<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)]">
+<div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-4)]">
   <div class="mb-[var(--space-3)] flex items-center justify-between">
     <h3 class="text-[14px] font-semibold text-[var(--text-primary)]">🏛️ {t('invest_latest_verdict')}</h3>
     {#if latestVerdict}

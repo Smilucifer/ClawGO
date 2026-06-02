@@ -36,7 +36,7 @@
     switch (severity) {
       case 'high': return 'text-[#a87a7a] bg-[var(--color-error-bg)] border-[var(--color-error-bg)]';
       case 'medium': return 'text-[#b89a6a] bg-[var(--color-warning-bg)] border-[var(--color-warning-bg)]';
-      default: return 'text-[var(--text-secondary)] bg-[var(--bg-hover)] border-[var(--border)]';
+      default: return 'text-[var(--text-secondary)] bg-[var(--bg-hover)] border-border';
     }
   }
 
@@ -86,7 +86,7 @@
 
 <div class="flex flex-col h-full">
   <!-- Status bar -->
-  <div class="flex items-center justify-between px-[var(--space-4)] py-[var(--space-2)] border-b border-[var(--border)]">
+  <div class="flex items-center justify-between px-[var(--space-4)] py-[var(--space-2)] border-b border-border">
     <div class="flex items-center gap-3 text-[12px] text-[var(--text-secondary)]">
       {#if store.scanStatus}
         <span>{store.scanStatus.totalEvents} {t('invest.eventWatch.events')}</span>
@@ -117,7 +117,7 @@
 
   <!-- Scan result feedback -->
   {#if store.lastScanResult}
-    <div class="flex items-center gap-3 px-[var(--space-4)] py-[var(--space-1)] text-[11px] border-b border-[var(--border)]/50 {store.lastScanResult.errors.length > 0 ? 'bg-[var(--color-warning-bg)]/30' : 'bg-[var(--color-success-bg)]/20'}">
+    <div class="flex items-center gap-3 px-[var(--space-4)] py-[var(--space-1)] text-[11px] border-b border-border/50 {store.lastScanResult.errors.length > 0 ? 'bg-[var(--color-warning-bg)]/30' : 'bg-[var(--color-success-bg)]/20'}">
       {#if store.lastScanResult.errors.length > 0}
         <span class="text-[var(--color-warning)]">
           {t('invest.eventWatch.scanErrors')}: {store.lastScanResult.errors.join('; ')}
@@ -135,9 +135,9 @@
   {/if}
 
   <!-- Filters -->
-  <div class="flex items-center gap-2 px-[var(--space-4)] py-[var(--space-2)] border-b border-[var(--border)]">
+  <div class="flex items-center gap-2 px-[var(--space-4)] py-[var(--space-2)] border-b border-border">
     <!-- Time window -->
-    <div class="flex rounded-[var(--radius-md)] overflow-hidden border border-[var(--border)]">
+    <div class="flex rounded-[var(--radius-md)] overflow-hidden border border-border">
       {#each ['24h', '48h', '7d'] as tw}
         <button
           onclick={() => handleTimeWindowChange(tw as '24h' | '48h' | '7d')}
@@ -151,7 +151,7 @@
       {#each ['all', 'high', 'medium', 'low'] as sev}
         <button
           onclick={() => handleSeverityChange(sev as 'all' | 'high' | 'medium' | 'low')}
-          class="px-2 py-0.5 text-[12px] rounded-[var(--radius-md)] border {store.eventFilter.severity === sev ? 'border-[var(--text-tertiary)] text-[var(--text-primary)]' : 'border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'}"
+          class="px-2 py-0.5 text-[12px] rounded-[var(--radius-md)] border {store.eventFilter.severity === sev ? 'border-[var(--text-tertiary)] text-[var(--text-primary)]' : 'border-border text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'}"
         >{sev === 'all' ? t('invest.eventWatch.filterAll') : sev === 'high' ? t('invest.eventWatch.filterHigh') : sev === 'medium' ? t('invest.eventWatch.filterMedium') : t('invest.eventWatch.filterLow')}</button>
       {/each}
     </div>
@@ -162,7 +162,7 @@
       placeholder={t('invest.eventWatch.searchPlaceholder')}
       value={store.eventFilter.search}
       oninput={handleSearchInput}
-      class="ml-auto rounded-[var(--radius-md)] px-[var(--space-2)] py-[var(--space-1)] text-[12px] bg-[var(--bg-input)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] w-40"
+      class="ml-auto rounded-[var(--radius-md)] px-[var(--space-2)] py-[var(--space-1)] text-[12px] bg-[var(--bg-input)] border border-border text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] w-40"
     />
   </div>
 
@@ -174,7 +174,7 @@
       </div>
     {:else}
       {#each store.filteredEvents as event (event.id)}
-        <div class="px-[var(--space-4)] py-[var(--space-2)] border-b border-[var(--border)]/50 hover:bg-[var(--bg-hover)] transition-colors">
+        <div class="px-[var(--space-4)] py-[var(--space-2)] border-b border-border/50 hover:bg-[var(--bg-hover)] transition-colors">
           <div class="flex items-start gap-2">
             <!-- Severity badge -->
             <span class="px-1.5 py-0.5 text-[10px] rounded-[var(--radius-full)] border {severityColor(event.severity)}">

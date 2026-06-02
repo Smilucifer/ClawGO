@@ -126,7 +126,7 @@
 
 <div class="flex h-full flex-col bg-[var(--bg-base)]" data-invest-scope>
   <!-- Header -->
-  <div class="border-b border-[var(--border)] px-[var(--space-4)] pt-[var(--space-4)]">
+  <div class="border-b border-border px-[var(--space-4)] pt-[var(--space-4)]">
     <h1 class="mb-[var(--space-1)] text-[22px] font-bold text-[var(--text-primary)]">{t('nav_invest')}</h1>
     <p class="mb-[var(--space-3)] text-[12px] text-[var(--text-tertiary)]">openInvest</p>
 
@@ -153,7 +153,7 @@
   <div class="flex-1 overflow-auto p-[var(--space-4)]">
     {#if activeTab === 'dashboard'}
       {#if !tushareToken}
-        <div class="mb-[var(--space-4)] rounded-[var(--radius-lg)] border border-dashed border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)] text-center text-[13px] text-[var(--text-tertiary)]">
+        <div class="mb-[var(--space-4)] rounded-[var(--radius-lg)] border border-dashed border-border bg-[var(--bg-card)] p-[var(--space-4)] text-center text-[13px] text-[var(--text-tertiary)]">
           {t('invest_no_token')}
         </div>
       {/if}
@@ -174,8 +174,8 @@
 
       <div class="mb-[var(--space-4)] flex gap-[var(--space-2)]">
         <button class="rounded-[var(--radius-md)] bg-[var(--accent)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] font-medium text-[var(--bg-base)] transition-colors hover:opacity-90" onclick={openBuy}>{t('invest_buy')}</button>
-        <button class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]" onclick={openCash}>{t('invest_edit_cash')}</button>
-        <button class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]" onclick={() => investStore.refreshPrices(tushareToken)}>{t('invest_refresh_prices')}</button>
+        <button class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]" onclick={openCash}>{t('invest_edit_cash')}</button>
+        <button class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]" onclick={() => investStore.refreshPrices(tushareToken)}>{t('invest_refresh_prices')}</button>
       </div>
 
       <HoldingsTable onSell={openSell} onConvert={openConvert} onAddWatch={openAddWatch} onDeleteWatch={openDeleteWatch} onEdit={openEditHolding} {tushareToken} />
@@ -240,7 +240,7 @@
       </div>
 
       <!-- Data initialization section -->
-      <div class="mb-[var(--space-4)] rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)]">
+      <div class="mb-[var(--space-4)] rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-4)]">
         <div class="flex items-center justify-between">
           <div>
             <div class="text-[13px] font-semibold text-[var(--text-primary)]">{t('invest_data_init')}</div>
@@ -251,7 +251,7 @@
               type="number"
               placeholder={t('invest_data_init_balance')}
               bind:value={initBalance}
-              class="w-36 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+              class="w-36 rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
             />
             <button
               class="rounded-[var(--radius-md)] bg-[var(--accent)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] font-medium text-[var(--bg-base)] transition-colors hover:opacity-90 disabled:opacity-40"

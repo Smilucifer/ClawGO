@@ -111,7 +111,7 @@
   }
 </script>
 
-<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-4 space-y-4">
+<div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-4 space-y-4">
   <h3 class="text-[13px] font-semibold text-[var(--text-primary)]">{t('settings_profile_title')}</h3>
   <p class="text-[12px] text-[var(--text-secondary)]">{t('settings_profile_desc')}</p>
 
@@ -124,7 +124,7 @@
       <p class="text-[12px] text-[var(--text-secondary)]">{t('settings_profile_emergency_buffer_desc')}</p>
       <input
         type="number"
-        class="w-64 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-3)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
+        class="w-64 rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-[var(--space-3)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
         bind:value={profileForm.emergencyBufferCny}
         min="0"
         step="10000"
@@ -137,7 +137,7 @@
         type="checkbox"
         checked={profileForm.familyBackupAvailable}
         onchange={(e) => (profileForm.familyBackupAvailable = e.currentTarget.checked)}
-        class="h-4 w-4 rounded-[var(--radius-sm)] border border-[var(--border)]"
+        class="h-4 w-4 rounded-[var(--radius-sm)] border border-border"
       />
       <div>
         <span class="text-[13px] text-[var(--text-primary)]">{t('settings_profile_family_backup')}</span>
@@ -150,7 +150,7 @@
       <label class="text-[13px] font-medium text-[var(--text-primary)]">{t('settings_profile_account_purpose')}</label>
       <p class="text-[12px] text-[var(--text-secondary)]">{t('settings_profile_account_purpose_desc')}</p>
       <select
-        class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-3)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
+        class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-[var(--space-3)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
         bind:value={profileForm.accountPurpose}
       >
         {#each accountPurposeOptions as opt}
@@ -169,7 +169,7 @@
       <label class="text-[13px] font-medium text-[var(--text-primary)]">{t('settings_profile_family_support')}</label>
       <p class="text-[12px] text-[var(--text-secondary)]">{t('settings_profile_family_support_desc')}</p>
       <select
-        class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-3)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
+        class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-[var(--space-3)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
         bind:value={profileForm.familySupport}
       >
         {#each familySupportOptions as opt}
@@ -183,7 +183,7 @@
       <label class="text-[13px] font-medium text-[var(--text-primary)]">{t('settings_profile_lifestyle_notes')}</label>
       <p class="text-[12px] text-[var(--text-secondary)]">{t('settings_profile_lifestyle_notes_desc')}</p>
       <textarea
-        class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-3)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
+        class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-[var(--space-3)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
         rows="4"
         bind:value={profileForm.lifestyleNotes}
         placeholder={t('settings_profile_lifestyle_notes_placeholder')}

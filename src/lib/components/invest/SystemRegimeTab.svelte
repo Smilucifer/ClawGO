@@ -47,7 +47,7 @@
   <div class="flex gap-[var(--space-2)]">
     <input
       type="text"
-      class="w-48 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-3)] py-[var(--space-1)] text-sm text-[var(--text-primary)]"
+      class="w-48 rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-[var(--space-3)] py-[var(--space-1)] text-sm text-[var(--text-primary)]"
       placeholder={t('invest_system_regime_placeholder')}
       bind:value={symbol}
       onkeydown={(e) => e.key === 'Enter' && classify()}
@@ -66,7 +66,7 @@
   {/if}
 
   {#if result}
-    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-3)] space-y-[var(--space-2)]">
+    <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-3)] space-y-[var(--space-2)]">
       <div class="flex items-center gap-[var(--space-2)]">
         <span class="text-sm font-medium text-[var(--text-primary)]">{result.tsCode}</span>
         <span class="rounded-[var(--radius-full)] bg-[var(--accent-muted)] px-3 py-1 text-[11px] font-bold text-[var(--accent)]">{result.regime}</span>
@@ -82,7 +82,7 @@
           </thead>
           <tbody>
             {#each Object.entries(result.metrics) as [key, val]}
-              <tr class="border-t border-[var(--border)]">
+              <tr class="border-t border-border">
                 <td class="py-1 pr-3 text-[var(--text-secondary)]">{key}</td>
                 <td class="py-1 font-[var(--font-mono)] text-[var(--text-primary)]">{typeof val === 'number' ? val.toFixed(2) : String(val)}</td>
               </tr>

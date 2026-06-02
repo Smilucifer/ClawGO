@@ -98,7 +98,7 @@
 
     <div class="flex items-center gap-2">
       <span class="text-[var(--text-secondary)] text-[11px]">{t('invest.eventWatch.triggerDialogRounds')}:</span>
-      <select bind:value={debateRounds} class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-[13px] text-[var(--text-primary)]">
+      <select bind:value={debateRounds} class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-2 py-1 text-[13px] text-[var(--text-primary)]">
         {#each DEBATE_OPTIONS as opt (opt)}
           <option value={opt}>{opt}</option>
         {/each}
@@ -118,7 +118,7 @@
 
   <div class="mt-[var(--space-6)] flex justify-end gap-[var(--space-3)]">
     <button
-      class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
+      class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-card)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
       onclick={() => { open = false; }}
     >{t('invest.eventWatch.triggerDialogCancel')}</button>
     <button

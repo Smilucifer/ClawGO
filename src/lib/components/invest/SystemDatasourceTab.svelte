@@ -71,10 +71,10 @@
   {:else if error}
     <p class="text-[13px] text-[var(--color-error)]">{error}</p>
   {:else}
-    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] overflow-hidden">
+    <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] overflow-hidden">
       <table class="w-full text-[13px]">
         <thead>
-          <tr class="border-b border-[var(--border)] text-left">
+          <tr class="border-b border-border text-left">
             <th class="pb-2 pr-3 text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_system_ds_name')}</th>
             <th class="pb-2 pr-3 text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_system_ds_status')}</th>
             <th class="pb-2 pr-3 text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_system_ds_last_success')}</th>
@@ -83,7 +83,7 @@
         </thead>
         <tbody>
           {#each sources as src}
-            <tr class="border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--bg-hover)]">
+            <tr class="border-b border-border last:border-b-0 hover:bg-[var(--bg-hover)]">
               <td class="py-1.5 pr-3 text-[var(--text-primary)]">{src.name}</td>
               <td class="py-1.5 pr-3">
                 <span

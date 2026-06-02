@@ -106,7 +106,7 @@
 
   <!-- Filters -->
   <div class="flex items-center gap-[var(--space-3)]">
-    <div class="flex gap-1 rounded-[var(--radius-md)] border border-[var(--border)] p-0.5">
+    <div class="flex gap-1 rounded-[var(--radius-md)] border border-border p-0.5">
       <button
         class="rounded-[var(--radius-md)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] transition-colors {statusFilter === 'active'
           ? 'bg-[var(--accent)] text-[#1a1918]'
@@ -126,7 +126,7 @@
     </div>
     <input
       type="text"
-      class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-3)] py-[var(--space-1)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+      class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-[var(--space-3)] py-[var(--space-1)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
       placeholder={t('invest_insights_search')}
       bind:value={searchQuery}
     />
@@ -145,7 +145,7 @@
   {:else}
     <div class="space-y-[var(--space-2)]">
       {#each insights as insight}
-        <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)] space-y-[var(--space-2)]">
+        <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-4)] space-y-[var(--space-2)]">
           <div class="flex items-start justify-between gap-[var(--space-3)]">
             <div class="flex items-center gap-[var(--space-2)]">
               <span class="rounded-full px-3 py-1 text-[11px] font-bold {typeBadge(insight.insightType)}">

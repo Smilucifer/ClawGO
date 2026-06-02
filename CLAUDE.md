@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v5.2.8, 2026-06-02). invest DB 迁移修复+Watch 价格刷新+代码审查优化。See `docs/changelog.md`.
+**Current phase:** Phase 10+ (v5.2.8, 2026-06-03). invest DB 迁移修复+Watch 价格刷新+委员会 Bug 修复(Quant 资金流向/Risk 集中度)+代码审查优化。See `docs/changelog.md`.
 
 ## Standard workflow
 
@@ -377,7 +377,7 @@ Key phases and their status:
 | 10+ (v5.2.4) | 批量实时行情 API+交易流程简化+返回率计算修复: get_realtime_quotes 批量 IPC(rt_k+fund_daily 降级)/refreshPrices N→1 次调用/buyStock+sellStock 移除手动 holding CRUD(依赖 record_trade recalculate)/totalReturnPct holdingsMarketValue/maxHolding 修复/--text-secondary+--text-tertiary/3 项 simplify(partition+join_all 并发+死赋值清理) | [done] |
 | 10+ (v5.2.5) | 委员会数据缓存+8段注入优化+前端名称显示: stock_data_cache 永久缓存(三元主键/batch_upsert 事务)/build_asset_context cache-first+typed deserialization(DailyBasic/FinaIndicator/ReportRc)/load_prompt_for_round 统一 17 占位符/Risk prompt 资产上下文(PE/PB/ROA/负债率/评级)/CIO 数据质量警告/exec_company_info+exec_moneyflow cache-first(nameMap/isMarketOpen 盘中检测/cron sanitize/6 项 simplify | [done] |
 | 10+ (v5.2.6) | 持仓名称持久化+收盘价格修复+代码搜索+数据初始化+持仓编辑+手动交易: trades.name/trade_date 字段+DB migration 回填/recalculate_holdings_inner 从 trade 恢复名称/investStore.nameMap 合并 3 源(持仓+行情+交易)/refreshPrices 智能守卫(收盘后已有缓存则跳过)/stock_basic ts_code 精确匹配+fund_basic 代码匹配/init_invest_data 命令/TradeDialog add_trade+edit_holding 模式/HoldingsTable 编辑按钮/recordTrade+updateHoldingMeta store 方法/TRADE_COLUMNS 常量+trade_from_row/6 项 simplify | [done] |
-| 10+ (v5.2.8) | invest DB 迁移修复+Watch 价格刷新+代码审查优化: trades_new 10→12 列/FALLBACK 删库重试/invest_db_path+ensure_conn+has_column 提取/冗余迁移块删除/refreshPrices 守卫修复(全持仓缓存检查)/addToWatch 价格预填/EventWatchTab String() 类型修复/6 项 simplify | [done] |
+| 10+ (v5.2.8) | invest DB 迁移修复+Watch 价格刷新+委员会 Bug 修复(Quant 资金流向/Risk 集中度)+代码审查优化: trades_new 10→12 列/FALLBACK 删库重试/invest_db_path+ensure_conn+has_column 提取/冗余迁移块删除/refreshPrices 守卫修复(全持仓缓存检查)/addToWatch 价格预填/EventWatchTab String() 类型修复/ETF rt_k adj_nav fallback/PnL 快照手动触发刷新修复(refreshPnlSnapshots+按 job 定向刷新+并行化)/CSS border 统一/Quant R1 资金流向缓存检查升级(按类型逐一检查+定向 refresh_moneyflow_cache)/Risk R1 集中度分母含现金对齐前端/total_assets()+has_type 闭包+entries.push 内存追加/15 项 simplify | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

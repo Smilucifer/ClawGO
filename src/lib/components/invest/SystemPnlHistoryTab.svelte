@@ -44,10 +44,10 @@
   {:else if snapshots.length === 0}
     <p class="text-sm text-[var(--text-secondary)]">{t('invest_system_pnl_history_empty')}</p>
   {:else}
-    <div class="overflow-x-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)]">
+    <div class="overflow-x-auto rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)]">
       <table class="w-full text-sm">
         <thead>
-          <tr class="border-b border-[var(--border)] text-left text-[var(--text-tertiary)]">
+          <tr class="border-b border-border text-left text-[var(--text-tertiary)]">
             <th class="text-[11px] font-medium uppercase tracking-wider pb-[var(--space-2)] pr-[var(--space-3)]">{t('invest_system_pnl_date')}</th>
             <th class="text-[11px] font-medium uppercase tracking-wider pb-[var(--space-2)] pr-[var(--space-3)] text-right">{t('invest_system_pnl_total')}</th>
             <th class="text-[11px] font-medium uppercase tracking-wider pb-[var(--space-2)] pr-[var(--space-3)] text-right">{t('invest_system_pnl_cash')}</th>
@@ -59,7 +59,7 @@
         </thead>
         <tbody>
           {#each snapshots as snap}
-            <tr class="border-b border-[var(--border)]">
+            <tr class="border-b border-border">
               <td class="py-[var(--space-2)] pr-[var(--space-3)] text-[var(--text-primary)] font-[var(--font-mono)]">{formatDate(snap.snapshotDate)}</td>
               <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right text-[var(--text-primary)] font-[var(--font-mono)]">¥{snap.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
               <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right text-[var(--text-primary)] font-[var(--font-mono)]">¥{snap.cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>

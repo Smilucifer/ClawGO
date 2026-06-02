@@ -7,7 +7,7 @@
   } = $props();
 </script>
 
-<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)]">
+<div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-4)]">
   <p class="mb-[var(--space-2)] text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{label}</p>
   <p class="text-[22px] font-bold leading-tight font-[var(--font-mono)] {trend === 'up' ? 'text-[#8a9a76]' : trend === 'down' ? 'text-[#a87a7a]' : 'text-[var(--text-primary)]'}">
     {value}

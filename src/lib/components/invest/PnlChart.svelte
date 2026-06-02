@@ -112,7 +112,7 @@
   });
 </script>
 
-<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)]">
+<div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-4)]">
   <div class="mb-[var(--space-2)] flex items-center justify-between">
     <h3 class="text-[14px] font-semibold text-[var(--text-primary)]">📈 {t('invest_pnl_chart')}</h3>
     <span class="text-[11px] text-[var(--text-tertiary)]">左轴: {t('invest_pnl_total_assets')} | 右轴: {t('invest_pnl_daily_pnl')}</span>

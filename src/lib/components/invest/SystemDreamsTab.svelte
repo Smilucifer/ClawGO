@@ -56,7 +56,7 @@
   {:else}
     <div class="space-y-[var(--space-2)]">
       {#each traces as trace}
-        <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-3)]">
+        <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-3)]">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-[var(--space-2)]">
               <span class="rounded-[var(--radius-md)] bg-[var(--bg-input)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]">{trace.dreamType}</span>
@@ -82,7 +82,7 @@
           {/if}
 
           {#if expandedId === trace.id}
-            <div class="mt-2 space-y-[var(--space-2)] border-t border-[var(--border)]/50 pt-[var(--space-2)]">
+            <div class="mt-2 space-y-[var(--space-2)] border-t border-border/50 pt-[var(--space-2)]">
               {#if trace.summary}
                 <div>
                   <span class="text-[12px] font-medium text-[var(--text-secondary)]">Summary:</span>

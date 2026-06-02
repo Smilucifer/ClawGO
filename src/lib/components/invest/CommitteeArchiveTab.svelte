@@ -49,11 +49,11 @@
 
 <div class="archive-grid grid h-full gap-[var(--space-4)]">
   <!-- Left panel: query + list -->
-  <aside class="flex flex-col gap-[var(--space-3)] rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-3)]">
+  <aside class="flex flex-col gap-[var(--space-3)] rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-3)]">
     <!-- Symbol selector + query button -->
     <div class="flex items-center gap-[var(--space-2)]">
       <select
-        class="flex-1 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-2)] py-[6px] text-[12px] text-[var(--text-primary)]"
+        class="flex-1 rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-[var(--space-2)] py-[6px] text-[12px] text-[var(--text-primary)]"
         bind:value={symbol}
       >
         <option value="">{t('invest_archive_symbol_label')}</option>
@@ -77,7 +77,7 @@
         type="number"
         min="1"
         max="90"
-        class="w-16 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-0.5 text-[11px] text-[var(--text-primary)]"
+        class="w-16 rounded-[var(--radius-sm)] border border-border bg-[var(--bg-input)] px-2 py-0.5 text-[11px] text-[var(--text-primary)]"
         bind:value={days}
       />
     </div>
@@ -118,7 +118,7 @@
   </aside>
 
   <!-- Right panel: detail -->
-  <section class="overflow-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)]">
+  <section class="overflow-auto rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-4)]">
     {#if selected}
       {@const v = verdictMap.get(selected.date) ?? null}
       <div class="mb-[var(--space-3)] flex items-center gap-[var(--space-3)]">

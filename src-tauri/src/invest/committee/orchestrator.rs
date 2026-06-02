@@ -167,6 +167,12 @@ struct PortfolioData {
 }
 
 impl PortfolioData {
+    /// 总资产 = 总持仓市值 + 现金。
+    /// 集中度分母与前端 CommitteeLiveTab 的 `totalAssets` 公式对齐。
+    fn total_assets(&self) -> f64 {
+        self.total_notional + self.cash
+    }
+
     /// Load portfolio data and refresh notional with current market prices.
     /// NOTE: This function has a side effect — it writes updated notional values
     /// back to the DB for holdings whose price changed by >0.01 CNY.
@@ -277,6 +283,8 @@ fn build_portfolio_summary(data: &PortfolioData) -> String {
 
     let mut out = String::from("【组合持仓概览】\n");
 
+    let total_assets = data.total_assets();
+
     if !data.holdings.is_empty() {
         out.push_str("| 标的 | 名称 | 股数 | 均价 | 市值(CNY) | 集中度 |\n");
         out.push_str("|------|------|------|------|----------|--------|\n");
@@ -291,8 +299,8 @@ fn build_portfolio_summary(data: &PortfolioData) -> String {
                 .map(|c| format!("{:.3}", c))
                 .unwrap_or_else(|| "-".to_string());
             let notional = format!("{:.2}", h.notional);
-            let concentration = if data.total_notional > 0.0 {
-                format!("{:.1}%", h.notional.abs() / data.total_notional * 100.0)
+            let concentration = if total_assets > 0.0 {
+                format!("{:.1}%", h.notional.abs() / total_assets * 100.0)
             } else {
                 "-".to_string()
             };
@@ -420,19 +428,20 @@ fn build_user_profile_context() -> String {
 // Concentration helper
 // ---------------------------------------------------------------------------
 
-/// 计算指定标的的集中度百分比（该资产 notional / 总资产）
+/// 计算指定标的的集中度百分比。
+/// 分母 = 总资产（含现金），与前端 CommitteeLiveTab 对齐。
 fn concentration_for_symbol(symbol: &str, portfolio_data: &PortfolioData) -> f64 {
-    let total_notional: f64 = portfolio_data.holdings.iter()
-        .map(|h| h.notional.abs())
-        .sum();
-    if total_notional <= 0.0 {
+    let total_assets = portfolio_data.total_assets();
+    if total_assets <= 0.0 {
         return 0.0;
     }
-    let symbol_notional: f64 = portfolio_data.holdings.iter()
+    let symbol_notional: f64 = portfolio_data
+        .holdings
+        .iter()
         .filter(|h| h.symbol == symbol)
         .map(|h| h.notional.abs())
         .sum();
-    symbol_notional / total_notional * 100.0
+    symbol_notional / total_assets * 100.0
 }
 
 // ---------------------------------------------------------------------------
@@ -599,6 +608,63 @@ async fn llm_call_with_retry(
 // Asset context builder
 // ---------------------------------------------------------------------------
 
+/// 定向刷新资金流向缓存（核心数据齐全但 moneyflow_dc 缺失时调用）。
+///
+/// 成功时写入缓存并返回更新后的 cache_entries（含新增条目）；
+/// 失败或数据为空时返回原始 entries（调用方通过检查 moneyflow_dc 是否存在来判断结果）。
+async fn refresh_moneyflow_cache(
+    client: &TushareClient,
+    symbol: &str,
+    mut entries: Vec<(String, String, String)>,
+) -> Vec<(String, String, String)> {
+    use crate::tushare::client::MoneyflowDc;
+
+    log::info!(
+        "build_asset_context: moneyflow_dc missing for {}, attempting targeted refresh",
+        symbol
+    );
+    let now = chrono::Utc::now();
+    let today = now.format("%Y%m%d").to_string();
+    let five_days_ago = (now - chrono::Duration::days(5))
+        .format("%Y%m%d")
+        .to_string();
+
+    match client.moneyflow_dc(symbol, &five_days_ago, &today).await {
+        Ok(mf) if !mf.is_empty() => {
+            let summary = MoneyflowDc::format_moneyflow_summary(&mf);
+            let summary_json =
+                serde_json::json!({ "summary": summary, "days": mf.len() });
+            let s = summary_json.to_string();
+            let _ = stock_data_cache::batch_upsert(&[(
+                symbol,
+                "moneyflow_dc",
+                today.as_str(),
+                s.as_str(),
+            )]);
+            // 内存追加新条目，避免 DB 重读
+            entries.push(("moneyflow_dc".to_string(), today, s));
+            log::info!(
+                "build_asset_context: moneyflow_dc refreshed for {}: {}",
+                symbol,
+                summary
+            );
+        }
+        Ok(_) => {
+            log::info!(
+                "build_asset_context: moneyflow_dc returned empty for {} (API may lack data for this symbol)",
+                symbol
+            );
+        }
+        Err(e) => {
+            log::warn!(
+                "build_asset_context: moneyflow_dc refresh failed for {}: {} (check Tushare API permission for moneyflow_dc endpoint)",
+                symbol, e
+            );
+        }
+    }
+    entries
+}
+
 /// 构建标的上下文数据，注入到角色 prompt 中
 ///
 /// 独立 API 调用通过 `tokio::join!` 并行执行，减少总耗时。
@@ -614,15 +680,21 @@ async fn build_asset_context(
     // ── 1. 尝试从 cache 读取所有数据类型 ──
     let mut cache_entries = stock_data_cache::load_all_latest_for_symbol(symbol)
         .unwrap_or_default();
-    let has_all = cache_entries.len() >= 3;
 
-    // ── 2. Cache miss → 刷新，只在刷新后重新读取 ──
-    if !has_all {
+    let has_type = |t: &str| cache_entries.iter().any(|(dt, _, _)| dt == t);
+    let has_daily_basic = has_type("daily_basic");
+    let has_fina = has_type("fina_indicator");
+    let has_moneyflow = has_type("moneyflow_dc");
+
+    // ── 2. 核心数据缺失 → 全量刷新 ──
+    if !has_daily_basic || !has_fina {
         if let Err(e) = refresh_asset_data(client, symbol, asset_type).await {
             log::warn!("build_asset_context: refresh failed for {}: {}", symbol, e);
         }
         cache_entries = stock_data_cache::load_all_latest_for_symbol(symbol)
             .unwrap_or_default();
+    } else if asset_type == "stock" && !has_moneyflow {
+        cache_entries = refresh_moneyflow_cache(client, symbol, cache_entries).await;
     }
 
     let find_json = |dt: &str| -> Option<String> {
@@ -703,6 +775,10 @@ async fn build_asset_context(
         serde_json::from_str::<serde_json::Value>(&json).ok()
             .and_then(|v| v["summary"].as_str().map(|s| s.to_string()))
     });
+    // 股票无资金流向数据 → 记录数据质量问题（非 ETF 且缓存缺失）
+    if money_flow_summary.is_none() && asset_type == "stock" {
+        data_quality.push("资金流向=N/A".to_string());
+    }
 
     // ── 8. 解析 industry ──
     let industry = if let Some(json) = find_json("industry") {

@@ -69,19 +69,19 @@
   </div>
 
   {#if editing}
-    <div class="space-y-4 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-4">
+    <div class="space-y-4 rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-4">
       <div>
         <label class="mb-1 block text-[12px] text-[var(--text-secondary)]">Strategy Name</label>
-        <input class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-[13px] text-[var(--text-primary)]" bind:value={editName} />
+        <input class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-3 py-1.5 text-[13px] text-[var(--text-primary)]" bind:value={editName} />
       </div>
       <div class="grid grid-cols-2 gap-4">
         <div>
           <label class="mb-1 block text-[12px] text-[var(--text-secondary)]">{t('invest_strategy_max_single')} (%)</label>
-          <input type="number" class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-[13px] text-[var(--text-primary)]" min="0" max="100" bind:value={editMaxSinglePct} />
+          <input type="number" class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-3 py-1.5 text-[13px] text-[var(--text-primary)]" min="0" max="100" bind:value={editMaxSinglePct} />
         </div>
         <div>
           <label class="mb-1 block text-[12px] text-[var(--text-secondary)]">{t('invest_strategy_min_cash')} (%)</label>
-          <input type="number" class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-[13px] text-[var(--text-primary)]" min="0" max="100" bind:value={editMinCashPct} />
+          <input type="number" class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-3 py-1.5 text-[13px] text-[var(--text-primary)]" min="0" max="100" bind:value={editMinCashPct} />
         </div>
       </div>
 
@@ -96,13 +96,13 @@
           {#each editTargets as target, idx}
             <div class="mb-2 flex items-center gap-2">
               <input
-                class="flex-1 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-[13px] text-[var(--text-primary)]"
+                class="flex-1 rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-2 py-1 text-[13px] text-[var(--text-primary)]"
                 placeholder={t('invest_strategy_target_symbol')}
                 bind:value={target.symbol}
               />
               <input
                 type="number"
-                class="w-20 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-[13px] text-[var(--text-primary)]"
+                class="w-20 rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-2 py-1 text-[13px] text-[var(--text-primary)]"
                 min="0" max="100"
                 placeholder="%"
                 bind:value={target.targetPct}
@@ -131,7 +131,7 @@
   {:else}
     <div class="space-y-3">
       {#each investStore.strategies as s}
-        <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-4">
+        <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-4">
           <div class="flex items-center justify-between">
             <p class="text-[13px] font-medium text-[var(--text-primary)]">{s.name}</p>
             <button class="rounded-[var(--radius-md)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]" onclick={() => startEdit(s)}>{t('invest_edit')}</button>

@@ -107,7 +107,7 @@
     </div>
     {#if store.toolCallHistory.length > 0}
       <button
-        class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
+        class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-card)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
         onclick={() => { store.toolCallHistory = []; expandedIndex = null; }}
       >
         {t('invest_tools_clear')}
@@ -117,31 +117,31 @@
 
   <!-- KPI cards -->
   <div class="grid grid-cols-3 gap-[var(--space-3)]">
-    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-3)] text-center">
+    <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-3)] text-center">
       <div class="font-[var(--font-mono)] text-[22px] font-bold text-[var(--text-primary)]">{totalCalls}</div>
       <div class="text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_tools_total_calls')}</div>
     </div>
-    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-3)] text-center">
+    <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-3)] text-center">
       <div class="font-[var(--font-mono)] text-[22px] font-bold {successRate >= 0.9 ? 'text-[var(--color-success)]' : successRate >= 0.7 ? 'text-[var(--color-warning)]' : 'text-[var(--color-error)]'}">
         {totalCalls > 0 ? `${(successRate * 100).toFixed(0)}%` : '-'}
       </div>
       <div class="text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_tools_success_rate')}</div>
     </div>
-    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-3)] text-center">
+    <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-3)] text-center">
       <div class="font-[var(--font-mono)] text-[22px] font-bold text-[var(--text-primary)]">{totalCalls > 0 ? `${avgLatency}ms` : '-'}</div>
       <div class="text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">{t('invest_tools_avg_latency')}</div>
     </div>
   </div>
 
   <!-- Role × Tool access matrix -->
-  <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)]">
-    <div class="border-b border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-4)] py-[var(--space-2)] text-[13px] font-medium text-[var(--text-primary)]">
+  <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)]">
+    <div class="border-b border-border bg-[var(--bg-input)] px-[var(--space-4)] py-[var(--space-2)] text-[13px] font-medium text-[var(--text-primary)]">
       {t('invest_tools_matrix_title')}
     </div>
     <div class="overflow-x-auto">
       <table class="w-full text-[12px]">
         <thead>
-          <tr class="border-b border-[var(--border)]">
+          <tr class="border-b border-border">
             <th class="px-[var(--space-3)] py-[var(--space-2)] text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
               {t('invest_tools_col_tool')}
             </th>
@@ -154,7 +154,7 @@
         </thead>
         <tbody>
           {#each TOOLS_MATRIX as row}
-            <tr class="border-b border-[var(--border)] last:border-0 hover:bg-[var(--bg-hover)]">
+            <tr class="border-b border-border last:border-0 hover:bg-[var(--bg-hover)]">
               <td class="px-[var(--space-3)] py-[var(--space-2)]">
                 <div class="font-[var(--font-mono)] text-[12px] text-[var(--text-primary)]">{row.name}</div>
                 <div class="text-[11px] text-[var(--text-tertiary)]">{t(row.descKey as MessageKey)}</div>
@@ -178,12 +178,12 @@
 
   <!-- Per-role stats when there's history -->
   {#if store.toolCallHistory.length > 0}
-    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)]">
-      <div class="border-b border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-4)] py-[var(--space-2)] text-[13px] font-medium text-[var(--text-primary)]">{t('invest_tools_by_role')}</div>
+    <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)]">
+      <div class="border-b border-border bg-[var(--bg-input)] px-[var(--space-4)] py-[var(--space-2)] text-[13px] font-medium text-[var(--text-primary)]">{t('invest_tools_by_role')}</div>
       <div class="grid grid-cols-5 gap-[var(--space-3)] p-[var(--space-4)]">
         {#each ROLE_COLUMNS as col}
           {@const stats = roleStats.get(col.key)}
-          <div class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-2)] text-center">
+          <div class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-card)] p-[var(--space-2)] text-center">
             <div class="mb-1 inline-block rounded-[var(--radius-md)] px-1.5 py-0.5 text-[11px] font-medium" style={roleBadgeStyle(col.key)}>
               {col.label}
             </div>
@@ -202,12 +202,12 @@
   {/if}
 
   <!-- Tool call history -->
-  <div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)]">
-    <div class="flex items-center justify-between border-b border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-4)] py-[var(--space-2)]">
+  <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)]">
+    <div class="flex items-center justify-between border-b border-border bg-[var(--bg-input)] px-[var(--space-4)] py-[var(--space-2)]">
       <span class="text-[13px] font-medium text-[var(--text-primary)]">{t('invest_tools_history')}</span>
       {#if store.toolCallHistory.length > 0}
         <select
-          class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-[12px] text-[var(--text-secondary)]"
+          class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-2 py-1 text-[12px] text-[var(--text-secondary)]"
           bind:value={roleFilter}
         >
           <option value="all">All Roles</option>
@@ -225,7 +225,7 @@
     {:else}
       <div class="max-h-96 overflow-y-auto">
         {#each filteredHistory as record, i}
-          <div class="border-b border-[var(--border)] last:border-0">
+          <div class="border-b border-border last:border-0">
             <button
               class="flex w-full items-center gap-2 px-[var(--space-4)] py-[var(--space-2)] text-left text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
               onclick={() => (expandedIndex = expandedIndex === i ? null : i)}
@@ -242,7 +242,7 @@
             </button>
 
             {#if expandedIndex === i}
-              <div class="space-y-2 border-t border-[var(--border)] bg-[var(--bg-hover)] px-[var(--space-4)] py-[var(--space-3)] text-[11px]">
+              <div class="space-y-2 border-t border-border bg-[var(--bg-hover)] px-[var(--space-4)] py-[var(--space-3)] text-[11px]">
                 <div>
                   <span class="font-medium text-[var(--text-tertiary)]">{t('invest_tools_arguments')}: </span>
                   <span class="font-[var(--font-mono)] text-[var(--text-secondary)]">{formatArgs(record.arguments)}</span>

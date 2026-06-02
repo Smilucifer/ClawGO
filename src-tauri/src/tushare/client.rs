@@ -739,7 +739,11 @@ impl TushareClient {
                 Ok(resp) => {
                     let quotes = Self::parse_realtime_quotes(&resp);
                     for q in &quotes {
-                        handled.push(q.ts_code.clone());
+                        // Only mark as handled if we got a valid price;
+                        // ETFs with close=0 should fall back to fund_daily.
+                        if q.close > 0.0 {
+                            handled.push(q.ts_code.clone());
+                        }
                     }
                     results.extend(quotes);
                 }
@@ -789,20 +793,30 @@ impl TushareClient {
         let amount_idx = fields.iter().position(|f| f == "amount");
         let trade_time_idx = fields.iter().position(|f| f == "trade_time");
 
+        let adj_nav_idx = fields.iter().position(|f| f == "adj_nav");
+
         let mut quotes = Vec::with_capacity(resp.data.items.len());
         for row in &resp.data.items {
             let get = |idx: Option<usize>| -> Option<f64> { idx.and_then(|i| get_f64(row, i)) };
+            let ts = ts_code_idx
+                .and_then(|i| get_str(row, i))
+                .unwrap_or_default();
+
+            // ETF 在 rt_k 中 close 可能为 0，adj_nav 才是真实价格
+            let mut close_val = get(close_idx).unwrap_or_default();
+            if close_val == 0.0 && Self::is_etf_code(&ts) {
+                close_val = get(adj_nav_idx).unwrap_or(0.0);
+            }
+
             quotes.push(RealtimeQuote {
-                ts_code: ts_code_idx
-                    .and_then(|i| get_str(row, i))
-                    .unwrap_or_default(),
+                ts_code: ts,
                 name: name_idx
                     .and_then(|i| get_str(row, i))
                     .unwrap_or_default(),
                 open: get(open_idx).unwrap_or_default(),
                 high: get(high_idx).unwrap_or_default(),
                 low: get(low_idx).unwrap_or_default(),
-                close: get(close_idx).unwrap_or_default(),
+                close: close_val,
                 pre_close: get(pre_close_idx).unwrap_or_default(),
                 vol: get(vol_idx).unwrap_or_default(),
                 amount: get(amount_idx).unwrap_or_default(),

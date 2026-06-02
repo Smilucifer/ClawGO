@@ -163,7 +163,7 @@
 </script>
 
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" data-invest-scope>
-  <div class="w-full max-w-md rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-6 shadow-lg">
+  <div class="w-full max-w-md rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-6 shadow-lg">
     <h2 class="mb-4 text-lg font-semibold text-[var(--text-primary)]">{title}</h2>
 
     {#if error}
@@ -178,20 +178,20 @@
       <div class="mb-3 grid grid-cols-2 gap-3">
         <div>
           <label for="eh-shares" class="mb-1 block text-sm text-[var(--text-secondary)]">{t('invest_quantity')}</label>
-          <input id="eh-shares" type="number" class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)] font-[var(--font-mono)]" step="100" min="0" bind:value={holdingShares} />
+          <input id="eh-shares" type="number" class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)] font-[var(--font-mono)]" step="100" min="0" bind:value={holdingShares} />
         </div>
         <div>
           <label for="eh-cost" class="mb-1 block text-sm text-[var(--text-secondary)]">{t('invest_cost_price')}</label>
-          <input id="eh-cost" type="number" class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)] font-[var(--font-mono)]" step="0.01" min="0" bind:value={holdingAvgCost} />
+          <input id="eh-cost" type="number" class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)] font-[var(--font-mono)]" step="0.01" min="0" bind:value={holdingAvgCost} />
         </div>
       </div>
       <div class="mb-3">
         <label for="eh-date" class="mb-1 block text-sm text-[var(--text-secondary)]">{t('invest_trade_buy_date')}</label>
-        <input id="eh-date" type="date" class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)]" bind:value={holdingEntryDate} />
+        <input id="eh-date" type="date" class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)]" bind:value={holdingEntryDate} />
       </div>
       <div class="mb-3">
         <label for="eh-notes" class="mb-1 block text-sm text-[var(--text-secondary)]">{t('invest_trade_notes')}</label>
-        <textarea id="eh-notes" class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)]" rows="2" bind:value={holdingNotes}></textarea>
+        <textarea id="eh-notes" class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)]" rows="2" bind:value={holdingNotes}></textarea>
       </div>
 
     {:else if needsSearch}
@@ -219,7 +219,7 @@
         <div class="flex gap-2">
           <input
             id="td-search"
-            class="flex-1 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+            class="flex-1 rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
             placeholder={t('invest_stock_search')}
             bind:value={searchQuery}
             onkeydown={(e) => { if (e.key === 'Enter') doSearch(); }}
@@ -227,7 +227,7 @@
           <button class="rounded-[var(--radius-md)] bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]" onclick={doSearch}>{t('invest_search')}</button>
         </div>
         {#if searchResults.length > 0}
-          <div class="mt-1 max-h-32 overflow-auto rounded-[var(--radius-md)] border border-[var(--border)]">
+          <div class="mt-1 max-h-32 overflow-auto rounded-[var(--radius-md)] border border-border">
             {#each searchResults as s}
               <button
                 class="w-full px-3 py-1.5 text-left text-sm text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
@@ -271,13 +271,13 @@
         {#if needsQty}
           <div>
             <label for="td-qty" class="mb-1 block text-sm text-[var(--text-secondary)]">{t('invest_quantity')}</label>
-            <input id="td-qty" type="number" class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)] font-[var(--font-mono)]" step="100" min="0" bind:value={quantity} />
+            <input id="td-qty" type="number" class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)] font-[var(--font-mono)]" step="100" min="0" bind:value={quantity} />
           </div>
         {/if}
         <div class={mode === 'add_watch' ? 'col-span-2' : ''}>
           <label for="td-price" class="mb-1 block text-sm text-[var(--text-secondary)]">{mode === 'add_watch' ? t('invest_watch_price') : t('invest_price')}</label>
           <div class="flex gap-1">
-            <input id="td-price" type="number" class="flex-1 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)] font-[var(--font-mono)]" step={assetType === 'etf' ? '0.001' : '0.01'} bind:value={price} />
+            <input id="td-price" type="number" class="flex-1 rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)] font-[var(--font-mono)]" step={assetType === 'etf' ? '0.001' : '0.01'} bind:value={price} />
             <button class="rounded-[var(--radius-md)] bg-[var(--bg-input)] px-2 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]" onclick={fillMarketPrice}>{t('invest_market_price')}</button>
           </div>
         </div>
@@ -290,23 +290,23 @@
       <!-- Trade date input -->
       <div class="mb-3">
         <label for="td-date" class="mb-1 block text-sm text-[var(--text-secondary)]">{t('invest_trade_buy_date')}</label>
-        <input id="td-date" type="date" class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)]" bind:value={tradeDate} />
+        <input id="td-date" type="date" class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)]" bind:value={tradeDate} />
       </div>
       <!-- Notes (for edit, add_trade modes) -->
       {#if mode === 'edit' || mode === 'add_trade'}
         <div class="mb-3">
           <label for="td-notes" class="mb-1 block text-sm text-[var(--text-secondary)]">{t('invest_trade_notes')}</label>
-          <textarea id="td-notes" class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)]" rows="2" bind:value={notes}></textarea>
+          <textarea id="td-notes" class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)]" rows="2" bind:value={notes}></textarea>
         </div>
       {/if}
     {:else if mode === 'cash'}
       <div class="mb-3">
         <label for="td-cash" class="mb-1 block text-sm text-[var(--text-secondary)]">{t('invest_cash_new_balance')}</label>
-        <input id="td-cash" type="number" class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)] font-[var(--font-mono)]" step="0.01" bind:value={cashBalance} />
+        <input id="td-cash" type="number" class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)] font-[var(--font-mono)]" step="0.01" bind:value={cashBalance} />
       </div>
       <div class="mb-3">
         <label for="td-reason" class="mb-1 block text-sm text-[var(--text-secondary)]">{t('invest_cash_reason')}</label>
-        <textarea id="td-reason" class="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)]" rows="2" bind:value={cashReason}></textarea>
+        <textarea id="td-reason" class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)]" rows="2" bind:value={cashReason}></textarea>
       </div>
     {/if}
 

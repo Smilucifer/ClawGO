@@ -47,7 +47,7 @@
     <!-- Left panel -->
     <div class="space-y-5">
       <!-- Verdict options -->
-      <div class="rounded-[var(--radius-lg)] border border-[var(--border)] p-4 bg-[var(--bg-card)]">
+      <div class="rounded-[var(--radius-lg)] border border-border p-4 bg-[var(--bg-card)]">
         <h3 class="mb-3 text-sm font-semibold flex items-center gap-2 text-[var(--text-primary)]">
           <span class="h-4 w-0.5 rounded-full bg-[var(--accent)]"></span>
           {t('invest_roles_verdict_options')}
@@ -69,7 +69,7 @@
       </div>
 
       <!-- REGIME hard rules -->
-      <div class="rounded-[var(--radius-lg)] border border-[var(--border)] p-4 bg-[var(--bg-card)]">
+      <div class="rounded-[var(--radius-lg)] border border-border p-4 bg-[var(--bg-card)]">
         <h3 class="mb-1 text-sm font-semibold flex items-center gap-2 text-[var(--text-primary)]">
           <span class="h-4 w-0.5 rounded-full bg-[var(--accent)]"></span>
           {t('invest_roles_regime_rules')}
@@ -91,7 +91,7 @@
                 ['low_quantile_threshold', '= 0.2'],
                 ['high_quantile_threshold', '= 0.8'],
               ] as [name, val]}
-                <tr class="border-b border-[var(--border)]">
+                <tr class="border-b border-border">
                   <td class="py-1 pr-2 text-[#3b82f6]">{name}</td>
                   <td class="py-1 text-right text-[var(--color-warning)]">{val}</td>
                 </tr>
@@ -126,7 +126,7 @@
     </div>
 
     <!-- Right panel: CIO Sanity Check -->
-    <div class="rounded-[var(--radius-lg)] border border-[var(--border)] p-4 bg-[var(--bg-card)]">
+    <div class="rounded-[var(--radius-lg)] border border-border p-4 bg-[var(--bg-card)]">
       <h3 class="mb-3 text-sm font-semibold flex items-center gap-2 text-[var(--text-primary)]">
         <span class="h-4 w-0.5 rounded-full bg-[var(--accent)]"></span>
         {t('invest_roles_sanity_check')}
@@ -215,7 +215,7 @@
       prompts: [{ key: 'cio', label: t('invest_roles_prompt_full') }],
     },
   ] as role}
-    <div class="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] border-l-[3px]"
+    <div class="overflow-hidden rounded-[var(--radius-lg)] border border-border border-l-[3px]"
       style="border-left-color: {role.color}">
       <!-- Role header -->
       <div class="flex items-center gap-3 p-4">
@@ -284,7 +284,7 @@
             <div class="mt-1">
               {#if editingKey === prompt.key}
                 <textarea
-                  class="h-48 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] p-2.5 font-[var(--font-mono)] text-xs leading-relaxed text-[var(--text-secondary)] focus:border-[#3b82f6] focus:outline-none focus:ring-1 focus:ring-[#3b82f6]/30"
+                  class="h-48 w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] p-2.5 font-[var(--font-mono)] text-xs leading-relaxed text-[var(--text-secondary)] focus:border-[#3b82f6] focus:outline-none focus:ring-1 focus:ring-[#3b82f6]/30"
                   bind:value={editText}
                 ></textarea>
                 <div class="mt-2 flex items-center gap-2">
@@ -300,7 +300,7 @@
                 </div>
               {:else}
                 <div
-                  class="max-h-48 overflow-y-auto rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] p-2.5 font-[var(--font-mono)] text-xs leading-relaxed text-[var(--text-secondary)] cursor-pointer hover:border-[var(--text-tertiary)]"
+                  class="max-h-48 overflow-y-auto rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] p-2.5 font-[var(--font-mono)] text-xs leading-relaxed text-[var(--text-secondary)] cursor-pointer hover:border-[var(--text-tertiary)]"
                   onclick={() => startEdit(prompt.key)}
                   role="button"
                   tabindex="0"
@@ -317,7 +317,7 @@
   {/each}
 
   <!-- Provider Configuration -->
-  <div class="rounded-[var(--radius-lg)] border border-[var(--border)] p-4 bg-[var(--bg-card)]">
+  <div class="rounded-[var(--radius-lg)] border border-border p-4 bg-[var(--bg-card)]">
     <h3 class="mb-3 text-sm font-semibold flex items-center gap-2 text-[var(--text-primary)]">
       <span class="h-4 w-0.5 rounded-full bg-[var(--accent)]"></span>
       {t('invest_committee_config')}

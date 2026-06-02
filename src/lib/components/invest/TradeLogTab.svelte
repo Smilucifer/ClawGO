@@ -78,23 +78,23 @@
       {t('invest_trade_log')} ({filtered.length})
     </h3>
     <input
-      class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+      class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
       placeholder={t('invest_trade_stock')}
       bind:value={symbolFilter}
     />
-    <select class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]" bind:value={directionFilter}>
+    <select class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]" bind:value={directionFilter}>
       <option value="all">{t('invest_trade_filter_all')}</option>
       <option value="buy">{t('invest_trade_filter_buy')}</option>
       <option value="sell">{t('invest_trade_filter_sell')}</option>
     </select>
     <label class="flex items-center gap-[var(--space-1)] text-[12px] text-[var(--text-secondary)] cursor-pointer select-none">
-      <input type="checkbox" bind:checked={showSystemActions} class="rounded border border-[var(--border)] accent-[var(--accent)]" />
+      <input type="checkbox" bind:checked={showSystemActions} class="rounded border border-border accent-[var(--accent)]" />
       {t('invest_trade_show_system')}
     </label>
     <button class="rounded-[var(--radius-md)] bg-[var(--accent)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] font-medium text-[var(--bg-base)] transition-colors hover:opacity-90" onclick={() => showAddTrade = true}>
       + {t('invest_trade_add')}
     </button>
-    <button class="ml-auto rounded-[var(--radius-md)] bg-[var(--bg-hover)] border border-[var(--border)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] hover:bg-[var(--accent-muted)] hover:text-[var(--text-primary)] transition-colors" onclick={exportCsv}>
+    <button class="ml-auto rounded-[var(--radius-md)] bg-[var(--bg-hover)] border border-border px-[var(--space-3)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] hover:bg-[var(--accent-muted)] hover:text-[var(--text-primary)] transition-colors" onclick={exportCsv}>
       {t('invest_export_csv')}
     </button>
   </div>
@@ -102,10 +102,10 @@
   {#if filtered.length === 0}
     <p class="py-[var(--space-8)] text-center text-[13px] text-[var(--text-tertiary)]">{t('invest_no_trades')}</p>
   {:else}
-    <div class="overflow-x-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)]">
+    <div class="overflow-x-auto rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)]">
       <table class="w-full text-[13px]">
         <thead>
-          <tr class="border-b border-[var(--border)] text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+          <tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
             <th class="px-[var(--space-3)] py-[var(--space-2)]">{t('invest_trade_date')}</th>
             <th class="px-[var(--space-3)] py-[var(--space-2)]">{t('invest_trade_stock')}</th>
             <th class="px-[var(--space-3)] py-[var(--space-2)]">{t('invest_trade_direction')}</th>
@@ -118,7 +118,7 @@
         </thead>
         <tbody>
           {#each filtered as tr}
-            <tr class="border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--bg-hover)] transition-colors">
+            <tr class="border-b border-border last:border-b-0 hover:bg-[var(--bg-hover)] transition-colors">
               <td class="px-[var(--space-3)] py-[var(--space-2)] text-[12px] text-[var(--text-secondary)]">{tradeDate(tr)}</td>
               <td class="px-[var(--space-3)] py-[var(--space-2)] font-medium text-[var(--text-primary)]">
                 <span>{nameMap.get(tr.symbol) ?? tr.symbol}</span>
