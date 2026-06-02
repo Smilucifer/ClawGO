@@ -15,8 +15,18 @@ pub mod verdict_tracking;
 pub mod verdicts;
 
 use rusqlite::Connection;
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Mutex;
+
+/// SQLite sidecar file extensions (WAL journal + shared memory).
+const DB_SIDECAR_EXTS: &[&str] = &["db", "db-wal", "db-shm"];
+
+/// Canonical column list for the trades table.
+const TRADES_COLUMNS: &[&str] = &[
+    "id", "symbol", "currency", "kind", "action", "shares", "price", "amount",
+    "notes", "created_at", "name", "trade_date", "asset_type",
+];
 
 /// 根据 ts_code/symbol 前缀判断是否为 ETF/基金。
 /// 前缀列表与 `TushareClient::daily_api` 保持同步。
@@ -49,13 +59,14 @@ pub fn init_db(_data_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Open and migrate the DB; if it fails, delete the file (incl. WAL/SHM)
+/// Open and migrate the DB; if it fails, backup the file (incl. WAL/SHM)
 /// and retry once with a fresh database.
 fn init_with_fallback(db_path: &Path) -> Result<Connection, String> {
     match init_db_inner(db_path) {
         Ok(conn) => Ok(conn),
         Err(e) => {
-            log::warn!("invest DB init failed ({}), deleting and retrying with fresh DB", e);
+            log::warn!("invest DB init failed ({}), backing up and retrying with fresh DB", e);
+            backup_db_files(db_path);
             delete_db_files(db_path);
             init_db_inner(db_path)
                 .map_err(|e2| format!("invest DB retry also failed: {}", e2))
@@ -63,9 +74,25 @@ fn init_with_fallback(db_path: &Path) -> Result<Connection, String> {
     }
 }
 
+/// Backup the SQLite database file and its WAL/SHM sidecars.
+/// Creates a timestamped backup copy before destructive operations.
+fn backup_db_files(db_path: &Path) {
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    for ext in DB_SIDECAR_EXTS {
+        let p = db_path.with_extension(ext);
+        if p.exists() {
+            let backup_name = format!("{}.backup_{}", p.display(), timestamp);
+            match std::fs::copy(&p, &backup_name) {
+                Ok(_) => log::info!("Backed up {} to {}", p.display(), backup_name),
+                Err(e) => log::warn!("Failed to backup {}: {}", p.display(), e),
+            }
+        }
+    }
+}
+
 /// Remove the SQLite database file and its WAL/SHM sidecars.
 fn delete_db_files(db_path: &Path) {
-    for ext in ["db", "db-wal", "db-shm"] {
+    for ext in DB_SIDECAR_EXTS {
         let p = db_path.with_extension(ext);
         if p.exists() {
             let _ = std::fs::remove_file(&p);
@@ -94,9 +121,97 @@ fn has_column(conn: &Connection, table: &str, col: &str) -> bool {
         > 0
 }
 
+/// Get list of column names for a table.
+fn get_table_columns(conn: &Connection, table: &str) -> Result<Vec<String>, String> {
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info('{}')", table))
+        .map_err(|e| format!("prepare table_info for {}: {}", table, e))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| format!("query table_info for {}: {}", table, e))?;
+    Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+/// Migrate trades table with tolerant column handling.
+/// Only copies columns that exist in the old table; missing columns get NULL defaults.
+/// This prevents data loss when schema doesn't match exactly.
+fn migrate_trades_table(conn: &mut Connection) -> Result<(), String> {
+    // Check if trades table exists
+    let trades_exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='trades'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+        > 0;
+
+    if !trades_exists {
+        // No existing trades table, just create the new one via CREATE_TABLES_SQL
+        return Ok(());
+    }
+
+    // Get existing columns from old trades table (fail fast on introspection error)
+    let old_columns: HashSet<String> = get_table_columns(conn, "trades")?.into_iter().collect();
+
+    // Build SELECT clause: use existing column if available, NULL if missing
+    let column_list = TRADES_COLUMNS.join(", ");
+    let select_clause = TRADES_COLUMNS
+        .iter()
+        .map(|col| {
+            if old_columns.contains(*col) {
+                col.to_string()
+            } else {
+                format!("NULL as {}", col)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    // Use RAII transaction for automatic rollback on any error
+    let tx = conn.transaction().map_err(|e| format!("begin trades migration tx: {}", e))?;
+
+    tx.execute_batch(
+        "CREATE TABLE IF NOT EXISTS trades_new (
+            id TEXT PRIMARY KEY,
+            symbol TEXT NOT NULL,
+            currency TEXT NOT NULL DEFAULT 'CNY',
+            kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
+            action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_watch_to_hold', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust', 'add_watch', 'delete_watch')),
+            shares REAL,
+            price REAL,
+            amount REAL,
+            notes TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            name TEXT,
+            trade_date TEXT,
+            asset_type TEXT
+        );"
+    ).map_err(|e| format!("create trades_new: {}", e))?;
+
+    // Copy data with tolerant column handling
+    let insert_sql = format!(
+        "INSERT OR IGNORE INTO trades_new ({}) SELECT {} FROM trades;",
+        column_list, select_clause
+    );
+    tx.execute_batch(&insert_sql)
+        .map_err(|e| format!("copy trades data: {}", e))?;
+
+    // Replace old table with new one
+    tx.execute_batch(
+        "DROP TABLE IF EXISTS trades;
+         ALTER TABLE trades_new RENAME TO trades;"
+    ).map_err(|e| format!("finalize trades migration: {}", e))?;
+
+    tx.commit().map_err(|e| format!("commit trades migration: {}", e))?;
+
+    log::info!("Trades table migrated successfully with {} old columns", old_columns.len());
+    Ok(())
+}
+
 /// Core initialization: open DB, run migrations, return the Connection.
 fn init_db_inner(db_path: &Path) -> Result<Connection, String> {
-    let conn = Connection::open(db_path)
+    let mut conn = Connection::open(db_path)
         .map_err(|e| format!("open invest.db: {}", e))?;
 
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")
@@ -123,33 +238,12 @@ fn init_db_inner(db_path: &Path) -> Result<Connection, String> {
     )
     .map_err(|e| format!("Failed to add events dedup index: {}", e))?;
 
-    // Migrate trades table: rebuild to include name/trade_date columns and
+    // Migrate trades table: rebuild to include name/trade_date/asset_type columns and
     // the complete action CHECK constraint (including cash_adjust/add_watch/delete_watch).
     // SQLite doesn't support ALTER CHECK, so we rebuild via trades_new.
-    // On an old DB that already has name/trade_date, this is a no-op.
-    // On a DB with a mismatched schema, init_with_fallback will wipe and retry.
-    conn.execute_batch(
-        "BEGIN;
-        CREATE TABLE IF NOT EXISTS trades_new (
-            id TEXT PRIMARY KEY,
-            symbol TEXT NOT NULL,
-            currency TEXT NOT NULL DEFAULT 'CNY',
-            kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
-            action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_watch_to_hold', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust', 'add_watch', 'delete_watch')),
-            shares REAL,
-            price REAL,
-            amount REAL,
-            notes TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            name TEXT,
-            trade_date TEXT,
-            asset_type TEXT
-        );
-        INSERT OR IGNORE INTO trades_new (id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date, asset_type) SELECT id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date, asset_type FROM trades;
-        DROP TABLE IF EXISTS trades;
-        ALTER TABLE trades_new RENAME TO trades;
-        COMMIT;"
-    ).map_err(|e| format!("migrate trades table: {}", e))?;
+    // Uses tolerant migration: only copies columns that exist in the old table,
+    // missing columns get NULL defaults. This prevents data loss on schema mismatch.
+    migrate_trades_table(&mut conn)?;
 
     // Migration: create verdict_reviews table (use local conn, DB not yet in static)
     verdict_reviews::create_table(&conn)?;
@@ -206,29 +300,8 @@ fn init_db_inner(db_path: &Path) -> Result<Connection, String> {
             .map_err(|e| format!("Failed to add family_support column: {}", e))?;
     }
 
-    // Migration: add name and trade_date columns to trades table if missing.
-    // NOTE: the trades rebuild migration above already creates trades with these
-    // columns. This block handles DBs where trades was created by CREATE_TABLES_SQL
-    // (which already includes name/trade_date) but the rebuild was skipped.
-    if !has_column(&conn, "trades", "name") {
-        conn.execute_batch("ALTER TABLE trades ADD COLUMN name TEXT;")
-            .map_err(|e| format!("Failed to add name column to trades: {}", e))?;
-        conn.execute_batch(
-            "UPDATE trades SET name = (SELECT h.name FROM holdings h WHERE h.symbol = trades.symbol AND h.currency = trades.currency AND h.kind = trades.kind AND h.name IS NOT NULL) WHERE name IS NULL AND action IN ('buy', 'add_watch', 'convert_watch_to_hold');"
-        ).map_err(|e| format!("backfill trade names: {}", e))?;
-    }
-    if !has_column(&conn, "trades", "trade_date") {
-        conn.execute_batch("ALTER TABLE trades ADD COLUMN trade_date TEXT;")
-            .map_err(|e| format!("Failed to add trade_date column to trades: {}", e))?;
-    }
-    if !has_column(&conn, "trades", "asset_type") {
-        conn.execute_batch("ALTER TABLE trades ADD COLUMN asset_type TEXT;")
-            .map_err(|e| format!("Failed to add asset_type column to trades: {}", e))?;
-        // Backfill: set asset_type from holdings for existing trades
-        conn.execute_batch(
-            "UPDATE trades SET asset_type = (SELECT h.asset_type FROM holdings h WHERE h.symbol = trades.symbol AND h.currency = trades.currency AND h.kind = trades.kind) WHERE asset_type IS NULL AND action IN ('buy', 'add_watch', 'convert_watch_to_hold');"
-        ).map_err(|e| format!("backfill trade asset_type: {}", e))?;
-    }
+    // NOTE: trades.name/trade_date/asset_type are already handled by migrate_trades_table
+    // (called above) which rebuilds the table with all 13 columns. No fallback needed.
 
     log::info!("invest.db initialized at {:?}", db_path);
     Ok(conn)

@@ -2,7 +2,7 @@
 
 ## v5.2.9 (2026-06-03)
 
-### 腾讯行情 API 集成 + ETF 价格修复 + asset_type 全链路修复 + 代码审查优化
+### 腾讯行情 API 集成 + ETF 价格修复 + asset_type 全链路修复 + DB 迁移安全修复 + 代码审查优化
 
 **腾讯行情 API 集成 (3 项):**
 1. **`tencent_quotes` 模块**: 新建 `src-tauri/src/tencent_quotes.rs`，实现 `fetch_quotes()` 批量获取实时行情；API `http://qt.gtimg.cn/q={symbols}` 免费、无需认证、支持 ETF+股票批量查询；响应 `~` 分隔字段解析（name/close/pre_close/open/high/low/vol/amount/trade_time）
@@ -12,6 +12,20 @@
 **ETF 价格显示修复 (2 项):**
 4. **`resolve_close_idx` 辅助方法**: 提取统一的价格列定位函数，优先 `price_field(ts_code)`（ETF→adj_nav, 股票→close），兜底 `"close"`；`daily()`、`fallback_daily_quote()`、`get_latest_price()` 三处调用统一
 5. **`get_latest_price` fallback 修复**: fields 字符串从 `{pf}` 改为 `{pf},close`，`resolve_close_idx` 替代无兜底的 `position(|f| f == pf)`，解决 ETF 调用 `adj_nav` 字段不存在时的错误
+
+**DB 迁移安全修复 (3 项):**
+11. **`init_with_fallback` 备份策略**: 迁移失败时先备份数据库文件（带时间戳），再删除重试，避免直接删除导致数据丢失
+12. **`backup_db_files` 函数**: 创建带时间戳的备份副本（`invest.db.backup_20260603_123456`），包含 WAL/SHM sidecars
+13. **`migrate_trades_table` 宽容迁移**: 动态检测旧表列结构，只复制存在的列，缺失列用 NULL 填充，防止列不匹配导致迁移失败
+
+**Simplify 审查修复 — DB 迁移安全 (7 项):**
+17. **`conn.transaction()` 替换手动 `BEGIN/COMMIT`**: RAII 自动回滚，防止迁移失败时连接中毒和 `trades_new` 僵尸表
+18. **`get_table_columns` 返回 `Result`**: 列表内省失败时立即报错，不再静默返回空 Vec 导致全表数据被 NULL 覆盖（静默数据擦除风险）
+19. **`DB_SIDECAR_EXTS` 常量**: `backup_db_files` 和 `delete_db_files` 共享扩展名列表，消除重复
+20. **`HashSet<String>` 替换 `Vec::contains`**: O(1) 查找替代 O(n) 线性扫描，消除 13 次/轮的 String 分配
+21. **`TRADES_COLUMNS` 静态常量**: 13 个列名不再每次调用堆分配，`column_list` 只 join 一次复用于 INSERT 语句
+22. **`get_table_columns` + `has_column` 语义分离**: 各司其职，不合并（单列检查 vs 全列内省）
+23. **删除 20 行死代码**: `has_column` 对 trades.name/trade_date/asset_type 的 fallback 迁移块，已被 `migrate_trades_table` 覆盖，每次 init 执行无意义 I/O
 
 **asset_type 全链路修复 (5 项):**
 6. **`Trade.asset_type` 字段**: Trade 结构体新增 `asset_type: Option<String>`；SQLite trades 表新增 `asset_type TEXT` 列；DB migration 自动从 holdings 回填现有交易
@@ -32,7 +46,7 @@
 - `src-tauri/src/tencent_quotes.rs` — 新建，腾讯行情 API 客户端
 - `src-tauri/src/tushare/client.rs` — realtime_quotes 腾讯优先 + resolve_close_idx + is_etf_code 委托共享函数 + 注释更新
 - `src-tauri/src/storage/invest/portfolio.rs` — asset_type 字段 + resolve_asset_type + is_etf_symbol 改用共享函数
-- `src-tauri/src/storage/invest/mod.rs` — trades 表 asset_type 迁移 + pub is_etf_symbol
+- `src-tauri/src/storage/invest/mod.rs` — trades 表 asset_type 迁移 + pub is_etf_symbol + DB 迁移安全重构(备份/宽容迁移/transaction/HashSet/常量/死代码清理)
 - `src-tauri/src/commands/invest.rs` — record_trade/update_trade 补 asset_type 参数
 - `src-tauri/src/lib.rs` — 注册 tencent_quotes 模块
 - `src/lib/stores/invest-store.svelte.ts` — 6 处 IPC 补 assetType

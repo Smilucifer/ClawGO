@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v5.2.9, 2026-06-03). 腾讯行情 API 集成+ETF 价格修复+asset_type 全链路修复+代码审查优化。See `docs/changelog.md`.
+**Current phase:** Phase 10+ (v5.2.9, 2026-06-03). 腾讯行情 API 集成+ETF 价格修复+asset_type 全链路修复+DB 迁移安全修复+代码审查优化。See `docs/changelog.md`.
 
 ## Standard workflow
 
@@ -378,7 +378,7 @@ Key phases and their status:
 | 10+ (v5.2.5) | 委员会数据缓存+8段注入优化+前端名称显示: stock_data_cache 永久缓存(三元主键/batch_upsert 事务)/build_asset_context cache-first+typed deserialization(DailyBasic/FinaIndicator/ReportRc)/load_prompt_for_round 统一 17 占位符/Risk prompt 资产上下文(PE/PB/ROA/负债率/评级)/CIO 数据质量警告/exec_company_info+exec_moneyflow cache-first(nameMap/isMarketOpen 盘中检测/cron sanitize/6 项 simplify | [done] |
 | 10+ (v5.2.6) | 持仓名称持久化+收盘价格修复+代码搜索+数据初始化+持仓编辑+手动交易: trades.name/trade_date 字段+DB migration 回填/recalculate_holdings_inner 从 trade 恢复名称/investStore.nameMap 合并 3 源(持仓+行情+交易)/refreshPrices 智能守卫(收盘后已有缓存则跳过)/stock_basic ts_code 精确匹配+fund_basic 代码匹配/init_invest_data 命令/TradeDialog add_trade+edit_holding 模式/HoldingsTable 编辑按钮/recordTrade+updateHoldingMeta store 方法/TRADE_COLUMNS 常量+trade_from_row/6 项 simplify | [done] |
 | 10+ (v5.2.8) | invest DB 迁移修复+Watch 价格刷新+委员会 Bug 修复(Quant 资金流向/Risk 集中度)+代码审查优化: trades_new 10→12 列/FALLBACK 删库重试/invest_db_path+ensure_conn+has_column 提取/冗余迁移块删除/refreshPrices 守卫修复(全持仓缓存检查)/addToWatch 价格预填/EventWatchTab String() 类型修复/ETF rt_k adj_nav fallback/PnL 快照手动触发刷新修复(refreshPnlSnapshots+按 job 定向刷新+并行化)/CSS border 统一/Quant R1 资金流向缓存检查升级(按类型逐一检查+定向 refresh_moneyflow_cache)/Risk R1 集中度分母含现金对齐前端/total_assets()+has_type 闭包+entries.push 内存追加/15 项 simplify | [done] |
-| 10+ (v5.2.9) | 腾讯行情 API 集成+ETF 价格修复+asset_type 全链路修复+代码审查优化: tencent_quotes 模块(fetch_quotes/~分隔解析/共享 reqwest::Client)/realtime_quotes 四层降级(腾讯→部分成功→rt_k→daily)/resolve_close_idx 统一价格列定位/get_latest_price adj_nav fallback/Trade.asset_type 字段+DB migration 回填/update_trade SQL 补 asset_type/resolve_asset_type 推导/is_etf_symbol 共享函数/前端 6 处 IPC 补 assetType/TradeDialog add_trade 传入/6 项 simplify(移除重复 RealtimeQuote+复用 client+共享 is_etf_symbol+长度守卫 38+部分成功降级+注释更新) | [done] |
+| 10+ (v5.2.9) | 腾讯行情 API 集成+ETF 价格修复+asset_type 全链路修复+DB 迁移安全修复+代码审查优化: tencent_quotes 模块(fetch_quotes/~分隔解析/共享 reqwest::Client)/realtime_quotes 四层降级(腾讯→部分成功→rt_k→daily)/resolve_close_idx 统一价格列定位/get_latest_price adj_nav fallback/Trade.asset_type 字段+DB migration 回填/update_trade SQL 补 asset_type/resolve_asset_type 推导/is_etf_symbol 共享函数/前端 6 处 IPC 补 assetType/TradeDialog add_trade 传入/init_with_fallback 备份策略(迁移失败先备份再删除)/backup_db_files 时间戳备份/migrate_trades_table 宽容迁移(动态列检测+NULL 填充)/7 项 simplify(移除重复 RealtimeQuote+复用 client+共享 is_etf_symbol+长度守卫 38+部分成功降级+注释更新+conn.transaction() RAII 回滚+get_table_columns Result 防静默擦除+DB_SIDECAR_EXTS 常量+HashSet O(1) 查找+TRADES_COLUMNS 静态常量+删除 20 行死代码) | [done] |
 
 Detailed plans and review responses are in `docs/`.
 
