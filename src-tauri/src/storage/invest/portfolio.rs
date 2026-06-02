@@ -125,11 +125,13 @@ pub fn record_trade(t: &Trade) -> Result<(), String> {
 /// Wrapped in a transaction to ensure atomicity; notional values are preserved
 /// from existing holdings so that recalculation does not corrupt user-edited data.
 fn recalculate_holdings_inner(conn: &Connection) -> Result<(), String> {
-    // Preserve existing notional values before DELETE (Finding 2: notional=0 corruption fix)
+    // Preserve existing notional and asset_type values before DELETE
+    // (Finding 2: notional=0 corruption fix; asset_type NOT NULL constraint fix)
     let mut notional_map: HashMap<(String, String, String), f64> = HashMap::new();
+    let mut asset_type_map: HashMap<(String, String, String), String> = HashMap::new();
     {
         let mut stmt = conn
-            .prepare("SELECT symbol, currency, kind, notional FROM holdings")
+            .prepare("SELECT symbol, currency, kind, notional, asset_type FROM holdings")
             .map_err(|e| format!("prepare notional query: {}", e))?;
         let rows = stmt
             .query_map([], |row| {
@@ -138,19 +140,21 @@ fn recalculate_holdings_inner(conn: &Connection) -> Result<(), String> {
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
                     row.get::<_, f64>(3)?,
+                    row.get::<_, String>(4)?,
                 ))
             })
             .map_err(|e| format!("query notional: {}", e))?;
         for row in rows {
-            let (sym, cur, kind, notional) = row.map_err(|e| format!("notional row: {}", e))?;
-            notional_map.insert((sym, cur, kind), notional);
+            let (sym, cur, kind, notional, at) = row.map_err(|e| format!("notional row: {}", e))?;
+            notional_map.insert((sym.clone(), cur.clone(), kind.clone()), notional);
+            asset_type_map.insert((sym, cur, kind), at);
         }
     }
 
     // Wrap DELETE + INSERTs in a transaction for atomicity (Finding 3: no transaction fix)
     conn.execute_batch("BEGIN").map_err(|e| format!("begin transaction: {}", e))?;
 
-    let result = recalculate_holdings_inner_body(conn, &notional_map);
+    let result = recalculate_holdings_inner_body(conn, &notional_map, &asset_type_map);
 
     match result {
         Ok(()) => {
@@ -171,6 +175,7 @@ fn recalculate_holdings_inner(conn: &Connection) -> Result<(), String> {
 fn recalculate_holdings_inner_body(
     conn: &Connection,
     notional_map: &HashMap<(String, String, String), f64>,
+    asset_type_map: &HashMap<(String, String, String), String>,
 ) -> Result<(), String> {
     // 1. Clear all existing holdings
     conn.execute("DELETE FROM holdings", [])
@@ -226,10 +231,14 @@ fn recalculate_holdings_inner_body(
 
     let mut map: HashMap<(String, String, String), MemHolding> = HashMap::new();
 
-    // Restore preserved notional values into the in-memory map (Finding 2 fix)
+    // Restore preserved notional and asset_type values into the in-memory map
     for ((sym, cur, kind), notional) in notional_map {
         let entry = map.entry((sym.clone(), cur.clone(), kind.clone())).or_default();
         entry.notional = *notional;
+    }
+    for ((sym, cur, kind), at) in asset_type_map {
+        let entry = map.entry((sym.clone(), cur.clone(), kind.clone())).or_default();
+        entry.asset_type = Some(at.clone());
     }
 
     for t in &trades {
@@ -240,6 +249,9 @@ fn recalculate_holdings_inner_body(
                 let price = t.price.unwrap_or(0.0);
                 let _amount = t.amount.unwrap_or(shares * price);
                 let entry = map.entry(key).or_default();
+                if entry.asset_type.is_none() {
+                    entry.asset_type = Some("stock".to_string());
+                }
                 if entry.shares > 0.0 && entry.avg_cost > 0.0 {
                     let new_shares = entry.shares + shares;
                     entry.avg_cost =
@@ -303,6 +315,9 @@ fn recalculate_holdings_inner_body(
                 // Create or preserve the watch entry in the map so it survives recalculation
                 let entry = map.entry(key).or_default();
                 entry.is_watch = true;
+                if entry.asset_type.is_none() {
+                    entry.asset_type = Some("stock".to_string());
+                }
                 if entry.name.is_none() {
                     entry.name = Some(t.symbol.clone());
                 }

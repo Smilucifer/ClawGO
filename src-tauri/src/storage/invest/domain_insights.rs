@@ -99,7 +99,17 @@ pub fn get_active_insights_json() -> Result<String, String> {
         let mut stmt = conn
             .prepare(
                 "SELECT json_group_array(
-                    json('id', id, 'insight_type', insight_type, 'symbol', symbol, 'content', content, 'confidence', confidence, 'source_verdict_ids', source_verdict_ids, 'status', status, 'created_at', created_at, 'updated_at', updated_at)
+                    json_object(
+                        'id', id,
+                        'insight_type', insight_type,
+                        'symbol', symbol,
+                        'content', content,
+                        'confidence', confidence,
+                        'source_verdict_ids', json(source_verdict_ids),
+                        'status', status,
+                        'created_at', created_at,
+                        'updated_at', updated_at
+                    )
                  )
                  FROM domain_insights WHERE status = 'active'",
             )

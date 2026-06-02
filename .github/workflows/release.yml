@@ -50,6 +50,33 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install protoc --no-progress
 
+      - name: Setup embedded Python runtime (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          PYTHON_VERSION="3.13.13"
+          RELEASE_TAG="20260510"
+          TARGET_DIR="src-tauri/python-runtime"
+          PYTHON_DIR="$TARGET_DIR/python"
+          URL="https://github.com/astral-sh/python-build-standalone/releases/download/${RELEASE_TAG}/cpython-${PYTHON_VERSION}+${RELEASE_TAG}-aarch64-apple-darwin-install_only.tar.gz"
+
+          if [ -f "$PYTHON_DIR/bin/python3" ]; then
+            echo "Python already exists, skipping download."
+          else
+            mkdir -p "$TARGET_DIR"
+            echo "Downloading Python $PYTHON_VERSION..."
+            curl -L -o /tmp/python-build-standalone.tar.gz "$URL"
+            echo "Extracting..."
+            tar xzf /tmp/python-build-standalone.tar.gz -C "$TARGET_DIR"
+            if [ ! -f "$PYTHON_DIR/bin/python3" ]; then
+              echo "::error::python3 not found after extraction"
+              exit 1
+            fi
+          fi
+
+          echo "Installing yfinance + orjson..."
+          "$PYTHON_DIR/bin/python3" -m pip install --no-warn-script-location yfinance orjson
+          echo "Python runtime ready."
+
       - name: Setup embedded Python runtime (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
