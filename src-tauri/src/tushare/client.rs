@@ -513,18 +513,64 @@ impl TushareClient {
         Ok(bars)
     }
 
-    /// Search stocks by optional name (模糊匹配). If `name` is `None`, returns
-    /// the first 50 stocks.
+    /// Search stocks by optional name or ts_code (精确匹配 ts_code 优先).
+    /// If `name` is `None`, returns the first 50 stocks.
     pub async fn stock_basic(&self, name: Option<&str>) -> Result<Vec<StockBasic>, String> {
-        let params = if let Some(n) = name {
-            serde_json::json!({ "name": n })
-        } else {
-            serde_json::json!({})
-        };
+        // If query looks like a ts_code (e.g. "600519" or "600519.SH"), try exact match first
+        if let Some(n) = name {
+            let trimmed = n.trim();
+            // Precise ts_code format: 6 digits, optionally followed by .SH or .SZ
+            let is_ts_code = trimmed.len() >= 6
+                && trimmed.chars().take(6).all(|c| c.is_ascii_digit())
+                && (trimmed.len() == 6 || trimmed.eq_ignore_ascii_case("6") || {
+                    let rest = &trimmed[6..];
+                    rest.eq_ignore_ascii_case(".SH") || rest.eq_ignore_ascii_case(".SZ")
+                });
+            if is_ts_code && !trimmed.is_empty() {
+                // Try exact ts_code match first
+                let ts_code_param = if trimmed.contains('.') {
+                    trimmed.to_string()
+                } else {
+                    format!("{}.{}", trimmed, if trimmed.starts_with('6') { "SH" } else { "SZ" })
+                };
+                let exact_params = serde_json::json!({
+                    "ts_code": ts_code_param,
+                    "list_status": "L",
+                });
+                if let Ok(resp) = self.call_api("stock_basic", exact_params, "").await {
+                    if !resp.data.items.is_empty() {
+                        return self.parse_stock_basic_response(&resp);
+                    }
+                }
+                // Fallback: search by name (fuzzy)
+                let params = serde_json::json!({ "name": trimmed });
+                let resp = self.call_api("stock_basic", params, "").await?;
+                let mut results = self.parse_stock_basic_response(&resp)?;
+                // If name search returns nothing, try broader symbol search
+                if results.is_empty() {
+                    let symbol_params = serde_json::json!({
+                        "symbol": trimmed,
+                        "list_status": "L",
+                    });
+                    if let Ok(resp2) = self.call_api("stock_basic", symbol_params, "").await {
+                        results = self.parse_stock_basic_response(&resp2)?;
+                    }
+                }
+                return Ok(results);
+            }
+            // Regular name search
+            let params = serde_json::json!({ "name": trimmed });
+            let resp = self.call_api("stock_basic", params, "").await?;
+            return self.parse_stock_basic_response(&resp);
+        }
 
+        let params = serde_json::json!({});
         let resp = self.call_api("stock_basic", params, "").await?;
-        let fields = &resp.data.fields;
+        self.parse_stock_basic_response(&resp)
+    }
 
+    fn parse_stock_basic_response(&self, resp: &TushareResponse) -> Result<Vec<StockBasic>, String> {
+        let fields = &resp.data.fields;
         let ts_code_idx = fields.iter().position(|f| f == "ts_code");
         let symbol_idx = fields.iter().position(|f| f == "symbol");
         let name_idx = fields.iter().position(|f| f == "name");
@@ -564,7 +610,8 @@ impl TushareClient {
         Ok(stocks)
     }
 
-    /// Search ETFs by optional name (模糊匹配). Filters to listed ETFs only.
+    /// Search ETFs by optional name or ts_code (模糊匹配). Filters to listed ETFs only.
+    /// Supports code-based lookup: if query looks like a numeric code, also matches on ts_code.
     pub async fn fund_basic(&self, name: Option<&str>) -> Result<Vec<FundBasic>, String> {
         let params = serde_json::json!({
             "fund_type": "E",  // ETF only
@@ -586,16 +633,20 @@ impl TushareClient {
             let fund_name = name_idx
                 .and_then(|i| get_str(row, i))
                 .unwrap_or_default();
-            // Client-side filter: skip if name doesn't match query
+            let fund_ts_code = ts_code_idx
+                .and_then(|i| get_str(row, i))
+                .unwrap_or_default();
+            // Client-side filter: skip if neither name nor ts_code matches query
             if let Some(ref q) = query {
-                if !fund_name.to_lowercase().contains(q) {
+                let name_match = fund_name.to_lowercase().contains(q);
+                let code_match = fund_ts_code.to_lowercase().contains(q)
+                    || fund_ts_code.split('.').next().unwrap_or("").to_lowercase().contains(q);
+                if !name_match && !code_match {
                     continue;
                 }
             }
             funds.push(FundBasic {
-                ts_code: ts_code_idx
-                    .and_then(|i| get_str(row, i))
-                    .unwrap_or_default(),
+                ts_code: fund_ts_code,
                 name: fund_name,
             });
         }

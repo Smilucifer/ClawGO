@@ -1751,6 +1751,10 @@ export interface Trade {
   amount: number | null;
   notes: string | null;
   createdAt: string;
+  /** Stock/ETF Chinese name — persisted so sold positions keep their name */
+  name: string | null;
+  /** User-specified trade date (YYYY-MM-DD). Falls back to createdAt */
+  tradeDate: string | null;
 }
 
 export interface PnlSnapshot {

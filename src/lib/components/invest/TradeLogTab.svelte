@@ -10,6 +10,7 @@
   let directionFilter = $state<string>('all');
   let showSystemActions = $state(false);
   let editingTrade = $state<Trade | null>(null);
+  let showAddTrade = $state(false);
 
   const SYSTEM_ACTIONS = new Set(['cash_adjust', 'cost_edit', 'add_watch', 'delete_watch']);
 
@@ -22,8 +23,8 @@
     return assetTypeMap[symbol] === 'etf' ? 3 : 2;
   }
 
-  /** symbol → Chinese name lookup from holdings */
-  const nameMap = $derived(new Map(investStore.holdings.filter(h => h.name).map(h => [h.symbol, h.name!])));
+  /** Use centralized nameMap from store (enriched from holdings + price cache + trades) */
+  const nameMap = $derived(investStore.nameMap);
 
   const filtered = $derived(
     investStore.trades.filter((tr) => {
@@ -44,10 +45,11 @@
   }
 
   function exportCsv() {
-    const header = 'Date,Stock,Direction,Quantity,Price,Amount,Notes\n';
+    const header = 'Date,Stock,Code,Direction,Quantity,Price,Amount,Notes\n';
     const rows = filtered.map((tr) =>
       [
-        new Date(tr.createdAt).toLocaleDateString(),
+        tradeDate(tr),
+        nameMap.get(tr.symbol) ?? '',
         tr.symbol,
         tr.action,
         tr.shares ?? '',
@@ -63,6 +65,10 @@
     a.download = `trades-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function tradeDate(tr: Trade): string {
+    return tr.tradeDate ?? new Date(tr.createdAt).toLocaleDateString();
   }
 </script>
 
@@ -85,6 +91,9 @@
       <input type="checkbox" bind:checked={showSystemActions} class="rounded border border-[var(--border)] accent-[var(--accent)]" />
       {t('invest_trade_show_system')}
     </label>
+    <button class="rounded-[var(--radius-md)] bg-[var(--accent)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] font-medium text-[var(--bg-base)] transition-colors hover:opacity-90" onclick={() => showAddTrade = true}>
+      + {t('invest_trade_add')}
+    </button>
     <button class="ml-auto rounded-[var(--radius-md)] bg-[var(--bg-hover)] border border-[var(--border)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] hover:bg-[var(--accent-muted)] hover:text-[var(--text-primary)] transition-colors" onclick={exportCsv}>
       {t('invest_export_csv')}
     </button>
@@ -110,8 +119,13 @@
         <tbody>
           {#each filtered as tr}
             <tr class="border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--bg-hover)] transition-colors">
-              <td class="px-[var(--space-3)] py-[var(--space-2)] text-[12px] text-[var(--text-secondary)]">{new Date(tr.createdAt).toLocaleDateString()}</td>
-              <td class="px-[var(--space-3)] py-[var(--space-2)] font-medium text-[var(--text-primary)]" title={tr.symbol}>{nameMap.get(tr.symbol) ?? tr.symbol}</td>
+              <td class="px-[var(--space-3)] py-[var(--space-2)] text-[12px] text-[var(--text-secondary)]">{tradeDate(tr)}</td>
+              <td class="px-[var(--space-3)] py-[var(--space-2)] font-medium text-[var(--text-primary)]">
+                <span>{nameMap.get(tr.symbol) ?? tr.symbol}</span>
+                {#if nameMap.has(tr.symbol)}
+                  <span class="ml-1 font-[var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">{tr.symbol}</span>
+                {/if}
+              </td>
               <td class="px-[var(--space-3)] py-[var(--space-2)]">
                 <span class={tr.action === 'buy' ? 'text-[var(--color-error)]' : 'text-[var(--color-success)]'}>
                   {tr.action.toUpperCase()}
@@ -147,5 +161,13 @@
     editTrade={editingTrade}
     {tushareToken}
     onClose={() => { editingTrade = null; }}
+  />
+{/if}
+
+{#if showAddTrade}
+  <TradeDialog
+    mode="add_trade"
+    {tushareToken}
+    onClose={() => { showAddTrade = false; }}
   />
 {/if}

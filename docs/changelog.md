@@ -1,5 +1,47 @@
 # Changelog / 更新日志
 
+## v5.2.6 (2026-06-02)
+
+### 持仓名称持久化 + 收盘价格修复 + 代码搜索 + 数据初始化 + 持仓编辑 + 手动交易
+
+**核心架构 (3 项):**
+1. **`trades.name` / `trades.trade_date` 字段**: Trade 结构体+SQLite 表新增 `name`（中文名）和 `trade_date`（用户指定日期）列；DB migration 自动迁移+从 holdings 回填现有交易名称
+2. **`recalculate_holdings_inner` 名称恢复**: buy/add_watch 操作从 `trade.name` 设置持仓名称，确保卖出后名称不丢失；convert_watch_to_hold 保留已有名称
+3. **`investStore.nameMap` 三源合并**: `$derived` 计算 `Map<symbol, name>`，合并 holdings + priceMap + trades 三源，所有组件统一使用（替代 4 处本地 nameMap）
+
+**价格修复 (1 项):**
+4. **`refreshPrices` 智能守卫**: 移除 `isMarketOpen()` 硬拦截，改为"收盘后已有缓存则跳过"策略 — 首次收盘后获取一次日线收盘价，后续 60s 轮询自动跳过，避免重复 API 调用
+
+**股票搜索增强 (2 项):**
+5. **`stock_basic` ts_code 精确匹配**: 检测 6 位数字+可选 `.SH`/`.SZ` 格式后优先查 `ts_code` 参数，失败再 fallback 到 name 模糊搜索和 symbol 搜索
+6. **`fund_basic` 代码匹配**: ETF 搜索同时匹配 `ts_code` 和基金名称（支持输入 `510300` 直接定位 ETF）
+
+**新功能 (3 项):**
+7. **`init_invest_data` 命令**: 系统页新增数据初始化按钮，一键同步交易日历（2 年）+设置初始余额
+8. **持仓编辑**: HoldingsTable 新增编辑按钮，支持修改持仓的买入日期/成本价/数量/备注（通过 `update_holding` 命令）
+9. **手动添加交易**: TradeLogTab 新增"手动添加交易"按钮，支持买入/卖出方向选择+自定义日期+备注
+
+**UI 改进 (3 项):**
+10. **TradeDialog 重构**: 新增 `add_trade`/`edit_holding` 两种模式；所有交易操作传入 `name`/`tradeDate`；`title`/`needsSearch`/`canSubmit` 提取为 `$derived` 派生值
+11. **TradeLogTab 增强**: 使用 `investStore.nameMap`（含卖出后名称）；表格显示"中文名 + 代码"双行；CSV 导出增加名称列；`tradeDate()` helper 复用
+12. **CommitteeArchiveTab/CommitteeAccuracyTab/StrategyTab**: 统一使用 `investStore.nameMap` 替代本地 nameMap，卖出后的标的也能显示中文名
+
+**Simplify 审查修复 (6 项):**
+13. **Reuse**: `add_trade`/`edit_holding` 移除动态 `import('$lib/transport')`，改为 `recordTrade()`/`updateHoldingMeta()` store 方法
+14. **Efficiency**: `refreshPrices` 收盘后智能守卫（已有缓存则跳过），`isMarketOpen()` 不再是死代码
+15. **Altitude**: `looks_like_code` 检测从脆弱字符检测改为精确 6 位数字+.SH/.SZ 匹配
+16. **Simplification**: `portfolio.rs` 提取 `TRADE_COLUMNS` 常量+`trade_from_row()` 辅助函数，消除 3 处 12 列重复
+17. **Simplification**: `mod.rs` 合并两处 `pragma_table_info` 迁移块为一次查询
+18. **Simplification**: `TradeLogTab` CSV 导出复用 `tradeDate()` helper
+
+**涉及文件:**
+- 修改：`src-tauri/src/storage/invest/portfolio.rs`、`mod.rs`、`src-tauri/src/commands/invest.rs`、`src-tauri/src/tushare/client.rs`、`src-tauri/src/lib.rs`
+- 修改：`src/lib/stores/invest-store.svelte.ts`、`src/lib/types.ts`、`src/routes/invest/+page.svelte`
+- 修改：`src/lib/components/invest/TradeDialog.svelte`、`TradeLogTab.svelte`、`HoldingsTable.svelte`、`CommitteeArchiveTab.svelte`、`CommitteeAccuracyTab.svelte`、`StrategyTab.svelte`
+- 修改：`messages/en.json`、`messages/zh-CN.json`
+
+---
+
 ## v5.2.5 (2026-06-02)
 
 ### 委员会数据缓存 + 8 段注入优化 + 前端名称显示

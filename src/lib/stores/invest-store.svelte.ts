@@ -67,7 +67,7 @@ class InvestStore {
   holdCount = $derived(this.holdHoldings.length);
   watchCount = $derived(this.watchHoldings.length);
 
-  /** Symbol → Chinese name lookup from holdings + price cache */
+  /** Symbol → Chinese name lookup from holdings + price cache + trades */
   nameMap = $derived.by(() => {
     const map = new Map<string, string>();
     for (const h of this.holdings) {
@@ -76,6 +76,10 @@ class InvestStore {
     // Enrich from price cache (rt_k returns name)
     for (const [code, q] of Object.entries(this.priceMap)) {
       if (q.name && !map.has(code)) map.set(code, q.name);
+    }
+    // Enrich from trades (persists names for sold positions)
+    for (const tr of this.trades) {
+      if (tr.name && !map.has(tr.symbol)) map.set(tr.symbol, tr.name);
     }
     return map;
   });
@@ -197,8 +201,9 @@ class InvestStore {
     const syms = this.holdings.map((h) => h.symbol);
     if (syms.length === 0 || !tushareToken) return;
 
-    // Skip rt_k API calls outside A-share trading hours (9:15-11:30, 13:00-15:00 CST, weekdays only)
-    if (!isMarketOpen()) return;
+    // After hours, only fetch if we don't already have cached prices.
+    // The backend falls back to daily close, which doesn't change — no point re-fetching.
+    if (!isMarketOpen() && this.lastRefreshAt > 0 && Object.keys(this.priceMap).length > 0) return;
 
     try {
       const quotes = await invoke<RealtimeQuote[]>("get_realtime_quotes", {
@@ -254,6 +259,7 @@ class InvestStore {
     price: number,
     _tushareToken: string,
     assetType?: string,
+    tradeDate?: string,
   ): Promise<void> {
     const amount = qty * price;
 
@@ -267,6 +273,8 @@ class InvestStore {
       price,
       amount,
       notes: null,
+      name: name || null,
+      tradeDate: tradeDate || null,
     });
 
     // record_trade triggers recalculate_holdings_inner which fully rebuilds
@@ -298,6 +306,8 @@ class InvestStore {
       price,
       amount,
       notes: null,
+      name: existing.name || null,
+      tradeDate: null,
     });
 
     // record_trade triggers recalculate_holdings_inner which fully rebuilds
@@ -320,6 +330,8 @@ class InvestStore {
       price: null,
       amount: newBalance,
       notes: reason || null,
+      name: null,
+      tradeDate: null,
     });
     this.cash = newBalance;
     await this.loadAll();
@@ -361,6 +373,8 @@ class InvestStore {
         price,
         amount: 0,
         notes: null,
+        name: name || null,
+        tradeDate: null,
       });
     } finally {
       await this.loadAll();
@@ -381,6 +395,8 @@ class InvestStore {
         price: null,
         amount: 0,
         notes: null,
+        name: null,
+        tradeDate: null,
       });
     } finally {
       await this.loadAll();
@@ -426,6 +442,8 @@ class InvestStore {
         price,
         amount,
         notes: null,
+        name: name || null,
+        tradeDate: null,
       });
 
       await invoke("update_cash", { available: this.cash - amount });
@@ -476,6 +494,8 @@ class InvestStore {
     price: number | null;
     amount: number | null;
     notes: string | null;
+    name?: string | null;
+    tradeDate?: string | null;
   }): Promise<void> {
     await invoke("update_trade", {
       id: trade.id,
@@ -487,6 +507,8 @@ class InvestStore {
       price: trade.price,
       amount: trade.amount,
       notes: trade.notes,
+      name: trade.name ?? null,
+      tradeDate: trade.tradeDate ?? null,
     });
     await this.loadAll();
   }
@@ -580,6 +602,63 @@ class InvestStore {
 
   setEventFilter(filter: Partial<EventFilter>): void {
     this.eventFilter = { ...this.eventFilter, ...filter };
+  }
+
+  // ── Data Initialization ──────────────────────────────────────────────
+
+  async initInvestData(tushareToken: string, initialBalance?: number): Promise<string> {
+    const result = await invoke<string>("init_invest_data", {
+      token: tushareToken,
+      initialBalance: initialBalance ?? null,
+    });
+    await this.loadAll();
+    return result;
+  }
+
+  // ── Generic Trade/Holding Operations ─────────────────────────────────
+
+  async recordTrade(trade: {
+    symbol: string;
+    kind: string;
+    action: string;
+    shares?: number | null;
+    price?: number | null;
+    amount?: number | null;
+    notes?: string | null;
+    name?: string | null;
+    tradeDate?: string | null;
+  }): Promise<void> {
+    await invoke("record_trade", {
+      id: null,
+      symbol: trade.symbol,
+      currency: "CNY",
+      kind: trade.kind,
+      action: trade.action,
+      shares: trade.shares ?? null,
+      price: trade.price ?? null,
+      amount: trade.amount ?? null,
+      notes: trade.notes ?? null,
+      name: trade.name ?? null,
+      tradeDate: trade.tradeDate ?? null,
+    });
+    await this.loadAll();
+  }
+
+  async updateHoldingMeta(params: {
+    symbol: string;
+    currency: string;
+    kind: string;
+    name: string | null;
+    notional: number;
+    avgCost: number | null;
+    shares: number | null;
+    entryDate: string | null;
+    linkedVerdictId: string | null;
+    notes: string | null;
+    assetType: string | null;
+  }): Promise<void> {
+    await invoke("update_holding", params);
+    await this.loadAll();
   }
 }
 

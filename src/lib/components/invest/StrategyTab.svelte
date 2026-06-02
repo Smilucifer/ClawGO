@@ -5,8 +5,8 @@
 
   let { tushareToken }: { tushareToken: string } = $props();
 
-  /** symbol → Chinese name lookup from holdings */
-  const nameMap = $derived(new Map(investStore.holdings.filter(h => h.name).map(h => [h.symbol, h.name!])));
+  /** Use centralized nameMap from store (enriched from holdings + price cache + trades) */
+  const nameMap = $derived(investStore.nameMap);
 
   let editing = $state(false);
   let editName = $state('');

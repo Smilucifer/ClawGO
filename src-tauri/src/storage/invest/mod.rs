@@ -230,6 +230,33 @@ pub fn init_db(data_dir: &Path) -> Result<(), String> {
         }
     }
 
+    // Migration: add name and trade_date columns to trades table if missing
+    {
+        let mut stmt = conn
+            .prepare("SELECT name FROM pragma_table_info('trades')")
+            .map_err(|e| format!("prepare column check: {}", e))?;
+        let cols: Vec<String> = stmt
+            .query_map([], |r| r.get(0))
+            .map_err(|e| format!("query columns: {}", e))?
+            .filter_map(|r| r.ok())
+            .collect();
+        let has_name = cols.iter().any(|c| c == "name");
+        let has_trade_date = cols.iter().any(|c| c == "trade_date");
+
+        if !has_name {
+            conn.execute_batch("ALTER TABLE trades ADD COLUMN name TEXT;")
+                .map_err(|e| format!("Failed to add name column to trades: {}", e))?;
+            // Backfill name from current holdings
+            conn.execute_batch(
+                "UPDATE trades SET name = (SELECT h.name FROM holdings h WHERE h.symbol = trades.symbol AND h.currency = trades.currency AND h.kind = trades.kind AND h.name IS NOT NULL) WHERE name IS NULL AND action IN ('buy', 'add_watch', 'convert_watch_to_hold');"
+            ).map_err(|e| format!("backfill trade names: {}", e))?;
+        }
+        if !has_trade_date {
+            conn.execute_batch("ALTER TABLE trades ADD COLUMN trade_date TEXT;")
+                .map_err(|e| format!("Failed to add trade_date column to trades: {}", e))?;
+        }
+    }
+
     let mut guard = DB.lock().map_err(|e| format!("lock db: {}", e))?;
     *guard = Some(conn);
     log::info!("invest.db initialized at {:?}", db_path);

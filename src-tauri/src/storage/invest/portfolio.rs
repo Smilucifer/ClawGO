@@ -41,6 +41,31 @@ pub struct Trade {
     pub amount: Option<f64>,
     pub notes: Option<String>,
     pub created_at: String,
+    /// Stock/ETF Chinese name — persisted so sold positions keep their name.
+    pub name: Option<String>,
+    /// User-specified trade date (YYYY-MM-DD). Falls back to created_at.
+    pub trade_date: Option<String>,
+}
+
+/// Canonical column list for SELECT queries on the trades table.
+const TRADE_COLUMNS: &str = "id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date";
+
+/// Map a DB row to a Trade struct. Used by all SELECT queries.
+fn trade_from_row(row: &rusqlite::Row) -> rusqlite::Result<Trade> {
+    Ok(Trade {
+        id: row.get(0)?,
+        symbol: row.get(1)?,
+        currency: row.get(2)?,
+        kind: row.get(3)?,
+        action: row.get(4)?,
+        shares: row.get(5)?,
+        price: row.get(6)?,
+        amount: row.get(7)?,
+        notes: row.get(8)?,
+        created_at: row.get(9)?,
+        name: row.get(10)?,
+        trade_date: row.get(11)?,
+    })
 }
 
 pub fn list_holdings() -> Result<Vec<Holding>, String> {
@@ -110,8 +135,8 @@ pub fn delete_holding(symbol: &str, currency: &str, kind: &str) -> Result<(), St
 pub fn record_trade(t: &Trade) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute(
-            "INSERT INTO trades (id, symbol, currency, kind, action, shares, price, amount, notes, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![t.id, t.symbol, t.currency, t.kind, t.action, t.shares, t.price, t.amount, t.notes, t.created_at],
+            "INSERT INTO trades (id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![t.id, t.symbol, t.currency, t.kind, t.action, t.shares, t.price, t.amount, t.notes, t.created_at, t.name, t.trade_date],
         )
         .map_err(|e| format!("record trade: {}", e))?;
         // Recalculate holdings after inserting trade (consistent with delete_trade/update_trade)
@@ -182,28 +207,13 @@ fn recalculate_holdings_inner_body(
         .map_err(|e| format!("clear holdings: {}", e))?;
 
     // 2. Load all trades in chronological order
+    let sql = format!("SELECT {TRADE_COLUMNS} FROM trades ORDER BY created_at ASC");
     let mut stmt = conn
-        .prepare(
-            "SELECT id, symbol, currency, kind, action, shares, price, amount, notes, created_at \
-             FROM trades ORDER BY created_at ASC",
-        )
+        .prepare(&sql)
         .map_err(|e| format!("prepare trades for recalc: {}", e))?;
 
     let trades: Vec<Trade> = stmt
-        .query_map([], |row| {
-            Ok(Trade {
-                id: row.get(0)?,
-                symbol: row.get(1)?,
-                currency: row.get(2)?,
-                kind: row.get(3)?,
-                action: row.get(4)?,
-                shares: row.get(5)?,
-                price: row.get(6)?,
-                amount: row.get(7)?,
-                notes: row.get(8)?,
-                created_at: row.get(9)?,
-            })
-        })
+        .query_map([], trade_from_row)
         .map_err(|e| format!("query trades for recalc: {}", e))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("collect trades for recalc: {}", e))?;
@@ -251,6 +261,10 @@ fn recalculate_holdings_inner_body(
                 let entry = map.entry(key).or_default();
                 if entry.asset_type.is_none() {
                     entry.asset_type = Some("stock".to_string());
+                }
+                // Preserve name from trade (set on first buy)
+                if entry.name.is_none() {
+                    entry.name = t.name.clone();
                 }
                 if entry.shares > 0.0 && entry.avg_cost > 0.0 {
                     let new_shares = entry.shares + shares;
@@ -318,8 +332,9 @@ fn recalculate_holdings_inner_body(
                 if entry.asset_type.is_none() {
                     entry.asset_type = Some("stock".to_string());
                 }
+                // Preserve name from trade (preferred) or existing entry
                 if entry.name.is_none() {
-                    entry.name = Some(t.symbol.clone());
+                    entry.name = t.name.clone().or_else(|| Some(t.symbol.clone()));
                 }
                 if let Some(p) = t.price {
                     entry.avg_cost = p;
@@ -394,8 +409,8 @@ pub fn update_trade(t: &Trade) -> Result<(), String> {
     with_conn(|conn| {
         let changed = conn
             .execute(
-                "UPDATE trades SET symbol=?2, currency=?3, kind=?4, action=?5, shares=?6, price=?7, amount=?8, notes=?9 WHERE id=?1",
-                params![t.id, t.symbol, t.currency, t.kind, t.action, t.shares, t.price, t.amount, t.notes],
+                "UPDATE trades SET symbol=?2, currency=?3, kind=?4, action=?5, shares=?6, price=?7, amount=?8, notes=?9, name=?10, trade_date=?11 WHERE id=?1",
+                params![t.id, t.symbol, t.currency, t.kind, t.action, t.shares, t.price, t.amount, t.notes, t.name, t.trade_date],
             )
             .map_err(|e| format!("update trade: {}", e))?;
         if changed == 0 {
@@ -410,32 +425,19 @@ pub fn update_trade(t: &Trade) -> Result<(), String> {
 pub fn list_trades(symbol: Option<&str>, limit: Option<i64>) -> Result<Vec<Trade>, String> {
     with_conn(|conn| {
         let limit_val = limit.unwrap_or(100);
-        let (sql, query_params): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = match symbol {
+        let (sql, query_params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match symbol {
             Some(s) => (
-                "SELECT id, symbol, currency, kind, action, shares, price, amount, notes, created_at FROM trades WHERE symbol = ?1 ORDER BY created_at DESC LIMIT ?2",
+                format!("SELECT {TRADE_COLUMNS} FROM trades WHERE symbol = ?1 ORDER BY created_at DESC LIMIT ?2"),
                 vec![Box::new(s.to_string()), Box::new(limit_val)],
             ),
             None => (
-                "SELECT id, symbol, currency, kind, action, shares, price, amount, notes, created_at FROM trades ORDER BY created_at DESC LIMIT ?1",
+                format!("SELECT {TRADE_COLUMNS} FROM trades ORDER BY created_at DESC LIMIT ?1"),
                 vec![Box::new(limit_val)],
             ),
         };
-        let mut stmt = conn.prepare(sql).map_err(|e| format!("prepare: {}", e))?;
+        let mut stmt = conn.prepare(&sql).map_err(|e| format!("prepare: {}", e))?;
         let rows = stmt
-            .query_map(rusqlite::params_from_iter(query_params.iter()), |row| {
-                Ok(Trade {
-                    id: row.get(0)?,
-                    symbol: row.get(1)?,
-                    currency: row.get(2)?,
-                    kind: row.get(3)?,
-                    action: row.get(4)?,
-                    shares: row.get(5)?,
-                    price: row.get(6)?,
-                    amount: row.get(7)?,
-                    notes: row.get(8)?,
-                    created_at: row.get(9)?,
-                })
-            })
+            .query_map(rusqlite::params_from_iter(query_params.iter()), trade_from_row)
             .map_err(|e| format!("query: {}", e))?;
         let mut items = Vec::new();
         for row in rows {

@@ -104,6 +104,8 @@ pub fn record_trade(
     price: Option<f64>,
     amount: Option<f64>,
     notes: Option<String>,
+    name: Option<String>,
+    trade_date: Option<String>,
 ) -> Result<(), String> {
     let trade_id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let now = chrono::Utc::now().to_rfc3339();
@@ -118,6 +120,8 @@ pub fn record_trade(
         amount,
         notes,
         created_at: now,
+        name,
+        trade_date,
     };
     portfolio::record_trade(&t)
 }
@@ -144,6 +148,8 @@ pub fn update_trade(
     price: Option<f64>,
     amount: Option<f64>,
     notes: Option<String>,
+    name: Option<String>,
+    trade_date: Option<String>,
 ) -> Result<(), String> {
     let t = Trade {
         id,
@@ -156,6 +162,8 @@ pub fn update_trade(
         amount,
         notes,
         created_at: String::new(),
+        name,
+        trade_date,
     };
     portfolio::update_trade(&t)
 }
@@ -513,6 +521,34 @@ pub async fn migrate_legacy_portfolio() -> Result<String, String> {
     let _ = std::fs::rename(&legacy_path, &backup);
 
     Ok(format!("migrated {} items", migrated))
+}
+
+// ── Data Initialization ──────────────────────────────────────────────────────
+
+/// Initialize invest data: sync trade calendar and optionally set initial balance.
+/// Returns a summary of what was initialized.
+#[tauri::command]
+pub async fn init_invest_data(
+    token: String,
+    initial_balance: Option<f64>,
+) -> Result<String, String> {
+    let mut steps = Vec::new();
+
+    // 1. Sync trade calendar
+    match sync_trade_calendar(token).await {
+        Ok(count) => steps.push(format!("trade_calendar: {} days", count)),
+        Err(e) => steps.push(format!("trade_calendar: failed ({})", e)),
+    }
+
+    // 2. Set initial balance if provided
+    if let Some(balance) = initial_balance {
+        // Update both available cash and initial balance
+        portfolio::set_cash(balance)?;
+        portfolio::set_initial_cash(balance)?;
+        steps.push(format!("initial_balance: ¥{:.2}", balance));
+    }
+
+    Ok(steps.join("; "))
 }
 
 // ── LLM Config ──────────────────────────────────────────────────────────────

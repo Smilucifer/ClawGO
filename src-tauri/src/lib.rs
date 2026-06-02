@@ -457,6 +457,7 @@ pub fn run() {
             commands::invest::get_realtime_quotes,
             commands::invest::sync_trade_calendar,
             commands::invest::migrate_legacy_portfolio,
+            commands::invest::init_invest_data,
             commands::invest::get_llm_config,
             commands::invest::save_llm_config,
             commands::invest::run_committee,

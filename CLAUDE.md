@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v5.2.5, 2026-06-02). 委员会数据缓存 + 8 段注入优化 + 前端名称显示（stock_data_cache 永久缓存 + build_asset_context cache-first + load_prompt_for_round 统一占位符 + Risk prompt 资产上下文 + 工具层 cache-first + nameMap + isMarketOpen + 6 项 simplify）。See `docs/changelog.md`.
+**Current phase:** Phase 10+ (v5.2.6, 2026-06-02). 持仓名称持久化 + 收盘价格修复 + 代码搜索 + 数据初始化 + 持仓编辑 + 手动交易 + 6 项 simplify。See `docs/changelog.md`.
 
 ## Standard workflow
 
@@ -376,6 +376,7 @@ Key phases and their status:
 | 10+ (v5.2.3) | /invest UI 修复+委员会 3 子页布局重构: [data-invest-scope] CSS token 作用域覆盖(--accent 金色/--color-error 暖红/--bg-input 输入层次)/CommitteeReplayTab 250px 双栏重写/CommitteeArchiveTab 双栏+verdict regex/CommitteeToolsTab 9×5 访问矩阵真表格/抽 invest-verdict.ts+pipeline-config ROLE_COLORS+getStepState/5 项 simplify 审查修复(verdictMap 预计算/loadGen race fix/死代码清理) | [done] |
 | 10+ (v5.2.4) | 批量实时行情 API+交易流程简化+返回率计算修复: get_realtime_quotes 批量 IPC(rt_k+fund_daily 降级)/refreshPrices N→1 次调用/buyStock+sellStock 移除手动 holding CRUD(依赖 record_trade recalculate)/totalReturnPct holdingsMarketValue/maxHolding 修复/--text-secondary+--text-tertiary/3 项 simplify(partition+join_all 并发+死赋值清理) | [done] |
 | 10+ (v5.2.5) | 委员会数据缓存+8段注入优化+前端名称显示: stock_data_cache 永久缓存(三元主键/batch_upsert 事务)/build_asset_context cache-first+typed deserialization(DailyBasic/FinaIndicator/ReportRc)/load_prompt_for_round 统一 17 占位符/Risk prompt 资产上下文(PE/PB/ROA/负债率/评级)/CIO 数据质量警告/exec_company_info+exec_moneyflow cache-first(nameMap/isMarketOpen 盘中检测/cron sanitize/6 项 simplify | [done] |
+| 10+ (v5.2.6) | 持仓名称持久化+收盘价格修复+代码搜索+数据初始化+持仓编辑+手动交易: trades.name/trade_date 字段+DB migration 回填/recalculate_holdings_inner 从 trade 恢复名称/investStore.nameMap 合并 3 源(持仓+行情+交易)/refreshPrices 智能守卫(收盘后已有缓存则跳过)/stock_basic ts_code 精确匹配+fund_basic 代码匹配/init_invest_data 命令/TradeDialog add_trade+edit_holding 模式/HoldingsTable 编辑按钮/recordTrade+updateHoldingMeta store 方法/TRADE_COLUMNS 常量+trade_from_row/6 项 simplify | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

@@ -65,10 +65,12 @@
   ]);
 
   let tushareToken = $state<string>('');
-  let dialogMode = $state<'buy' | 'sell' | 'cash' | 'convert' | 'add_watch' | null>(null);
+  let dialogMode = $state<'buy' | 'sell' | 'cash' | 'convert' | 'add_watch' | 'add_trade' | 'edit_holding' | null>(null);
   let dialogPrefill = $state<{ symbol?: string; name?: string; holding?: Holding } | undefined>();
   let refreshInterval = $state<ReturnType<typeof setInterval> | null>(null);
   let confirmDeleteWatch = $state<{ open: boolean; symbol: string; name: string }>({ open: false, symbol: '', name: '' });
+  let initLoading = $state(false);
+  let initResult = $state<string | null>(null);
 
   const invoke = <T,>(cmd: string, args?: Record<string, unknown>) =>
     getTransport().invoke<T>(cmd, args);
@@ -114,6 +116,7 @@
   function openCash() { dialogMode = 'cash'; dialogPrefill = undefined; }
   function openConvert(h: Holding) { dialogMode = 'convert'; dialogPrefill = { symbol: h.symbol, name: h.name ?? undefined }; }
   function openAddWatch() { dialogMode = 'add_watch'; dialogPrefill = undefined; }
+  function openEditHolding(h: Holding) { dialogMode = 'edit_holding'; dialogPrefill = { symbol: h.symbol, name: h.name ?? undefined, holding: h }; }
   function openDeleteWatch(h: Holding) {
     confirmDeleteWatch = { open: true, symbol: h.symbol, name: h.name ?? h.symbol };
   }
@@ -174,7 +177,7 @@
         <button class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]" onclick={() => investStore.refreshPrices(tushareToken)}>{t('invest_refresh_prices')}</button>
       </div>
 
-      <HoldingsTable onSell={openSell} onConvert={openConvert} onAddWatch={openAddWatch} onDeleteWatch={openDeleteWatch} {tushareToken} />
+      <HoldingsTable onSell={openSell} onConvert={openConvert} onAddWatch={openAddWatch} onDeleteWatch={openDeleteWatch} onEdit={openEditHolding} {tushareToken} />
 
       <div class="mt-[var(--space-6)]">
         <PnlChart />
@@ -218,7 +221,7 @@
       {/if}
     {:else if activeTab === 'system'}
       <!-- System sub-tab navigation (pill style) -->
-      <div class="mb-[var(--space-4)] flex flex-wrap gap-[var(--space-2)]">
+      <div class="mb-[var(--space-4)] flex flex-wrap items-center gap-[var(--space-2)]">
         {#each systemSubTabs as subTab}
           <button
             class="rounded-full px-[var(--space-3)] py-[var(--space-1)] text-[12px] font-medium transition-colors"
@@ -233,6 +236,36 @@
             {subTab.label}
           </button>
         {/each}
+      </div>
+
+      <!-- Data initialization section -->
+      <div class="mb-[var(--space-4)] rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-[var(--space-4)]">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-[13px] font-semibold text-[var(--text-primary)]">{t('invest_data_init')}</div>
+            <div class="text-[11px] text-[var(--text-tertiary)]">{t('invest_data_init_desc')}</div>
+          </div>
+          <button
+            class="rounded-[var(--radius-md)] bg-[var(--accent)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] font-medium text-[var(--bg-base)] transition-colors hover:opacity-90 disabled:opacity-40"
+            disabled={!tushareToken || initLoading}
+            onclick={async () => {
+              initLoading = true;
+              initResult = null;
+              try {
+                initResult = await investStore.initInvestData(tushareToken);
+              } catch (e) {
+                initResult = String(e);
+              } finally {
+                initLoading = false;
+              }
+            }}
+          >
+            {initLoading ? '...' : t('invest_data_init_btn')}
+          </button>
+        </div>
+        {#if initResult !== null}
+          <p class="mt-2 text-[11px] text-[var(--text-secondary)]">{initResult}</p>
+        {/if}
       </div>
 
       {#if systemSubTab === 'cron'}

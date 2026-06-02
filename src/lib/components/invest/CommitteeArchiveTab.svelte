@@ -21,24 +21,16 @@
     return map;
   });
 
-  // Combined HOLD + WATCH list for dropdown
+  // Combined HOLD + WATCH list for dropdown — use centralized nameMap
   const symbolOptions = $derived(
     investStore.holdings
       .filter((h) => h.kind === 'hold' || h.kind === 'watch')
       .map((h) => ({ symbol: h.symbol, label: h.name ? `${h.symbol} ${h.name}` : h.symbol }))
   );
 
-  // Symbol → Chinese name lookup from holdings
-  const nameMap = $derived.by(() => {
-    const map = new Map<string, string>();
-    for (const h of investStore.holdings) {
-      if (h.name) map.set(h.symbol, h.name);
-    }
-    return map;
-  });
-
+  // Symbol → Chinese name lookup from centralized store (enriched from holdings + price cache + trades)
   function symLabel(sym: string): string {
-    return nameMap.get(sym) ?? sym;
+    return investStore.nameMap.get(sym) ?? sym;
   }
 
   async function load() {
