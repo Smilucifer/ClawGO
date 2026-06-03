@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v5.2.11, 2026-06-03). 记忆管理重构+DSML 工具调用格式兼容+委员会 UI 修复。See `docs/changelog.md`.
+**Current phase:** Phase 10+ (v5.2.12, 2026-06-03). Tushare moneyflow_dc Schema 迁移+XML 工具调用解析+Changelog 查看器+委员会批量运行。See `docs/changelog.md`.
 
 ## Standard workflow
 
@@ -381,6 +381,7 @@ Key phases and their status:
 | 10+ (v5.2.9) | 腾讯行情 API 集成+ETF 价格修复+asset_type 全链路修复+DB 迁移安全修复+代码审查优化: tencent_quotes 模块(fetch_quotes/~分隔解析/共享 reqwest::Client)/realtime_quotes 四层降级(腾讯→部分成功→rt_k→daily)/resolve_close_idx 统一价格列定位/get_latest_price adj_nav fallback/Trade.asset_type 字段+DB migration 回填/update_trade SQL 补 asset_type/resolve_asset_type 推导/is_etf_symbol 共享函数/前端 6 处 IPC 补 assetType/TradeDialog add_trade 传入/init_with_fallback 备份策略(迁移失败先备份再删除)/backup_db_files 时间戳备份/migrate_trades_table 宽容迁移(动态列检测+NULL 填充)/7 项 simplify(移除重复 RealtimeQuote+复用 client+共享 is_etf_symbol+长度守卫 38+部分成功降级+注释更新+conn.transaction() RAII 回滚+get_table_columns Result 防静默擦除+DB_SIDECAR_EXTS 常量+HashSet O(1) 查找+TRADES_COLUMNS 静态常量+删除 20 行死代码) | [done] |
 | 10+ (v5.2.10) | 委员会直播页面崩溃修复 — watch/hold 持仓去重+Simplify 审查修复: watchHoldings store 层 holdSymbolSet 去重(根因: buyStock 不清理 watch 条目→重复 key→Svelte 运行时崩溃)/CommitteeLiveTab+CommitteeReplayTab 组件级冗余去重移除/3 项 simplify(altitude: 去重提升到 store 层/reuse: 消除跨组件重复 seen Set/simplification: 双循环合并为 map) | [done] |
 | 10+ (v5.2.11) | 记忆管理重构+DSML 工具调用格式兼容+委员会 UI 修复: list_memory_files 定向扫描/remove_memory+archive_memory+restore_memory 命令/EmbeddingConfig+memory_dream_enabled 持久化/记忆管理页重写(saveSettingsPatch)/parse_dsml_tool_calls 解析器(collect_stream 层规范化)/orchestrator 简化(解构去 clone+args 缓存)/CommitteeAccuracyTab onMount 修复/emergencyBufferCny+formatCash 精度 | [done] |
+| 10+ (v5.2.12) | Tushare moneyflow_dc Schema 迁移+XML 工具调用解析+Changelog 查看器+委员会批量运行: MoneyflowDc 结构体*_vol→*_amount(7 字段)/万手→亿元/moneyflow_dc() 解析器+aggregate_moneyflow+format_moneyflow_summary+工具描述更新/parse_xml_tool_calls(<tool_call> 格式)/finish_tool_parse 共享函数/collect_stream 二级降级/7 单元测试/AboutModal changelog.md 解析+折叠展开+搜索+懒解析/CommitteeLiveTab 复选框多选+运行选中+全选/ReplayTab verdict 徽章+MarkdownContent/buildVerdictMap+encodeCwdSlug 提取/memory 项目范围过滤/10 i18n keys/4 路 simplify 审查通过 | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

@@ -956,9 +956,10 @@ fn build_context_messages(
 /// tools) produces the final text. When `tool_defs` is `None`, a single call
 /// is made without tools.
 ///
-/// Note: DSML (DeepSeek/MiMo native) tool-call normalization is handled
-/// upstream in `collect_stream()`, so `response1.tool_calls` is already
-/// populated correctly regardless of the provider's wire format.
+/// Note: DSML (DeepSeek/MiMo native) and plain `<tool_call>` tool-call
+/// normalization is handled upstream in `collect_stream()`, so
+/// `response1.tool_calls` is already populated correctly regardless of the
+/// provider's wire format.
 async fn run_with_tool_loop(
     client: &dyn InvestLlmClient,
     symbol: &str,

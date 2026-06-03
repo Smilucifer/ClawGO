@@ -573,6 +573,10 @@
   "invest_no_token": "Set Tushare token in Settings to enable live prices.",
   "invest_refresh_prices": "Refresh Prices",
   "invest_run_all_holdings": "Run All Holdings",
+  "invest_run_selected": "Run Selected ({count})",
+  "invest_select_all": "Select All",
+  "invest_clear_selection": "Clear Selection",
+  "invest_select_symbol": "Select {symbol}",
   "invest_include_watch": "Include WATCH",
   "invest_overview_symbol": "Symbol",
   "invest_overview_status": "Status",
@@ -2113,6 +2117,12 @@
   "appUpdate_checking": "Checking...",
   "appUpdate_upToDate": "You are already on the latest version (v{version}).",
   "appUpdate_checkFailed": "Failed to check for updates. Please try again later.",
+
+  "about_changelog": "Changelog",
+  "about_searchVersions": "Search versions...",
+  "about_expandAll": "Expand all",
+  "about_collapseAll": "Collapse all",
+  "about_noMatching": "No matching versions found",
 
   "drag_foldersInserted": "{count} folder(s) added as path reference",
   "drag_filesAsPathRef": "{count} file(s) added as path reference",

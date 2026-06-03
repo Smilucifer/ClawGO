@@ -103,7 +103,7 @@ pub fn get_recent_committee_verdicts_def() -> ToolDef {
 pub fn get_moneyflow_def() -> ToolDef {
     ToolDef {
         name: "get_moneyflow".to_string(),
-        description: "获取个股近5日主力/散户资金流向。返回每日大单/超大单/中单/小单的买入卖出量和净流入。ETF 标的可能无数据。".to_string(),
+        description: "获取个股近5日主力/散户资金流向。返回每日超大单/大单/中单/小单净额（万元）及汇总（亿元）。ETF 标的可能无数据。".to_string(),
         parameters: json!({
             "type": "object",
             "properties": {

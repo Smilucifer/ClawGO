@@ -1,5 +1,62 @@
 # Changelog / 更新日志
 
+## v5.2.12 (2026-06-03)
+
+### Tushare moneyflow_dc Schema 迁移 + XML 工具调用解析 + Changelog 查看器 + 委员会批量运行
+
+**Tushare `moneyflow_dc` API Schema 迁移 (5 项):**
+1. **`MoneyflowDc` 结构体重写**: 字段从 `*_vol`(买/卖分开, 11 字段) 改为 `*_amount`(净额, 7 字段)，匹配 Tushare 上游 API 变更
+2. **`moneyflow_dc()` 解析器更新**: 字段名查找从 `buy_sm_vol`/`sell_sm_vol` 等改为 `buy_sm_amount`/`buy_md_amount` 等
+3. **`aggregate_moneyflow()` 简化**: 从 `buy - sell` 对减改为直接累加净额（API 已预计算）
+4. **`format_moneyflow_summary()` 单位修正**: 从"万手"改为"亿元"（÷10000），保留两位小数
+5. **`get_moneyflow_def()` 描述更新**: 工具说明反映新数据格式（净额万元/汇总亿元）
+
+**Plain XML 工具调用解析器 (4 项):**
+6. **`parse_xml_tool_calls()` 解析器**: 新增对 `<tool_call>{"name":"...","arguments":{...}}</tool_call>` 格式的支持，覆盖 LLM 偶发的纯文本工具调用
+7. **`finish_tool_parse()` 共享函数**: 提取 DSML 和 XML 解析器共用的日志+Option 包装逻辑，消除重复代码
+8. **`collect_stream()` 二级降级**: DSML 格式检测失败后尝试 plain XML 格式，确保工具调用不丢失
+9. **7 个单元测试**: 覆盖基本解析、多调用、畸形 JSON、空参数、缺字段、缺闭合标签等场景
+
+**AboutModal Changelog 查看器 (UI 重写):**
+10. **从 README 渲染改为 changelog.md 解析**: `parseChangelog()` 支持 `vX.Y.Z (date)` 和 `Phase X` 两种头部格式
+11. **版本折叠/展开**: 每个版本独立折叠，当前版本自动高亮+展开
+12. **搜索过滤**: 按版本号、标题、正文内容实时过滤
+13. **懒解析**: 首次打开 Modal 时才解析 changelog，避免启动开销
+14. **i18n**: 新增 `about_changelog`/`about_searchVersions`/`about_expandAll`/`about_collapseAll`/`about_noMatching` 5 个 key
+
+**委员会直播页批量运行 (UX 增强):**
+15. **复选框选择**: 每个持仓卡片前新增 checkbox，支持多选标的
+16. **"运行选中"按钮**: 只运行勾选的标的，与"运行全部"并列
+17. **全选/取消选择**: 一键批量操作，运行状态时禁用
+18. **i18n**: 新增 `invest_run_selected`/`invest_select_all`/`invest_clear_selection`/`invest_select_symbol` 4 个 key
+
+**委员会 UI 细节优化 (3 项):**
+19. **`buildVerdictMap()` 共享函数**: `CommitteeArchiveTab` 和 `CommitteeReplayTab` 的 verdict 预计算逻辑提取到 `invest-verdict.ts`
+20. **MarkdownContent 渲染**: ArchiveTab 和 ReplayTab 归档内容从纯文本改为 Markdown 渲染
+21. **ReplayTab verdict 徽章**: 侧边栏日期列表和详情页头部显示 verdict 色标徽章
+
+**工具函数提取 (2 项):**
+22. **`encodeCwdSlug()` 提取**: 从 `+layout.svelte` 内联函数提取到 `format.ts` 共享模块，memory 页面复用
+23. **Memory 页面项目范围过滤**: `scopeMemory` 按 `encodeCwdSlug(projectCwd)` 过滤，只显示当前项目的记忆条目
+
+**涉及文件:**
+- `src-tauri/src/tushare/client.rs` — `MoneyflowDc` 结构体+解析器+聚合+格式化
+- `src-tauri/src/invest/committee/tools.rs` — `get_moneyflow_def()` 描述
+- `src-tauri/src/invest/llm/types.rs` — `parse_xml_tool_calls()` + `finish_tool_parse()` + 测试
+- `src-tauri/src/invest/committee/orchestrator.rs` — DSML 注释更新
+- `src/lib/components/AboutModal.svelte` — Changelog 查看器重写
+- `src/lib/components/invest/CommitteeLiveTab.svelte` — 批量运行
+- `src/lib/components/invest/CommitteeArchiveTab.svelte` — verdictMap + MarkdownContent
+- `src/lib/components/invest/CommitteeReplayTab.svelte` — verdictMap + MarkdownContent + 徽章
+- `src/lib/utils/invest-verdict.ts` — `buildVerdictMap()` 共享函数
+- `src/lib/utils/format.ts` — `encodeCwdSlug()` 共享函数
+- `src/routes/+layout.svelte` — 使用共享 `encodeCwdSlug`
+- `src/routes/memory/+page.svelte` — 项目范围过滤
+- `messages/en.json` — 10 个新 i18n key
+- `messages/zh-CN.json` — 10 个新 i18n key
+
+---
+
 ## v5.2.11 (2026-06-03)
 
 ### 记忆管理重构 + DSML 工具调用格式兼容 + 委员会 UI 修复

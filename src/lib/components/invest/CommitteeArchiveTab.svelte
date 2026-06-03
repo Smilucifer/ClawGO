@@ -3,7 +3,8 @@
   import { investCommitteeStore } from '$lib/stores/invest-committee-store.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
   import type { ArchivedDecision } from '$lib/stores/invest-committee-store.svelte';
-  import { getVerdictBadgeStyle, parseVerdictFromContent } from '$lib/utils/invest-verdict';
+  import { getVerdictBadgeStyle, buildVerdictMap } from '$lib/utils/invest-verdict';
+  import MarkdownContent from '$lib/components/MarkdownContent.svelte';
 
   let symbol = $state('');
   let days = $state(14);
@@ -15,11 +16,7 @@
 
   // Pre-compute verdicts once per archives change — avoids re-running regex
   // on every selectedDate click for the entire list.
-  const verdictMap = $derived.by(() => {
-    const map = new Map<string, string | null>();
-    for (const a of archives) map.set(a.date, parseVerdictFromContent(a.content));
-    return map;
-  });
+  const verdictMap = $derived.by(() => buildVerdictMap(archives));
 
   // Combined HOLD + WATCH list for dropdown — use centralized nameMap
   const symbolOptions = $derived(
@@ -133,8 +130,8 @@
           </span>
         {/if}
       </div>
-      <div class="max-h-[60vh] overflow-y-auto whitespace-pre-wrap font-[var(--font-mono)] text-[13px] leading-[1.7] text-[var(--text-secondary)]">
-        {selected.content}
+      <div class="max-h-[60vh] overflow-y-auto text-[13px] leading-[1.7]">
+        <MarkdownContent text={selected.content} />
       </div>
     {:else}
       <div class="flex h-full items-center justify-center text-[13px] text-[var(--text-tertiary)]">

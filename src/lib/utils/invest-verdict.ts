@@ -30,3 +30,15 @@ export function parseVerdictFromContent(content: string): VerdictKind | null {
   const m = content.match(VERDICT_RE);
   return m ? (m[1].toUpperCase() as VerdictKind) : null;
 }
+
+/**
+ * Pre-compute a verdict map from archived decisions — avoids re-running
+ * regex on every date click for the entire list.
+ */
+export function buildVerdictMap(
+  archives: { date: string; content: string }[],
+): Map<string, string | null> {
+  const map = new Map<string, string | null>();
+  for (const a of archives) map.set(a.date, parseVerdictFromContent(a.content));
+  return map;
+}

@@ -8,6 +8,7 @@
   import CodeEditor from "$lib/components/CodeEditor.svelte";
   import { t } from "$lib/i18n/index.svelte";
   import { dbgWarn } from "$lib/utils/debug";
+  import { encodeCwdSlug } from "$lib/utils/format";
   import { filterVisibleCandidates } from "$lib/utils/memory-helpers";
   import type { MemoryFileCandidate } from "$lib/types";
 
@@ -31,7 +32,12 @@
     ...candidates.filter((c) => c.scope === "global-memory"),
   ]);
   let scopeProject = $derived(candidates.filter((c) => c.scope === "project"));
-  let scopeMemory = $derived(candidates.filter((c) => c.scope === "memory"));
+  // Filter memory scope by current project slug — only show memories belonging to this project
+  let scopeMemory = $derived(
+    projectCwd
+      ? candidates.filter((c) => c.scope === "memory" && c.projectSlug === encodeCwdSlug(projectCwd))
+      : candidates.filter((c) => c.scope === "memory"),
+  );
   // Merge project + auto-memory for the project section
   let scopeFolder = $derived([...scopeProject, ...scopeMemory]);
 

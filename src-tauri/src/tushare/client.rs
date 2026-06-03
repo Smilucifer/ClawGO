@@ -197,39 +197,41 @@ pub struct ReportRc {
 pub struct MoneyflowDc {
     pub ts_code: String,
     pub trade_date: String,
-    pub buy_sm_vol: Option<f64>,
-    pub sell_sm_vol: Option<f64>,
-    pub buy_md_vol: Option<f64>,
-    pub sell_md_vol: Option<f64>,
-    pub buy_lg_vol: Option<f64>,
-    pub sell_lg_vol: Option<f64>,
-    pub buy_elg_vol: Option<f64>,
-    pub sell_elg_vol: Option<f64>,
-    pub net_mf_vol: Option<f64>,
+    /// 小单净额（万元）
+    pub buy_sm_amount: Option<f64>,
+    /// 中单净额（万元）
+    pub buy_md_amount: Option<f64>,
+    /// 大单净额（万元）
+    pub buy_lg_amount: Option<f64>,
+    /// 超大单净额（万元）
+    pub buy_elg_amount: Option<f64>,
+    /// 净流入金额（万元）
+    pub net_amount: Option<f64>,
 }
 
 impl MoneyflowDc {
-    /// 聚合主力/散户净流入（万手）
-    /// 主力 = 超大单 + 大单 净流入
-    /// 散户 = 中单 + 小单 净流入
+    /// 聚合主力/散户净流入（万元）
+    /// 主力 = 超大单净额 + 大单净额
+    /// 散户 = 中单净额 + 小单净额
     pub fn aggregate_moneyflow(rows: &[MoneyflowDc]) -> (f64, f64) {
         let mut main_net = 0.0;
         let mut retail_net = 0.0;
         for r in rows {
-            main_net += r.buy_elg_vol.unwrap_or(0.0) - r.sell_elg_vol.unwrap_or(0.0)
-                      + r.buy_lg_vol.unwrap_or(0.0) - r.sell_lg_vol.unwrap_or(0.0);
-            retail_net += r.buy_md_vol.unwrap_or(0.0) - r.sell_md_vol.unwrap_or(0.0)
-                        + r.buy_sm_vol.unwrap_or(0.0) - r.sell_sm_vol.unwrap_or(0.0);
+            main_net += r.buy_elg_amount.unwrap_or(0.0) + r.buy_lg_amount.unwrap_or(0.0);
+            retail_net += r.buy_md_amount.unwrap_or(0.0) + r.buy_sm_amount.unwrap_or(0.0);
         }
         (main_net, retail_net)
     }
 
-    /// 格式化资金流向摘要
+    /// 格式化资金流向摘要（亿元）
     pub fn format_moneyflow_summary(rows: &[MoneyflowDc]) -> String {
         let (main_net, retail_net) = Self::aggregate_moneyflow(rows);
         let main_label = if main_net >= 0.0 { "主力净流入" } else { "主力净流出" };
         let retail_label = if retail_net >= 0.0 { "散户净流入" } else { "散户净流出" };
-        format!("{} {:.1}万手，{} {:.1}万手", main_label, main_net.abs(), retail_label, retail_net.abs())
+        // 万元 → 亿元，保留两位小数
+        let main_yi = main_net.abs() / 10000.0;
+        let retail_yi = retail_net.abs() / 10000.0;
+        format!("{} {:.2}亿元，{} {:.2}亿元", main_label, main_yi, retail_label, retail_yi)
     }
 }
 
@@ -1375,15 +1377,11 @@ impl TushareClient {
 
         let ts_code_idx = fields.iter().position(|f| f == "ts_code");
         let trade_date_idx = fields.iter().position(|f| f == "trade_date");
-        let buy_sm_vol_idx = fields.iter().position(|f| f == "buy_sm_vol");
-        let sell_sm_vol_idx = fields.iter().position(|f| f == "sell_sm_vol");
-        let buy_md_vol_idx = fields.iter().position(|f| f == "buy_md_vol");
-        let sell_md_vol_idx = fields.iter().position(|f| f == "sell_md_vol");
-        let buy_lg_vol_idx = fields.iter().position(|f| f == "buy_lg_vol");
-        let sell_lg_vol_idx = fields.iter().position(|f| f == "sell_lg_vol");
-        let buy_elg_vol_idx = fields.iter().position(|f| f == "buy_elg_vol");
-        let sell_elg_vol_idx = fields.iter().position(|f| f == "sell_elg_vol");
-        let net_mf_vol_idx = fields.iter().position(|f| f == "net_mf_vol");
+        let buy_sm_amount_idx = fields.iter().position(|f| f == "buy_sm_amount");
+        let buy_md_amount_idx = fields.iter().position(|f| f == "buy_md_amount");
+        let buy_lg_amount_idx = fields.iter().position(|f| f == "buy_lg_amount");
+        let buy_elg_amount_idx = fields.iter().position(|f| f == "buy_elg_amount");
+        let net_amount_idx = fields.iter().position(|f| f == "net_amount");
 
         let mut items = Vec::with_capacity(resp.data.items.len());
         for row in &resp.data.items {
@@ -1394,15 +1392,11 @@ impl TushareClient {
                 trade_date: trade_date_idx
                     .and_then(|i| get_str(row, i))
                     .unwrap_or_default(),
-                buy_sm_vol: buy_sm_vol_idx.and_then(|i| get_f64(row, i)),
-                sell_sm_vol: sell_sm_vol_idx.and_then(|i| get_f64(row, i)),
-                buy_md_vol: buy_md_vol_idx.and_then(|i| get_f64(row, i)),
-                sell_md_vol: sell_md_vol_idx.and_then(|i| get_f64(row, i)),
-                buy_lg_vol: buy_lg_vol_idx.and_then(|i| get_f64(row, i)),
-                sell_lg_vol: sell_lg_vol_idx.and_then(|i| get_f64(row, i)),
-                buy_elg_vol: buy_elg_vol_idx.and_then(|i| get_f64(row, i)),
-                sell_elg_vol: sell_elg_vol_idx.and_then(|i| get_f64(row, i)),
-                net_mf_vol: net_mf_vol_idx.and_then(|i| get_f64(row, i)),
+                buy_sm_amount: buy_sm_amount_idx.and_then(|i| get_f64(row, i)),
+                buy_md_amount: buy_md_amount_idx.and_then(|i| get_f64(row, i)),
+                buy_lg_amount: buy_lg_amount_idx.and_then(|i| get_f64(row, i)),
+                buy_elg_amount: buy_elg_amount_idx.and_then(|i| get_f64(row, i)),
+                net_amount: net_amount_idx.and_then(|i| get_f64(row, i)),
             });
         }
         Ok(items)

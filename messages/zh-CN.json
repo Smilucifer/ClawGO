@@ -573,6 +573,10 @@
   "invest_no_token": "请在设置中配置 Tushare Token 以启用实时行情",
   "invest_refresh_prices": "刷新行情",
   "invest_run_all_holdings": "运行全部持仓",
+  "invest_run_selected": "运行选中 ({count})",
+  "invest_select_all": "全选",
+  "invest_clear_selection": "取消选择",
+  "invest_select_symbol": "选择 {symbol}",
   "invest_include_watch": "包含 WATCH",
   "invest_overview_symbol": "标的",
   "invest_overview_status": "状态",
@@ -2113,6 +2117,12 @@
   "appUpdate_checking": "检查中...",
   "appUpdate_upToDate": "当前已为最新版本（v{version}）。",
   "appUpdate_checkFailed": "检查更新失败，请稍后重试。",
+
+  "about_changelog": "更新日志",
+  "about_searchVersions": "搜索版本...",
+  "about_expandAll": "展开全部",
+  "about_collapseAll": "收起全部",
+  "about_noMatching": "没有匹配的版本",
 
   "drag_foldersInserted": "已添加 {count} 个文件夹路径引用",
   "drag_filesAsPathRef": "{count} 个文件已添加为路径引用",

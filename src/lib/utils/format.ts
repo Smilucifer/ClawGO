@@ -91,6 +91,14 @@ export function cwdDisplayLabel(cwd: string): string {
   return parts[parts.length - 1] || "/";
 }
 
+/**
+ * Encode a cwd path to a slug for `~/.claude/projects/<slug>/memory/` lookup.
+ * Must match Rust `encode_cwd()` in `cli_sessions.rs`.
+ */
+export function encodeCwdSlug(cwd: string): string {
+  return cwd.replace(/[/\\]/g, "-");
+}
+
 /** Format an install count with K/M suffix (e.g. 160242 → "160K"). */
 export function formatInstallCount(count: number): string {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;

@@ -1,6 +1,7 @@
 <script lang="ts">
   import "../app.css";
   import { escapeHtml } from "$lib/utils/ansi";
+  import { encodeCwdSlug } from "$lib/utils/format";
   import {
     listRuns,
     getUserSettings,
@@ -311,11 +312,6 @@
     memoryCandidates.filter((c) => c.scope === "global" || c.scope === "global-memory"),
   );
   let memoryScopeMemory = $derived(memoryCandidates.filter((c) => c.scope === "memory"));
-
-  /** Encode a cwd path to match ~/.claude/projects/{slug} naming convention. */
-  function encodeCwdSlug(cwd: string): string {
-    return cwd.replace(/[/\\]/g, "-");
-  }
 
   /** Get memory files belonging to a specific project. */
   function memoryForProject(cwd: string): MemoryFileCandidate[] {

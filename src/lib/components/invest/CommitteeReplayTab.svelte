@@ -6,7 +6,8 @@
   import type { MessageKey } from '$lib/i18n/types';
   import DebateBlock from './DebateBlock.svelte';
   import { STEP_DEFS, getStepState, getRoundForStep } from './pipeline-config';
-  import { getVerdictBadgeStyle } from '$lib/utils/invest-verdict';
+  import { getVerdictBadgeStyle, buildVerdictMap } from '$lib/utils/invest-verdict';
+  import MarkdownContent from '$lib/components/MarkdownContent.svelte';
 
   // ── Mode ───────────────────────────────────────────────────────────────────
   type ReplayMode = 'replay' | 'simulate';
@@ -19,6 +20,10 @@
   const selectedArchive = $derived(
     archives.find((a) => a.date === selectedDate) ?? archives[0] ?? null,
   );
+
+  // Pre-compute verdicts once per archives change — avoids re-running regex
+  // on every selectedDate click for the entire list.
+  const verdictMap = $derived.by(() => buildVerdictMap(archives));
 
   // Simulate mode state
   let simulateRounds = $state(2);
@@ -195,15 +200,21 @@
             {:else}
               <div class="space-y-0.5">
                 {#each archives as archive}
+                  {@const v = verdictMap.get(archive.date) ?? null}
                   <button
-                    class="block w-full rounded-[var(--radius-md)] px-[var(--space-2)] py-[var(--space-1)] text-left text-[12px] font-[var(--font-mono)] transition-colors"
+                    class="flex w-full items-center justify-between rounded-[var(--radius-md)] px-[var(--space-2)] py-[var(--space-1)] text-left text-[12px] font-[var(--font-mono)] transition-colors"
                     class:bg-[var(--accent-muted)]={selectedDate === archive.date}
                     class:text-[var(--accent)]={selectedDate === archive.date}
                     class:text-[var(--text-secondary)]={selectedDate !== archive.date}
                     class:hover:bg-[var(--bg-hover)]={selectedDate !== archive.date}
                     onclick={() => (selectedDate = archive.date)}
                   >
-                    {archive.date}
+                    <span>{archive.date}</span>
+                    {#if v}
+                      <span class="rounded-[var(--radius-sm)] px-1.5 py-0.5 text-[9px] font-bold" style={getVerdictBadgeStyle(v)}>
+                        {v}
+                      </span>
+                    {/if}
                   </button>
                 {/each}
               </div>
@@ -223,15 +234,21 @@
             {t('invest_archive_select')}
           </div>
         {:else}
+          {@const v = verdictMap.get(selectedArchive.date) ?? null}
           <div class="mb-[var(--space-3)] flex items-center gap-[var(--space-3)]">
             <span class="text-[14px] font-semibold text-[var(--text-primary)]">
               {allHoldings.find((h) => h.symbol === selectedArchive.symbol)?.name ?? selectedArchive.symbol}
             </span>
             <span class="font-[var(--font-mono)] text-xs text-[var(--text-secondary)]">{selectedArchive.symbol}</span>
             <span class="text-xs text-[var(--text-tertiary)]">— {selectedArchive.date}</span>
+            {#if v}
+              <span class="ml-auto rounded-[var(--radius-full)] px-3 py-1 text-[11px] font-bold" style={getVerdictBadgeStyle(v)}>
+                {v}
+              </span>
+            {/if}
           </div>
-          <div class="whitespace-pre-wrap font-[var(--font-mono)] text-[13px] leading-[1.7] text-[var(--text-secondary)]">
-            {selectedArchive.content}
+          <div class="max-h-[60vh] overflow-y-auto text-[13px] leading-[1.7]">
+            <MarkdownContent text={selectedArchive.content} />
           </div>
         {/if}
       </section>

@@ -258,6 +258,21 @@ pub struct CollectedResponse {
 /// Full-width vertical bar (U+FF5C) used by DeepSeek/MiMo DSML format.
 const DSML_BAR: &str = "\u{FF5C}";
 
+/// Common tail for all tool-call parsers: log result and wrap in `Option`.
+fn finish_tool_parse(tool_calls: Vec<ToolCall>, label: &str) -> Option<Vec<ToolCall>> {
+    if tool_calls.is_empty() {
+        log::warn!("{label} format detected but no tool calls parsed");
+        None
+    } else {
+        log::info!(
+            "Successfully parsed {} {label} tool calls: {:?}",
+            tool_calls.len(),
+            tool_calls.iter().map(|tc| &tc.name).collect::<Vec<_>>()
+        );
+        Some(tool_calls)
+    }
+}
+
 /// Parse tool calls from DSML format text content.
 ///
 /// Some LLMs (DeepSeek, MiMo) occasionally return tool calls in their native
@@ -343,24 +358,62 @@ pub(crate) fn parse_dsml_tool_calls(content: &str) -> Option<Vec<ToolCall>> {
         remaining = &remaining[body_start + body_end + invoke_close.len()..];
     }
 
-    if tool_calls.is_empty() {
-        log::warn!("DSML format detected but no tool calls parsed");
-        None
-    } else {
-        log::info!(
-            "Successfully parsed {} DSML tool calls: {:?}",
-            tool_calls.len(),
-            tool_calls.iter().map(|tc| &tc.name).collect::<Vec<_>>()
-        );
-        Some(tool_calls)
+    finish_tool_parse(tool_calls, "DSML")
+}
+
+/// Parse tool calls from plain XML-like `<tool_call>` tags.
+///
+/// Some LLMs occasionally return tool calls as plain text with
+/// `<tool_call>{"name":"...","arguments":{...}}</tool_call>` format instead
+/// of using the OpenAI-compatible streaming protocol or DSML tags.
+/// This function detects and parses that format into standard `ToolCall` structs.
+pub(crate) fn parse_xml_tool_calls(content: &str) -> Option<Vec<ToolCall>> {
+    if !content.contains("<tool_call>") {
+        return None;
     }
+
+    log::info!("Detected plain XML tool-call format in LLM response, parsing...");
+
+    let mut tool_calls = Vec::new();
+    let mut remaining = content;
+
+    while let Some(start) = remaining.find("<tool_call>") {
+        let after_open = &remaining[start + "<tool_call>".len()..];
+        let Some(end) = after_open.find("</tool_call>") else {
+            break; // missing closing tag — stop parsing, keep what we have
+        };
+        let body = after_open[..end].trim();
+
+        // The body may contain the JSON directly, or have extra wrapping.
+        // Try to parse as JSON with "name" and "arguments" fields.
+        match serde_json::from_str::<serde_json::Value>(body) {
+            Ok(obj) => {
+                if let Some(name) = obj.get("name").and_then(|v| v.as_str()) {
+                    let arguments = obj
+                        .get("arguments")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+                    tool_calls.push(ToolCall {
+                        id: format!("xml_{}", tool_calls.len()),
+                        name: name.to_string(),
+                        arguments,
+                    });
+                }
+            }
+            Err(e) => log::warn!("<tool_call> body is not valid JSON: {e}"),
+        }
+
+        remaining = &remaining[start + "<tool_call>".len() + end + "</tool_call>".len()..];
+    }
+
+    finish_tool_parse(tool_calls, "plain XML")
 }
 
 /// Collect a stream into a single `CollectedResponse`.
 ///
-/// After assembly, performs DSML normalization: if `tool_calls` is empty but
-/// `content` contains DeepSeek/MiMo DSML-format tool call tags, parses them
-/// into `tool_calls` and clears the raw XML from `content`.
+/// After assembly, performs format normalization: if `tool_calls` is empty but
+/// `content` contains DSML or plain `<tool_call>` tags, parses them
+/// into `tool_calls` and clears the raw text from `content`.
 pub async fn collect_stream(mut stream: BoxStream<'static, StreamChunk>) -> CollectedResponse {
     let mut result = CollectedResponse::default();
     let mut tool_call_map: std::collections::HashMap<String, (String, String)> =
@@ -398,12 +451,14 @@ pub async fn collect_stream(mut stream: BoxStream<'static, StreamChunk>) -> Coll
         }
     }
 
-    // Normalize DSML: if no OpenAI tool calls were streamed but content contains
-    // DSML tags, parse them and move to tool_calls, clearing the raw XML.
+    // Normalize: if no OpenAI tool calls were streamed, try DSML then plain XML.
     if result.tool_calls.is_empty() {
         if let Some(dsml_calls) = parse_dsml_tool_calls(&result.content) {
             result.content.clear();
             result.tool_calls = dsml_calls;
+        } else if let Some(xml_calls) = parse_xml_tool_calls(&result.content) {
+            result.content.clear();
+            result.tool_calls = xml_calls;
         }
     }
 
@@ -411,3 +466,86 @@ pub async fn collect_stream(mut stream: BoxStream<'static, StreamChunk>) -> Coll
 }
 
 use futures_util::StreamExt;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_xml_tool_calls_basic() {
+        let content = r#"<tool_call>
+{"name":"get_history_data","arguments":{"symbol":"000300.SH","days":90}}
+</tool_call>"#;
+        let calls = parse_xml_tool_calls(content).expect("should parse");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "get_history_data");
+        assert_eq!(calls[0].arguments["symbol"], "000300.SH");
+        assert_eq!(calls[0].arguments["days"], 90);
+    }
+
+    #[test]
+    fn test_parse_xml_tool_calls_multiple() {
+        let content = r#"Some preamble
+<tool_call>
+{"name":"get_history_data","arguments":{"symbol":"600519.SH","days":60}}
+</tool_call>
+Some text in between
+<tool_call>
+{"name":"scan_stocks","arguments":{"query":"test"}}
+</tool_call>
+trailing text"#;
+        let calls = parse_xml_tool_calls(content).expect("should parse");
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].name, "get_history_data");
+        assert_eq!(calls[1].name, "scan_stocks");
+    }
+
+    #[test]
+    fn test_parse_xml_tool_calls_no_tags() {
+        let content = "Just a normal response with no tool calls.";
+        assert!(parse_xml_tool_calls(content).is_none());
+    }
+
+    #[test]
+    fn test_parse_xml_tool_calls_malformed_json() {
+        // Malformed JSON inside the tag should skip gracefully
+        let content = "<tool_call>\nnot valid json\n</tool_call>";
+        // The parser returns None because no valid tool calls were parsed
+        assert!(parse_xml_tool_calls(content).is_none());
+    }
+
+    #[test]
+    fn test_parse_xml_tool_calls_empty_arguments() {
+        let content = r#"<tool_call>
+{"name":"some_tool","arguments":{}}
+</tool_call>"#;
+        let calls = parse_xml_tool_calls(content).expect("should parse");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "some_tool");
+    }
+
+    #[test]
+    fn test_parse_xml_tool_calls_missing_arguments_field() {
+        let content = r#"<tool_call>
+{"name":"some_tool"}
+</tool_call>"#;
+        let calls = parse_xml_tool_calls(content).expect("should parse");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "some_tool");
+        // Should default to empty object
+        assert_eq!(calls[0].arguments, serde_json::json!({}));
+    }
+
+    #[test]
+    fn test_parse_xml_tool_calls_missing_closing_tag() {
+        // Missing closing tag should gracefully stop, preserving earlier results
+        let content = r#"<tool_call>
+{"name":"first_tool","arguments":{"x":1}}
+</tool_call>
+<tool_call>
+{"name":"second_tool","arguments":{"y":2}}"#;
+        let calls = parse_xml_tool_calls(content).expect("should parse first");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "first_tool");
+    }
+}

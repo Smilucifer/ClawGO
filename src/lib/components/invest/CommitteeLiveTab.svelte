@@ -7,6 +7,7 @@
 
   let expandedSymbol = $state<string | null>(null);
   let includeWatch = $state(true);
+  let selectedSymbols = $state<Set<string>>(new Set());
 
   const store = investCommitteeStore;
   const invest = investStore;
@@ -25,8 +26,6 @@
     return assets;
   });
 
-  const holdCount = $derived(invest.holdCount);
-  const watchCount = $derived(invest.watchCount);
 
   const portfolioStats = $derived.by(() => {
     const hv = invest.holdingsMarketValue;
@@ -63,8 +62,25 @@
   // ── Helpers ──────────────────────────────────────────────────────────────
   // getStepState / getRoundForStep / getVerdictBadgeStyle 已抽到共享模块
 
-  async function runAll() {
-    const syms = allAssets.map((a) => a.symbol);
+  function toggleSelect(symbol: string) {
+    const next = new Set(selectedSymbols);
+    if (next.has(symbol)) {
+      next.delete(symbol);
+    } else {
+      next.add(symbol);
+    }
+    selectedSymbols = next;
+  }
+
+  function selectAll() {
+    selectedSymbols = new Set(allAssets.map((a) => a.symbol));
+  }
+
+  function clearSelection() {
+    selectedSymbols = new Set();
+  }
+
+  async function runSymbols(syms: string[]) {
     if (syms.length === 0) return;
     expandedSymbol = syms[0];
     await store.runCommittee(syms);
@@ -86,12 +102,29 @@
   <!-- ── Top action bar ─────────────────────────────────────────────────── -->
   <div class="flex items-center justify-between rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-3)]">
     <div class="flex items-center gap-[var(--space-3)]">
+      <!-- Run Selected Button -->
+      <button
+        class="flex items-center gap-[var(--space-2)] rounded-[var(--radius-md)] bg-[var(--accent)] px-[var(--space-4)] py-[var(--space-2)] text-[12px] font-medium text-[var(--bg-base)] transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+        disabled={store.running || selectedSymbols.size === 0}
+        onclick={() => runSymbols(Array.from(selectedSymbols))}
+      >
+        {#if store.running && selectedSymbols.size > 0}
+          <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-white"></span>
+          {t('invest_committee_running_progress', {
+            current: String(completedCount),
+            total: String(selectedSymbols.size),
+          })}
+        {:else}
+          ▶ {t('invest_run_selected', { count: String(selectedSymbols.size) })}
+        {/if}
+      </button>
+      <!-- Run All Button -->
       <button
         class="flex items-center gap-[var(--space-2)] rounded-[var(--radius-md)] bg-[rgba(138,154,118,0.15)] px-[var(--space-4)] py-[var(--space-2)] text-[12px] font-medium text-[#8a9a76] transition-colors hover:bg-[rgba(138,154,118,0.25)] disabled:cursor-not-allowed disabled:opacity-40"
         disabled={store.running || allAssets.length === 0}
-        onclick={runAll}
+        onclick={() => runSymbols(allAssets.map((a) => a.symbol))}
       >
-        {#if store.running}
+        {#if store.running && selectedSymbols.size === 0}
           <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-[#8a9a76]"></span>
           {t('invest_committee_running_progress', {
             current: String(completedCount),
@@ -106,13 +139,31 @@
         {t('invest_include_watch')}
       </label>
     </div>
-    <span class="text-[12px] text-[var(--text-tertiary)]">
-      {t('invest_hold')} {holdCount}{watchCount > 0 ? ` + ${watchCount} ${t('invest_watch')}` : ''}
-    </span>
+    <div class="flex items-center gap-[var(--space-3)]">
+      <!-- Selection controls -->
+      {#if selectedSymbols.size > 0}
+        <button
+          class="text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+          onclick={clearSelection}
+        >
+          {t('invest_clear_selection')}
+        </button>
+      {:else}
+        <button
+          class="text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+          onclick={selectAll}
+        >
+          {t('invest_select_all')}
+        </button>
+      {/if}
+      <span class="text-[12px] text-[var(--text-tertiary)]">
+        {t('invest_hold')} {invest.holdCount}{invest.watchCount > 0 ? ` + ${invest.watchCount} ${t('invest_watch')}` : ''}
+      </span>
+    </div>
   </div>
 
   <!-- ── Portfolio summary card ─────────────────────────────────────────── -->
-  {#if holdCount > 0}
+  {#if invest.holdCount > 0}
     <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-4)]">
       <div class="mb-[var(--space-3)] text-[14px] font-semibold text-[var(--text-primary)]">
         {t('invest_committee_portfolio_summary')}
@@ -120,7 +171,7 @@
       <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:var(--space-3); text-align:center;">
         <div>
           <div class="text-[11px] text-[var(--text-tertiary)]">{t('invest_position_count')}</div>
-          <div class="text-[18px] font-bold font-[var(--font-mono)] text-[var(--text-primary)]">{holdCount}</div>
+          <div class="text-[18px] font-bold font-[var(--font-mono)] text-[var(--text-primary)]">{invest.holdCount}</div>
         </div>
         <div>
           <div class="text-[11px] text-[var(--text-tertiary)]">{t('invest_holdings_value')}</div>
@@ -168,10 +219,25 @@
 
     <div class="overflow-hidden rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] transition-colors">
       <!-- Card header (clickable) -->
-      <button
-        class="flex w-full items-center gap-[var(--space-3)] px-[var(--space-4)] py-[var(--space-3)] text-left transition-colors hover:bg-[var(--bg-hover)]"
+      <div
+        class="flex w-full items-center gap-[var(--space-3)] px-[var(--space-4)] py-[var(--space-3)] text-left transition-colors hover:bg-[var(--bg-hover)] cursor-pointer"
+        role="button"
+        tabindex="0"
         onclick={() => toggleExpand(asset.symbol)}
+        onkeydown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) toggleExpand(asset.symbol); }}
       >
+        <!-- Checkbox for selection -->
+        <div class="flex items-center shrink-0">
+          <input
+            type="checkbox"
+            checked={selectedSymbols.has(asset.symbol)}
+            onchange={() => toggleSelect(asset.symbol)}
+            onclick={(e) => e.stopPropagation()}
+            disabled={store.running}
+            style="accent-color: var(--accent);"
+            aria-label={t('invest_select_symbol', { symbol: asset.symbol })}
+          />
+        </div>
         <!-- Name + ticker -->
         <span class="min-w-[80px] text-[14px] font-semibold text-[var(--text-primary)]">{asset.name || asset.symbol}</span>
         <span class="shrink-0 text-[12px] font-[var(--font-mono)] text-[var(--text-tertiary)]">{asset.symbol}</span>
@@ -211,7 +277,7 @@
 
         <!-- Expand arrow -->
         <span class="shrink-0 text-[12px] text-[var(--text-tertiary)] transition-transform {isExpanded ? 'rotate-90' : ''}">▶</span>
-      </button>
+      </div>
 
       <!-- ── Expanded body ──────────────────────────────────────────────── -->
       {#if isExpanded}
