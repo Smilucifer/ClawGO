@@ -1,5 +1,24 @@
 # Changelog / 更新日志
 
+## v5.2.10 (2026-06-03)
+
+### 委员会直播页面崩溃修复 — watch/hold 持仓去重
+
+**Bug 修复 (3 项):**
+1. **`watchHoldings` store 层去重**: `invest-store.svelte.ts` 的 `watchHoldings` 从简单 kind 过滤改为 `$derived.by` + `holdSymbolSet` 排除已在 `holdHoldings` 中的 symbol；根因是 `buyStock` 直接买入已在 watch 列表中的股票时，不会自动清理 watch 条目，导致同一 symbol 同时存在于 holdHoldings 和 watchHoldings，`{#each} (asset.symbol)` 重复 key 触发 Svelte 运行时崩溃
+2. **`CommitteeLiveTab.allAssets` 简化**: store 保证去重后，`allAssets` 从手动 `seen` Set + 双循环恢复为简洁的 `.map()` 形式
+3. **`CommitteeReplayTab.allHoldings` 简化**: 同上，移除组件级冗余去重逻辑
+
+**Simplify 审查修复 (3 项):**
+4. **Altitude 修复**: 去重从组件层（消费者自行 dedup）提升到 store 层（数据源自动过滤），所有消费者自动受益，无需重复实现
+5. **Reuse 修复**: 消除 CommitteeLiveTab 和 CommitteeReplayTab 之间重复的 `seen` Set 去重模式
+6. **Simplification**: 两个循环体合并为单一 `.map()` 调用
+
+**涉及文件:**
+- `src/lib/stores/invest-store.svelte.ts` — `watchHoldings` 加入 holdSymbolSet 去重
+- `src/lib/components/invest/CommitteeLiveTab.svelte` — `allAssets` 简化
+- `src/lib/components/invest/CommitteeReplayTab.svelte` — `allHoldings` 简化
+
 ## v5.2.9 (2026-06-03)
 
 ### 腾讯行情 API 集成 + ETF 价格修复 + asset_type 全链路修复 + DB 迁移安全修复 + 代码审查优化

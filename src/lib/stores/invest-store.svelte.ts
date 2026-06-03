@@ -65,7 +65,15 @@ class InvestStore {
 
   // ── Derived ──────────────────────────────────────────────────────────
   holdHoldings = $derived(this.holdings.filter((h) => h.kind === "hold"));
-  watchHoldings = $derived(this.holdings.filter((h) => h.kind === "watch"));
+  /**
+   * Watch holdings excluding symbols that already have a hold entry.
+   * Prevents duplicates when a watched stock is bought directly (buyStock)
+   * instead of using convertWatchToHold — the hold entry takes priority.
+   */
+  watchHoldings = $derived.by(() => {
+    const held = new Set(this.holdHoldings.map((h) => h.symbol));
+    return this.holdings.filter((h) => h.kind === "watch" && !held.has(h.symbol));
+  });
   holdCount = $derived(this.holdHoldings.length);
   watchCount = $derived(this.watchHoldings.length);
 

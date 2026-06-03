@@ -33,23 +33,11 @@
   ] as const;
 
   // ── Holdings ───────────────────────────────────────────────────────────────
-  const allHoldings = $derived.by(() => {
-    const seen = new Set<string>();
-    const result: Array<{ symbol: string; name: string; kind: string }> = [];
-    for (const h of investStore.holdHoldings) {
-      if (!seen.has(h.symbol)) {
-        seen.add(h.symbol);
-        result.push({ symbol: h.symbol, name: h.name ?? h.symbol, kind: 'HOLD' });
-      }
-    }
-    for (const h of investStore.watchHoldings) {
-      if (!seen.has(h.symbol)) {
-        seen.add(h.symbol);
-        result.push({ symbol: h.symbol, name: h.name ?? h.symbol, kind: 'WATCH' });
-      }
-    }
-    return result;
-  });
+  // store.holdHoldings / watchHoldings are already deduplicated (hold takes priority)
+  const allHoldings = $derived([
+    ...investStore.holdHoldings.map((h) => ({ symbol: h.symbol, name: h.name ?? h.symbol, kind: 'HOLD' })),
+    ...investStore.watchHoldings.map((h) => ({ symbol: h.symbol, name: h.name ?? h.symbol, kind: 'WATCH' })),
+  ]);
 
   const hasHoldings = $derived(allHoldings.length > 0);
 
