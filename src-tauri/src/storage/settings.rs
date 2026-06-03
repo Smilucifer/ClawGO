@@ -572,6 +572,8 @@ pub fn update_user_settings(patch: serde_json::Value) -> Result<UserSettings, St
     apply_hashmap_field(&mut all.user.enabled_plugins, &patch, "enabled_plugins")?;
     apply_optional_string_empty_as_none(&mut all.user.tushare_token, &patch, "tushare_token");
     apply_optional_string_empty_as_none(&mut all.user.tushare_proxy_url, &patch, "tushare_proxy_url");
+    apply_embedding_config(&mut all.user.embedding_config, &patch)?;
+    apply_bool_field(&mut all.user.memory_dream_enabled, &patch, "memory_dream_enabled");
     all.user.updated_at = crate::models::now_iso();
     save(&all)?;
     Ok(all.user)
@@ -659,6 +661,23 @@ fn apply_hashmap_field<V: serde::de::DeserializeOwned + Default>(
         } else {
             *target = serde_json::from_value(v.clone())
                 .map_err(|e| format!("Invalid {}: {}", key, e))?;
+        }
+    }
+    Ok(())
+}
+
+fn apply_embedding_config(
+    target: &mut Option<crate::models::EmbeddingConfig>,
+    patch: &serde_json::Value,
+) -> Result<(), String> {
+    if let Some(v) = patch.get("embedding_config") {
+        if v.is_null() {
+            *target = None;
+        } else {
+            *target = Some(
+                serde_json::from_value(v.clone())
+                    .map_err(|e| format!("Invalid embedding_config: {}", e))?,
+            );
         }
     }
     Ok(())

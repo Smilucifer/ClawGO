@@ -77,6 +77,21 @@ pub fn save_memory(
     )
 }
 
+#[tauri::command]
+pub fn remove_memory(id: String) -> Result<(), String> {
+    memory_store::delete_memory(&id)
+}
+
+#[tauri::command]
+pub fn archive_memory(id: String) -> Result<(), String> {
+    memory_store::archive_memory(&id)
+}
+
+#[tauri::command]
+pub fn restore_memory(id: String) -> Result<(), String> {
+    memory_store::restore_memory(&id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

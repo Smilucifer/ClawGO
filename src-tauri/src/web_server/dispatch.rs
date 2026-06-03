@@ -264,7 +264,7 @@ pub async fn dispatch_command(
         }
         "list_memory_files" => {
             let cwd = params.get("cwd").and_then(|v| v.as_str()).map(String::from);
-            let result = crate::commands::files::list_memory_files(cwd)?;
+            let result = crate::commands::files::list_memory_files(cwd, None)?;
             serde_json::to_value(result).map_err(|e| e.to_string())
         }
 

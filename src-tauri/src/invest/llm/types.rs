@@ -251,7 +251,116 @@ pub struct CollectedResponse {
     pub usage: Usage,
 }
 
+// ---------------------------------------------------------------------------
+// DSML tool-call parser (DeepSeek/MiMo native format fallback)
+// ---------------------------------------------------------------------------
+
+/// Full-width vertical bar (U+FF5C) used by DeepSeek/MiMo DSML format.
+const DSML_BAR: &str = "\u{FF5C}";
+
+/// Parse tool calls from DSML format text content.
+///
+/// Some LLMs (DeepSeek, MiMo) occasionally return tool calls in their native
+/// DSML format instead of OpenAI-compatible JSON. This function detects and
+/// parses that format into standard `ToolCall` structs.
+///
+/// DSML format example:
+/// ```xml
+/// <｜｜DSML｜｜tool_calls>
+/// <｜｜DSML｜｜invoke name="get_history_data">
+/// <｜｜DSML｜｜parameter name="symbol" string="true">600519.SH</｜｜DSML｜｜parameter>
+/// </｜｜DSML｜｜invoke>
+/// </｜｜DSML｜｜tool_calls>
+/// ```
+pub(crate) fn parse_dsml_tool_calls(content: &str) -> Option<Vec<ToolCall>> {
+    let dsml_tag = format!("<{0}{0}DSML{0}{0}tool_calls>", DSML_BAR);
+    if !content.contains(&dsml_tag) {
+        return None;
+    }
+
+    log::info!("Detected DSML tool-call format in LLM response, parsing...");
+
+    let invoke_open = format!("<{0}{0}DSML{0}{0}invoke name=\"", DSML_BAR);
+    let invoke_close = format!("</{0}{0}DSML{0}{0}invoke>", DSML_BAR);
+    let param_open = format!("<{0}{0}DSML{0}{0}parameter name=\"", DSML_BAR);
+    let param_close = format!("</{0}{0}DSML{0}{0}parameter>", DSML_BAR);
+
+    let mut tool_calls = Vec::new();
+    let mut remaining = content;
+
+    while let Some(inv_start) = remaining.find(&invoke_open) {
+        let after_open = &remaining[inv_start + invoke_open.len()..];
+        let name_end = after_open.find("\">")?;
+        let tool_name = &after_open[..name_end];
+
+        let body_start = inv_start + invoke_open.len() + name_end + 2;
+        let body_end = remaining[body_start..].find(&invoke_close)?;
+        let body = &remaining[body_start..body_start + body_end];
+
+        // Parse parameters
+        let mut params = serde_json::Map::new();
+        let mut param_rest = body;
+
+        while let Some(p_start) = param_rest.find(&param_open) {
+            let after_p = &param_rest[p_start + param_open.len()..];
+            let p_name_end = after_p.find("\">")?;
+            let name_and_attr = &after_p[..p_name_end];
+
+            // Extract name (before first quote or space)
+            let p_name = if let Some(q) = name_and_attr.find('"') {
+                &name_and_attr[..q]
+            } else if let Some(s) = name_and_attr.find(' ') {
+                &name_and_attr[..s]
+            } else {
+                name_and_attr
+            };
+            let is_string = name_and_attr.contains("string=\"true\"");
+
+            let val_start = p_name_end + 2;
+            let val_end = after_p[val_start..].find(&param_close)?;
+            let val = &after_p[val_start..val_start + val_end];
+
+            let value = if is_string {
+                serde_json::Value::String(val.to_string())
+            } else if let Ok(n) = val.parse::<i64>() {
+                serde_json::Value::Number(n.into())
+            } else if let Ok(f) = val.parse::<f64>() {
+                serde_json::json!(f)
+            } else {
+                serde_json::Value::String(val.to_string())
+            };
+            params.insert(p_name.to_string(), value);
+
+            param_rest = &param_rest[p_start + param_open.len() + val_start + val_end + param_close.len()..];
+        }
+
+        tool_calls.push(ToolCall {
+            id: format!("dsml_{}", tool_calls.len()),
+            name: tool_name.to_string(),
+            arguments: serde_json::Value::Object(params),
+        });
+
+        remaining = &remaining[body_start + body_end + invoke_close.len()..];
+    }
+
+    if tool_calls.is_empty() {
+        log::warn!("DSML format detected but no tool calls parsed");
+        None
+    } else {
+        log::info!(
+            "Successfully parsed {} DSML tool calls: {:?}",
+            tool_calls.len(),
+            tool_calls.iter().map(|tc| &tc.name).collect::<Vec<_>>()
+        );
+        Some(tool_calls)
+    }
+}
+
 /// Collect a stream into a single `CollectedResponse`.
+///
+/// After assembly, performs DSML normalization: if `tool_calls` is empty but
+/// `content` contains DeepSeek/MiMo DSML-format tool call tags, parses them
+/// into `tool_calls` and clears the raw XML from `content`.
 pub async fn collect_stream(mut stream: BoxStream<'static, StreamChunk>) -> CollectedResponse {
     let mut result = CollectedResponse::default();
     let mut tool_call_map: std::collections::HashMap<String, (String, String)> =
@@ -288,6 +397,16 @@ pub async fn collect_stream(mut stream: BoxStream<'static, StreamChunk>) -> Coll
             }
         }
     }
+
+    // Normalize DSML: if no OpenAI tool calls were streamed but content contains
+    // DSML tags, parse them and move to tool_calls, clearing the raw XML.
+    if result.tool_calls.is_empty() {
+        if let Some(dsml_calls) = parse_dsml_tool_calls(&result.content) {
+            result.content.clear();
+            result.tool_calls = dsml_calls;
+        }
+    }
+
     result
 }
 

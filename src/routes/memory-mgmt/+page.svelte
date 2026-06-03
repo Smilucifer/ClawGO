@@ -5,7 +5,7 @@
   import * as api from "$lib/api";
   import Input from "$lib/components/Input.svelte";
   import { dbgWarn } from "$lib/utils/debug";
-  import type { UserSettings } from "$lib/types";
+  import type { UserSettings, EmbeddingConfig } from "$lib/types";
 
   type MemTab = "userMemory" | "archived" | "extractionConfig";
   let activeTab: MemTab = $state("userMemory");
@@ -19,6 +19,16 @@
   let scopeFilter: string | null = $state(null);
   const scopeOptions = [null, "global", "project", "invest"];
 
+  // ── Shared helpers ────────────────────────────────────────────────
+
+  async function saveSettingsPatch(patch: Partial<UserSettings>) {
+    try {
+      settings = await api.updateUserSettings(patch);
+    } catch (err) {
+      dbgWarn("memory-mgmt", "save settings failed", err);
+    }
+  }
+
   // ── Memory Extraction Config state ──
   let memoryExtractionEnabled = $state(true);
   let memoryExtractionChatEndpoint = $state("");
@@ -29,116 +39,116 @@
   let memoryDreamEnabled = $state(true);
   let settings = $state<UserSettings | null>(null);
 
-  function loadMemoryExtractionConfig() {
-    try {
-      const s = JSON.parse(localStorage.getItem("clawgo-memory-extraction") ?? "{}");
-      if (s.chat_endpoint) memoryExtractionChatEndpoint = s.chat_endpoint;
-      if (s.chat_model) memoryExtractionChatModel = s.chat_model;
-      if (s.chat_api_key) memoryExtractionChatApiKey = s.chat_api_key;
-      if (s.enabled === false) memoryExtractionEnabled = false;
-    } catch {
-      // defaults are fine
+  function loadExtractionConfigFromSettings(s: UserSettings) {
+    const ec = s.embedding_config;
+    if (ec) {
+      memoryExtractionEnabled = ec.enabled ?? true;
+      memoryExtractionChatEndpoint = ec.chat_endpoint ?? "";
+      memoryExtractionChatModel = ec.chat_model ?? "";
+      memoryExtractionChatApiKey = ec.chat_api_key ?? "";
     }
   }
 
-  function saveMemoryExtractionConfig() {
-    localStorage.setItem("clawgo-memory-extraction", JSON.stringify({
-      enabled: memoryExtractionEnabled,
-      chat_endpoint: memoryExtractionChatEndpoint.trim() || undefined,
-      chat_model: memoryExtractionChatModel.trim() || undefined,
-      chat_api_key: memoryExtractionChatApiKey.trim() || undefined,
-    }));
+  async function saveExtractionConfigToSettings() {
+    if (!settings) return;
+    const ep = memoryExtractionChatEndpoint.trim();
+    const mdl = memoryExtractionChatModel.trim();
+    const key = memoryExtractionChatApiKey.trim();
+    const ec: EmbeddingConfig | undefined = memoryExtractionEnabled
+      ? {
+          enabled: true,
+          endpoint: ep || "http://localhost:8080/v1",
+          model: mdl || "gpt-4o-mini",
+          api_key: key || undefined,
+          chat_endpoint: ep || undefined,
+          chat_model: mdl || undefined,
+          chat_api_key: key || undefined,
+        }
+      : undefined;
+    await saveSettingsPatch({ embedding_config: ec } as Partial<UserSettings>);
   }
 
-  function debouncedSaveMemoryExtraction() {
+  function debouncedSaveExtraction() {
     if (memoryExtractionSaveDebounce) clearTimeout(memoryExtractionSaveDebounce);
-    memoryExtractionSaveDebounce = setTimeout(() => saveMemoryExtractionConfig(), 500);
+    memoryExtractionSaveDebounce = setTimeout(() => saveExtractionConfigToSettings(), 500);
   }
 
   onMount(async () => {
     try {
       settings = await api.getUserSettings();
       memoryDreamEnabled = settings.memory_dream_enabled ?? true;
+      loadExtractionConfigFromSettings(settings);
     } catch (e) {
       dbgWarn("memory-mgmt", "load settings failed", e);
     }
-    loadMemoryExtractionConfig();
   });
 
-  let memories: any[] = $state([]);
-  let loading = $state(false);
-  let loadVersion = 0;
+  // ── Memory list loader (parameterized) ────────────────────────────
 
-  async function loadMemories() {
-    const version = ++loadVersion;
-    loading = true;
+  let memories: any[] = $state([]);
+  let archivedMemories: any[] = $state([]);
+  let loading = $state(false);
+  let archivedLoading = $state(false);
+  let loadVersion = 0;
+  let archivedLoadVersion = 0;
+
+  async function loadMemoryList(
+    statusFilter: "approved" | "archived",
+  ) {
+    const isApproved = statusFilter === "approved";
+    const versionRef = isApproved ? ++loadVersion : ++archivedLoadVersion;
+    const setLoad = (v: boolean) => { if (isApproved) loading = v; else archivedLoading = v; };
+    const setResult = (r: any[]) => { if (isApproved) memories = r; else archivedMemories = r; };
+    const isStale = () => isApproved ? versionRef !== loadVersion : versionRef !== archivedLoadVersion;
+
+    setLoad(true);
     try {
       const result = await getTransport().invoke<any[]>("list_memories", {
+        status_filter: statusFilter,
         scope_filter: scopeFilter,
       });
-      if (version === loadVersion) {
-        memories = result;
-      }
+      if (!isStale()) setResult(result);
     } catch (e) {
-      console.error("Failed to load memories:", e);
+      console.error(`Failed to load ${statusFilter} memories:`, e);
     } finally {
-      if (version === loadVersion) {
-        loading = false;
-      }
+      if (!isStale()) setLoad(false);
     }
   }
 
   $effect(() => {
     void scopeFilter;
-    loadMemories();
+    loadMemoryList("approved");
   });
-
-  // ── Archived insights ──────────────────────────────────────────────
-
-  let archivedInsights: any[] = $state([]);
-  let archivedLoading = $state(false);
-  let archivedLoadVersion = 0;
-
-  async function loadArchivedInsights() {
-    const version = ++archivedLoadVersion;
-    archivedLoading = true;
-    try {
-      const result = await getTransport().invoke<any[]>("list_insights", {
-        status: "archived",
-        limit: 50,
-      });
-      if (version === archivedLoadVersion) {
-        archivedInsights = result;
-      }
-    } catch (e) {
-      console.error("Failed to load archived insights:", e);
-    } finally {
-      if (version === archivedLoadVersion) {
-        archivedLoading = false;
-      }
-    }
-  }
-
-  let restoringId: string | null = $state(null);
-
-  async function restoreInsight(id: string) {
-    restoringId = id;
-    try {
-      await getTransport().invoke("unarchive_insight", { id });
-      await loadArchivedInsights();
-    } catch (e) {
-      console.error("Failed to restore insight:", e);
-    } finally {
-      restoringId = null;
-    }
-  }
 
   $effect(() => {
     if (activeTab === "archived") {
-      loadArchivedInsights();
+      loadMemoryList("archived");
     }
   });
 
+  // ── Memory actions (parameterized) ────────────────────────────────
+
+  let actionLoadingId: string | null = $state(null);
+
+  async function performMemoryAction(
+    command: string,
+    id: string,
+    sourceList: "approved" | "archived",
+  ) {
+    actionLoadingId = id;
+    try {
+      await getTransport().invoke(command, { id });
+      if (sourceList === "approved") {
+        memories = memories.filter((m) => m.id !== id);
+      } else {
+        archivedMemories = archivedMemories.filter((m) => m.id !== id);
+      }
+    } catch (e) {
+      console.error(`Failed to ${command}:`, e);
+    } finally {
+      actionLoadingId = null;
+    }
+  }
 </script>
 
 <div class="flex h-full flex-col">
@@ -183,17 +193,33 @@
         <div class="text-muted-foreground text-sm">No memories found</div>
       {:else}
         <div class="flex flex-col gap-2">
-          {#each memories as mem}
+          {#each memories as mem (mem.id)}
             <div class="rounded-md border border-border p-3">
               <div class="mb-1 flex items-center gap-2">
                 <span class="rounded bg-muted px-1.5 py-0.5 text-xs">{mem.scope}</span>
-                <span class="rounded bg-muted px-1.5 py-0.5 text-xs">{mem.type}</span>
+                <span class="rounded bg-muted px-1.5 py-0.5 text-xs">{mem.memory_type}</span>
                 {#if mem.confidence != null}
                   <span class="text-muted-foreground text-xs">confidence: {mem.confidence.toFixed(1)}</span>
                 {/if}
               </div>
               <div class="text-sm">{mem.content}</div>
-              <div class="text-muted-foreground mt-1 text-xs">Updated: {mem.updated_at}</div>
+              <div class="mt-2 flex items-center gap-2">
+                <span class="text-muted-foreground flex-1 text-xs">Updated: {mem.updated_at}</span>
+                <button
+                  class="rounded-md bg-muted px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted/80 disabled:opacity-50"
+                  disabled={actionLoadingId === mem.id}
+                  onclick={() => performMemoryAction("archive_memory", mem.id, "approved")}
+                >
+                  归档
+                </button>
+                <button
+                  class="rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20 disabled:opacity-50"
+                  disabled={actionLoadingId === mem.id}
+                  onclick={() => performMemoryAction("remove_memory", mem.id, "approved")}
+                >
+                  删除
+                </button>
+              </div>
             </div>
           {/each}
         </div>
@@ -202,27 +228,28 @@
     {:else if activeTab === "archived"}
       {#if archivedLoading}
         <div class="text-muted-foreground text-sm">Loading...</div>
-      {:else if archivedInsights.length === 0}
-        <div class="text-muted-foreground text-sm">No archived insights</div>
+      {:else if archivedMemories.length === 0}
+        <div class="text-muted-foreground text-sm">No archived memories</div>
       {:else}
         <div class="flex flex-col gap-2">
-          {#each archivedInsights as insight}
+          {#each archivedMemories as mem (mem.id)}
             <div class="rounded-md border border-border p-3">
               <div class="mb-1 flex items-center gap-2">
-                <span class="rounded bg-muted px-1.5 py-0.5 text-xs">{insight.insightType}</span>
-                {#if insight.symbol}
-                  <span class="rounded bg-muted px-1.5 py-0.5 text-xs">{insight.symbol}</span>
+                <span class="rounded bg-muted px-1.5 py-0.5 text-xs">{mem.scope}</span>
+                <span class="rounded bg-muted px-1.5 py-0.5 text-xs">{mem.memory_type}</span>
+                {#if mem.confidence != null}
+                  <span class="text-muted-foreground text-xs">confidence: {mem.confidence.toFixed(1)}</span>
                 {/if}
-                <span class="text-muted-foreground text-xs">{insight.updatedAt}</span>
+                <span class="text-muted-foreground text-xs">{mem.updated_at}</span>
               </div>
-              <div class="text-sm">{insight.content}</div>
+              <div class="text-sm">{mem.content}</div>
               <div class="mt-2">
                 <button
                   class="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={restoringId === insight.id}
-                  onclick={() => restoreInsight(insight.id)}
+                  disabled={actionLoadingId === mem.id}
+                  onclick={() => performMemoryAction("restore_memory", mem.id, "archived")}
                 >
-                  {restoringId === insight.id ? "Restoring..." : "Restore"}
+                  {actionLoadingId === mem.id ? "Restoring..." : "Restore"}
                 </button>
               </div>
             </div>
@@ -244,7 +271,7 @@
             checked={memoryExtractionEnabled}
             onchange={(e) => {
               memoryExtractionEnabled = e.currentTarget.checked;
-              saveMemoryExtractionConfig();
+              saveExtractionConfigToSettings();
             }}
             class="h-4 w-4 rounded border-input"
           />
@@ -258,7 +285,7 @@
             type="text"
             bind:value={memoryExtractionChatEndpoint}
             placeholder="留空使用 Provider 默认端点"
-            onblur={debouncedSaveMemoryExtraction}
+            onblur={debouncedSaveExtraction}
           />
 
           <!-- Chat API Key -->
@@ -268,7 +295,7 @@
               type={memoryExtractionShowKey ? "text" : "password"}
               bind:value={memoryExtractionChatApiKey}
               placeholder="留空使用 Provider 默认 Key"
-              onblur={debouncedSaveMemoryExtraction}
+              onblur={debouncedSaveExtraction}
             />
             <button
               class="absolute right-2 top-8 text-xs text-muted-foreground hover:text-foreground"
@@ -284,7 +311,7 @@
             type="text"
             bind:value={memoryExtractionChatModel}
             placeholder="留空使用 Provider 默认模型"
-            onblur={debouncedSaveMemoryExtraction}
+            onblur={debouncedSaveExtraction}
           />
         {:else}
           <p class="text-xs text-muted-foreground">
@@ -306,11 +333,7 @@
               checked={memoryDreamEnabled}
               onchange={async (e) => {
                 memoryDreamEnabled = e.currentTarget.checked;
-                try {
-                  settings = await api.updateUserSettings({ memory_dream_enabled: memoryDreamEnabled } as Partial<UserSettings>);
-                } catch (err) {
-                  dbgWarn("memory-mgmt", "save memory_dream_enabled failed", err);
-                }
+                await saveSettingsPatch({ memory_dream_enabled: memoryDreamEnabled } as Partial<UserSettings>);
               }}
               class="h-4 w-4 rounded border-input"
             />

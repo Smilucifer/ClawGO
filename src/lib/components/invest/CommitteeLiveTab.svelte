@@ -33,6 +33,7 @@
     const cashVal = invest.cash;
     const total = invest.totalAssets;
     const ret = invest.totalReturnPct;
+    const emergencyBuffer = store.llmConfig?.emergencyBufferCny ?? 0;
 
     let maxHolding = { name: '', pct: 0 };
     if (total > 0) {
@@ -46,7 +47,7 @@
       }
     }
 
-    return { hv, cash: cashVal, total, ret, concentration: maxHolding };
+    return { hv, cash: cashVal, total, ret, concentration: maxHolding, emergencyBuffer };
   });
 
   const pipelineStarted = $derived(store.streaming || store.results.length > 0);
@@ -74,7 +75,9 @@
   }
 
   function formatCash(v: number): string {
-    if (v >= 10000) return '¥' + (v / 10000).toFixed(0) + 'K';
+    if (v >= 10000) {
+      return '¥' + (v / 1000).toFixed(1) + 'K';
+    }
     return '¥' + v.toLocaleString();
   }
 </script>
@@ -124,7 +127,7 @@
           <div class="text-[18px] font-bold font-[var(--font-mono)] text-[var(--text-primary)]">{formatCash(portfolioStats.hv)}</div>
         </div>
         <div>
-          <div class="text-[11px] text-[var(--text-tertiary)]">{t('invest_committee_emergency')}</div>
+          <div class="text-[11px] text-[var(--text-tertiary)]">{t('invest_cash')}</div>
           <div class="text-[18px] font-bold font-[var(--font-mono)] text-[#8a9a76]">{formatCash(portfolioStats.cash)}</div>
         </div>
         <div>

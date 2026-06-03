@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { t } from '$lib/i18n/index.svelte';
   import { getTransport } from '$lib/transport';
   import { investStore } from '$lib/stores/invest-store.svelte';
@@ -105,7 +106,7 @@
     return 'text-[#a87a7a]';
   }
 
-  $effect(() => { loadSummary(); });
+  onMount(() => { loadSummary(); });
 </script>
 
 <div class="flex flex-col gap-[var(--space-4)]">

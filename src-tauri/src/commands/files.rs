@@ -335,6 +335,7 @@ fn scan_md_inner(
 #[tauri::command]
 pub fn list_memory_files(
     cwd: Option<String>,
+    project_paths: Option<Vec<String>>,
 ) -> Result<Vec<crate::models::MemoryFileCandidate>, String> {
     struct ProjectMemorySpec {
         provider: &'static str,
@@ -445,21 +446,39 @@ pub fn list_memory_files(
         }
     }
 
-    // Project auto-memory scope — scan ALL ~/.claude/projects/*/memory/*.md
+    // Project auto-memory scope — scan memory dirs for known project paths
     if let Some(ref home) = crate::storage::home_dir() {
         let projects_dir = std::path::Path::new(&home).join(".claude").join("projects");
         if projects_dir.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(&projects_dir) {
-                for entry in entries.flatten() {
-                    let slug = entry.file_name().to_string_lossy().to_string();
-                    let memory_dir = entry.path().join("memory");
-                    if memory_dir.is_dir() {
-                        let memory_files =
-                            scan_memory_md_files(&memory_dir, &memory_dir, 3, 50);
-                        for mut f in memory_files {
-                            f.project_slug = Some(slug.clone());
-                            files.push(f);
-                        }
+            // Collect (slug, memory_dir) pairs: targeted or full scan
+            let slug_dirs: Vec<(String, std::path::PathBuf)> =
+                if let Some(paths) = project_paths.as_deref().filter(|p| !p.is_empty()) {
+                    paths
+                        .iter()
+                        .map(|cwd| {
+                            let slug = crate::storage::cli_sessions::encode_cwd(cwd);
+                            let dir = projects_dir.join(&slug).join("memory");
+                            (slug, dir)
+                        })
+                        .collect()
+                } else {
+                    std::fs::read_dir(&projects_dir)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|e| e.ok())
+                        .map(|entry| {
+                            let slug = entry.file_name().to_string_lossy().to_string();
+                            let dir = entry.path().join("memory");
+                            (slug, dir)
+                        })
+                        .collect()
+                };
+            for (slug, memory_dir) in &slug_dirs {
+                if memory_dir.is_dir() {
+                    let memory_files = scan_memory_md_files(memory_dir, memory_dir, 3, 50);
+                    for mut f in memory_files {
+                        f.project_slug = Some(slug.clone());
+                        files.push(f);
                     }
                 }
             }
@@ -564,7 +583,7 @@ mod tests {
         std::fs::create_dir_all(&cwd).unwrap();
         std::fs::write(cwd.join("CLAUDE.md"), "# hello").unwrap();
 
-        let result = list_memory_files(Some(cwd.to_string_lossy().to_string()));
+        let result = list_memory_files(Some(cwd.to_string_lossy().to_string()), None);
         assert!(result.is_ok());
         let files = result.unwrap();
 
@@ -581,7 +600,7 @@ mod tests {
 
     #[test]
     fn list_memory_files_no_cwd_returns_only_global() {
-        let result = list_memory_files(None);
+        let result = list_memory_files(None, None);
         assert!(result.is_ok());
         let files = result.unwrap();
         assert!(files.iter().all(|f| f.scope == "global"));

@@ -955,6 +955,10 @@ fn build_context_messages(
 /// model requests tool calls, they are executed and a second call (without
 /// tools) produces the final text. When `tool_defs` is `None`, a single call
 /// is made without tools.
+///
+/// Note: DSML (DeepSeek/MiMo native) tool-call normalization is handled
+/// upstream in `collect_stream()`, so `response1.tool_calls` is already
+/// populated correctly regardless of the provider's wire format.
 async fn run_with_tool_loop(
     client: &dyn InvestLlmClient,
     symbol: &str,
@@ -1000,18 +1004,20 @@ async fn run_with_tool_loop(
     };
     total_tokens += response1.usage.total_tokens;
 
-    if !response1.tool_calls.is_empty() && tool_defs.is_some() {
-        // Build assistant message carrying tool-call metadata (OpenAI format)
-        let tool_calls_json: Vec<serde_json::Value> = response1
-            .tool_calls
+    if !response1.tool_calls.is_empty() {
+        // Tool calls present (already normalized by collect_stream) — execute them
+        let CollectedResponse { content, tool_calls, .. } = response1;
+
+        let tool_calls_json: Vec<serde_json::Value> = tool_calls
             .iter()
             .map(|tc| {
+                let args_str = tc.arguments.to_string();
                 serde_json::json!({
                     "id": tc.id,
                     "type": "function",
                     "function": {
                         "name": tc.name,
-                        "arguments": tc.arguments.to_string()
+                        "arguments": args_str
                     }
                 })
             })
@@ -1019,16 +1025,17 @@ async fn run_with_tool_loop(
 
         messages.push(Message {
             role: "assistant".to_string(),
-            content: response1.content.clone(),
+            content,
             tool_call_id: None,
             tool_calls: Some(tool_calls_json),
             name: None,
         });
 
         // Execute each tool call and append results
-        for tc in &response1.tool_calls {
+        for tc in &tool_calls {
             let tool_start = std::time::Instant::now();
-            let tool_result = execute_tool(&tc.name, &tc.arguments.to_string(), symbol).await;
+            let args_str = tc.arguments.to_string();
+            let tool_result = execute_tool(&tc.name, &args_str, symbol).await;
             let tool_latency = tool_start.elapsed().as_millis() as u64;
             let (success, result_msg) = match &tool_result {
                 Ok(r) => (true, r.clone()),
@@ -1040,7 +1047,7 @@ async fn run_with_tool_loop(
                     role,
                     round,
                     tool_name: tc.name.clone(),
-                    arguments: tc.arguments.to_string(),
+                    arguments: args_str,
                     result: Some(result_msg.clone()),
                     success,
                     latency_ms: tool_latency,
@@ -1088,7 +1095,7 @@ async fn run_with_tool_loop(
             total_tokens,
         ))
     } else {
-        // No tool calls or no tools provided — use first-pass content directly
+        // No tool calls — use first-pass content directly
         let (text, truncated) = hard_truncate(&response1.content, role, 0);
         let parsed = parse_role_output(role, &text, truncated);
         let latency_ms = start.elapsed().as_millis() as u64;

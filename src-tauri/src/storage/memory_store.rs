@@ -286,6 +286,26 @@ pub fn delete_memory(id: &str) -> Result<(), String> {
     })
 }
 
+/// Archive a memory by setting its status to "archived".
+pub fn archive_memory(id: &str) -> Result<(), String> {
+    let mut node = get_memory(id)?.ok_or_else(|| format!("memory {} not found", id))?;
+    node.status = "archived".to_string();
+    node.updated_at = Utc::now().to_rfc3339();
+    update_memory(&node)
+}
+
+/// Restore an archived memory to approved status with moderate confidence.
+pub fn restore_memory(id: &str) -> Result<(), String> {
+    let mut node = get_memory(id)?.ok_or_else(|| format!("memory {} not found", id))?;
+    if node.status != "archived" {
+        return Err(format!("memory {} is not archived (status={})", id, node.status));
+    }
+    node.status = "approved".to_string();
+    node.confidence = 60.0;
+    node.updated_at = Utc::now().to_rfc3339();
+    update_memory(&node)
+}
+
 // ── Search ──
 
 /// Sanitize a user query for FTS5 MATCH — escapes or strips special operators.

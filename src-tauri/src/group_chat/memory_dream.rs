@@ -46,20 +46,6 @@ pub fn list_archived_memories(limit: usize, offset: usize) -> Result<Vec<MemoryN
     memory_store::list_memories(Some("archived"), None, None, limit, offset)
 }
 
-/// Restore an archived memory to approved status.
-pub fn restore_archived_memory(id: &str) -> Result<MemoryNode, String> {
-    let mut node = memory_store::get_memory(id)?
-        .ok_or_else(|| format!("memory {} not found", id))?;
-    if node.status != "archived" {
-        return Err(format!("memory {} is not archived (status={})", id, node.status));
-    }
-    node.status = "approved".to_string();
-    node.confidence = 60.0; // restore with moderate confidence
-    node.updated_at = chrono::Utc::now().to_rfc3339();
-    memory_store::update_memory(&node)?;
-    Ok(node)
-}
-
 /// Export all approved memories to a JSON snapshot file.
 pub fn snapshot_memories(data_dir: &Path) -> Result<PathBuf, String> {
     let memories = memory_store::list_memories(Some("approved"), None, None, 10000, 0)

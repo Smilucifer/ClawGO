@@ -334,7 +334,8 @@
     const seq = ++memoryCandidateSeq;
     if (!opts?.soft) memoryLoading = true;
     try {
-      const result = await listMemoryFiles(projectCwd || undefined);
+      const knownPaths = untrack(() => selectableFolders.map((f) => f.cwd));
+      const result = await listMemoryFiles(projectCwd || undefined, knownPaths);
       if (seq !== memoryCandidateSeq) return; // stale — discard
       memoryCandidates = result;
       dbg("layout", "memory candidates loaded", {

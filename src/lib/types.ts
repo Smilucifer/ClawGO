@@ -253,7 +253,18 @@ export interface UserSettings {
   tushare_token?: string;
   tushare_proxy_url?: string;
   memory_dream_enabled?: boolean;
+  embedding_config?: EmbeddingConfig;
   updated_at: string;
+}
+
+export interface EmbeddingConfig {
+  enabled: boolean;
+  endpoint: string;
+  api_key?: string;
+  model: string;
+  chat_endpoint?: string;
+  chat_model?: string;
+  chat_api_key?: string;
 }
 
 export interface BalanceCacheEntry {

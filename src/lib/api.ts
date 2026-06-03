@@ -549,9 +549,13 @@ export async function writeHtmlExport(path: string, content: string): Promise<vo
 // Memory file candidates
 export async function listMemoryFiles(
   cwd?: string,
+  projectPaths?: string[],
 ): Promise<import("./types").MemoryFileCandidate[]> {
-  dbg("api", "listMemoryFiles", { cwd });
-  return invoke<import("./types").MemoryFileCandidate[]>("list_memory_files", { cwd: cwd ?? null });
+  dbg("api", "listMemoryFiles", { cwd, projectPaths });
+  return invoke<import("./types").MemoryFileCandidate[]>("list_memory_files", {
+    cwd: cwd ?? null,
+    project_paths: projectPaths ?? null,
+  });
 }
 
 // Files

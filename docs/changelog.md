@@ -1,5 +1,46 @@
 # Changelog / 更新日志
 
+## v5.2.11 (2026-06-03)
+
+### 记忆管理重构 + DSML 工具调用格式兼容 + 委员会 UI 修复
+
+**记忆管理重构 (8 项):**
+1. **`list_memory_files` 定向扫描**: 新增 `project_paths` 参数，从全量扫描 `~/.claude/projects/*/memory/` 改为按已知项目路径定向查询，减少无关项目噪声
+2. **`remove_memory` 命令**: 新增 Tauri IPC 命令，前端可直接删除记忆条目
+3. **`archive_memory` 命令**: 新增 Tauri IPC 命令，将记忆状态设为 `archived`
+4. **`restore_memory` 命令**: 新增 Tauri IPC 命令，将已归档记忆恢复为 `approved`（置信度 60）
+5. **`memory_store` 归档/恢复函数**: `archive_memory()` 和 `restore_memory()` 从 `memory_dream.rs` 迁移到 `memory_store.rs`，统一存储层职责
+6. **`EmbeddingConfig` 设置持久化**: `embedding_config` 从 localStorage 迁移到 `UserSettings`，`settings.rs` 新增 `apply_embedding_config` 处理函数
+7. **`memory_dream_enabled` 设置持久化**: `memory_dream_enabled` 从 localStorage 迁移到 `UserSettings`
+8. **记忆管理页面重写**: `/memory-mgmt` 页面从 localStorage 读取配置改为通过 `updateUserSettings` 持久化到后端，新增 `saveSettingsPatch` 通用辅助函数
+
+**DSML 工具调用格式兼容 (3 项):**
+9. **`parse_dsml_tool_calls` 解析器**: 新增 DeepSeek/MiMo 原生 DSML 格式工具调用解析，支持 `<｜｜DSML｜｜invoke>` + `<｜｜DSML｜｜parameter>` 嵌套标签结构
+10. **`collect_stream()` 层规范化**: DSML 格式检测和解析下沉到 `collect_stream()` 后置步骤，`CollectedResponse` 契约保证 `.tool_calls` 已填充，所有下游消费者自动受益
+11. **`orchestrator.rs` 简化**: `run_with_tool_loop()` 移除 DSML 特殊逻辑，解构 `CollectedResponse` 消除 clone，`tc.arguments.to_string()` 缓存为局部变量
+
+**委员会 UI 修复 (3 项):**
+12. **`CommitteeAccuracyTab` 加载修复**: `$effect` 改为 `onMount`，避免 Svelte 5 响应式循环导致的重复加载
+13. **`CommitteeLiveTab` 紧急缓冲金**: 新增 `emergencyBufferCny` 指标，从 `llmConfig` 读取并展示
+14. **现金显示精度修复**: `formatCash` 从整数 K 改为一位小数 K（如 ¥12.3K），标签从 `invest_committee_emergency` 改为 `invest_cash`
+
+**涉及文件:**
+- `src-tauri/src/commands/files.rs` — `list_memory_files` 新增 `project_paths` 参数
+- `src-tauri/src/commands/memos.rs` — 新增 `remove_memory`/`archive_memory`/`restore_memory`
+- `src-tauri/src/storage/memory_store.rs` — 新增 `archive_memory`/`restore_memory`
+- `src-tauri/src/group_chat/memory_dream.rs` — 移除 `restore_archived_memory`（迁移至 memory_store）
+- `src-tauri/src/storage/settings.rs` — 新增 `apply_embedding_config`/`apply_bool_field`
+- `src-tauri/src/invest/llm/types.rs` — 新增 `parse_dsml_tool_calls` + `collect_stream` DSML 规范化
+- `src-tauri/src/invest/committee/orchestrator.rs` — `run_with_tool_loop` 简化
+- `src-tauri/src/lib.rs` — 注册新 Tauri 命令
+- `src-tauri/src/web_server/dispatch.rs` — `list_memory_files` 调用适配
+- `src/lib/api.ts` — `listMemoryFiles` 新增 `projectPaths` 参数
+- `src/lib/types.ts` — 新增 `EmbeddingConfig` 接口
+- `src/lib/components/invest/CommitteeAccuracyTab.svelte` — `$effect` → `onMount`
+- `src/lib/components/invest/CommitteeLiveTab.svelte` — `emergencyBuffer` + `formatCash` 修复
+- `src/routes/+layout.svelte` — `listMemoryFiles` 传入 `knownPaths`
+- `src/routes/memory-mgmt/+page.svelte` — 配置持久化重写
+
 ## v5.2.10 (2026-06-03)
 
 ### 委员会直播页面崩溃修复 — watch/hold 持仓去重
