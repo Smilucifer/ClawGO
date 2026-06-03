@@ -67,9 +67,9 @@ pub struct SyncResult {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-/// Encode cwd for Claude CLI directory naming: '/' and '\' → '-'.
+/// Encode cwd for Claude CLI directory naming: '/', '\' and ':' → '-'.
 pub fn encode_cwd(cwd: &str) -> String {
-    cwd.replace(['/', '\\'], "-")
+    cwd.replace(['/', '\\', ':'], "-")
 }
 
 fn claude_projects_dir() -> Option<PathBuf> {
@@ -1743,14 +1743,14 @@ mod tests {
         assert_eq!(encode_cwd("/Users/alice/project"), "-Users-alice-project");
         assert_eq!(encode_cwd("/"), "-");
         assert_eq!(encode_cwd("relative"), "relative");
-        // Windows paths
+        // Windows paths — ':' is also replaced
         assert_eq!(
             encode_cwd("C:\\Users\\alice\\project"),
-            "C:-Users-alice-project"
+            "C--Users-alice-project"
         );
         assert_eq!(
             encode_cwd("C:/Users/alice/project"),
-            "C:-Users-alice-project"
+            "C--Users-alice-project"
         );
     }
 

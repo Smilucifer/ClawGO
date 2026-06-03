@@ -94,9 +94,10 @@ export function cwdDisplayLabel(cwd: string): string {
 /**
  * Encode a cwd path to a slug for `~/.claude/projects/<slug>/memory/` lookup.
  * Must match Rust `encode_cwd()` in `cli_sessions.rs`.
+ * Claude CLI replaces '/', '\' and ':' with '-'.
  */
 export function encodeCwdSlug(cwd: string): string {
-  return cwd.replace(/[/\\]/g, "-");
+  return cwd.replace(/[/\\:]/g, "-");
 }
 
 /** Format an install count with K/M suffix (e.g. 160242 → "160K"). */

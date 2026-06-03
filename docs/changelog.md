@@ -1,5 +1,49 @@
 # Changelog / 更新日志
 
+## v5.2.13 (2026-06-03)
+
+### 工具调用解析器增强 + encode_cwd 冒号兼容 + 13 单元测试
+
+**XML 解析器 (4 项):**
+1. **parse_function_calls() 解析器**: 新增 function_calls/invoke 格式支持，覆盖 LLM 偶发 XML 工具调用
+2. **parse_fn_tag_body() 辅助函数**: 处理 function=name + parameter=value 变体格式
+3. **infer_json_value() 类型推断**: 从字符串自动推断 JSON 值类型(bool/i64/f64/string)，消除重复逻辑
+4. **TOOL_CALL_TAG_PAIRS 常量**: 共享的工具调用标签对列表，供解析器和残留清理共用
+
+**残留标签清理安全网 (1 项):**
+5. **strip_residual_tool_call_tags() 安全网**: 所有解析器未匹配但 XML 标签残留时，自动剥离防止泄露到角色输出
+
+**DSML 单竖线规范化 (1 项):**
+6. **parse_dsml_tool_calls() 单竖线支持**: 自动检测并规范化单竖线 DSML 变体为双竖线
+
+**collect_stream() 四级降级链 (1 项):**
+7. **降级链升级**: DSML -> parse_function_calls -> parse_xml_tool_calls -> strip_residual
+
+**encode_cwd() Windows 盘符兼容 (2 项):**
+8. **Rust encode_cwd() 冒号替换**: Windows 路径编码从 C:-Users 修正为 C--Users，匹配 Claude CLI 实际目录命名
+9. **TypeScript encodeCwdSlug() 同步**: 前端 slug 生成同步加入冒号替换，保持前后端一致
+
+**单元测试 (13 项):**
+10. test_parse_function_calls_basic — 基本解析 + bool 推断
+11. test_parse_function_calls_multiple — 多 invoke 解析
+12. test_parse_function_calls_numeric_params — 数值参数推断
+13. test_parse_function_calls_no_tags — 无标签返回 None
+14. test_parse_function_calls_with_surrounding_text — 包裹文本中解析
+15. test_parse_xml_fn_eq_basic — function=name 基本解析
+16. test_parse_xml_fn_eq_with_params — function=name 带参数
+17. test_strip_residual_function_calls_tags — 残留清理
+18. test_strip_residual_tool_call_tags — 残留清理
+19. test_strip_no_tags_unchanged — 无标签不变
+20. test_parse_dsml_single_bar — DSML 单竖线解析
+21. encode_cwd 冒号测试更新 — Windows 路径断言修正
+
+**涉及文件:**
+- src-tauri/src/invest/llm/types.rs — 3 个新解析器 + 辅助函数 + 安全网 + 13 测试
+- src-tauri/src/storage/cli_sessions.rs — encode_cwd() 冒号替换 + 测试更新
+- src/lib/utils/format.ts — encodeCwdSlug() 冒号替换
+
+---
+
 ## v5.2.12 (2026-06-03)
 
 ### Tushare moneyflow_dc Schema 迁移 + XML 工具调用解析 + Changelog 查看器 + 委员会批量运行
