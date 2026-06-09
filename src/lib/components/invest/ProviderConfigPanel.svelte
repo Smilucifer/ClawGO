@@ -54,13 +54,6 @@
     scheduleSave();
   }
 
-  function handleBufferInput(e: Event) {
-    const target = e.target as HTMLInputElement;
-    if (!config) return;
-    config.emergencyBufferCny = Number(target.value) || 0;
-    scheduleSave();
-  }
-
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   function scheduleSave() {
@@ -183,20 +176,6 @@
                 <option value={opt}>{opt}</option>
               {/each}
             </select>
-          </div>
-
-          <div>
-            <label class="mr-1 text-[11px] text-[var(--text-tertiary)]">
-              {t('invest_committee_emergency_buffer')}
-            </label>
-            <input
-              type="number"
-              class="w-28 rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] font-[var(--font-mono)] text-[var(--text-primary)]"
-              value={config.emergencyBufferCny}
-              min={0}
-              step={10000}
-              oninput={handleBufferInput}
-            />
           </div>
         </div>
       {:else}

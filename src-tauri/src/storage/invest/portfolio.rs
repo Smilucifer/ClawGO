@@ -1,6 +1,6 @@
 use super::{is_etf_symbol, with_conn};
 use rusqlite::{params, Connection};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// 根据 symbol 推导 asset_type：优先使用 trade 提供的值，兜底从 symbol 前缀推导。
 fn resolve_asset_type(t: &Trade) -> String {
@@ -10,7 +10,7 @@ fn resolve_asset_type(t: &Trade) -> String {
         .unwrap_or_else(|| if is_etf_symbol(&t.symbol) { "etf" } else { "stock" }.to_string())
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Holding {
     pub symbol: String,
@@ -156,6 +156,26 @@ pub fn record_trade(t: &Trade) -> Result<(), String> {
     })
 }
 
+/// Recalculate cash balance from initial_balance + trade history.
+/// Must be called within an active connection/transaction.
+/// buy, sell, and convert_watch_to_hold trades affect the derived cash balance.
+/// cash_adjust and other non-cash trades are ignored.
+fn recalculate_cash_inner(conn: &Connection, trades: &[Trade]) -> Result<(), String> {
+    let initial = get_initial_cash_inner(conn).unwrap_or(0.0);
+
+    let mut cash = initial;
+    for t in trades {
+        let amount = t.amount.unwrap_or(0.0);
+        match t.action.as_str() {
+            "buy" | "convert_watch_to_hold" => cash -= amount,
+            "sell" => cash += amount,
+            _ => {}
+        }
+    }
+
+    set_cash_inner(conn, cash)
+}
+
 /// Replay all trades from scratch to rebuild the holdings table.
 /// This is an internal helper that must be called within an active connection.
 /// Wrapped in a transaction to ensure atomicity; notional values are preserved
@@ -248,9 +268,22 @@ fn recalculate_holdings_inner_body(
         fn recompute_notional(&mut self) {
             self.notional = self.avg_cost * self.shares;
         }
+
+        /// Copy core identity/valuation fields from another entry.
+        /// Used by hold↔watch conversions to avoid repeating field lists.
+        fn copy_core_fields_from(&mut self, src: &MemHolding) {
+            self.name = src.name.clone();
+            self.avg_cost = src.avg_cost;
+            self.notional = src.notional;
+            self.entry_date = src.entry_date.clone();
+            self.asset_type = src.asset_type.clone();
+        }
     }
 
     let mut map: HashMap<(String, String, String), MemHolding> = HashMap::new();
+    // Track symbols explicitly deleted from watchlist so that the sell→watch
+    // auto-convert does not "resurrect" entries the user already removed.
+    let mut watch_deleted: HashSet<String> = HashSet::new();
 
     // Restore preserved notional and asset_type values into the in-memory map
     for ((sym, cur, kind), notional) in notional_map {
@@ -292,9 +325,22 @@ fn recalculate_holdings_inner_body(
             }
             "sell" => {
                 let shares = t.shares.unwrap_or(0.0);
-                if let Some(entry) = map.get_mut(&key) {
+                let should_convert = if let Some(entry) = map.get_mut(&key) {
                     entry.shares = (entry.shares - shares).max(0.0);
                     entry.recompute_notional();
+                    // Auto-convert to watch when all shares are sold,
+                    // but skip if the user explicitly deleted this symbol from watch
+                    entry.shares <= 0.0001 && !entry.is_watch && !watch_deleted.contains(&t.symbol)
+                } else {
+                    false
+                };
+                if should_convert {
+                    let watch_key = (t.symbol.clone(), t.currency.clone(), "watch".to_string());
+                    if let Some(hold_entry) = map.remove(&key) {
+                        let watch_entry = map.entry(watch_key).or_default();
+                        watch_entry.copy_core_fields_from(&hold_entry);
+                        watch_entry.is_watch = true;
+                    }
                 }
             }
             "cost_edit" => {
@@ -311,13 +357,9 @@ fn recalculate_holdings_inner_body(
                 let hold_key = (t.symbol.clone(), t.currency.clone(), "hold".to_string());
                 if let Some(watch_entry) = map.remove(&watch_key) {
                     let hold_entry = map.entry(hold_key).or_default();
-                    hold_entry.name = watch_entry.name;
+                    hold_entry.copy_core_fields_from(&watch_entry);
                     hold_entry.shares = watch_entry.shares;
-                    hold_entry.avg_cost = watch_entry.avg_cost;
-                    hold_entry.notional = watch_entry.notional; // preserve notional across convert
-                    hold_entry.entry_date = watch_entry.entry_date;
                     hold_entry.notes = Some("converted from watchlist".to_string());
-                    hold_entry.asset_type = watch_entry.asset_type;
                 }
             }
             "convert_hold_to_watch" => {
@@ -326,13 +368,9 @@ fn recalculate_holdings_inner_body(
                 let watch_key = (t.symbol.clone(), t.currency.clone(), "watch".to_string());
                 if let Some(hold_entry) = map.remove(&hold_key) {
                     let watch_entry = map.entry(watch_key).or_default();
-                    watch_entry.name = hold_entry.name;
+                    watch_entry.copy_core_fields_from(&hold_entry);
                     watch_entry.shares = hold_entry.shares;
-                    watch_entry.avg_cost = hold_entry.avg_cost;
-                    watch_entry.notional = hold_entry.notional; // preserve notional across convert
-                    watch_entry.entry_date = hold_entry.entry_date;
                     watch_entry.notes = Some("converted from hold".to_string());
-                    watch_entry.asset_type = hold_entry.asset_type;
                     watch_entry.is_watch = true;
                 }
             }
@@ -355,7 +393,8 @@ fn recalculate_holdings_inner_body(
                 });
             }
             "delete_watch" => {
-                // Remove the watch entry from the map
+                // Record the symbol so sell→watch auto-convert won't resurrect it
+                watch_deleted.insert(t.symbol.clone());
                 map.remove(&key);
             }
             // cash_adjust is trade-log-only; holdings are managed separately
@@ -363,7 +402,12 @@ fn recalculate_holdings_inner_body(
         }
     }
 
-    // 4. Write rebuilt holdings to database
+    // 4. Recalculate cash from initial_balance + trade history
+    //    This ensures cash stays consistent whenever trades change,
+    //    eliminating the need for frontend to separately call update_cash.
+    recalculate_cash_inner(conn, &trades)?;
+
+    // 5. Write rebuilt holdings to database
     let now = chrono::Utc::now().to_rfc3339();
     for ((symbol, currency, kind), h) in &map {
         // Skip zero-share holdings (but preserve watch items which have no shares)
@@ -472,32 +516,40 @@ pub fn get_cash() -> Result<f64, String> {
 
 /// Get the initial cash balance (starting capital). Returns 0 if not set.
 pub fn get_initial_cash() -> Result<f64, String> {
-    with_conn(|conn| {
-        let result = conn.query_row(
-            "SELECT COALESCE(initial_balance, 0.0) FROM cash WHERE id = 1",
-            [],
-            |row| row.get::<_, f64>(0),
-        );
-        match result {
-            Ok(v) => Ok(v),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(0.0),
-            Err(e) => Err(format!("get initial cash: {}", e)),
-        }
-    })
+    with_conn(|conn| get_initial_cash_inner(conn))
+}
+
+fn get_initial_cash_inner(conn: &Connection) -> Result<f64, String> {
+    let result = conn.query_row(
+        "SELECT COALESCE(initial_balance, 0.0) FROM cash WHERE id = 1",
+        [],
+        |row| row.get::<_, f64>(0),
+    );
+    match result {
+        Ok(v) => Ok(v),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(0.0),
+        Err(e) => Err(format!("get initial cash: {}", e)),
+    }
 }
 
 pub fn set_cash(amount: f64) -> Result<(), String> {
-    with_conn(|conn| {
-        let now = chrono::Utc::now().to_rfc3339();
-        // On first insert, also set initial_balance to the starting amount
-        conn.execute(
-            "INSERT INTO cash (id, available, initial_balance, updated_at) VALUES (1, ?1, ?1, ?2) \
-             ON CONFLICT(id) DO UPDATE SET available=?1, updated_at=?2",
-            params![amount, now],
-        )
-        .map_err(|e| format!("set cash: {}", e))?;
-        Ok(())
-    })
+    with_conn(|conn| set_cash_inner(conn, amount))
+}
+
+fn set_cash_inner(conn: &Connection, amount: f64) -> Result<(), String> {
+    let now = chrono::Utc::now().to_rfc3339();
+    // Only set `available`; leave `initial_balance` as NULL on INSERT so that
+    // `set_initial_cash` is the sole writer of that column.  The previous
+    // `VALUES (1, ?1, ?1, ?2)` would corrupt `initial_balance` whenever the
+    // cash row was re-created (e.g. after `clear_all_invest_data`), causing
+    // `recalculate_cash_inner` to compute negative cash from a zero base.
+    conn.execute(
+        "INSERT INTO cash (id, available, initial_balance, updated_at) VALUES (1, ?1, NULL, ?2) \
+         ON CONFLICT(id) DO UPDATE SET available=?1, updated_at=?2",
+        params![amount, now],
+    )
+    .map_err(|e| format!("set cash: {}", e))?;
+    Ok(())
 }
 
 /// 统计近 N 天内的交易次数

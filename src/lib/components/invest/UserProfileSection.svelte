@@ -7,7 +7,6 @@
   let profileSaved = $state(false);
   let profileError = $state('');
   let profileForm = $state({
-    emergencyBufferCny: 100000,
     familyBackupAvailable: false,
     accountPurpose: 'default',
     lifestyleNotes: '',
@@ -41,7 +40,6 @@
     profileLoading = true;
     try {
       const p = await getTransport().invoke<{
-        emergencyBufferCny: number;
         familyBackupAvailable: boolean;
         accountPurpose: string;
         lifestyleNotes: string;
@@ -63,7 +61,6 @@
         : (PURPOSE_MAP[p.accountPurpose] ?? 'default');
 
       profileForm = {
-        emergencyBufferCny: p.emergencyBufferCny,
         familyBackupAvailable: p.familyBackupAvailable,
         accountPurpose: normalizedPurpose,
         lifestyleNotes: p.lifestyleNotes,
@@ -83,16 +80,9 @@
   async function saveProfile() {
     profileSaved = false;
     profileError = '';
-    const buffer = profileForm.emergencyBufferCny;
-    if (!Number.isFinite(buffer) || buffer < 0) {
-      profileForm.emergencyBufferCny = 100000;
-      profileError = t('settings_profile_invalid_buffer');
-      return;
-    }
     try {
       await getTransport().invoke('save_user_profile', {
         profile: {
-          emergencyBufferCny: buffer,
           familyBackupAvailable: profileForm.familyBackupAvailable,
           accountPurpose: profileForm.accountPurpose,
           lifestyleNotes: profileForm.lifestyleNotes,
@@ -118,19 +108,6 @@
   {#if profileLoading}
     <p class="text-[13px] text-[var(--text-secondary)]">{t('invest_loading')}</p>
   {:else}
-    <!-- Emergency Buffer -->
-    <div class="space-y-1">
-      <label class="text-[13px] font-medium text-[var(--text-primary)]">{t('settings_profile_emergency_buffer')}</label>
-      <p class="text-[12px] text-[var(--text-secondary)]">{t('settings_profile_emergency_buffer_desc')}</p>
-      <input
-        type="number"
-        class="w-64 rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-[var(--space-3)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
-        bind:value={profileForm.emergencyBufferCny}
-        min="0"
-        step="10000"
-      />
-    </div>
-
     <!-- Family Backup Toggle -->
     <label class="flex items-center gap-3 cursor-pointer">
       <input

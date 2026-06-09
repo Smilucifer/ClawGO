@@ -1,5 +1,142 @@
 # Changelog / 更新日志
 
+## v5.2.16 (2026-06-09)
+
+### invest 统计日期 5:00 AM 截止 + 委员会批量优化 + 收盘价格修复
+
+**统计日期截止 (1 项):**
+1. **invest 统计日期 05:00 截止逻辑**: 新增 `date_utils` 集中模块，凌晨 05:00 前运行的任务归属前一天统计日期。影响 PnL 快照、委员会归档、verdict 日期、每日报告、Dreaming 管道、调度器 trading day 检查共 8 处调用点。前端 `getInvestDate()` 使用本地时区构造（修复 `toISOString()` UTC bug）。Dashboard header 显示日期规则提示。
+
+**委员会批量优化 (3 项):**
+2. **PortfolioData 批量共享**: `run_committee_batch` / `run_committee_batch_stream` 预加载一次 `PortfolioData`（含价格刷新），通过 `Arc<PortfolioData>` 共享给所有 symbol 任务，消除 N 次重复 DB 读取和 Tushare API 调用。新增 30 秒超时保护。
+3. **PortfolioData dry_run 模式**: `load_and_refresh_prices(dry_run)` 参数控制是否将更新后的 notional 写回 DB。dry_run=true 时仍获取价格（用于准确市值估算）但不持久化。
+4. **notional_is_estimated 警告**: 当持仓市值基于成本价估算（未获取到实时价格）时，Risk R1 上下文注入 ⚠️ 警告，提示盈亏比和集中度数据可能不准确。
+
+**G3 子弹数据兜底 (1 项):**
+5. **cio_sanity_check Gate 3 fallback**: `actual_cash_cny: Option<f64>` 参数传入 `PortfolioData.cash`，Gate 3 检查链变为 CIO 解析 → 各轮输出 → 实际现金余额，消除"子弹数据不可用"误跳过。Gate 4 复用 Gate 2 的 `concentration` 变量（-7 行重复代码）。
+
+**收盘价格修复 (1 项):**
+6. **收盘后行情跳过 rt_k**: `get_latest_price` 和 `realtime_quotes` 新增 `is_a_share_market_open()` 判断（基于 `trade_calendar` 交易日历 + 北京时间 9:15-11:30/13:00-15:00），收盘后直接使用 `daily`/`fund_daily` 日线数据，避免 rt_k 返回非最终收盘价。
+
+**数据完整性 (2 项):**
+7. **卖出自动转 Watch**: `recalculate_holdings_inner` 的 sell 分支，当卖出导致 shares ≈ 0 时自动转为 watch 条目（保留名称、成本价、资产类型）。`MemHolding::copy_core_fields_from()` 辅助方法统一 hold↔watch 转换逻辑。
+8. **卖出/删除/修改交易后现金自动同步**: `recalculate_cash_inner()` 在 `recalculate_holdings_inner` 事务内自动从交易历史重算现金，前端不再需要手动调用 `update_cash`。
+
+**Simplify 审查修复 (5 项):**
+9. **date_utils 共享内部函数**: 提取 `invest_date_naive()` 内部函数，三个公开函数从它派生，消除三重复制。
+10. **committees.rs 使用 `get_invest_date_compact()`**: 替代 `.replace('-', "")` 内联实现。
+11. **archive.rs 直接调用 `get_invest_naive_date()`**: 消除 `String → parse_from_str → NaiveDate` 往返。
+12. **format.ts 时区修复**: `toISOString()` (UTC) 改为 `getFullYear()`/`getMonth()`/`getDate()` (本地时区)。
+13. **format.ts 常量提取**: `INVEST_DATE_CUTOFF_HOUR` 常量替代魔数 `5`，注释对齐 Rust 同名常量。
+
+**涉及文件:**
+- src-tauri/src/invest/date_utils.rs — 新建，集中日期工具模块（3 函数 + 5 测试）
+- src-tauri/src/invest/mod.rs — 注册 date_utils 模块
+- src-tauri/src/lib.rs — PnL 快照改用 `get_invest_date()` + `get_previous_day_snapshot()`
+- src-tauri/src/invest/scheduler/runner.rs — 调度器 today 改用 `get_invest_date()`
+- src-tauri/src/invest/committee/archive.rs — 3 处调用改用 invest date
+- src-tauri/src/storage/invest/committees.rs — verdict_date 改用 invest date
+- src-tauri/src/invest/daily_report.rs — 报告日期改用 `get_invest_date()`
+- src-tauri/src/invest/dreaming/pipeline.rs — dreaming today 改用 `get_invest_naive_date()`
+- src-tauri/src/invest/committee/orchestrator.rs — PortfolioData Arc 共享 + dry_run + timeout
+- src-tauri/src/invest/committee/analysis.rs — `actual_cash_cny` 参数 + Gate 4 去重
+- src-tauri/src/storage/invest/portfolio.rs — `recalculate_cash_inner` + `copy_core_fields_from` + sell auto-convert
+- src-tauri/src/storage/invest/scheduler.rs — `is_a_share_market_open()` 函数
+- src-tauri/src/storage/invest/verdicts.rs — `get_previous_day_snapshot()` + `row_to_pnl_snapshot()`
+- src-tauri/src/tushare/client.rs — 收盘后跳过 rt_k
+- src/lib/i18n/format.ts — `getInvestDate()` 前端工具函数
+- src/lib/components/invest/TradeDialog.svelte — 默认日期改用 `getInvestDate()`
+- src/routes/invest/+page.svelte — Dashboard 日期规则提示
+- src/lib/stores/invest-store.svelte.ts — store 方法简化
+- src/lib/components/invest/CommitteeArchiveTab.svelte — UI 更新
+- src/lib/components/invest/CommitteeReplayTab.svelte — UI 更新
+- messages/en.json + messages/zh-CN.json — `invest_date_rule` i18n key
+
+### 现金负数修复 + 备用金重构 + Watch 复活修复
+
+**Bug 修复 (2 项):**
+14. **交易操作导致现金变负数 (-100000)**: `set_cash_inner` 的 INSERT SQL 原本将 `initial_balance` 设为与 `available` 相同值，当现金行被清除后重建时会覆盖初始资本。修复为 INSERT 时 `initial_balance = NULL`，只有 `set_initial_cash` 才写入该列。
+15. **卖出后已删除的 Watch 复活**: `recalculate_holdings_inner_body` 重放所有交易时，sell 全部卖出会自动转 watch，但不检查用户是否曾通过 `delete_watch` 明确删除过。新增 `watch_deleted: HashSet<String>` 集合追踪已删除的 watch 符号，sell 分支转换前检查该集合。
+
+**备用金重构 (6 项):**
+16. **删除 `emergency_buffer_cny` 独立配置**: 从 `UserProfile` 结构体/SQL、`InvestLlmConfig` 结构体/JSON 序列化、`CommitteeConfig` 结构体三处完全移除。
+17. **动态计算 buffer**: `effective_buffer = max(min_cash_pct across strategies) × total_assets`，无策略时 fallback 0.0 并输出 `log::warn`。
+18. **风险偏好从账户类型推导**: `build_user_profile_context()` 根据 `account_purpose`（零花钱/长线/退休金/教育金）推导风险偏好描述注入 LLM prompt，无需额外设置。
+19. **前端清理**: `ProviderConfigPanel` 删除 buffer 输入框，`UserProfileSection` 删除 buffer 输入/验证，`CommitteeLiveTab` 删除未使用的 buffer 计算，`InvestLlmConfig` / `UserProfile` TS 接口同步更新。
+20. **i18n 清理**: 删除 4 个 i18n key（中英文各 `settings_profile_emergency_buffer`、`_desc`、`_invalid_buffer`、`invest_committee_emergency_buffer`）。
+21. **参数重命名**: 全链路 `emergency_buffer_cny` → `min_cash_reserve`，LLM 上下文标签改为"最低现金储备"。
+
+**Simplify 审查修复 (5 项):**
+22. **PortfolioData timeout+fallback 提取**: 三处重复的 `tokio::time::timeout(30s, load_and_refresh_prices)` + 空 PortfolioData fallback 提取为 `PortfolioData::load_with_timeout()` + `Default` impl。
+23. **无效绑定删除**: `let config = config;` 无效自绑定删除。
+24. **多策略取最保守值**: `list_strategies().into_iter().next()` 改为 `fold(f64::max)` 取所有策略中最大的 `min_cash_pct`。
+25. **fallback 日志**: 无策略配置时 `log::warn` 提示 Gate 3 buffer = 0。
+
+**涉及文件 (本次追加):**
+- src-tauri/src/storage/invest/portfolio.rs — `set_cash_inner` NULL 修复 + `watch_deleted` 集合
+- src-tauri/src/storage/invest/user_profile.rs — 删除 `emergency_buffer_cny` 字段
+- src-tauri/src/commands/invest.rs — 删除 `InvestLlmConfig.emergency_buffer_cny`
+- src-tauri/src/invest/committee/orchestrator.rs — 动态 buffer 计算 + 风险偏好注入 + timeout 提取 + 参数重命名
+- src-tauri/src/invest/committee/analysis.rs — 参数重命名
+- src/lib/stores/invest-committee-store.svelte.ts — 删除 `emergencyBufferCny` 接口字段
+- src/lib/components/invest/ProviderConfigPanel.svelte — 删除 buffer 输入
+- src/lib/components/invest/UserProfileSection.svelte — 删除 buffer 输入/验证
+- src/lib/components/invest/CommitteeLiveTab.svelte — 删除 buffer 计算
+- src/lib/types.ts — 删除 `UserProfile.emergencyBufferCny`
+- messages/en.json + messages/zh-CN.json — 删除 4 个 i18n key
+
+---
+
+## v5.2.15 (2026-06-07)
+
+### 卖出自动转 Watch + G3 子弹数据兜底修复
+
+**Bug 修复 (2 项):**
+1. **卖出全部持仓后自动转为 Watch 状态**: `recalculate_holdings_inner_body` 的 sell 分支中，当卖出导致 `shares ≈ 0` 时，将 hold 条目自动转为 watch 条目（保留名称、成本价、资产类型），而非直接删除。用户可在 watch 列表中手动删除或重新买入。
+2. **委员会 G3 检查"子弹数据不可用"修复**: `cio_sanity_check` 的 Gate 3 原本仅从 LLM 输出中解析 `dry_powder_cny`，LLM 经常不输出该字段导致永远跳过检查。新增 `actual_cash_cny: Option<f64>` 参数作为兜底，解析链变为 CIO 输出 → 各轮输出 → `PortfolioData.cash` 真实现金余额。
+
+**Simplify 审查修复 (2 项):**
+3. **concentration 重复计算消除**: Gate 2 和 Gate 4 的 `concentration_pct` fallback 链完全相同，Gate 4 复用 Gate 2 的 `concentration` 变量（-7 行）。
+4. **hold↔watch 字段拷贝去重**: 提取 `MemHolding::copy_core_fields_from()` 辅助方法，sell auto-convert、`convert_watch_to_hold`、`convert_hold_to_watch` 三处转换逻辑统一调用，新增字段只需改一处。
+
+**涉及文件:**
+- src-tauri/src/storage/invest/portfolio.rs — sell 分支自动转 watch + `copy_core_fields_from()` 辅助方法
+- src-tauri/src/invest/committee/analysis.rs — `cio_sanity_check` 新增 `actual_cash_cny` 参数 + concentration 去重
+- src-tauri/src/invest/committee/orchestrator.rs — 调用处传入 `Some(portfolio_data.cash)`
+
+---
+
+## v5.2.14 (2026-06-06)
+
+### PnL 快照每日收益计算修复 + 卖出现金同步修复
+
+**Bug 修复 (2 项):**
+1. **`run_pnl_snapshot()` daily_pnl 计算逻辑修复**: 同一天多次运行快照任务时，`daily_pnl` 错误地计算为与同一天前一次快照的差值，而非与前一天的差值。新增 `get_previous_day_snapshot(current_date)` 函数，通过 `WHERE snapshot_date < ?1` 确保始终与前一天比较。
+2. **卖出/删除/修改交易后现金余额自动同步**: `record_trade`、`delete_trade`、`update_trade` 之前只重建持仓表不更新现金表，导致卖出后现金不增加。新增 `recalculate_cash_inner()` 函数，在 `recalculate_holdings_inner` 事务内自动从交易历史重算现金。
+
+**Simplify 审查修复 (4 项):**
+3. **SQL 重复消除**: 提取 `get_initial_cash_inner(conn)` 和 `set_cash_inner(conn, amount)` 辅助函数，`recalculate_cash_inner` 复用而非内联重复 SQL。
+4. **`convert_watch_to_hold` 现金同步**: 该操作等同买入（扣现金），`recalculate_cash_inner` 现在正确识别并扣除。
+5. **移除前端冗余 `update_cash`**: `buyStock`/`sellStock`/`convertWatchToHold` 不再手动调用 `update_cash`，由后端 `recalculate_cash_inner` 统一处理，消除双写竞争。
+6. **`updateCash` 简化**: 移除 `cash_adjust` 交易记录（与后端重算冲突），改为直接 `set_cash`。
+
+**收盘价格修复 (1 项):**
+7. **收盘后行情显示非最终收盘价**: 腾讯 API 失败时降级到 Tushare `rt_k`（盘中接口），收盘后返回的是最后一笔盘中价而非官方收盘价。新增 `is_a_share_market_open()` 函数（基于 `trade_calendar` 交易日历+北京时间时段判断），收盘后跳过 `rt_k` 直接使用 `daily`/`fund_daily` 日线数据。
+
+**Simplify 审查修复 (3 项):**
+8. **PnlSnapshot 行映射重复消除**: 提取 `row_to_pnl_snapshot()` 辅助函数（复用已有 `row_to_verdict` 模式），`list_pnl_snapshots` 和 `get_previous_day_snapshot` 共用。
+9. **市场时段判断提升到 scheduler 模块**: `is_a_share_market_open()` 从 `TushareClient` 移至 `storage::invest::scheduler`，消除 HTTP 客户端对存储层的反向依赖。
+10. **`get_latest_price` 收盘后跳过 `rt_k`**: 与 `realtime_quotes` 保持一致，收盘后直接降级到日线收盘价。
+
+**涉及文件:**
+- src-tauri/src/lib.rs — `run_pnl_snapshot()` 改用 `get_previous_day_snapshot`
+- src-tauri/src/storage/invest/verdicts.rs — 新增 `get_previous_day_snapshot()` 函数
+- src-tauri/src/storage/invest/portfolio.rs — 新增 `recalculate_cash_inner()` + `get_initial_cash_inner` + `set_cash_inner` 提取
+- src/lib/stores/invest-store.svelte.ts — 移除冗余 `update_cash` 调用，简化 `updateCash`
+- src/lib/components/invest/TradeDialog.svelte — 移除 `add_trade` 模式冗余 `updateCash`
+
+---
+
 ## v5.2.13 (2026-06-03)
 
 ### 工具调用解析器增强 + encode_cwd 冒号兼容 + 13 单元测试

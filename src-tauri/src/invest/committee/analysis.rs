@@ -130,7 +130,8 @@ pub fn cio_sanity_check(
     cio_parsed: &ParsedFields,
     round_outputs: &[RoundOutput],
     macro_signal: &str,
-    emergency_buffer_cny: f64,
+    min_cash_reserve: f64,
+    actual_cash_cny: Option<f64>,
 ) -> SanityCheckResult {
     let mut result = SanityCheckResult {
         gate1_pass: true,
@@ -180,20 +181,21 @@ pub fn cio_sanity_check(
 
     // Gate 3 -- Dry powder check
     // Only enforce when data is available; missing data does NOT force HOLD.
+    // Fallback chain: CIO parsed → any round output → actual portfolio cash.
     let dry_powder = cio_parsed.dry_powder_cny.or_else(|| {
         round_outputs
             .iter()
             .filter_map(|o| o.parsed.dry_powder_cny)
             .last()
-    });
+    }).or(actual_cash_cny);
     if let Some(dp) = dry_powder {
-        if dp < emergency_buffer_cny {
+        if dp < min_cash_reserve {
             result.gate3_pass = false;
             result.final_verdict = "HOLD".to_string();
             result.final_confidence = result.final_confidence.min(0.4);
             result.notes.push(format!(
-                "G3: 可用子弹 {:.2} < 应急储备 {:.2}，降级为HOLD",
-                dp, emergency_buffer_cny
+                "G3: 可用子弹 {:.2} < 最低现金储备 {:.2}，降级为HOLD",
+                dp, min_cash_reserve
             ));
         }
     } else {
@@ -202,16 +204,9 @@ pub fn cio_sanity_check(
     }
 
     // Gate 4 -- Position-aware confidence adjustment
-    // Shared concentration computation for both 4a and 4b
-    let concentration_g4 = cio_parsed.concentration_pct.unwrap_or(
-        round_outputs
-            .iter()
-            .filter_map(|o| o.parsed.concentration_pct)
-            .last()
-            .unwrap_or(0.0),
-    );
+    // Reuses `concentration` from Gate 2 (same fallback chain).
     // 4a: Position = 0 and verdict = HOLD → cash opportunity cost rule, cap confidence at 0.3
-    if concentration_g4 <= 0.0 && result.final_verdict == "HOLD" {
+    if concentration <= 0.0 && result.final_verdict == "HOLD" {
         result.gate4_pass = false;
         result.final_confidence = result.final_confidence.min(0.3);
         result.notes.push(
@@ -219,13 +214,13 @@ pub fn cio_sanity_check(
         );
     }
     // 4b: CONCENTRATION_PCT < 20% and verdict = HOLD → low-conviction penalty
-    if concentration_g4 > 0.0 && concentration_g4 < 20.0 && result.final_verdict == "HOLD"
+    if concentration > 0.0 && concentration < 20.0 && result.final_verdict == "HOLD"
     {
         result.gate4_pass = false;
         result.final_confidence = result.final_confidence.min(0.4);
         result.notes.push(format!(
             "G4b: 集中度 {:.1}% < 20% 且HOLD，置信度上限0.4",
-            concentration_g4
+            concentration
         ));
     }
 
@@ -370,7 +365,7 @@ mod tests {
             ..Default::default()
         };
         let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_off", 100000.0);
+        let result = cio_sanity_check(&cio, &outputs, "risk_off", 100000.0, None);
         assert!(!result.gate1_pass);
         assert_eq!(result.final_verdict, "HOLD");
     }
@@ -384,7 +379,7 @@ mod tests {
             ..Default::default()
         };
         let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0);
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0, None);
         assert!(!result.gate2_pass);
         assert_eq!(result.final_verdict, "TRIM");
     }
@@ -398,7 +393,7 @@ mod tests {
             ..Default::default()
         };
         let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0);
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0, None);
         assert!(!result.gate3_pass);
         assert_eq!(result.final_verdict, "HOLD");
         assert!(result.final_confidence <= 0.4);
@@ -421,7 +416,7 @@ mod tests {
             latency_ms: 0,
             tokens_used: 0,
         }];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0);
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0, None);
         assert_eq!(result.final_verdict, "HOLD");
         assert!(result.final_confidence <= 0.4);
     }
@@ -436,7 +431,7 @@ mod tests {
             ..Default::default()
         };
         let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0);
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0, None);
         assert!(result.gate1_pass);
         assert!(result.gate2_pass);
         assert!(result.gate3_pass);
@@ -455,7 +450,7 @@ mod tests {
             ..Default::default()
         };
         let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0);
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0, None);
         assert!(!result.gate3_pass);
         assert_eq!(result.final_verdict, "HOLD");
     }
@@ -470,7 +465,7 @@ mod tests {
             ..Default::default()
         };
         let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0);
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0, None);
         assert!(!result.gate2_pass);
         assert_eq!(result.final_verdict, "TRIM");
     }
@@ -484,7 +479,7 @@ mod tests {
             ..Default::default()
         };
         let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_off", 100000.0);
+        let result = cio_sanity_check(&cio, &outputs, "risk_off", 100000.0, None);
         assert!(!result.gate4_pass);
         assert!(result.final_confidence <= 0.3);
     }
@@ -498,8 +493,24 @@ mod tests {
             ..Default::default()
         };
         let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_off", 100000.0);
+        let result = cio_sanity_check(&cio, &outputs, "risk_off", 100000.0, None);
         assert!(!result.gate4_pass);
         assert!(result.final_confidence <= 0.4);
+    }
+
+    #[test]
+    fn test_sanity_gate3_fallback_to_actual_cash() {
+        // When CIO and round outputs have no dry_powder_cny,
+        // actual_cash_cny should be used as fallback.
+        let cio = ParsedFields {
+            verdict: Some("BUY".to_string()),
+            confidence: Some(0.7),
+            ..Default::default()
+        };
+        let outputs = vec![];
+        // actual_cash = 200000 > emergency_buffer = 100000 → G3 should pass
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0, Some(200000.0));
+        assert!(result.gate3_pass);
+        assert!(!result.notes.iter().any(|n| n.contains("子弹数据不可用")));
     }
 }

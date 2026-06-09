@@ -32,7 +32,6 @@
     const cashVal = invest.cash;
     const total = invest.totalAssets;
     const ret = invest.totalReturnPct;
-    const emergencyBuffer = store.llmConfig?.emergencyBufferCny ?? 0;
 
     let maxHolding = { name: '', pct: 0 };
     if (total > 0) {
@@ -46,7 +45,7 @@
       }
     }
 
-    return { hv, cash: cashVal, total, ret, concentration: maxHolding, emergencyBuffer };
+    return { hv, cash: cashVal, total, ret, concentration: maxHolding };
   });
 
   const pipelineStarted = $derived(store.streaming || store.results.length > 0);

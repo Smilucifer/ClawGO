@@ -56,8 +56,6 @@ pub type EventEmitter = Arc<dyn Fn(CommitteeEvent) + Send + Sync>;
 pub struct CommitteeConfig {
     /// Number of debate rounds (default 2 = Quant/R1+R2 + Risk/R1+R2).
     pub debate_rounds: u8,
-    /// Minimum dry powder (CNY) required to avoid Gate 3 downgrade.
-    pub emergency_buffer_cny: f64,
     /// Per-LLM-call timeout in seconds.
     pub timeout_secs: u64,
     /// Per-role provider override. Roles not present use the default.
@@ -75,7 +73,6 @@ impl Default for CommitteeConfig {
         }
         Self {
             debate_rounds: 2,
-            emergency_buffer_cny: 100_000.0,
             timeout_secs: 120,
             role_providers,
             model_override: None,
@@ -160,10 +157,14 @@ fn get_asset_name(symbol: &str) -> Option<String> {
 
 /// Pre-loaded portfolio data shared across multiple context builders.
 /// Loaded once in `run_committee` and passed by reference to avoid redundant DB reads.
-struct PortfolioData {
+#[derive(Clone)]
+pub(crate) struct PortfolioData {
     holdings: Vec<crate::storage::invest::portfolio::Holding>,
     cash: f64,
     total_notional: f64,
+    /// `true` when at least one holding's notional was estimated from avg_cost
+    /// rather than fetched from a live market price.
+    notional_is_estimated: bool,
 }
 
 impl PortfolioData {
@@ -174,9 +175,10 @@ impl PortfolioData {
     }
 
     /// Load portfolio data and refresh notional with current market prices.
-    /// NOTE: This function has a side effect — it writes updated notional values
-    /// back to the DB for holdings whose price changed by >0.01 CNY.
-    async fn load_and_refresh_prices() -> Self {
+    /// NOTE: When `dry_run=false`, writes updated notional values back to the
+    /// DB for holdings whose price changed by >0.01 CNY.  When `dry_run=true`,
+    /// prices are still fetched (for accurate notional) but nothing is persisted.
+    async fn load_and_refresh_prices(dry_run: bool) -> Self {
         use crate::storage::invest::portfolio::{get_cash, list_holdings, upsert_holding};
         use futures_util::StreamExt;
 
@@ -227,16 +229,18 @@ impl PortfolioData {
                         let old_notional = h.notional;
                         if (new_notional - old_notional).abs() > 0.01 {
                             h.notional = new_notional;
-                            if let Err(e) = upsert_holding(h) {
-                                log::warn!(
-                                    "portfolio: failed to update notional for {}: {}",
-                                    h.symbol, e
-                                );
-                            } else {
-                                log::debug!(
-                                    "portfolio: updated notional for {}: {:.0} -> {:.0}",
-                                    h.symbol, old_notional, new_notional
-                                );
+                            if !dry_run {
+                                if let Err(e) = upsert_holding(h) {
+                                    log::warn!(
+                                        "portfolio: failed to update notional for {}: {}",
+                                        h.symbol, e
+                                    );
+                                } else {
+                                    log::debug!(
+                                        "portfolio: updated notional for {}: {:.0} -> {:.0}",
+                                        h.symbol, old_notional, new_notional
+                                    );
+                                }
                             }
                         }
                     }
@@ -255,11 +259,13 @@ impl PortfolioData {
         // Fallback: if notional is 0 but avg_cost and shares are available,
         // compute notional from cost basis. This handles the case where
         // record_trade was called without triggering recalculate_holdings.
+        let mut notional_is_estimated = false;
         for h in &mut holdings {
             if h.notional.abs() < 0.01 {
                 if let (Some(avg_cost), Some(shares)) = (h.avg_cost, h.shares) {
                     if avg_cost > 0.0 && shares > 0.0 {
                         h.notional = avg_cost * shares;
+                        notional_is_estimated = true;
                         log::debug!(
                             "portfolio: fallback notional for {}: {:.2} (avg_cost={:.4} * shares={:.0})",
                             h.symbol, h.notional, avg_cost, shares
@@ -270,7 +276,35 @@ impl PortfolioData {
         }
 
         let total_notional = holdings.iter().map(|h| h.notional.abs()).sum();
-        Self { holdings, cash, total_notional }
+        Self { holdings, cash, total_notional, notional_is_estimated }
+    }
+
+    /// Load portfolio data with a 30-second timeout. Returns an empty portfolio
+    /// on timeout, preventing the pipeline from hanging on unresponsive APIs.
+    async fn load_with_timeout(dry_run: bool) -> Self {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            Self::load_and_refresh_prices(dry_run),
+        )
+        .await
+        {
+            Ok(data) => data,
+            Err(_) => {
+                log::warn!("portfolio: load_and_refresh_prices timed out after 30s, using empty portfolio");
+                Self::default()
+            }
+        }
+    }
+}
+
+impl Default for PortfolioData {
+    fn default() -> Self {
+        Self {
+            holdings: Vec::new(),
+            cash: 0.0,
+            total_notional: 0.0,
+            notional_is_estimated: false,
+        }
     }
 }
 
@@ -403,6 +437,15 @@ fn build_user_profile_context() -> String {
         _ => "未设置",
     };
 
+    // Derive risk preference from account purpose — no separate setting needed.
+    let risk_label = match profile.account_purpose.as_str() {
+        "pocket_money" => "激进型：可承受高波动，追求短期高收益，允许集中持仓",
+        "long_term" => "稳健型：注重价值和分红，能承受中等波动，偏好分散配置",
+        "retirement" => "保守型：优先保本，严格控制回撤，偏好蓝筹高股息",
+        "education" => "保守型：安全性优先，有明确用款时间约束",
+        _ => "中性型：默认风险偏好，平衡收益与安全",
+    };
+
     let support_label = match profile.family_support.as_deref() {
         Some("none") | None => "无家族经济支持",
         Some("occasional") => "偶尔有家族经济支持",
@@ -413,13 +456,14 @@ fn build_user_profile_context() -> String {
 
     let mut out = String::from("【用户投资档案】\n");
     out.push_str(&format!("账户用途: {}\n", purpose_label));
+    out.push_str(&format!("风险偏好: {}\n", risk_label));
     out.push_str(&format!("家族支持: {}\n", support_label));
 
     if !profile.lifestyle_notes.is_empty() {
         out.push_str(&format!("用户备注: {}\n", profile.lifestyle_notes));
     }
 
-    out.push_str("\n请根据上述用户档案调整裁决的激进程度和仓位建议。例如：退休金账户应更保守，零花钱账户可更灵活，无家族支持时需更注重安全边际。\n");
+    out.push_str("\n请根据上述用户档案调整裁决的激进程度和仓位建议。风险偏好为激进型时可更灵活地推荐高波动标的；保守型时应优先考虑安全边际和回撤控制。\n");
 
     out
 }
@@ -508,6 +552,10 @@ fn build_risk_metrics_context(
 
     if !risk_notes.is_empty() {
         out.push_str(&format!("标的风险: {}\n", risk_notes.join("，")));
+    }
+
+    if portfolio_data.notional_is_estimated {
+        out.push_str("⚠️ 注意：部分持仓市值为成本估算值（未获取到实时价格），盈亏比和集中度数据可能不准确。\n");
     }
 
     out.push_str("\n请在分析中直接使用上述预计算指标，无需重新计算。\n");
@@ -903,7 +951,7 @@ fn build_context_messages(
     round_outputs: &[RoundOutput],
     symbol: &str,
     macro_signal: &str,
-    emergency_buffer_cny: f64,
+    min_cash_reserve: f64,
     portfolio_summary: &str,
     regime_context: Option<&str>,
     _asset_context: &AssetContext,
@@ -917,8 +965,8 @@ fn build_context_messages(
     }
 
     let mut context = format!(
-        "【标的: {}】\nMacro SIGNAL: {}\nEmergency Buffer: {:.2} CNY\n",
-        symbol, macro_signal, emergency_buffer_cny
+        "【标的: {}】\nMacro SIGNAL: {}\n最低现金储备: {:.2} CNY\n",
+        symbol, macro_signal, min_cash_reserve
     );
     if !portfolio_summary.is_empty() {
         context.push_str(&portfolio_summary);
@@ -1185,7 +1233,7 @@ async fn run_l4_officer_phase(
     config: &CommitteeConfig,
     round_outputs: &[RoundOutput],
     macro_signal: &str,
-    emergency_buffer_cny: f64,
+    min_cash_reserve: f64,
     portfolio_summary: &str,
     regime_context: Option<&str>,
     emitter: &Option<EventEmitter>,
@@ -1213,7 +1261,7 @@ async fn run_l4_officer_phase(
         config,
         round_outputs,
         macro_signal,
-        emergency_buffer_cny,
+        min_cash_reserve,
         portfolio_summary,
         regime_context,
         emitter,
@@ -1269,7 +1317,7 @@ async fn run_l4_officer_phase(
                 .rev()
                 .find_map(|o| o.parsed.dry_powder_cny)
         })
-        .unwrap_or(emergency_buffer_cny);
+        .unwrap_or(min_cash_reserve);
 
     // 获取近7天交易次数
     let recent_trade_count = crate::storage::invest::portfolio::count_recent_trades(Some(symbol), 7)
@@ -1322,7 +1370,7 @@ async fn run_role_phase(
     config: &CommitteeConfig,
     round_outputs: &[RoundOutput],
     macro_signal: &str,
-    emergency_buffer_cny: f64,
+    min_cash_reserve: f64,
     portfolio_summary: &str,
     regime_context: Option<&str>,
     emitter: &Option<EventEmitter>,
@@ -1390,7 +1438,7 @@ async fn run_role_phase(
     let governor = global_governor();
     let _permit = governor.acquire(provider).await;
 
-    let mut messages = build_context_messages(round_outputs, symbol, macro_signal, emergency_buffer_cny, portfolio_summary, regime_context, asset_context);
+    let mut messages = build_context_messages(round_outputs, symbol, macro_signal, min_cash_reserve, portfolio_summary, regime_context, asset_context);
 
     // Risk R1: 注入组合层面风险指标（集中度/浮盈/回撤）到 user message
     if role == CommitteeRole::Risk && round == 1 {
@@ -1443,7 +1491,7 @@ async fn run_debate_rounds(
     round_outputs: &mut Vec<RoundOutput>,
     total_tokens: &mut u32,
     macro_signal: &str,
-    emergency_buffer_cny: f64,
+    min_cash_reserve: f64,
     emitter: &Option<EventEmitter>,
     portfolio_summary: &str,
     regime_context: Option<&str>,
@@ -1476,11 +1524,11 @@ async fn run_debate_rounds(
                 config,
                 round_outputs,
                 macro_signal,
-                emergency_buffer_cny,
+                min_cash_reserve,
                 portfolio_summary,
                 regime_context,
                 emitter,
-                &portfolio_data,
+                portfolio_data,
                 asset_context,
             )
             .await?;
@@ -1534,27 +1582,41 @@ async fn run_debate_rounds(
 ///
 /// When `emitter` is `Some`, events are emitted at each pipeline step boundary
 /// for real-time frontend streaming via `"committee-event"` Tauri event channel.
-pub async fn run_committee(
+pub(crate) async fn run_committee(
     client: &dyn InvestLlmClient,
     symbol: &str,
     config: &CommitteeConfig,
     emitter: Option<EventEmitter>,
     dry_run: bool,
+    portfolio_override: Option<std::sync::Arc<PortfolioData>>,
 ) -> Result<CommitteeResult, String> {
     let start = std::time::Instant::now();
 
-    // Override emergency_buffer_cny from user profile if explicitly saved
-    let mut config_owned = config.clone();
-    if let Ok(Some(profile)) = crate::storage::invest::user_profile::get_profile() {
-        config_owned.emergency_buffer_cny = profile.emergency_buffer_cny;
-    }
-    let config = &config_owned;
     let mut round_outputs: Vec<RoundOutput> = Vec::new();
     let mut total_tokens: u32 = 0;
 
-    // Load portfolio data with current prices for injection into Macro and Risk R1
-    let portfolio_data = PortfolioData::load_and_refresh_prices().await;
+    // Load portfolio data with current prices for injection into Macro and Risk R1.
+    // In batch mode the caller pre-loads once and passes an Arc to avoid redundant
+    // DB reads and API calls.
+    let portfolio_data = match portfolio_override {
+        Some(arc) => (*arc).clone(),
+        None => PortfolioData::load_with_timeout(dry_run).await,
+    };
     let portfolio_summary = build_portfolio_summary(&portfolio_data);
+
+    // Compute effective buffer from strategy's min_cash_pct × total_assets.
+    // Use the maximum min_cash_pct across all strategies (most conservative).
+    // Falls back to 0.0 if no strategy is configured — Gate 3 becomes a no-op.
+    let effective_buffer = {
+        let strategies = crate::storage::invest::strategy::list_strategies().unwrap_or_default();
+        let max_pct = strategies.iter().filter_map(|s| s.min_cash_pct).fold(0.0_f64, f64::max);
+        if max_pct > 0.0 {
+            portfolio_data.total_assets() * max_pct / 100.0
+        } else {
+            log::warn!("run_committee: no strategy with min_cash_pct configured, Gate 3 buffer = 0");
+            0.0
+        }
+    };
 
     // 构建标的上下文数据（行业、估值、资金流向、评级等）
     let asset_context = {
@@ -1670,7 +1732,7 @@ pub async fn run_committee(
         &mut round_outputs,
         &mut total_tokens,
         &macro_signal,
-        config.emergency_buffer_cny,
+        effective_buffer,
         &emitter,
         &portfolio_summary,
         regime_context.as_deref(),
@@ -1687,7 +1749,7 @@ pub async fn run_committee(
             config,
             &round_outputs,
             &macro_signal,
-            config.emergency_buffer_cny,
+            effective_buffer,
             &portfolio_summary,
             regime_context.as_deref(),
             &emitter,
@@ -1719,7 +1781,7 @@ pub async fn run_committee(
             config,
             &round_outputs,
             &macro_signal,
-            config.emergency_buffer_cny,
+            effective_buffer,
             &portfolio_summary,
             regime_context.as_deref(),
             &emitter,
@@ -1756,7 +1818,8 @@ pub async fn run_committee(
         &cio_parsed,
         &round_outputs,
         &macro_signal,
-        config.emergency_buffer_cny,
+        effective_buffer,
+        Some(portfolio_data.cash),
     );
 
     // Determine final verdict — sentinel override takes priority
@@ -1834,14 +1897,19 @@ pub async fn run_committee_batch(
     config: &CommitteeConfig,
     dry_run: bool,
 ) -> Vec<Result<CommitteeResult, String>> {
+    // Pre-load portfolio once and share across all tasks to avoid redundant
+    // DB reads and price-fetch API calls.
+    let portfolio_arc = std::sync::Arc::new(PortfolioData::load_with_timeout(dry_run).await);
+
     let mut handles = Vec::with_capacity(symbols.len());
 
     for symbol in symbols {
         let client = client.clone();
         let config = config.clone();
         let symbol = symbol.clone();
+        let portfolio = portfolio_arc.clone();
         handles.push(tokio::spawn(async move {
-            run_committee(&*client, &symbol, &config, None, dry_run).await
+            run_committee(&*client, &symbol, &config, None, dry_run, Some(portfolio)).await
         }));
     }
 
@@ -1871,6 +1939,9 @@ pub async fn run_committee_batch_stream(
         total: symbols.len(),
     });
 
+    // Pre-load portfolio once and share across all tasks.
+    let portfolio_arc = std::sync::Arc::new(PortfolioData::load_with_timeout(dry_run).await);
+
     let mut handles: Vec<(String, _)> = Vec::with_capacity(symbols.len());
 
     for symbol in symbols {
@@ -1878,8 +1949,9 @@ pub async fn run_committee_batch_stream(
         let config = config.clone();
         let symbol = symbol.clone();
         let emitter = emitter.clone();
+        let portfolio = portfolio_arc.clone();
         handles.push((symbol.clone(), tokio::spawn(async move {
-            run_committee(&*client, &symbol, &config, Some(emitter), dry_run).await
+            run_committee(&*client, &symbol, &config, Some(emitter), dry_run, Some(portfolio)).await
         })));
     }
 

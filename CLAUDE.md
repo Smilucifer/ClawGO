@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v5.2.12, 2026-06-03). Tushare moneyflow_dc Schema 迁移+XML 工具调用解析+Changelog 查看器+委员会批量运行。See `docs/changelog.md`.
+**Current phase:** Phase 10+ (v5.2.16, 2026-06-09). invest 统计日期 5AM 截止+委员会批量优化+收盘价格修复。See `docs/changelog.md`.
 
 ## Standard workflow
 
@@ -382,6 +382,10 @@ Key phases and their status:
 | 10+ (v5.2.10) | 委员会直播页面崩溃修复 — watch/hold 持仓去重+Simplify 审查修复: watchHoldings store 层 holdSymbolSet 去重(根因: buyStock 不清理 watch 条目→重复 key→Svelte 运行时崩溃)/CommitteeLiveTab+CommitteeReplayTab 组件级冗余去重移除/3 项 simplify(altitude: 去重提升到 store 层/reuse: 消除跨组件重复 seen Set/simplification: 双循环合并为 map) | [done] |
 | 10+ (v5.2.11) | 记忆管理重构+DSML 工具调用格式兼容+委员会 UI 修复: list_memory_files 定向扫描/remove_memory+archive_memory+restore_memory 命令/EmbeddingConfig+memory_dream_enabled 持久化/记忆管理页重写(saveSettingsPatch)/parse_dsml_tool_calls 解析器(collect_stream 层规范化)/orchestrator 简化(解构去 clone+args 缓存)/CommitteeAccuracyTab onMount 修复/emergencyBufferCny+formatCash 精度 | [done] |
 | 10+ (v5.2.12) | Tushare moneyflow_dc Schema 迁移+XML 工具调用解析+Changelog 查看器+委员会批量运行: MoneyflowDc 结构体*_vol→*_amount(7 字段)/万手→亿元/moneyflow_dc() 解析器+aggregate_moneyflow+format_moneyflow_summary+工具描述更新/parse_xml_tool_calls(<tool_call> 格式)/finish_tool_parse 共享函数/collect_stream 二级降级/7 单元测试/AboutModal changelog.md 解析+折叠展开+搜索+懒解析/CommitteeLiveTab 复选框多选+运行选中+全选/ReplayTab verdict 徽章+MarkdownContent/buildVerdictMap+encodeCwdSlug 提取/memory 项目范围过滤/10 i18n keys/4 路 simplify 审查通过 | [done] |
+| 10+ (v5.2.13) | 工具调用解析器增强+encode_cwd 冒号兼容+13 单元测试: parse_function_calls()/parse_fn_tag_body()/infer_json_value()/TOOL_CALL_TAG_PAIRS/strip_residual_tool_call_tags 安全网/parse_dsml_tool_calls 单竖线/collect_stream 四级降级/encode_cwd 冒号替换/encodeCwdSlug 同步/13 单元测试 | [done] |
+| 10+ (v5.2.14) | PnL 快照每日收益计算+卖出现金同步+收盘价格修复+代码审查优化: get_previous_day_snapshot()/recalculate_cash_inner()/is_a_share_market_open(交易日历)/get_latest_price 收盘后跳过 rt_k/row_to_pnl_snapshot 复用/scheduler 模块提取/10 项审查修复 | [done] |
+| 10+ (v5.2.15) | 卖出自动转 Watch+G3 子弹数据兜底修复: sell 全部卖出→hold 自动转 watch(保留名称/成本价)/cio_sanity_check actual_cash_cny 兜底(PortfolioData.cash→G3 永久可用)/concentration 去重/MemHolding::copy_core_fields_from 辅助方法/2 项 simplify | [done] |
+| 10+ (v5.2.16) | invest 统计日期 5AM 截止+委员会批量优化+收盘价格修复+现金负数修复+备用金重构+Watch 复活修复: date_utils 集中模块(3 函数+5 测试)/8 处调用替换/PortfolioData Arc 批量共享+30s timeout+load_with_timeout 提取/dry_run 模式/notional_is_estimated 警告/cio_sanity_check Gate 3 actual_cash fallback+Gate 4 去重/recalculate_cash_inner 自动同步/get_latest_price+realtime_quotes 收盘后跳过 rt_k/sell auto-convert watch+watch_deleted 防复活/getInvestDate 前端本地时区修复+常量提取/Dashboard 日期规则提示/set_cash_inner NULL initial_balance 修复/emergency_buffer_cny 全链路删除( UserProfile+InvestLlmConfig+CommitteeConfig)/effective_buffer 动态计算(max min_cash_pct×total_assets)/风险偏好从 account_purpose 推导注入 prompt/前端+4 i18n key 清理/参数重命名 min_cash_reserve/10 项 simplify | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

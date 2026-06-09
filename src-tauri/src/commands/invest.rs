@@ -576,7 +576,6 @@ pub struct InvestLlmConfig {
     /// The currently selected provider ID (e.g. "deepseek", "mimo-plan", "mimo-api").
     pub selected_provider: String,
     pub debate_rounds: u8,
-    pub emergency_buffer_cny: f64,
     pub timeout_secs: u64,
 }
 
@@ -609,7 +608,6 @@ fn default_llm_config() -> InvestLlmConfig {
         ],
         selected_provider: "deepseek".to_string(),
         debate_rounds: 4,
-        emergency_buffer_cny: 100_000.0,
         timeout_secs: 120,
     }
 }
@@ -626,7 +624,7 @@ pub fn get_llm_config() -> Result<InvestLlmConfig, String> {
         serde_json::from_str(&content).map_err(|e| format!("parse llm_config: {}", e))?;
 
     // Known non-provider keys in the config JSON
-    const META_KEYS: &[&str] = &["selected_provider", "debate_rounds", "emergency_buffer_cny", "timeout_secs"];
+    const META_KEYS: &[&str] = &["selected_provider", "debate_rounds", "timeout_secs"];
 
     let mut providers = Vec::new();
     if let Some(obj) = data.as_object() {
@@ -664,9 +662,6 @@ pub fn get_llm_config() -> Result<InvestLlmConfig, String> {
             .unwrap_or("deepseek")
             .to_string(),
         debate_rounds: data["debate_rounds"].as_u64().unwrap_or(4) as u8,
-        emergency_buffer_cny: data["emergency_buffer_cny"]
-            .as_f64()
-            .unwrap_or(100_000.0),
         timeout_secs: data["timeout_secs"].as_u64().unwrap_or(120),
     })
 }
@@ -715,10 +710,6 @@ pub fn save_llm_config(config: InvestLlmConfig) -> Result<(), String> {
         serde_json::Value::Number(config.debate_rounds.into()),
     );
     data.insert(
-        "emergency_buffer_cny".into(),
-        serde_json::json!(config.emergency_buffer_cny),
-    );
-    data.insert(
         "timeout_secs".into(),
         serde_json::Value::Number(config.timeout_secs.into()),
     );
@@ -752,7 +743,6 @@ fn build_committee_config(config_data: &InvestLlmConfig, debate_rounds: Option<u
     let provider = parse_provider_id(&config_data.selected_provider);
     let mut committee_config = crate::invest::committee::orchestrator::CommitteeConfig::default();
     committee_config.debate_rounds = debate_rounds.unwrap_or(config_data.debate_rounds);
-    committee_config.emergency_buffer_cny = config_data.emergency_buffer_cny;
     committee_config.timeout_secs = config_data.timeout_secs;
     // Pass user-configured model for the selected provider
     if let Some(p) = config_data.providers.iter().find(|p| p.provider_id == config_data.selected_provider) {

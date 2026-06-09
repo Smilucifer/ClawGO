@@ -1894,7 +1894,6 @@ export interface DomainInsight {
 // ── Invest types (Phase 4b: User Profile & Daily Report) ──
 
 export interface UserProfile {
-  emergencyBufferCny: number;
   familyBackupAvailable: boolean;
   accountPurpose: string;
   lifestyleNotes: string;
