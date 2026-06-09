@@ -19,8 +19,8 @@ impl Default for DreamConfig {
             invest_enabled: false,
             invest_cron: "0 3 * * *".into(),
             lookback_days: 30,
-            min_score: 0.8,
-            min_count: 3,
+            min_score: 0.5,
+            min_count: 2,
         }
     }
 }

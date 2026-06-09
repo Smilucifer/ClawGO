@@ -1,4 +1,5 @@
 pub mod daily_report;
+pub mod date_utils;
 pub mod dreaming;
 pub mod llm;
 pub mod committee;

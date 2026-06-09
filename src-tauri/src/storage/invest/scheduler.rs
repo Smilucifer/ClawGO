@@ -1,6 +1,6 @@
 use super::with_conn;
 use super::with_conn_mut;
-use chrono::{Datelike, NaiveDate};
+use chrono::{Datelike, NaiveDate, Timelike};
 use rusqlite::params;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -103,6 +103,26 @@ fn is_weekday(date: &str) -> bool {
     } else {
         false
     }
+}
+
+/// 判断 A 股市场当前是否在盘中交易时段。
+/// 使用 `trade_calendar` 表判断今天是否为交易日（含节假日/调休），再检查北京时间是否在 9:15-11:30 / 13:00-15:00。
+pub fn is_a_share_market_open() -> bool {
+    let now = chrono::Utc::now();
+    let cst = now + chrono::Duration::hours(8);
+    let today = cst.format("%Y-%m-%d").to_string();
+
+    if !is_trading_day(&today).unwrap_or(false) {
+        return false;
+    }
+
+    let minutes = cst.hour() * 60 + cst.minute();
+    // 集合竞价 9:15 - 上午收盘 11:30
+    if minutes >= 9 * 60 + 15 && minutes <= 11 * 60 + 30 {
+        return true;
+    }
+    // 下午开盘 13:00 - 收盘 15:00
+    minutes >= 13 * 60 && minutes <= 15 * 60
 }
 
 pub fn upsert_trade_calendar(date: &str, is_open: bool, pretrade_date: Option<&str>) -> Result<(), String> {

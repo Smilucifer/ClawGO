@@ -71,6 +71,7 @@ pub const INTERNATIONAL_SYMBOLS: &[(&str, &str)] = &[
 ///
 /// All actual HTTP requests are handled by `python-runtime/scripts/providers/yahoo.py`
 /// via the JSON-RPC bridge.
+#[derive(Clone)]
 pub struct InternationalClient;
 
 impl InternationalClient {
@@ -84,13 +85,24 @@ impl InternationalClient {
         crate::python::require()
     }
 
-    // -- high-level helpers --------------------------------------------------
+    /// Generic JSON-RPC call to the Python data server.
+    /// Deserializes the result into the target type.
+    async fn rpc_call<T: serde::de::DeserializeOwned>(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+    ) -> Result<T, String> {
+        let result = Self::runtime()?.call(method, params).await?;
+        serde_json::from_value(result)
+            .map_err(|e| format!("Failed to parse {method} response: {e}"))
+    }
+
+    // -- Yahoo Finance (quote + history) --------------------------------------
 
     /// Fetch real-time quote for a Yahoo symbol.
     pub async fn fetch_yahoo_quote(&self, symbol: &str) -> Result<YahooQuote, String> {
-        let params = serde_json::json!({"symbol": symbol});
-        let result = Self::runtime()?.call("yahoo.quote", params).await?;
-        serde_json::from_value(result).map_err(|e| format!("Failed to parse YahooQuote: {e}"))
+        self.rpc_call("yahoo.quote", serde_json::json!({"symbol": symbol}))
+            .await
     }
 
     /// Fetch historical daily bars for a Yahoo symbol.
@@ -102,50 +114,52 @@ impl InternationalClient {
         symbol: &str,
         days: u32,
     ) -> Result<Vec<YahooBar>, String> {
-        let params = serde_json::json!({"symbol": symbol, "days": days});
-        let result = Self::runtime()?.call("yahoo.history", params).await?;
-        serde_json::from_value(result).map_err(|e| format!("Failed to parse YahooBar list: {e}"))
+        self.rpc_call(
+            "yahoo.history",
+            serde_json::json!({"symbol": symbol, "days": days}),
+        )
+        .await
     }
 
-    /// Search for news articles via Yahoo Finance search API.
-    ///
-    /// `query` is the search string (e.g. "A股 央行", "中国股市").
-    /// `count` is the maximum number of news items to return (default 10).
-    pub async fn fetch_yahoo_news(
+    // -- Jin10 provider (金十数据) --------------------------------------------
+
+    /// Fetch flash news from Jin10 (金十数据).
+    /// Returns items compatible with YahooNewsItem schema.
+    pub async fn fetch_jinshi_news(
         &self,
         query: &str,
         count: u32,
     ) -> Result<Vec<YahooNewsItem>, String> {
-        let params = serde_json::json!({"query": query, "count": count});
-        let result = Self::runtime()?.call("yahoo.news", params).await?;
-        serde_json::from_value(result).map_err(|e| format!("Failed to parse YahooNewsItem list: {e}"))
+        self.rpc_call(
+            "jinshi.news",
+            serde_json::json!({"query": query, "count": count}),
+        )
+        .await
     }
 
-    /// Fetch Chinese financial news from Yahoo Finance using multiple search queries.
-    /// Returns deduplicated news items sorted by publish time (newest first).
-    ///
-    /// The Python yfinance library handles its own rate limiting internally,
-    /// so no artificial delays are needed on the Rust side.
-    pub async fn fetch_china_finance_news(&self, max_items: usize) -> Vec<YahooNewsItem> {
-        let queries = ["A股 中国", "中国股市", "央行 中国", "A股 市场"];
-        let per_query = ((max_items as u32) / queries.len() as u32).max(3);
-
-        let mut all: Vec<YahooNewsItem> = Vec::new();
-        let mut seen = std::collections::HashSet::new();
-
-        for q in queries.iter() {
-            if let Ok(items) = self.fetch_yahoo_news(q, per_query).await {
-                for item in items {
-                    if item.uuid.is_empty() || seen.insert(item.uuid.clone()) {
-                        all.push(item);
-                    }
-                }
-            }
+    /// Fetch all flash news from Jin10 (金十数据) — macro + international.
+    /// No query filter, returns the full feed.
+    pub async fn fetch_jinshi_all_news(&self, max_items: usize) -> Vec<YahooNewsItem> {
+        if let Ok(items) = self.fetch_jinshi_news("", max_items as u32).await {
+            return items;
         }
+        Vec::new()
+    }
 
-        all.sort_by_key(|b| std::cmp::Reverse(b.provider_publish_time));
-        all.truncate(max_items);
-        all
+    // -- AkShare provider (东财个股新闻 via AkShare) ---------------------------
+
+    /// Fetch per-stock news from EastMoney via AkShare.
+    /// `symbol` is the A-share stock code (e.g. "600519").
+    pub async fn fetch_akshare_stock_news(
+        &self,
+        symbol: &str,
+        count: u32,
+    ) -> Result<Vec<YahooNewsItem>, String> {
+        self.rpc_call(
+            "akshare.stock_news",
+            serde_json::json!({"symbol": symbol, "count": count}),
+        )
+        .await
     }
 }
 

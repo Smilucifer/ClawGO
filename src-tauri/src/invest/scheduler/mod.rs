@@ -67,7 +67,7 @@ pub fn default_jobs() -> Vec<CronJob> {
             name: "Dreaming (投资)".into(),
             cron_expr: "0 0 3 * * *".into(),
             interval_min: None,
-            enabled: false,
+            enabled: true,
             requires_trading_day: true,
             last_run: None,
             next_run: None,

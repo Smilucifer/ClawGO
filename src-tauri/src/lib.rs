@@ -102,8 +102,11 @@ pub async fn run_pnl_snapshot() -> Result<String, String> {
 
     let total_value = cash + holdings_value;
 
-    let prev = verdicts::list_pnl_snapshots(Some(1))?;
-    let (daily_pnl, daily_pnl_pct) = if let Some(last) = prev.first() {
+    let today = crate::invest::date_utils::get_invest_date();
+    // Use get_previous_day_snapshot to get the snapshot from a previous day,
+    // not the most recent snapshot which might be from today (if run multiple times)
+    let prev = verdicts::get_previous_day_snapshot(&today)?;
+    let (daily_pnl, daily_pnl_pct) = if let Some(last) = prev {
         let pnl = total_value - last.total_value;
         let pct = if last.total_value > 0.0 {
             (pnl / last.total_value) * 100.0
@@ -114,8 +117,6 @@ pub async fn run_pnl_snapshot() -> Result<String, String> {
     } else {
         (None, None)
     };
-
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let snapshot = verdicts::PnlSnapshot {
         id: 0,
         snapshot_date: today,

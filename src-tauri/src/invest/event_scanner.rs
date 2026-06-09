@@ -3,6 +3,30 @@ use serde::{Deserialize, Serialize};
 use crate::invest::international::InternationalClient;
 use crate::invest::llm::{InvestLlmClient, LlmConfig, Message, collect_stream};
 
+/// Normalize Tushare date strings to ISO 8601 format.
+/// Handles "20260609" → "2026-06-09T00:00:00" and passes through valid ISO strings.
+fn normalize_tushare_date(raw: &str, fallback: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return fallback.to_string();
+    }
+    // "20260609" 8-digit pure numeric format
+    if trimmed.len() == 8 && trimmed.bytes().all(|b| b.is_ascii_digit()) {
+        return format!(
+            "{}-{}-{}T00:00:00",
+            &trimmed[0..4],
+            &trimmed[4..6],
+            &trimmed[6..8]
+        );
+    }
+    // "2026-06-09" 10-char date-only format
+    if trimmed.len() == 10 && trimmed.as_bytes()[4] == b'-' && trimmed.as_bytes()[7] == b'-' {
+        return format!("{}T00:00:00", trimmed);
+    }
+    // Already has time component or other format — pass through
+    trimmed.to_string()
+}
+
 /// Severity classification from rule-based keyword filtering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -43,9 +67,12 @@ pub struct RawEvent {
     pub created_at: String,
 }
 
-/// Minimum Tushare events before skipping Yahoo Finance fallback.
-/// Below this threshold the yield is too sparse for reliable keyword filtering.
-const YAHOO_FALLBACK_MIN_EVENTS: usize = 3;
+// ── Source count limits ──
+
+/// Max Jin10 flash news items per scan.
+const JIN10_COUNT: usize = 30;
+/// Max AkShare per-stock news items per symbol.
+const AKSHARE_PER_STOCK_COUNT: u32 = 8;
 
 // ── Rule-based keyword filtering ──
 
@@ -169,11 +196,12 @@ pub struct ScanResult {
     pub filtered: usize,
     pub saved: usize,
     pub sources_scanned: Vec<String>,
-    /// Errors encountered during scan (Tushare / Yahoo failures).
+    /// Errors encountered during scan (Tushare / AkShare failures).
     pub errors: Vec<String>,
 }
 
-/// Run a full event scan: fetch from Tushare, filter by keywords, normalize via LLM, save to DB.
+/// Run a full event scan: fetch from Tushare announcements + Jin10 flash + AkShare per-stock,
+/// filter by keywords, normalize via LLM, save to DB.
 pub async fn scan_events(
     tushare: &crate::tushare::TushareClient,
     llm_client: &dyn InvestLlmClient,
@@ -191,41 +219,7 @@ pub async fn scan_events(
     let mut sources_scanned: Vec<String> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
 
-    // 1. Fetch major_news (sina + cls)
-    for src in &["sina", "cls"] {
-        sources_scanned.push(format!("tushare_major_news:{}", src));
-        match tushare.major_news(src, &one_day_ago, &today).await {
-            Ok(items) => {
-                log::info!(
-                    "tushare_major_news({}) returned {} items",
-                    src,
-                    items.len()
-                );
-                for item in items {
-                    let created_at = if item.datetime.is_empty() {
-                        now.format("%Y-%m-%dT%H:%M:%S").to_string()
-                    } else {
-                        item.datetime
-                    };
-                    raw_events.push(RawEvent {
-                        source: format!("tushare_major_news:{}", src),
-                        event_type: "news".to_string(),
-                        title: item.title,
-                        body: item.content,
-                        url: None,
-                        created_at,
-                    });
-                }
-            }
-            Err(e) => {
-                let msg = format!("tushare_major_news({}): {}", src, e);
-                log::warn!("{}", msg);
-                errors.push(msg);
-            }
-        }
-    }
-
-    // 2. Fetch announcements for HOLD + WATCH holdings
+    // 1. Fetch Tushare announcements for HOLD + WATCH holdings
     let holdings = crate::storage::invest::portfolio::list_holdings()
         .unwrap_or_default();
     let active_symbols: Vec<&str> = holdings
@@ -262,11 +256,8 @@ pub async fn scan_events(
                     items.len()
                 );
                 for item in items {
-                    let created_at = if item.ann_date.is_empty() {
-                        now.format("%Y-%m-%dT%H:%M:%S").to_string()
-                    } else {
-                        item.ann_date.clone()
-                    };
+                    let fallback = now.format("%Y-%m-%dT%H:%M:%S").to_string();
+                    let created_at = normalize_tushare_date(&item.ann_date, &fallback);
                     raw_events.push(RawEvent {
                         source: "tushare_anns_d".to_string(),
                         event_type: "announcement".to_string(),
@@ -286,40 +277,76 @@ pub async fn scan_events(
     }
 
     log::info!(
-        "Tushare sources yielded {} raw events total",
+        "Tushare announcements yielded {} raw events total",
         raw_events.len()
     );
 
-    // 3. Fetch Yahoo Finance news as fallback when Tushare yields few results
-    if raw_events.len() < YAHOO_FALLBACK_MIN_EVENTS {
-        log::info!(
-            "Tushare yielded only {} events, fetching Yahoo Finance news as fallback",
-            raw_events.len()
-        );
-        sources_scanned.push("yahoo_finance_news".to_string());
-        let yahoo_client = InternationalClient::from_settings();
-        let yahoo_items = yahoo_client.fetch_china_finance_news(15).await;
-        if yahoo_items.is_empty() {
-            log::info!("Yahoo Finance news returned 0 items");
-            errors.push("yahoo_finance: returned 0 items (possible 429 rate limit)".into());
-        } else {
-            log::info!("Yahoo Finance news returned {} items", yahoo_items.len());
-            for item in yahoo_items {
+    // 2. Fetch Jin10 flash news (macro + international) + AkShare per-stock news concurrently
+    {
+        let client = InternationalClient::from_settings();
+        let fallback_time = now.format("%Y-%m-%dT%H:%M:%S").to_string();
+
+        // Helper: convert YahooNewsItem to RawEvent
+        let mut add_news_items = |items: &[crate::invest::international::YahooNewsItem], source_name: &str| {
+            if items.is_empty() {
+                log::info!("{source_name} returned 0 items");
+                return;
+            }
+            log::info!("{source_name} returned {} items", items.len());
+            for item in items {
                 let created_at = if item.provider_publish_time > 0 {
                     chrono::DateTime::from_timestamp(item.provider_publish_time, 0)
                         .map(|dt| dt.format("%Y-%m-%dT%H:%M:%S").to_string())
-                        .unwrap_or_else(|| now.format("%Y-%m-%dT%H:%M:%S").to_string())
+                        .unwrap_or_else(|| fallback_time.clone())
                 } else {
-                    now.format("%Y-%m-%dT%H:%M:%S").to_string()
+                    fallback_time.clone()
                 };
                 raw_events.push(RawEvent {
-                    source: "yahoo_finance".to_string(),
+                    source: source_name.to_string(),
                     event_type: "news".to_string(),
-                    title: item.title,
+                    title: item.title.clone(),
                     body: format!("Publisher: {}", item.publisher),
-                    url: Some(item.link),
+                    url: Some(item.link.clone()),
                     created_at,
                 });
+            }
+        };
+
+        // Build per-stock futures for AkShare
+        let stock_futures: Vec<_> = active_symbols
+            .iter()
+            .map(|symbol| {
+                let c = client.clone();
+                async move {
+                    let result = c.fetch_akshare_stock_news(symbol, AKSHARE_PER_STOCK_COUNT).await;
+                    (symbol, result)
+                }
+            })
+            .collect();
+
+        // Run Jin10 + all per-stock fetches concurrently
+        let jin10_client = client.clone();
+        let jin10_future = async {
+            sources_scanned.push("jinshi_flash".to_string());
+            jin10_client.fetch_jinshi_all_news(JIN10_COUNT).await
+        };
+
+        let (jin10_result, stock_results) = tokio::join!(
+            jin10_future,
+            futures_util::future::join_all(stock_futures)
+        );
+
+        add_news_items(&jin10_result, "jinshi_flash");
+
+        for (symbol, result) in stock_results {
+            let source = format!("akshare:{}", symbol);
+            sources_scanned.push(source.clone());
+            match result {
+                Ok(items) => add_news_items(&items, &source),
+                Err(e) => {
+                    log::warn!("akshare_stock_news({}): {}", symbol, e);
+                    errors.push(format!("akshare:{}: {}", symbol, e));
+                }
             }
         }
     }

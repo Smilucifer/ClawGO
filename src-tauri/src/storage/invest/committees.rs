@@ -39,8 +39,9 @@ pub fn archive_verdict(
         now.format("%Y%m%d%H%M%S%.3f")
     );
     let created_at = now.format("%Y-%m-%d %H:%M:%S").to_string();
-    let date = extract_date(&created_at);
-    let verdict_date = now.format("%Y%m%d").to_string();
+    // 统计日期：05:00 前归属前一天
+    let invest_date = crate::invest::date_utils::get_invest_date();
+    let verdict_date = crate::invest::date_utils::get_invest_date_compact();
 
     with_conn_mut(|conn| {
         let tx = conn
@@ -55,10 +56,10 @@ pub fn archive_verdict(
         )
         .map_err(|e| format!("supersede tracking: {e}"))?;
 
-        // 2. Delete older verdicts for this symbol on the same date
+        // 2. Delete older verdicts for this symbol on the same invest date
         tx.execute(
             "DELETE FROM verdicts WHERE symbol = ?1 AND date(created_at) = ?2",
-            params![symbol, date],
+            params![symbol, invest_date],
         )
         .map_err(|e| format!("delete old verdicts: {e}"))?;
 
@@ -99,7 +100,7 @@ pub fn archive_verdict(
         log::info!(
             "archived verdict for {} (date={}, id={})",
             symbol,
-            date,
+            invest_date,
             id,
         );
         Ok(())
@@ -188,6 +189,7 @@ pub fn list_verdict_history(symbol: &str, days: i64) -> Result<Vec<Verdict>, Str
 
 /// Extract the date portion (`YYYY-MM-DD`) from a datetime string.
 /// Handles both `"YYYY-MM-DD HH:MM:SS"` and `"YYYY-MM-DDTHH:MM:SS"`.
+#[allow(dead_code)] // kept for tests
 fn extract_date(created_at: &str) -> String {
     if let Some(pos) = created_at.find('T') {
         created_at[..pos].to_string()

@@ -38,7 +38,7 @@ fn archive_root() -> PathBuf {
 
 /// Get the date-scoped archive directory: `~/.claw-go/invest/committee/{YYYY-MM-DD}/`
 fn archive_date_dir() -> PathBuf {
-    let today = Local::now().format("%Y-%m-%d").to_string();
+    let today = crate::invest::date_utils::get_invest_date();
     archive_root().join(today)
 }
 
@@ -83,7 +83,7 @@ pub fn archive_decision_full(
     // Read existing entries, filter out same symbol+date, then write back
     // filtered content + new entry. This matches the DB's daily-overwrite pattern.
     let jsonl_path = archive_root().join("events.jsonl");
-    let today_str = Local::now().format("%Y-%m-%d").to_string();
+    let today_str = crate::invest::date_utils::get_invest_date();
     let event = serde_json::json!({
         "ts": Local::now().format("%Y-%m-%dT%H:%M:%S%.3f").to_string(),
         "symbol": symbol,
@@ -259,7 +259,7 @@ pub fn load_archive(
         return Ok(Vec::new());
     }
 
-    let today = Local::now();
+    let today = crate::invest::date_utils::get_invest_naive_date();
     let mut results: Vec<ArchivedDecision> = Vec::new();
 
     for offset in 0..days {

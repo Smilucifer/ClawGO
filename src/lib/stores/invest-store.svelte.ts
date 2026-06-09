@@ -18,6 +18,20 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   return getTransport().invoke<T>(cmd, args);
 }
 
+/** Parse event date strings, handling Tushare "20260609" format as safety net. */
+function parseEventDate(dateStr: string): number {
+  const d = new Date(dateStr);
+  if (!isNaN(d.getTime())) return d.getTime();
+  // Handle "20260609" 8-digit numeric format from Tushare
+  if (/^\d{8}$/.test(dateStr)) {
+    const parsed = new Date(
+      `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}T00:00:00`,
+    );
+    return parsed.getTime();
+  }
+  return NaN;
+}
+
 /** Check if A-share market is currently in trading hours (9:15-11:30 or 13:00-15:00 CST, weekdays) */
 function isMarketOpen(): boolean {
   const now = new Date();
@@ -144,7 +158,7 @@ class InvestStore {
     // Pre-compute timestamps to avoid redundant Date allocations in filter + sort
     const withTs = filtered.map((e) => ({
       e,
-      ts: new Date(e.createdAt).getTime(),
+      ts: parseEventDate(e.createdAt),
     }));
 
     let result = withTs.filter((item) => item.ts > cutoff);
@@ -288,10 +302,8 @@ class InvestStore {
       assetType: assetType || null,
     });
 
-    // record_trade triggers recalculate_holdings_inner which fully rebuilds
-    // the holdings table — no need for a separate add_holding/update_holding call.
-
-    await invoke("update_cash", { available: this.cash - amount });
+    // record_trade triggers recalculate_holdings_inner which rebuilds holdings
+    // and recalculate_cash_inner which auto-updates the cash balance.
 
     await this.loadAll();
   }
@@ -322,29 +334,16 @@ class InvestStore {
       assetType: existing.assetType || null,
     });
 
-    // record_trade triggers recalculate_holdings_inner which fully rebuilds
-    // the holdings table — no need for a separate delete_holding/update_holding call.
-
-    await invoke("update_cash", { available: this.cash + amount });
+    // record_trade triggers recalculate_holdings_inner which rebuilds holdings
+    // and recalculate_cash_inner which auto-updates the cash balance.
 
     await this.loadAll();
   }
 
-  async updateCash(newBalance: number, reason?: string): Promise<void> {
+  async updateCash(newBalance: number, _reason?: string): Promise<void> {
+    // Set cash directly — backend recalculates from initial_balance + trades,
+    // so this manual override is only needed for external adjustments (deposits, etc.)
     await invoke("update_cash", { available: newBalance });
-    await invoke("record_trade", {
-      id: null,
-      symbol: "CASH",
-      currency: "CNY",
-      kind: "hold",
-      action: "cash_adjust",
-      shares: null,
-      price: null,
-      amount: newBalance,
-      notes: reason || null,
-      name: null,
-      tradeDate: null,
-    });
     this.cash = newBalance;
     await this.loadAll();
   }
@@ -439,7 +438,6 @@ class InvestStore {
     price: number,
   ): Promise<void> {
     const amount = qty * price;
-    const prevCash = this.cash;
 
     // Save watch holding data for rollback
     const watchHolding = this.watchHoldings.find((h) => h.symbol === symbol);
@@ -476,11 +474,10 @@ class InvestStore {
         assetType: watchHolding?.assetType ?? "stock",
       });
 
-      await invoke("update_cash", { available: this.cash - amount });
-      this.cash = this.cash - amount;
+      // record_trade triggers recalculate_cash_inner which auto-deducts cash
+      // (convert_watch_to_hold is treated as a buy-equivalent).
     } catch (e) {
-      // Rollback: restore watch holding and cash
-      this.cash = prevCash;
+      // Rollback: restore watch holding
       if (watchHolding) {
         await invoke("add_holding", {
           symbol,

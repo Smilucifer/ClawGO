@@ -1,4 +1,3 @@
-use chrono::Local;
 use std::fs;
 use std::path::Path;
 
@@ -17,7 +16,7 @@ pub struct DailyReportRecord {
 }
 
 pub fn generate_daily_report(data_dir: &Path) -> Result<String, String> {
-    let today = Local::now().format("%Y-%m-%d").to_string();
+    let today = crate::invest::date_utils::get_invest_date();
     let report_dir = data_dir.join("invest").join("reports");
     fs::create_dir_all(&report_dir)
         .map_err(|e| format!("create report dir: {e}"))?;

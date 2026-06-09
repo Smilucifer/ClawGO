@@ -91,12 +91,13 @@ impl JsonRpcClient {
             Self::read_responses(stdout, pending_clone, alive_clone).await;
         });
 
-        // Spawn stderr reader task (for Python logs)
+        // Spawn stderr reader task (for Python logs) — info level so startup
+        // errors and tracebacks are visible without debug logging.
         tokio::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                log::debug!("[python] {}", line);
+                log::info!("[python] {}", line);
             }
         });
 
@@ -166,16 +167,18 @@ impl JsonRpcClient {
             }
         }
 
-        // Stdout closed — mark the client as dead so ensure_running() will restart it.
+        // Stdout closed — mark the client as dead so get_client() will restart it.
         alive.store(false, Ordering::SeqCst);
+        log::warn!("[python-bridge] Python process exited");
 
-        // Mark all pending requests as failed
+        // Pre-format the error message once, then share it across all pending requests.
+        let error_msg = "Python process exited".to_string();
         let mut map = pending.lock().await;
         for (id, tx) in map.drain() {
-            log::warn!("[python-bridge] Process exited, failing pending request {}", id);
+            log::warn!("[python-bridge] Failing pending request {}", id);
             let _ = tx.send(Err(JsonRpcError::Io(std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
-                "Python process exited",
+                error_msg.clone(),
             ))));
         }
     }

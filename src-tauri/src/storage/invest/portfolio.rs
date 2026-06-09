@@ -280,10 +280,37 @@ fn recalculate_holdings_inner_body(
         }
     }
 
+    /// Check if P&L should expire based on date gap.
+    /// P&L expires if there's >= 2 calendar days between cleared_date and buy_date,
+    /// which approximates "at least 1 trading day without holding the symbol".
+    fn is_pnl_expired(cleared_date: &str, buy_date: &str) -> bool {
+        use chrono::NaiveDate;
+        if let (Ok(d1), Ok(d2)) = (
+            NaiveDate::parse_from_str(cleared_date, "%Y-%m-%d"),
+            NaiveDate::parse_from_str(buy_date, "%Y-%m-%d"),
+        ) {
+            let days_gap = (d2 - d1).num_days();
+            // Gap >= 2 calendar days means at least 1 full day without position
+            // (e.g., sold Monday, buy Wednesday = 2 day gap, P&L expires)
+            days_gap >= 2
+        } else {
+            // If dates can't be parsed, conservatively expire P&L
+            true
+        }
+    }
+
     let mut map: HashMap<(String, String, String), MemHolding> = HashMap::new();
     // Track symbols explicitly deleted from watchlist so that the sell→watch
     // auto-convert does not "resurrect" entries the user already removed.
     let mut watch_deleted: HashSet<String> = HashSet::new();
+    // Track realized P&L per symbol for day-trading (做T) cost adjustment.
+    // P&L is amortized into new cost basis unless there's a gap of >= 1 trading day
+    // without holding the symbol (i.e., cleared and not re-bought within the next trading day).
+    struct PnlTracker {
+        realized_pnl: f64,
+        cleared_date: Option<String>,  // Date when position was fully closed
+    }
+    let mut pnl_tracker_map: HashMap<String, PnlTracker> = HashMap::new();
 
     // Restore preserved notional and asset_type values into the in-memory map
     for ((sym, cur, kind), notional) in notional_map {
@@ -301,7 +328,6 @@ fn recalculate_holdings_inner_body(
             "buy" => {
                 let shares = t.shares.unwrap_or(0.0);
                 let price = t.price.unwrap_or(0.0);
-                let _amount = t.amount.unwrap_or(shares * price);
                 let entry = map.entry(key).or_default();
                 if entry.asset_type.is_none() {
                     entry.asset_type = Some(resolve_asset_type(t));
@@ -310,27 +336,73 @@ fn recalculate_holdings_inner_body(
                 if entry.name.is_none() {
                     entry.name = t.name.clone();
                 }
-                if entry.shares > 0.0 && entry.avg_cost > 0.0 {
-                    let new_shares = entry.shares + shares;
-                    entry.avg_cost =
-                        (entry.avg_cost * entry.shares + price * shares) / new_shares;
-                    entry.shares = new_shares;
+
+                // Day-trading (做T) cost adjustment:
+                // P&L from previous sells is amortized into new cost basis,
+                // UNLESS there was a gap of >= 1 trading day without holding
+                // the symbol (cleared and not re-bought within next trading day).
+                let realized_pnl = if let Some(tracker) = pnl_tracker_map.remove(&t.symbol) {
+                    // Check if P&L has expired (cleared date gap >= 2 calendar days ≈ 1 trading day)
+                    if let Some(ref cleared_date) = tracker.cleared_date {
+                        let buy_date = &t.created_at[..10];
+                        if is_pnl_expired(cleared_date, buy_date) {
+                            // P&L expired: trading day gap means no amortization
+                            0.0
+                        } else {
+                            tracker.realized_pnl
+                        }
+                    } else {
+                        // No clear date recorded (partial sell), use P&L
+                        tracker.realized_pnl
+                    }
                 } else {
-                    entry.avg_cost = if shares > 0.0 { price } else { 0.0 };
-                    entry.shares = shares;
-                }
+                    0.0
+                };
+
+                // Unified cost basis calculation (works for both new and existing positions)
+                let existing_cost_basis = entry.avg_cost * entry.shares;
+                let buy_cost = price * shares;
+                let new_shares = entry.shares + shares;
+                let adjusted_cost_basis = existing_cost_basis + buy_cost - realized_pnl;
+                entry.avg_cost = if new_shares > 0.0 {
+                    (adjusted_cost_basis / new_shares).max(0.0)
+                } else {
+                    0.0
+                };
+                entry.shares = new_shares;
                 // Compute notional as cost basis (avg_cost * shares).
                 // Will be updated to current market value in PortfolioData::load.
                 entry.recompute_notional();
             }
             "sell" => {
                 let shares = t.shares.unwrap_or(0.0);
+                let sell_price = t.price.unwrap_or(0.0);
                 let should_convert = if let Some(entry) = map.get_mut(&key) {
+                    // Calculate realized P&L for this sell trade
+                    // realized_pnl = shares_sold * (sell_price - avg_cost)
+                    if entry.shares > 0.0 && entry.avg_cost > 0.0 {
+                        let pnl = shares * (sell_price - entry.avg_cost);
+                        let tracker = pnl_tracker_map.entry(t.symbol.clone()).or_insert(PnlTracker {
+                            realized_pnl: 0.0,
+                            cleared_date: None,
+                        });
+                        tracker.realized_pnl += pnl;
+                    }
                     entry.shares = (entry.shares - shares).max(0.0);
                     entry.recompute_notional();
                     // Auto-convert to watch when all shares are sold,
                     // but skip if the user explicitly deleted this symbol from watch
-                    entry.shares <= 0.0001 && !entry.is_watch && !watch_deleted.contains(&t.symbol)
+                    let is_cleared = entry.shares <= 0.0001 && !entry.is_watch && !watch_deleted.contains(&t.symbol);
+                    // Record cleared date for P&L expiry tracking
+                    if is_cleared {
+                        let trade_date = &t.created_at[..10];
+                        let tracker = pnl_tracker_map.entry(t.symbol.clone()).or_insert(PnlTracker {
+                            realized_pnl: 0.0,
+                            cleared_date: None,
+                        });
+                        tracker.cleared_date = Some(trade_date.to_string());
+                    }
+                    is_cleared
                 } else {
                     false
                 };
@@ -358,7 +430,10 @@ fn recalculate_holdings_inner_body(
                 if let Some(watch_entry) = map.remove(&watch_key) {
                     let hold_entry = map.entry(hold_key).or_default();
                     hold_entry.copy_core_fields_from(&watch_entry);
-                    hold_entry.shares = watch_entry.shares;
+                    // Use shares from the trade record, not from watch entry
+                    // (watch entries have null/0 shares; the actual quantity is in the trade)
+                    hold_entry.shares = t.shares.unwrap_or(0.0);
+                    hold_entry.recompute_notional();
                     hold_entry.notes = Some("converted from watchlist".to_string());
                 }
             }
@@ -388,9 +463,7 @@ fn recalculate_holdings_inner_body(
                 if let Some(p) = t.price {
                     entry.avg_cost = p;
                 }
-                entry.entry_date = entry.entry_date.clone().or_else(|| {
-                    Some(t.created_at[..10].to_string())
-                });
+                entry.entry_date.get_or_insert_with(|| t.created_at[..10].to_string());
             }
             "delete_watch" => {
                 // Record the symbol so sell→watch auto-convert won't resurrect it

@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v5.2.16, 2026-06-09). invest 统计日期 5AM 截止+委员会批量优化+收盘价格修复。See `docs/changelog.md`.
+**Current phase:** Phase 10+ (v5.2.19, 2026-06-09). Python RPC 崩溃修复+Provider 共享工具+代码清理。See `docs/changelog.md`.
 
 ## Standard workflow
 
@@ -385,7 +385,10 @@ Key phases and their status:
 | 10+ (v5.2.13) | 工具调用解析器增强+encode_cwd 冒号兼容+13 单元测试: parse_function_calls()/parse_fn_tag_body()/infer_json_value()/TOOL_CALL_TAG_PAIRS/strip_residual_tool_call_tags 安全网/parse_dsml_tool_calls 单竖线/collect_stream 四级降级/encode_cwd 冒号替换/encodeCwdSlug 同步/13 单元测试 | [done] |
 | 10+ (v5.2.14) | PnL 快照每日收益计算+卖出现金同步+收盘价格修复+代码审查优化: get_previous_day_snapshot()/recalculate_cash_inner()/is_a_share_market_open(交易日历)/get_latest_price 收盘后跳过 rt_k/row_to_pnl_snapshot 复用/scheduler 模块提取/10 项审查修复 | [done] |
 | 10+ (v5.2.15) | 卖出自动转 Watch+G3 子弹数据兜底修复: sell 全部卖出→hold 自动转 watch(保留名称/成本价)/cio_sanity_check actual_cash_cny 兜底(PortfolioData.cash→G3 永久可用)/concentration 去重/MemHolding::copy_core_fields_from 辅助方法/2 项 simplify | [done] |
-| 10+ (v5.2.16) | invest 统计日期 5AM 截止+委员会批量优化+收盘价格修复+现金负数修复+备用金重构+Watch 复活修复: date_utils 集中模块(3 函数+5 测试)/8 处调用替换/PortfolioData Arc 批量共享+30s timeout+load_with_timeout 提取/dry_run 模式/notional_is_estimated 警告/cio_sanity_check Gate 3 actual_cash fallback+Gate 4 去重/recalculate_cash_inner 自动同步/get_latest_price+realtime_quotes 收盘后跳过 rt_k/sell auto-convert watch+watch_deleted 防复活/getInvestDate 前端本地时区修复+常量提取/Dashboard 日期规则提示/set_cash_inner NULL initial_balance 修复/emergency_buffer_cny 全链路删除( UserProfile+InvestLlmConfig+CommitteeConfig)/effective_buffer 动态计算(max min_cash_pct×total_assets)/风险偏好从 account_purpose 推导注入 prompt/前端+4 i18n key 清理/参数重命名 min_cash_reserve/10 项 simplify | [done] |
+| 10+ (v5.2.16) | invest 统计日期 5AM 截止+委员会批量优化+收盘价格修复+现金负数修复+备用金重构+Watch 复活修复+Watch转Hold shares 修复: date_utils 集中模块(3 函数+5 测试)/8 处调用替换/PortfolioData Arc 批量共享+30s timeout+load_with_timeout 提取/dry_run 模式/notional_is_estimated 警告/cio_sanity_check Gate 3 actual_cash fallback+Gate 4 去重/recalculate_cash_inner 自动同步/get_latest_price+realtime_quotes 收盘后跳过 rt_k/sell auto-convert watch+watch_deleted 防复活/getInvestDate 前端本地时区修复+常量提取/Dashboard 日期规则提示/set_cash_inner NULL initial_balance 修复/emergency_buffer_cny 全链路删除( UserProfile+InvestLlmConfig+CommitteeConfig)/effective_buffer 动态计算(max min_cash_pct×total_assets)/风险偏好从 account_purpose 推导注入 prompt/前端+4 i18n key 清理/参数重命名 min_cash_reserve/convert_watch_to_hold replay shares 从交易记录读取+recompute_notional/10 项 simplify | [done] |
+| 10+ (v5.2.17) | Dashboard 按钮统一+做T成本均摊: HoldingsTable hold/watch 统一编辑/买入/卖出按钮/onBuy prop/移除 confirmDeleteWatch 死代码/dialogMode 类型清理/PnlTracker 结构跟踪实现盈亏+清仓日期/is_pnl_expired 日期边界(≥2天过期)/buy 分支统一消除冗余条件/_amount 死变量移除/get_or_insert_with 优化/3 项 simplify | [done] |
+| 10+ (v5.2.18) | 事件源重构: Jin10 全量快讯+AkShare 个股新闻替代 Yahoo/Tushare 新闻/Tushare 新闻移除/东财搜索 API/国际事件覆盖/AkShare Python provider/rpc_call 泛型提取/probe_news helper/fallback_time 常量/5 项 simplify | [done] |
+| 10+ (v5.2.19) | Python RPC 崩溃修复: lazy import 模式+server.py ImportError 处理+bridge.rs exit_status 移除+stderr 简化/providers/utils.py 共享工具提取(3 函数消除 8 处重复)/PnL 快照 get_previous_day_snapshot/17 个临时文件清理+.gitignore 更新/340MB worktrees 清理 | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

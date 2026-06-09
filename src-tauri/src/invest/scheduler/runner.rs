@@ -86,7 +86,7 @@ where
         sleep(Duration::from_secs(10)).await;
         loop {
             let jobs = config::load_jobs();
-            let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+            let today = crate::invest::date_utils::get_invest_date();
 
             for job in jobs {
                 if !job.enabled {

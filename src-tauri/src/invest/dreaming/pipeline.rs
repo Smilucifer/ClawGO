@@ -50,7 +50,7 @@ pub async fn run_invest_pipeline(tushare_token: &str) -> Result<DreamResult, Str
     // ── Light Sleep: Extract tuples from recent verdicts ───────────────
     let light_start = Instant::now();
     let verdicts = verdicts::list_verdicts(None, Some(200))?;
-    let today = chrono::Local::now().naive_local().date();
+    let today = crate::invest::date_utils::get_invest_naive_date();
     let cutoff = today - chrono::Duration::days(config.lookback_days);
 
     let recent: Vec<_> = verdicts
@@ -116,6 +116,11 @@ pub async fn run_invest_pipeline(tushare_token: &str) -> Result<DreamResult, Str
         }
 
         if (group.len() as i64) < config.min_count {
+            log::debug!(
+                "dream REM: skip {symbol}/{verdict}/{regime} — count {} < min_count {}",
+                group.len(),
+                config.min_count
+            );
             continue;
         }
 
@@ -132,9 +137,11 @@ pub async fn run_invest_pipeline(tushare_token: &str) -> Result<DreamResult, Str
             .daily(&ts_code, &first_date.replace('-', ""), &end_date)
             .await
         else {
+            log::debug!("dream REM: skip {symbol}/{verdict}/{regime} — daily() fetch failed");
             continue;
         };
         if bars.is_empty() {
+            log::debug!("dream REM: skip {symbol}/{verdict}/{regime} — 0 bars returned");
             continue;
         }
 
@@ -192,6 +199,7 @@ pub async fn run_invest_pipeline(tushare_token: &str) -> Result<DreamResult, Str
 
         let total = returns_30d.len();
         if total == 0 {
+            log::debug!("dream REM: skip {symbol}/{verdict}/{regime} — 0 price samples matched");
             continue;
         }
 
@@ -199,6 +207,13 @@ pub async fn run_invest_pipeline(tushare_token: &str) -> Result<DreamResult, Str
         let score = hit_rate_30d * 0.7 + (total.min(10) as f64 / 10.0) * 0.3;
 
         if score >= config.min_score {
+            log::info!(
+                "dream REM: qualify {symbol}/{verdict}/{regime} — score {:.2} >= {:.2}, hit_rate_30d {:.0}%, {} samples",
+                score,
+                config.min_score,
+                hit_rate_30d * 100.0,
+                total
+            );
             let source_ids: Vec<String> = group
                 .iter()
                 .flat_map(|t| {
@@ -223,9 +238,23 @@ pub async fn run_invest_pipeline(tushare_token: &str) -> Result<DreamResult, Str
                 avg_return_30d: avg_or_zero(&returns_30d),
                 source_ids,
             });
+        } else {
+            log::debug!(
+                "dream REM: reject {symbol}/{verdict}/{regime} — score {:.2} < min_score {:.2}, hit_rate_30d {:.0}%, {} samples",
+                score,
+                config.min_score,
+                hit_rate_30d * 100.0,
+                total
+            );
         }
     }
     let rem_dur = rem_start.elapsed().as_millis() as i64;
+    log::info!(
+        "dream REM stage done: {} candidates qualified from {} groups in {}ms",
+        candidates.len(),
+        groups.len(),
+        rem_dur
+    );
 
     // ── Deep Sleep: Write insights to domain_insights ────────────────
     let deep_start = Instant::now();

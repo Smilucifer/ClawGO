@@ -22,6 +22,10 @@ __pycache__/
 Thumbs.db
 desktop.ini
 
+# Temp output and SQLite caches
+output*.txt
+*.db
+
 # IDE
 .idea/
 .vscode/

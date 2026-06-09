@@ -1230,31 +1230,34 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
     let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let mut sources = Vec::new();
 
-    // Check Tushare
+    // Check Tushare — stock API and news API separately (different permission tiers)
     let settings = crate::storage::settings::get_user_settings();
     if let Some(ref token) = settings.tushare_token {
         let client = TushareClient::with_token(token.clone());
+
+        // Tushare 行情 (stock API)
         match client.get_latest_price("000001.SZ").await {
             Ok(price) => {
                 sources.push(DataSourceStatus {
-                    name: "Tushare".into(),
+                    name: "Tushare 行情".into(),
                     ok: true,
                     last_success: Some(now_str.clone()),
                     sample_value: Some(format!("000001.SZ = {:.2}", price)),
                 });
             }
-            Err(_) => {
+            Err(e) => {
                 sources.push(DataSourceStatus {
-                    name: "Tushare".into(),
+                    name: "Tushare 行情".into(),
                     ok: false,
                     last_success: None,
-                    sample_value: None,
+                    sample_value: Some(format!("{e}")),
                 });
             }
         }
+
     } else {
         sources.push(DataSourceStatus {
-            name: "Tushare".into(),
+            name: "Tushare 行情".into(),
             ok: false,
             last_success: None,
             sample_value: Some("no token configured".into()),
@@ -1327,26 +1330,35 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
         });
     }
 
-    // Check Yahoo Finance — fetch ^VIX as a connectivity probe
-    let yahoo_client = crate::invest::international::InternationalClient::from_settings();
-    match yahoo_client.fetch_yahoo_quote("^VIX").await {
-        Ok(quote) => {
-            sources.push(DataSourceStatus {
-                name: "Yahoo Finance".into(),
-                ok: true,
-                last_success: Some(now_str.clone()),
-                sample_value: Some(format!("^VIX = {:.2}", quote.price)),
-            });
-        }
-        Err(e) => {
-            sources.push(DataSourceStatus {
-                name: "Yahoo Finance".into(),
+    // Check international data sources (AkShare + Jin10)
+    let intl_client = crate::invest::international::InternationalClient::from_settings();
+
+    async fn probe_news(
+        name: &str,
+        now: &str,
+        result: Result<Vec<crate::invest::international::YahooNewsItem>, String>,
+    ) -> DataSourceStatus {
+        match result {
+            Ok(items) => {
+                let sample = items.first().map(|i| i.title.chars().take(20).collect::<String>());
+                DataSourceStatus {
+                    name: name.into(),
+                    ok: true,
+                    last_success: Some(now.into()),
+                    sample_value: sample,
+                }
+            }
+            Err(e) => DataSourceStatus {
+                name: name.into(),
                 ok: false,
                 last_success: None,
                 sample_value: Some(e),
-            });
+            },
         }
     }
+
+    sources.push(probe_news("AkShare 个股", &now_str, intl_client.fetch_akshare_stock_news("000001", 1).await).await);
+    sources.push(probe_news("金十数据", &now_str, intl_client.fetch_jinshi_news("", 1).await).await);
 
     sources
 }

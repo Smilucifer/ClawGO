@@ -1,5 +1,82 @@
 # Changelog / 更新日志
 
+## v5.2.19 (2026-06-09)
+
+### Python RPC 崩溃修复 + Provider 共享工具 + 代码清理
+
+**Python RPC 崩溃修复 (3 项):**
+1. **Lazy import 模式**: `jinshi.py` 和 `eastmoney.py` 的 `import requests` 从模块级移至 `_get_session()` 内部，缺失时返回 None 而非崩溃整个 RPC 子进程。
+2. **server.py ImportError 处理**: `get_provider()` 捕获 ImportError 并转为 ValueError，附带缺失依赖提示。
+3. **bridge.rs 简化**: 移除 `exit_status` 字段（仅存硬编码字符串），stderr 日志从 3 个 `contains` 判断简化为 `log::info!` 全量记录，error message 预格式化避免 N 次重复分配。
+
+**Provider 共享工具 (1 项):**
+4. **`providers/utils.py` 提取**: `matches_query()`、`parse_timestamp()`、`create_session()` 三个共享函数消除 `jinshi.py`/`eastmoney.py`/`akshare_news.py` 中的重复代码（`_matches_query`×3、`_parse_*_time`×3、`_get_session`×2）。
+
+**PnL 快照修复 (1 项):**
+5. **`get_previous_day_snapshot`**: `run_pnl_snapshot` 使用前一天快照而非最近快照计算日收益，避免同日多次运行时的重复计算。
+
+**代码清理 (2 项):**
+6. **删除 17 个临时文件**: 12 个 test_*.py 测试脚本 + tushare_config.py + simplify_parsers.py + dragon_tiger_cache.py + screener_cache.db + output.txt + output_utf8.txt（含 2 个硬编码 Tushare API token）。
+7. **`.gitignore` 更新**: 新增 `output*.txt` 和 `*.db` 规则，清理 340 MB 陈旧 worktrees。
+
+**涉及文件:**
+- `src-tauri/src/python/bridge.rs` — exit_status 移除 + stderr 简化
+- `src-tauri/src/python/mod.rs` — get_client 简化
+- `src-tauri/python-runtime/scripts/server.py` — ImportError 处理
+- `src-tauri/python-runtime/scripts/providers/utils.py` — 新共享工具模块
+- `src-tauri/python-runtime/scripts/providers/jinshi.py` — lazy import + 共享 utils
+- `src-tauri/python-runtime/scripts/providers/eastmoney.py` — lazy import + 共享 utils + _empty_quote 提取
+- `src-tauri/python-runtime/scripts/providers/akshare_news.py` — 使用共享 parse_timestamp
+- `src-tauri/src/lib.rs` — PnL 快照使用 get_previous_day_snapshot
+- `.gitignore` — output*.txt + *.db 规则
+
+## v5.2.18 (2026-06-09)
+
+### 事件源重构: Jin10 全量快讯 + AkShare 个股新闻
+
+**数据源替换 (3 项):**
+1. **移除 Yahoo Finance 新闻**: 删除 `fetch_yahoo_news`、`fetch_china_finance_news`、`fetch_eastmoney_news`、`fetch_eastmoney_quote` 4 个死方法。Yahoo 429 限流问题彻底解决。
+2. **移除 Tushare 新闻**: `event_scanner` 不再调用 `major_news` API（该端点在自定义代理上返回 0 条）。Tushare 公告 (`anns_d`) 保留。
+3. **新增 Jin10 + AkShare 双源架构**: Jin10 (`channel=-8200`) 获取全量快讯（宏观+国际），AkShare (`stock_news_em`) 对持仓/观望标的逐个获取个股新闻。两源并发 (`tokio::join!`)，归一化为 `YahooNewsItem` schema 后去重+严重性分类+LLM 归一化入 DB。
+
+**新增 Python Provider (1 项):**
+4. **`akshare_news.py`**: 通过 AkShare 库调用东财搜索 API，返回 `YahooNewsItem` 格式。`fillna("")` + `to_dict("records")` 简化 DataFrame 处理。
+
+**代码质量优化 (5 项 simplify):**
+5. **`rpc_call<T>` 泛型方法**: `international.rs` 7 个 RPC 方法从 3 行体变为 1 行调用，消除机械重复。
+6. **`probe_news` helper**: `commands/invest.rs` 健康检测 AkShare+Jin10 两个重复块合并为 3 行调用。
+7. **`fallback_time` 局部变量**: `event_scanner.rs` 消除 3x 重复 `now.format(...)` 表达式。
+8. **`JIN10_COUNT` / `AKSHARE_PER_STOCK_COUNT` 常量**: 魔法数字移至模块级。
+9. **健康检测更新**: 5 源（Tushare 行情 / invest.db / LLM Config / AkShare 个股 / 金十数据），移除 Tushare 新闻/东财/同花顺。
+
+**涉及文件:**
+- `src-tauri/src/invest/event_scanner.rs` — Jin10+AkShare pipeline + 常量提取
+- `src-tauri/src/invest/international.rs` — `rpc_call<T>` + 移除死代码 + 新方法
+- `src-tauri/src/commands/invest.rs` — 健康检测重构
+- `src-tauri/python-runtime/scripts/server.py` — 注册 akshare，移除 ths
+- `src-tauri/python-runtime/scripts/providers/akshare_news.py` — 新 Python provider
+
+## v5.2.17 (2026-06-09)
+
+### Dashboard 按钮统一 + 做 T 成本均摊
+
+**Dashboard UI 改进 (1 项):**
+1. **持仓/观望按钮统一**: HoldingsTable 的 hold 和 watch 条目统一显示"编辑、买入、卖出"三个按钮。移除 `onConvert`、`onDeleteWatch` props，新增 `onBuy` prop。watch 买入直接调用 `buyStock`（自动转 hold）。移除 `confirmDeleteWatch` 死代码和 `dialogMode` 中未使用的 `'convert'`、`'add_trade'` 类型。
+
+**做 T 成本均摊 (1 项):**
+2. **卖出→买入 P&L 均摊**: `recalculate_holdings_inner_body` 新增 `PnlTracker` 结构，跟踪每个 symbol 的实现盈亏和清仓日期。卖出时计算 `pnl = shares × (sell_price - avg_cost)` 并累加；买入时将累计 P&L 均摊到新成本价：`adjusted_cost_basis = existing_cost_basis + buy_cost - realized_pnl`。日期边界规则：清仓后间隔 ≥ 2 天（自然日）P&L 过期，不再均摊（近似"中间隔出一个交易日"）。
+
+**Simplify 审查修复 (3 项):**
+3. **buy 分支统一**: 消除 `if entry.shares > 0` / `else` 两个分支，统一为单一公式（当 shares=0 时 existing_cost_basis=0，数学等价）。
+4. **`_amount` 死变量移除**: buy 分支中未使用的 `_amount` 计算删除。
+5. **`entry_date` clone 优化**: `add_watch` 分支中 `entry.entry_date.clone().or_else()` 改为 `get_or_insert_with()`，避免已有值时的无意义 clone。
+
+**涉及文件:**
+- src-tauri/src/storage/invest/portfolio.rs — `PnlTracker` + `is_pnl_expired()` + buy/sell 分支重写
+- src/lib/components/invest/HoldingsTable.svelte — 按钮统一 + props 简化
+- src/routes/invest/+page.svelte — 新增 `openBuyFromHolding` + 移除死代码
+- src/lib/stores/invest-store.svelte.ts — 已有 `buyStock` 自动处理 watch→hold
+
 ## v5.2.16 (2026-06-09)
 
 ### invest 统计日期 5:00 AM 截止 + 委员会批量优化 + 收盘价格修复
@@ -54,23 +131,24 @@
 
 ### 现金负数修复 + 备用金重构 + Watch 复活修复
 
-**Bug 修复 (2 项):**
+**Bug 修复 (3 项):**
 14. **交易操作导致现金变负数 (-100000)**: `set_cash_inner` 的 INSERT SQL 原本将 `initial_balance` 设为与 `available` 相同值，当现金行被清除后重建时会覆盖初始资本。修复为 INSERT 时 `initial_balance = NULL`，只有 `set_initial_cash` 才写入该列。
 15. **卖出后已删除的 Watch 复活**: `recalculate_holdings_inner_body` 重放所有交易时，sell 全部卖出会自动转 watch，但不检查用户是否曾通过 `delete_watch` 明确删除过。新增 `watch_deleted: HashSet<String>` 集合追踪已删除的 watch 符号，sell 分支转换前检查该集合。
+16. **Watch 转 Hold 后 Dashboard 不显示**: `convert_watch_to_hold` replay 逻辑从 watch 条目复制 shares（始终为 0），导致新 hold 条目 shares=0 被过滤跳过。修复为从交易记录 `t.shares` 读取实际数量，并调用 `recompute_notional()` 重算持仓金额。
 
 **备用金重构 (6 项):**
-16. **删除 `emergency_buffer_cny` 独立配置**: 从 `UserProfile` 结构体/SQL、`InvestLlmConfig` 结构体/JSON 序列化、`CommitteeConfig` 结构体三处完全移除。
-17. **动态计算 buffer**: `effective_buffer = max(min_cash_pct across strategies) × total_assets`，无策略时 fallback 0.0 并输出 `log::warn`。
-18. **风险偏好从账户类型推导**: `build_user_profile_context()` 根据 `account_purpose`（零花钱/长线/退休金/教育金）推导风险偏好描述注入 LLM prompt，无需额外设置。
-19. **前端清理**: `ProviderConfigPanel` 删除 buffer 输入框，`UserProfileSection` 删除 buffer 输入/验证，`CommitteeLiveTab` 删除未使用的 buffer 计算，`InvestLlmConfig` / `UserProfile` TS 接口同步更新。
-20. **i18n 清理**: 删除 4 个 i18n key（中英文各 `settings_profile_emergency_buffer`、`_desc`、`_invalid_buffer`、`invest_committee_emergency_buffer`）。
-21. **参数重命名**: 全链路 `emergency_buffer_cny` → `min_cash_reserve`，LLM 上下文标签改为"最低现金储备"。
+17. **删除 `emergency_buffer_cny` 独立配置**: 从 `UserProfile` 结构体/SQL、`InvestLlmConfig` 结构体/JSON 序列化、`CommitteeConfig` 结构体三处完全移除。
+18. **动态计算 buffer**: `effective_buffer = max(min_cash_pct across strategies) × total_assets`，无策略时 fallback 0.0 并输出 `log::warn`。
+19. **风险偏好从账户类型推导**: `build_user_profile_context()` 根据 `account_purpose`（零花钱/长线/退休金/教育金）推导风险偏好描述注入 LLM prompt，无需额外设置。
+20. **前端清理**: `ProviderConfigPanel` 删除 buffer 输入框，`UserProfileSection` 删除 buffer 输入/验证，`CommitteeLiveTab` 删除未使用的 buffer 计算，`InvestLlmConfig` / `UserProfile` TS 接口同步更新。
+21. **i18n 清理**: 删除 4 个 i18n key（中英文各 `settings_profile_emergency_buffer`、`_desc`、`_invalid_buffer`、`invest_committee_emergency_buffer`）。
+22. **参数重命名**: 全链路 `emergency_buffer_cny` → `min_cash_reserve`，LLM 上下文标签改为"最低现金储备"。
 
 **Simplify 审查修复 (5 项):**
-22. **PortfolioData timeout+fallback 提取**: 三处重复的 `tokio::time::timeout(30s, load_and_refresh_prices)` + 空 PortfolioData fallback 提取为 `PortfolioData::load_with_timeout()` + `Default` impl。
-23. **无效绑定删除**: `let config = config;` 无效自绑定删除。
-24. **多策略取最保守值**: `list_strategies().into_iter().next()` 改为 `fold(f64::max)` 取所有策略中最大的 `min_cash_pct`。
-25. **fallback 日志**: 无策略配置时 `log::warn` 提示 Gate 3 buffer = 0。
+23. **PortfolioData timeout+fallback 提取**: 三处重复的 `tokio::time::timeout(30s, load_and_refresh_prices)` + 空 PortfolioData fallback 提取为 `PortfolioData::load_with_timeout()` + `Default` impl。
+24. **无效绑定删除**: `let config = config;` 无效自绑定删除。
+25. **多策略取最保守值**: `list_strategies().into_iter().next()` 改为 `fold(f64::max)` 取所有策略中最大的 `min_cash_pct`。
+26. **fallback 日志**: 无策略配置时 `log::warn` 提示 Gate 3 buffer = 0。
 
 **涉及文件 (本次追加):**
 - src-tauri/src/storage/invest/portfolio.rs — `set_cash_inner` NULL 修复 + `watch_deleted` 集合

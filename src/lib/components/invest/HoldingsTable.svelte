@@ -3,11 +3,10 @@
   import { t } from '$lib/i18n/index.svelte';
   import type { Holding } from '$lib/types';
 
-  let { onSell, onConvert, onAddWatch, onDeleteWatch, onEdit, tushareToken }: {
+  let { onBuy, onSell, onAddWatch, onEdit, tushareToken }: {
+    onBuy: (h: Holding) => void;
     onSell: (h: Holding) => void;
-    onConvert: (h: Holding) => void;
     onAddWatch: () => void;
-    onDeleteWatch: (h: Holding) => void;
     onEdit: (h: Holding) => void;
     tushareToken: string;
   } = $props();
@@ -122,21 +121,14 @@
                 class="rounded-[var(--radius-md)] border border-border bg-transparent px-[8px] py-[2px] text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
                 onclick={() => onEdit(h)}
               >{t('invest_edit')}</button>
-              {#if h.kind === 'hold'}
-                <button
-                  class="ml-[4px] rounded-[var(--radius-md)] border border-[rgba(168,122,122,0.3)] bg-transparent px-[8px] py-[2px] text-[11px] font-medium text-[#a87a7a] transition-colors hover:bg-[rgba(168,122,122,0.1)]"
-                  onclick={() => onSell(h)}
-                >{t('invest_sell')}</button>
-              {:else}
-                <button
-                  class="ml-[4px] rounded-[var(--radius-md)] border border-[rgba(138,154,118,0.3)] bg-[rgba(138,154,118,0.15)] px-[8px] py-[2px] text-[11px] font-medium text-[#8a9a76] transition-colors hover:bg-[rgba(138,154,118,0.25)]"
-                  onclick={() => onConvert(h)}
-                >{t('invest_convert_to_hold')}</button>
-                <button
-                  class="ml-[4px] rounded-[var(--radius-md)] border border-[rgba(168,122,122,0.3)] bg-transparent px-[8px] py-[2px] text-[11px] font-medium text-[#a87a7a] transition-colors hover:bg-[rgba(168,122,122,0.1)]"
-                  onclick={() => onDeleteWatch(h)}
-                >{t('invest_delete')}</button>
-              {/if}
+              <button
+                class="ml-[4px] rounded-[var(--radius-md)] border border-[rgba(138,154,118,0.3)] bg-[rgba(138,154,118,0.15)] px-[8px] py-[2px] text-[11px] font-medium text-[#8a9a76] transition-colors hover:bg-[rgba(138,154,118,0.25)]"
+                onclick={() => onBuy(h)}
+              >{t('invest_buy')}</button>
+              <button
+                class="ml-[4px] rounded-[var(--radius-md)] border border-[rgba(168,122,122,0.3)] bg-transparent px-[8px] py-[2px] text-[11px] font-medium text-[#a87a7a] transition-colors hover:bg-[rgba(168,122,122,0.1)]"
+                onclick={() => onSell(h)}
+              >{t('invest_sell')}</button>
             </td>
           </tr>
         {/each}

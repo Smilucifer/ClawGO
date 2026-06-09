@@ -97,3 +97,23 @@ export function fmtRelative(d: Date | string): string {
   // Beyond 7 days: show formatted date
   return fmtDate(date);
 }
+
+// ── Invest date helpers ─────────────────────────────────────────
+
+/** Invest 统计截止小时：每天 05:00 之前归属前一天。与 Rust `INVEST_DATE_CUTOFF_HOUR` 对齐。 */
+const INVEST_DATE_CUTOFF_HOUR = 5;
+
+/**
+ * 返回 invest 统计日期（YYYY-MM-DD，本地时区）。
+ * 05:00 之前返回昨天，05:00 及之后返回今天。
+ */
+export function getInvestDate(): string {
+  const now = new Date();
+  if (now.getHours() < INVEST_DATE_CUTOFF_HOUR) {
+    now.setDate(now.getDate() - 1);
+  }
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}

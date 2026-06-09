@@ -54,6 +54,21 @@ pub struct PnlSnapshot {
     pub created_at: String,
 }
 
+/// Extract a PnlSnapshot from a SQL row. Column order must match the SELECT clause:
+/// id, snapshot_date, total_value, cash, holdings_value, daily_pnl, daily_pnl_pct, created_at
+fn row_to_pnl_snapshot(row: &rusqlite::Row) -> Result<PnlSnapshot, rusqlite::Error> {
+    Ok(PnlSnapshot {
+        id: row.get(0)?,
+        snapshot_date: row.get(1)?,
+        total_value: row.get(2)?,
+        cash: row.get(3)?,
+        holdings_value: row.get(4)?,
+        daily_pnl: row.get(5)?,
+        daily_pnl_pct: row.get(6)?,
+        created_at: row.get(7)?,
+    })
+}
+
 pub fn save_verdict(v: &Verdict) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute(
@@ -132,24 +147,30 @@ pub fn list_pnl_snapshots(limit: Option<i64>) -> Result<Vec<PnlSnapshot>, String
             .prepare("SELECT id, snapshot_date, total_value, cash, holdings_value, daily_pnl, daily_pnl_pct, created_at FROM pnl_snapshots ORDER BY snapshot_date DESC LIMIT ?1")
             .map_err(|e| format!("prepare: {}", e))?;
         let rows = stmt
-            .query_map(params![limit_val], |row| {
-                Ok(PnlSnapshot {
-                    id: row.get(0)?,
-                    snapshot_date: row.get(1)?,
-                    total_value: row.get(2)?,
-                    cash: row.get(3)?,
-                    holdings_value: row.get(4)?,
-                    daily_pnl: row.get(5)?,
-                    daily_pnl_pct: row.get(6)?,
-                    created_at: row.get(7)?,
-                })
-            })
+            .query_map(params![limit_val], row_to_pnl_snapshot)
             .map_err(|e| format!("query: {}", e))?;
         let mut items = Vec::new();
         for row in rows {
             items.push(row.map_err(|e| format!("row: {}", e))?);
         }
         Ok(items)
+    })
+}
+
+/// Get the most recent snapshot before the given date (for daily PnL calculation).
+/// Returns None if no prior snapshot exists.
+pub fn get_previous_day_snapshot(current_date: &str) -> Result<Option<PnlSnapshot>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT id, snapshot_date, total_value, cash, holdings_value, daily_pnl, daily_pnl_pct, created_at FROM pnl_snapshots WHERE snapshot_date < ?1 ORDER BY snapshot_date DESC LIMIT 1")
+            .map_err(|e| format!("prepare: {}", e))?;
+        let mut rows = stmt
+            .query_map(params![current_date], row_to_pnl_snapshot)
+            .map_err(|e| format!("query: {}", e))?;
+        match rows.next() {
+            Some(row) => Ok(Some(row.map_err(|e| format!("row: {}", e))?)),
+            None => Ok(None),
+        }
     })
 }
 

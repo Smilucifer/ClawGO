@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from '$lib/i18n/index.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
+  import { getInvestDate } from '$lib/i18n/format';
   import type { Holding, Trade } from '$lib/types';
 
   let { mode, prefill, editTrade, tushareToken, onClose }: {
@@ -16,7 +17,7 @@
   let quantity = $state(editTrade?.shares ?? 0);
   let price = $state(editTrade?.price ?? 0);
   let notes = $state(editTrade?.notes ?? '');
-  let tradeDate = $state(editTrade?.tradeDate ?? new Date().toISOString().split('T')[0]);
+  let tradeDate = $state(editTrade?.tradeDate ?? getInvestDate());
   let cashBalance = $state(investStore.cash);
   let cashReason = $state('');
   let loading = $state(false);
@@ -97,7 +98,8 @@
       } else if (mode === 'add_watch') {
         await investStore.addToWatch(symbol, name, price, assetType);
       } else if (mode === 'add_trade') {
-        // Manual trade entry — records a buy or sell trade with custom date
+        // Manual trade entry — records a buy or sell trade with custom date.
+        // Backend auto-recalculates cash via recalculate_cash_inner.
         const amount = quantity * price;
         await investStore.recordTrade({
           symbol,
@@ -111,11 +113,6 @@
           tradeDate: tradeDate || null,
           assetType,
         });
-        // Update cash balance
-        const newCash = tradeAction === 'buy'
-          ? investStore.cash - amount
-          : investStore.cash + amount;
-        await investStore.updateCash(newCash);
       } else if (mode === 'edit_holding' && prefill?.holding) {
         // Update holding entry_date, cost, shares, notes
         const h = prefill.holding;

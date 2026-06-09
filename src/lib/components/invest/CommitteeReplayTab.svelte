@@ -117,7 +117,7 @@
   }
 </script>
 
-<div class="space-y-[var(--space-3)]">
+<div class="flex h-full flex-col gap-[var(--space-3)]">
   <!-- Mode toggle -->
   <div class="flex w-fit rounded-[var(--radius-lg)] border border-border bg-[var(--bg-base)] p-0.5">
     <button
@@ -146,9 +146,9 @@
   <!-- MODE A: Real Replay — two-column layout (250px / 1fr)                   -->
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
   {#if mode === 'replay'}
-    <div class="replay-grid grid gap-[var(--space-4)]">
+    <div class="replay-grid grid min-h-0 flex-1 gap-[var(--space-4)]">
       <!-- Sidebar: symbol list + history dates -->
-      <aside class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-3)] max-h-[600px] overflow-y-auto">
+      <aside class="flex flex-col rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-3)] overflow-y-auto">
         <div class="mb-[var(--space-2)] px-[var(--space-2)] text-[12px] font-semibold text-[var(--text-primary)]">
           {t('invest_replay_symbol_label')}
         </div>
@@ -224,7 +224,7 @@
       </aside>
 
       <!-- Content: archive detail -->
-      <section class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-4)] max-h-[600px] overflow-y-auto">
+      <section class="flex min-h-0 flex-1 flex-col rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-4)] overflow-y-auto">
         {#if !symbol.trim()}
           <div class="flex h-full items-center justify-center py-12 text-center text-sm text-[var(--text-secondary)]">
             {t('invest_replay_empty')}
@@ -247,7 +247,7 @@
               </span>
             {/if}
           </div>
-          <div class="max-h-[60vh] overflow-y-auto text-[13px] leading-[1.7]">
+          <div class="min-h-0 flex-1 overflow-y-auto text-[13px] leading-[1.7]">
             <MarkdownContent text={selectedArchive.content} />
           </div>
         {/if}
@@ -476,6 +476,7 @@
 <style>
   .replay-grid {
     grid-template-columns: 250px 1fr;
+    grid-template-rows: 1fr;
   }
   @media (max-width: 768px) {
     .replay-grid {

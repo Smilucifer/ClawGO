@@ -25,7 +25,6 @@
   import SystemDatasourceTab from '$lib/components/invest/SystemDatasourceTab.svelte';
   import SystemPnlHistoryTab from '$lib/components/invest/SystemPnlHistoryTab.svelte';
   import SystemDreamsTab from '$lib/components/invest/SystemDreamsTab.svelte';
-  import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
   import type { Holding } from '$lib/types';
 
   type InvestTab = 'dashboard' | 'committee' | 'strategy' | 'trades' | 'system';
@@ -65,10 +64,9 @@
   ]);
 
   let tushareToken = $state<string>('');
-  let dialogMode = $state<'buy' | 'sell' | 'cash' | 'convert' | 'add_watch' | 'add_trade' | 'edit_holding' | null>(null);
+  let dialogMode = $state<'buy' | 'sell' | 'cash' | 'add_watch' | 'edit_holding' | null>(null);
   let dialogPrefill = $state<{ symbol?: string; name?: string; holding?: Holding } | undefined>();
   let refreshInterval = $state<ReturnType<typeof setInterval> | null>(null);
-  let confirmDeleteWatch = $state<{ open: boolean; symbol: string; name: string }>({ open: false, symbol: '', name: '' });
   let initLoading = $state(false);
   let initResult = $state<string | null>(null);
   let initBalance = $state('');
@@ -113,14 +111,11 @@
   });
 
   function openBuy() { dialogMode = 'buy'; dialogPrefill = undefined; }
+  function openBuyFromHolding(h: Holding) { dialogMode = 'buy'; dialogPrefill = { symbol: h.symbol, name: h.name ?? undefined, holding: h }; }
   function openSell(h: Holding) { dialogMode = 'sell'; dialogPrefill = { symbol: h.symbol, name: h.name ?? undefined, holding: h }; }
   function openCash() { dialogMode = 'cash'; dialogPrefill = undefined; }
-  function openConvert(h: Holding) { dialogMode = 'convert'; dialogPrefill = { symbol: h.symbol, name: h.name ?? undefined }; }
   function openAddWatch() { dialogMode = 'add_watch'; dialogPrefill = undefined; }
   function openEditHolding(h: Holding) { dialogMode = 'edit_holding'; dialogPrefill = { symbol: h.symbol, name: h.name ?? undefined, holding: h }; }
-  function openDeleteWatch(h: Holding) {
-    confirmDeleteWatch = { open: true, symbol: h.symbol, name: h.name ?? h.symbol };
-  }
   function closeDialog() { dialogMode = null; dialogPrefill = undefined; }
 </script>
 
@@ -129,6 +124,7 @@
   <div class="border-b border-border px-[var(--space-4)] pt-[var(--space-4)]">
     <h1 class="mb-[var(--space-1)] text-[22px] font-bold text-[var(--text-primary)]">{t('nav_invest')}</h1>
     <p class="mb-[var(--space-3)] text-[12px] text-[var(--text-tertiary)]">openInvest</p>
+    <p class="mb-[var(--space-2)] text-[11px] text-[var(--text-tertiary)]">📅 {t('invest_date_rule')}</p>
 
     <!-- Primary tab navigation -->
     <div class="flex gap-0">
@@ -150,7 +146,7 @@
   </div>
 
   <!-- Content area -->
-  <div class="flex-1 overflow-auto p-[var(--space-4)]">
+  <div class="min-h-0 flex-1 overflow-auto p-[var(--space-4)]">
     {#if activeTab === 'dashboard'}
       {#if !tushareToken}
         <div class="mb-[var(--space-4)] rounded-[var(--radius-lg)] border border-dashed border-border bg-[var(--bg-card)] p-[var(--space-4)] text-center text-[13px] text-[var(--text-tertiary)]">
@@ -178,7 +174,7 @@
         <button class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]" onclick={() => investStore.refreshPrices(tushareToken)}>{t('invest_refresh_prices')}</button>
       </div>
 
-      <HoldingsTable onSell={openSell} onConvert={openConvert} onAddWatch={openAddWatch} onDeleteWatch={openDeleteWatch} onEdit={openEditHolding} {tushareToken} />
+      <HoldingsTable onBuy={openBuyFromHolding} onSell={openSell} onAddWatch={openAddWatch} onEdit={openEditHolding} {tushareToken} />
 
       <div class="mt-[var(--space-6)]">
         <PnlChart />
@@ -304,10 +300,3 @@
   <TradeDialog mode={dialogMode} prefill={dialogPrefill} {tushareToken} onClose={closeDialog} />
 {/if}
 
-<ConfirmDialog
-  bind:open={confirmDeleteWatch.open}
-  title={t('invest_delete')}
-  message={`${t('invest_delete')} ${confirmDeleteWatch.name}?`}
-  variant="danger"
-  onConfirm={() => { investStore.deleteWatch(confirmDeleteWatch.symbol); }}
-/>

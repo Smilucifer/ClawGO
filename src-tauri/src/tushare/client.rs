@@ -452,6 +452,11 @@ impl TushareClient {
         crate::storage::invest::is_etf_symbol(ts_code)
     }
 
+    /// 判断 A 股市场当前是否在盘中交易时段（委托 scheduler 模块，使用交易日历）。
+    fn is_a_share_market_open() -> bool {
+        crate::storage::invest::scheduler::is_a_share_market_open()
+    }
+
     /// 返回日线 API 中代表"价格"的首选字段名。
     /// 股票 `daily` 使用 `close`；ETF/基金 `fund_daily` 优先 `adj_nav`（复权单位净值），但部分接口可能返回 `close`。
     fn price_field(ts_code: &str) -> &'static str {
@@ -674,17 +679,19 @@ impl TushareClient {
     /// Get the latest price for a given stock or ETF.
     /// 盘中尝试 `rt_k` 实时行情；失败或非盘中降级到日线收盘价。
     pub async fn get_latest_price(&self, ts_code: &str) -> Result<f64, String> {
-        // 1) 尝试 rt_k 获取盘中实时价（股票和场内 ETF 均支持）
-        if let Ok(resp) = self
-            .call_api("rt_k", serde_json::json!({ "ts_code": ts_code }), "")
-            .await
-        {
-            if let Some(price) = Self::parse_realtime_quotes(&resp)
-                .into_iter()
-                .find(|q| q.close > 0.0)
-                .map(|q| q.close)
+        // 1) 盘中尝试 rt_k 获取实时价；收盘后跳过（rt_k 可能返回非最终收盘价）
+        if Self::is_a_share_market_open() {
+            if let Ok(resp) = self
+                .call_api("rt_k", serde_json::json!({ "ts_code": ts_code }), "")
+                .await
             {
-                return Ok(price);
+                if let Some(price) = Self::parse_realtime_quotes(&resp)
+                    .into_iter()
+                    .find(|q| q.close > 0.0)
+                    .map(|q| q.close)
+                {
+                    return Ok(price);
+                }
             }
         }
 
@@ -716,6 +723,9 @@ impl TushareClient {
     /// - ETF/基金：先尝试 `rt_k`，失败再降级到 `fund_daily`（前一交易日净值）
     ///
     /// 返回的 `RealtimeQuote.close` 始终是最新的可用价格。
+    ///
+    /// **收盘后行为**：当 A 股市场已收盘时，跳过 `rt_k`（盘中接口可能返回非最终收盘价），
+    /// 直接降级到 `daily`/`fund_daily` 日线数据（含官方收盘价）。
     pub async fn realtime_quotes(
         &self,
         ts_codes: &[&str],
@@ -765,35 +775,46 @@ impl TushareClient {
         let (etf_codes, stock_codes): (Vec<&str>, Vec<&str>) =
             ts_codes.iter().partition(|c| Self::is_etf_code(c));
 
+        // 收盘后跳过 rt_k（盘中接口可能返回非最终收盘价），直接用 daily 日线
+        let market_open = Self::is_a_share_market_open();
+
         let mut results: Vec<RealtimeQuote> = Vec::new();
 
-        // ── Stocks + ETFs: try rt_k, fall back to daily for missing ───
+        // ── Stocks + ETFs: try rt_k (盘中) or daily (收盘后), fall back to daily for missing ───
         for codes in [stock_codes, etf_codes] {
             if codes.is_empty() {
                 continue;
             }
-            let codes_str = codes.join(",");
+
             let mut handled = Vec::new();
-            match self
-                .call_api("rt_k", serde_json::json!({ "ts_code": codes_str }), "")
-                .await
-            {
-                Ok(resp) => {
-                    let quotes = Self::parse_realtime_quotes(&resp);
-                    for q in &quotes {
-                        // Only mark as handled if we got a valid price;
-                        // ETFs with close=0 should fall back to fund_daily.
-                        if q.close > 0.0 {
-                            handled.push(q.ts_code.clone());
+
+            if market_open {
+                // 盘中：rt_k 实时行情优先
+                let codes_str = codes.join(",");
+                match self
+                    .call_api("rt_k", serde_json::json!({ "ts_code": codes_str }), "")
+                    .await
+                {
+                    Ok(resp) => {
+                        let quotes = Self::parse_realtime_quotes(&resp);
+                        for q in &quotes {
+                            // Only mark as handled if we got a valid price;
+                            // ETFs with close=0 should fall back to fund_daily.
+                            if q.close > 0.0 {
+                                handled.push(q.ts_code.clone());
+                            }
                         }
+                        results.extend(quotes);
                     }
-                    results.extend(quotes);
+                    Err(e) => {
+                        log::warn!("rt_k failed, falling back to daily: {e}");
+                    }
                 }
-                Err(e) => {
-                    log::warn!("rt_k failed, falling back to daily: {e}");
-                }
+            } else {
+                log::info!("market closed, skipping rt_k for {} codes", codes.len());
             }
-            // Fall back for any codes not returned by rt_k
+
+            // Fall back for any codes not handled (rt_k missing or market closed)
             let missing: Vec<&str> = codes
                 .iter()
                 .filter(|c| !handled.iter().any(|h| h == *c))

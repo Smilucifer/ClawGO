@@ -46,7 +46,7 @@
 
 <div class="archive-grid grid h-full gap-[var(--space-4)]">
   <!-- Left panel: query + list -->
-  <aside class="flex flex-col gap-[var(--space-3)] rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-3)]">
+  <aside class="flex flex-col gap-[var(--space-3)] overflow-y-auto rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-3)]">
     <!-- Symbol selector + query button -->
     <div class="flex items-center gap-[var(--space-2)]">
       <select
@@ -115,7 +115,7 @@
   </aside>
 
   <!-- Right panel: detail -->
-  <section class="overflow-auto rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-4)]">
+  <section class="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-4)]">
     {#if selected}
       {@const v = verdictMap.get(selected.date) ?? null}
       <div class="mb-[var(--space-3)] flex items-center gap-[var(--space-3)]">
@@ -130,7 +130,7 @@
           </span>
         {/if}
       </div>
-      <div class="max-h-[60vh] overflow-y-auto text-[13px] leading-[1.7]">
+      <div class="min-h-0 flex-1 overflow-y-auto text-[13px] leading-[1.7]">
         <MarkdownContent text={selected.content} />
       </div>
     {:else}
@@ -144,7 +144,7 @@
 <style>
   .archive-grid {
     grid-template-columns: 250px 1fr;
-    min-height: 500px;
+    grid-template-rows: 1fr;
   }
   @media (max-width: 768px) {
     .archive-grid {

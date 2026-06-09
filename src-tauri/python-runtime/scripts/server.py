@@ -22,7 +22,12 @@ def get_provider(name: str):
     if name not in PROVIDERS:
         raise ValueError(f"Unknown provider: {name}")
     module_name = PROVIDERS[name]
-    module = importlib.import_module(f"providers.{module_name}")
+    try:
+        module = importlib.import_module(f"providers.{module_name}")
+    except ImportError as e:
+        raise ValueError(f"Provider '{name}' import failed (missing dependency?): {e}") from e
+    except Exception as e:
+        raise ValueError(f"Provider '{name}' import error: {e}") from e
     return module
 
 
@@ -78,6 +83,9 @@ def handle_request(req: dict) -> dict:
 def main():
     # Register providers
     register_provider("yahoo", "yahoo")
+    register_provider("eastmoney", "eastmoney")
+    register_provider("jinshi", "jinshi")
+    register_provider("akshare", "akshare_news")
 
     print("[server] ClawGO Python Data Server started", file=sys.stderr, flush=True)
 
