@@ -32,7 +32,7 @@ pub fn add_holding(
     notes: Option<String>,
     asset_type: Option<String>,
 ) -> Result<(), String> {
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let h = Holding {
         symbol,
         currency,
@@ -66,7 +66,7 @@ pub fn update_holding(
     notes: Option<String>,
     asset_type: Option<String>,
 ) -> Result<(), String> {
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let h = Holding {
         symbol,
         currency,
@@ -109,7 +109,7 @@ pub fn record_trade(
     asset_type: Option<String>,
 ) -> Result<(), String> {
     let trade_id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let t = Trade {
         id: trade_id,
         symbol,
@@ -218,7 +218,7 @@ pub fn save_verdict(
     latency_ms: Option<i64>,
 ) -> Result<(), String> {
     let vid = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let v = Verdict {
         id: vid,
         symbol,
@@ -290,7 +290,7 @@ pub fn save_event(
     stance: Option<String>,
 ) -> Result<(), String> {
     let eid = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let e = Event {
         id: eid,
         source,
@@ -326,7 +326,7 @@ pub fn save_event_source(
     enabled: bool,
 ) -> Result<(), String> {
     let sid = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let s = EventSource {
         id: sid,
         name,
@@ -375,7 +375,7 @@ pub fn save_strategy(
     min_cash_pct: Option<f64>,
 ) -> Result<(), String> {
     let sid = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let parsed_targets: Vec<serde_json::Value> =
         serde_json::from_str(&targets).map_err(|e| format!("invalid targets JSON: {e}"))?;
     let s = strategy::Strategy {
@@ -1340,25 +1340,59 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
     ) -> DataSourceStatus {
         match result {
             Ok(items) => {
-                let sample = items.first().map(|i| i.title.chars().take(20).collect::<String>());
-                DataSourceStatus {
-                    name: name.into(),
-                    ok: true,
-                    last_success: Some(now.into()),
-                    sample_value: sample,
+                if items.is_empty() {
+                    // Empty result but no error — likely missing dependency or no data
+                    DataSourceStatus {
+                        name: name.into(),
+                        ok: true,
+                        last_success: Some(now.into()),
+                        sample_value: Some("(empty)".into()),
+                    }
+                } else {
+                    let sample = items.first().map(|i| i.title.chars().take(20).collect::<String>());
+                    DataSourceStatus {
+                        name: name.into(),
+                        ok: true,
+                        last_success: Some(now.into()),
+                        sample_value: sample,
+                    }
                 }
             }
-            Err(e) => DataSourceStatus {
-                name: name.into(),
-                ok: false,
-                last_success: None,
-                sample_value: Some(e),
-            },
+            Err(e) => {
+                log::warn!("[datasource] {} probe failed: {}", name, e);
+                DataSourceStatus {
+                    name: name.into(),
+                    ok: false,
+                    last_success: None,
+                    sample_value: Some(e),
+                }
+            }
         }
     }
 
     sources.push(probe_news("AkShare 个股", &now_str, intl_client.fetch_akshare_stock_news("000001", 1).await).await);
     sources.push(probe_news("金十数据", &now_str, intl_client.fetch_jinshi_news("", 1).await).await);
+
+    // Yahoo Finance (VIX, TNX, DXY, Gold, Oil, USDCNY)
+    match intl_client.fetch_yahoo_quote("^VIX").await {
+        Ok(q) => {
+            sources.push(DataSourceStatus {
+                name: "Yahoo Finance".into(),
+                ok: true,
+                last_success: Some(now_str.clone()),
+                sample_value: Some(format!("VIX = {:.2}", q.price)),
+            });
+        }
+        Err(e) => {
+            log::warn!("[datasource] Yahoo Finance probe failed: {}", e);
+            sources.push(DataSourceStatus {
+                name: "Yahoo Finance".into(),
+                ok: false,
+                last_success: None,
+                sample_value: Some(e),
+            });
+        }
+    }
 
     sources
 }

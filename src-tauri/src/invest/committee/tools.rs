@@ -735,11 +735,8 @@ async fn exec_moneyflow(symbol: &str) -> Result<String, String> {
     // Cache-first: 当天的数据直接用
     if let Ok(Some((date, json, _))) = stock_data_cache::load_latest(symbol, "moneyflow_dc") {
         if date == today {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&json) {
-                if let Some(summary) = v["summary"].as_str() {
-                    let days = v["days"].as_u64().unwrap_or(5);
-                    return Ok(format!("【{} 近{}日资金流向】\n{}", symbol, days, summary));
-                }
+            if let Ok(payload) = serde_json::from_str::<crate::tushare::client::MoneyflowCachePayload>(&json) {
+                return Ok(format!("【{} 近{}日资金流向】\n{}", symbol, payload.days, payload.summary));
             }
         }
     }

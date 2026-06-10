@@ -233,6 +233,37 @@ impl MoneyflowDc {
         let retail_yi = retail_net.abs() / 10000.0;
         format!("{} {:.2}亿元，{} {:.2}亿元", main_label, main_yi, retail_label, retail_yi)
     }
+
+    /// 仅取最新一天数据格式化摘要（用于 prompt 注入，避免多日累计掩盖当日信号）
+    pub fn format_moneyflow_summary_latest(rows: &[MoneyflowDc]) -> String {
+        match rows.iter().max_by_key(|r| r.trade_date.as_str()) {
+            Some(latest) => Self::format_moneyflow_summary(std::slice::from_ref(latest)),
+            None => "N/A".to_string(),
+        }
+    }
+
+    /// 构建缓存 JSON（统一 5 日汇总 + 当日摘要 + 天数），供 `build_asset_context` 和
+    /// `refresh_moneyflow_cache` 共用，避免两处重复构造。
+    pub fn to_cache_json(rows: &[MoneyflowDc]) -> String {
+        let payload = MoneyflowCachePayload {
+            summary: Self::format_moneyflow_summary(rows),
+            daily_summary: Self::format_moneyflow_summary_latest(rows),
+            days: rows.len(),
+        };
+        serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string())
+    }
+}
+
+/// moneyflow_dc 缓存条目的结构化载荷（typed 替代 `serde_json::Value` 手动解析）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoneyflowCachePayload {
+    /// 近5日主力/散户净流入摘要
+    pub summary: String,
+    /// 当日主力/散户净流入摘要（旧缓存可能缺失，fallback 到 summary）
+    #[serde(default)]
+    pub daily_summary: String,
+    /// 数据天数
+    pub days: usize,
 }
 
 // ---------------------------------------------------------------------------

@@ -17,7 +17,7 @@ pub struct SchedulerLog {
 
 pub fn log_task_start(task_name: &str) -> Result<i64, String> {
     with_conn_mut(|conn| {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
         conn.execute(
             "INSERT INTO scheduler_logs (task_name, status, started_at) VALUES (?1, 'running', ?2)",
             params![task_name, now],
@@ -29,7 +29,7 @@ pub fn log_task_start(task_name: &str) -> Result<i64, String> {
 
 pub fn log_task_end(id: i64, status: &str, message: Option<&str>) -> Result<(), String> {
     with_conn(|conn| {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
         conn.execute(
             "UPDATE scheduler_logs SET status = ?1, message = ?2, finished_at = ?3, duration_ms = CAST((julianday(?3) - julianday(started_at)) * 86400000 AS INTEGER) WHERE id = ?4",
             params![status, message, now, id],

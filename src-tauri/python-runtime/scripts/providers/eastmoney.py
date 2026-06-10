@@ -7,17 +7,9 @@ Uses direct REST API calls — no extra dependencies beyond 'requests'.
 import time
 from datetime import datetime
 
-from .utils import create_session, matches_query, parse_timestamp
+from .utils import LazySession, matches_query, parse_timestamp
 
-# Lazy-init session (requests may not be installed).
-_session = None
-
-
-def _get_session():
-    global _session
-    if _session is None:
-        _session = create_session(referer="https://finance.eastmoney.com/")
-    return _session
+_session = LazySession("eastmoney", referer="https://finance.eastmoney.com/")
 
 
 def _empty_quote(symbol: str) -> dict:
@@ -50,7 +42,7 @@ def news(query: str = "", count: int = 15) -> list:
         "req_trace": str(int(time.time() * 1000)),
     }
 
-    session = _get_session()
+    session = _session.get()
     if session is None:
         return _fetch_7x24_news(count)
 
@@ -95,7 +87,7 @@ def _fetch_7x24_news(count: int) -> list:
         "s_node": "0",
     }
 
-    session = _get_session()
+    session = _session.get()
     if session is None:
         return []
 
@@ -139,7 +131,7 @@ def quote(symbol: str) -> dict:
         "ut": "fa5fd1943c7b386f172d6893dbbd1d0c",
     }
 
-    session = _get_session()
+    session = _session.get()
     if session is None:
         return _empty_quote(symbol)
 

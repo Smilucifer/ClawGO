@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v5.2.19, 2026-06-09). Python RPC 崩溃修复+Provider 共享工具+代码清理。See `docs/changelog.md`.
+**Current phase:** Phase 10+ (v5.3.1, 2026-06-10). Python RPC UnicodeEncodeError 修复 + 定时任务 cron 格式修复。See `docs/changelog.md`.
 
 ## Standard workflow
 
@@ -388,7 +388,11 @@ Key phases and their status:
 | 10+ (v5.2.16) | invest 统计日期 5AM 截止+委员会批量优化+收盘价格修复+现金负数修复+备用金重构+Watch 复活修复+Watch转Hold shares 修复: date_utils 集中模块(3 函数+5 测试)/8 处调用替换/PortfolioData Arc 批量共享+30s timeout+load_with_timeout 提取/dry_run 模式/notional_is_estimated 警告/cio_sanity_check Gate 3 actual_cash fallback+Gate 4 去重/recalculate_cash_inner 自动同步/get_latest_price+realtime_quotes 收盘后跳过 rt_k/sell auto-convert watch+watch_deleted 防复活/getInvestDate 前端本地时区修复+常量提取/Dashboard 日期规则提示/set_cash_inner NULL initial_balance 修复/emergency_buffer_cny 全链路删除( UserProfile+InvestLlmConfig+CommitteeConfig)/effective_buffer 动态计算(max min_cash_pct×total_assets)/风险偏好从 account_purpose 推导注入 prompt/前端+4 i18n key 清理/参数重命名 min_cash_reserve/convert_watch_to_hold replay shares 从交易记录读取+recompute_notional/10 项 simplify | [done] |
 | 10+ (v5.2.17) | Dashboard 按钮统一+做T成本均摊: HoldingsTable hold/watch 统一编辑/买入/卖出按钮/onBuy prop/移除 confirmDeleteWatch 死代码/dialogMode 类型清理/PnlTracker 结构跟踪实现盈亏+清仓日期/is_pnl_expired 日期边界(≥2天过期)/buy 分支统一消除冗余条件/_amount 死变量移除/get_or_insert_with 优化/3 项 simplify | [done] |
 | 10+ (v5.2.18) | 事件源重构: Jin10 全量快讯+AkShare 个股新闻替代 Yahoo/Tushare 新闻/Tushare 新闻移除/东财搜索 API/国际事件覆盖/AkShare Python provider/rpc_call 泛型提取/probe_news helper/fallback_time 常量/5 项 simplify | [done] |
-| 10+ (v5.2.19) | Python RPC 崩溃修复: lazy import 模式+server.py ImportError 处理+bridge.rs exit_status 移除+stderr 简化/providers/utils.py 共享工具提取(3 函数消除 8 处重复)/PnL 快照 get_previous_day_snapshot/17 个临时文件清理+.gitignore 更新/340MB worktrees 清理 | [done] |
+| 10+ (v5.2.19) | Python RPC 崩溃修复: lazy import 模式+server.py ImportError 处理+bridge.rs exit_status 移除+stderr 简化/providers/utils.py 共享工具提取(3 函数消除 8 处重复)+LazySession+clean_dataframe+BaseException 保护+_safe_print/PnL 快照 get_previous_day_snapshot/资金流向当日注入(MoneyflowCachePayload+to_cache_json+Quant R1 双注入)/Jin10 错误日志/17 个临时文件清理+.gitignore 更新/340MB worktrees 清理/6 项 simplify 修复 | [done] |
+| 10+ (v5.3.0) | convert_watch_to_hold 移除(delete_watch+buy 替代)+现金管理重构(增量 UPDATE 替代全量重算+cash_delta_for_trade 单一真相源+get_trade_by_id 提取+recalculate_inner 合并+get_cash_inner 错误传播)+时间格式统一(Millis 精度+DB 归一化)+CHECK 迁移数据保护+前端 IPC 精简(4→2)+SchedulerTab 卡片重设计+next_run 计算+状态映射合并+7 项 simplify | [done] |
+| 10+ (v5.3.0) | 定时任务调度面板重设计: Card 布局+状态圆点+倒计时+7 预设+可视化 cron builder+运行时间线/后端 compute_next_run_for_job+load_jobs 自动填充+runner should_fire 简化(45→5 行)+单次 load+save/invest-status.ts 共享模块+STATUS_MAP 查找表/18 i18n keys/4 项 simplify(load_jobs_base 提取+persist_next_run 删除+should_fire 消除+查找表合并) | [done] |
+| 10+ (v5.3.1) | Python RPC UnicodeEncodeError 修复: bridge.rs PYTHONIOENCODING=utf-8 环境变量+server.py _safe_print UnicodeEncodeError 捕获+4 路 simplify 审查通过 | [done] |
+| 10+ (v5.3.1) | 定时任务 cron 格式修复: PRESETS/fieldsToCron 5→6 字段+stripSeconds 提取+normalize_cron_6field 后端归一化+DreamConfig 默认修复+4 路 simplify 审查通过 | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

@@ -149,11 +149,13 @@ class InvestStore {
     // Note: Date.now() is not reactive — cutoff is refreshed when events or filter change (e.g. after scan).
     const now = Date.now();
     const windows = {
+      "all": 0,
       "24h": 86_400_000,
       "48h": 172_800_000,
       "7d": 604_800_000,
     } as const;
-    const cutoff = now - windows[this.eventFilter.timeWindow];
+    const windowMs = windows[this.eventFilter.timeWindow];
+    const cutoff = now - windowMs;
 
     // Pre-compute timestamps to avoid redundant Date allocations in filter + sort
     const withTs = filtered.map((e) => ({
@@ -161,7 +163,11 @@ class InvestStore {
       ts: parseEventDate(e.createdAt),
     }));
 
-    let result = withTs.filter((item) => item.ts > cutoff);
+    // For "all" window, skip time filter; for others, filter by cutoff.
+    // Keep events with unparseable timestamps (NaN) — they may have valid data.
+    let result = windowMs === 0
+      ? withTs
+      : withTs.filter((item) => isNaN(item.ts) || item.ts > cutoff);
 
     // Severity filter
     if (this.eventFilter.severity !== "all") {
@@ -438,25 +444,23 @@ class InvestStore {
     price: number,
   ): Promise<void> {
     const amount = qty * price;
-
-    // Save watch holding data for rollback
     const watchHolding = this.watchHoldings.find((h) => h.symbol === symbol);
 
     try {
-      await invoke("delete_holding", { symbol, currency: "CNY", kind: "watch" });
-
-      await invoke("add_holding", {
+      // Two trades: delete_watch removes watch entry, buy creates hold entry.
+      // record_trade triggers recalculate_holdings which rebuilds all holdings from trades.
+      await invoke("record_trade", {
+        id: null,
         symbol,
         currency: "CNY",
-        kind: "hold",
-        name,
-        notional: 0,
-        avgCost: price,
-        shares: qty,
-        entryDate: new Date().toISOString().split("T")[0],
-        linkedVerdictId: null,
-        notes: "converted from watchlist",
-        assetType: watchHolding?.assetType ?? "stock",
+        kind: "watch",
+        action: "delete_watch",
+        shares: null,
+        price: null,
+        amount: 0,
+        notes: null,
+        name: null,
+        tradeDate: null,
       });
 
       await invoke("record_trade", {
@@ -464,7 +468,7 @@ class InvestStore {
         symbol,
         currency: "CNY",
         kind: "hold",
-        action: "convert_watch_to_hold",
+        action: "buy",
         shares: qty,
         price,
         amount,
@@ -473,26 +477,8 @@ class InvestStore {
         tradeDate: null,
         assetType: watchHolding?.assetType ?? "stock",
       });
-
-      // record_trade triggers recalculate_cash_inner which auto-deducts cash
-      // (convert_watch_to_hold is treated as a buy-equivalent).
     } catch (e) {
-      // Rollback: restore watch holding
-      if (watchHolding) {
-        await invoke("add_holding", {
-          symbol,
-          currency: "CNY",
-          kind: "watch",
-          name: watchHolding.name,
-          notional: watchHolding.notional ?? 0,
-          avgCost: watchHolding.avgCost ?? null,
-          shares: watchHolding.shares ?? null,
-          entryDate: watchHolding.entryDate ?? null,
-          linkedVerdictId: watchHolding.linkedVerdictId ?? null,
-          notes: watchHolding.notes ?? null,
-          assetType: watchHolding.assetType ?? "stock",
-        }).catch(() => {}); // Best-effort rollback
-      }
+      // Best-effort: reload state. The first trade (delete_watch) may already be persisted.
       throw e;
     }
 

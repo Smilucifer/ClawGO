@@ -177,7 +177,7 @@ fn migrate_trades_table(conn: &mut Connection) -> Result<(), String> {
             symbol TEXT NOT NULL,
             currency TEXT NOT NULL DEFAULT 'CNY',
             kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
-            action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_watch_to_hold', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust', 'add_watch', 'delete_watch')),
+            action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust', 'add_watch', 'delete_watch')),
             shares REAL,
             price REAL,
             amount REAL,
@@ -188,6 +188,10 @@ fn migrate_trades_table(conn: &mut Connection) -> Result<(), String> {
             asset_type TEXT
         );"
     ).map_err(|e| format!("create trades_new: {}", e))?;
+
+    // Convert deprecated actions before copying (avoids CHECK constraint violation)
+    tx.execute_batch("UPDATE trades SET action = 'buy' WHERE action = 'convert_watch_to_hold'")
+        .map_err(|e| format!("convert deprecated actions: {}", e))?;
 
     // Copy data with tolerant column handling
     let insert_sql = format!(
@@ -386,7 +390,7 @@ CREATE TABLE IF NOT EXISTS trades (
     symbol TEXT NOT NULL,
     currency TEXT NOT NULL DEFAULT 'CNY',
     kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
-    action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_watch_to_hold', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust', 'add_watch', 'delete_watch')),
+    action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust', 'add_watch', 'delete_watch')),
     shares REAL,
     price REAL,
     amount REAL,

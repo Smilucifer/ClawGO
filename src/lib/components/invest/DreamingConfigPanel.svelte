@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from '$lib/i18n/index.svelte';
   import { getTransport } from '$lib/transport';
+  import { investStatusTextClass } from '$lib/utils/invest-status';
 
   const invoke = <T,>(cmd: string, args?: Record<string, unknown>) =>
     getTransport().invoke<T>(cmd, args);
@@ -126,12 +127,7 @@
     return `${(ms / 1000).toFixed(1)}s`;
   }
 
-  function statusColor(status: string): string {
-    if (status === 'completed') return 'text-[var(--color-success)]';
-    if (status === 'rolled_back') return 'text-[var(--color-warning)]';
-    if (status === 'failed') return 'text-[var(--color-error)]';
-    return 'text-[var(--text-secondary)]';
-  }
+  // investStatusTextClass → investStatusTextClass (shared via $lib/utils/invest-status)
 
   $effect(() => {
     loadConfig();
@@ -290,7 +286,7 @@
             <div class="flex items-center justify-between rounded-[var(--radius-sm)] border border-border bg-[var(--bg-card)] px-3 py-2 text-xs">
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
-                  <span class={statusColor(trace.status)}>{trace.status}</span>
+                  <span class={investStatusTextClass(trace.status)}>{trace.status}</span>
                   <span class="text-[var(--text-tertiary)]">#{trace.id}</span>
                   <span class="text-[var(--text-tertiary)]">{trace.triggerType}</span>
                 </div>

@@ -6,20 +6,9 @@ Uses the Jin10 flash news API — no auth required, no extra dependencies.
 
 import re
 
-from .utils import create_session, matches_query, parse_timestamp
+from .utils import LazySession, matches_query, parse_timestamp
 
-# Lazy-init session (requests may not be installed).
-_session = None
-
-
-def _get_session():
-    global _session
-    if _session is None:
-        _session = create_session(
-            referer="https://www.jin10.com/",
-            origin="https://www.jin10.com",
-        )
-    return _session
+_session = LazySession("jinshi", referer="https://www.jin10.com/", origin="https://www.jin10.com")
 
 
 def news(query: str = "", count: int = 15) -> list:
@@ -39,7 +28,7 @@ def news(query: str = "", count: int = 15) -> list:
         "x-version": "1.0.0",
     }
 
-    session = _get_session()
+    session = _session.get()
     if session is None:
         return []
 

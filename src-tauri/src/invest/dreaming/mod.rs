@@ -17,7 +17,7 @@ impl Default for DreamConfig {
     fn default() -> Self {
         Self {
             invest_enabled: false,
-            invest_cron: "0 3 * * *".into(),
+            invest_cron: "0 0 3 * * *".into(),
             lookback_days: 30,
             min_score: 0.5,
             min_count: 2,

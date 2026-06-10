@@ -25,7 +25,8 @@ use std::sync::Arc;
 pub struct AssetContext {
     pub asset_type: String,              // "stock" | "etf"
     pub industry: Option<String>,        // tushare stock_basic → 申万二级行业
-    pub money_flow_summary: Option<String>, // 近5日主力/散户净流入摘要
+    pub money_flow_summary: Option<String>,       // 近5日主力/散户净流入摘要（工具用）
+    pub money_flow_daily_summary: Option<String>, // 当日主力/散户净流入摘要（prompt 注入）
     pub pe_ttm: Option<f64>,
     pub pb: Option<f64>,
     pub total_mv_yi: Option<f64>,        // 总市值（亿元）
@@ -679,10 +680,7 @@ async fn refresh_moneyflow_cache(
 
     match client.moneyflow_dc(symbol, &five_days_ago, &today).await {
         Ok(mf) if !mf.is_empty() => {
-            let summary = MoneyflowDc::format_moneyflow_summary(&mf);
-            let summary_json =
-                serde_json::json!({ "summary": summary, "days": mf.len() });
-            let s = summary_json.to_string();
+            let s = MoneyflowDc::to_cache_json(&mf);
             let _ = stock_data_cache::batch_upsert(&[(
                 symbol,
                 "moneyflow_dc",
@@ -692,9 +690,8 @@ async fn refresh_moneyflow_cache(
             // 内存追加新条目，避免 DB 重读
             entries.push(("moneyflow_dc".to_string(), today, s));
             log::info!(
-                "build_asset_context: moneyflow_dc refreshed for {}: {}",
-                symbol,
-                summary
+                "build_asset_context: moneyflow_dc refreshed for {}",
+                symbol
             );
         }
         Ok(_) => {
@@ -819,14 +816,21 @@ async fn build_asset_context(
     };
 
     // ── 7. 解析 moneyflow_dc ──
-    let money_flow_summary = find_json("moneyflow_dc").and_then(|json| {
-        serde_json::from_str::<serde_json::Value>(&json).ok()
-            .and_then(|v| v["summary"].as_str().map(|s| s.to_string()))
-    });
+    use crate::tushare::client::MoneyflowCachePayload;
+    let moneyflow_cache: Option<MoneyflowCachePayload> = find_json("moneyflow_dc")
+        .and_then(|json| serde_json::from_str(&json).ok());
     // 股票无资金流向数据 → 记录数据质量问题（非 ETF 且缓存缺失）
-    if money_flow_summary.is_none() && asset_type == "stock" {
+    if moneyflow_cache.is_none() && asset_type == "stock" {
         data_quality.push("资金流向=N/A".to_string());
     }
+    // 解构避免多次 clone：daily_summary 优先，fallback 到 summary（旧缓存兼容）
+    let (money_flow_summary, money_flow_daily_summary) = match moneyflow_cache {
+        Some(c) => {
+            let daily = if c.daily_summary.is_empty() { c.summary.clone() } else { c.daily_summary };
+            (Some(c.summary), Some(daily))
+        }
+        None => (None, None),
+    };
 
     // ── 8. 解析 industry ──
     let industry = if let Some(json) = find_json("industry") {
@@ -844,6 +848,7 @@ async fn build_asset_context(
         asset_type: asset_type.to_string(),
         industry,
         money_flow_summary,
+        money_flow_daily_summary,
         pe_ttm,
         pb,
         total_mv_yi,
@@ -915,9 +920,7 @@ async fn refresh_asset_data(
     }
     if let Ok(mf) = &mf_result {
         if !mf.is_empty() {
-            let summary = MoneyflowDc::format_moneyflow_summary(mf);
-            let summary_json = serde_json::json!({ "summary": summary, "days": mf.len() });
-            entries.push(("moneyflow_dc".into(), today.clone(), summary_json.to_string()));
+            entries.push(("moneyflow_dc".into(), today.clone(), MoneyflowDc::to_cache_json(mf)));
         }
     }
     if asset_type == "stock" {
@@ -1412,7 +1415,7 @@ async fn run_role_phase(
         if let Some(ref industry) = asset_context.industry {
             cio_data.push(format!("行业: {}", industry));
         }
-        if let Some(ref mf) = asset_context.money_flow_summary {
+        if let Some(ref mf) = asset_context.money_flow_daily_summary {
             cio_data.push(format!("资金: {}", mf));
         }
         if let Some(pe) = asset_context.pe_ttm {
@@ -1814,12 +1817,14 @@ pub(crate) async fn run_committee(
         .map(|o| o.parsed.clone())
         .unwrap_or_default();
 
+    let actual_concentration = concentration_for_symbol(symbol, &portfolio_data);
     let sanity = cio_sanity_check(
         &cio_parsed,
         &round_outputs,
         &macro_signal,
         effective_buffer,
         Some(portfolio_data.cash),
+        Some(actual_concentration),
     );
 
     // Determine final verdict — sentinel override takes priority

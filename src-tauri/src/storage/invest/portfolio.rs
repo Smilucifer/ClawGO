@@ -113,7 +113,7 @@ pub fn list_holdings() -> Result<Vec<Holding>, String> {
 
 pub fn upsert_holding(h: &Holding) -> Result<(), String> {
     with_conn(|conn| {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
         let created = if h.created_at.is_empty() { &now } else { &h.created_at };
         conn.execute(
             "INSERT INTO holdings (symbol, currency, kind, name, notional, avg_cost, shares, entry_date, linked_verdict_id, notes, asset_type, created_at, updated_at)
@@ -150,39 +150,74 @@ pub fn record_trade(t: &Trade) -> Result<(), String> {
             params![t.id, t.symbol, t.currency, t.kind, t.action, t.shares, t.price, t.amount, t.notes, t.created_at, t.name, t.trade_date, t.asset_type],
         )
         .map_err(|e| format!("record trade: {}", e))?;
-        // Recalculate holdings after inserting trade (consistent with delete_trade/update_trade)
-        recalculate_holdings_inner(conn)?;
+        // Apply cash delta for this trade, then recalculate holdings.
+        // Using delta instead of full recalculation avoids corrupting cash
+        // when initial_balance doesn't match actual starting capital.
+        apply_cash_delta_sql(conn, cash_delta_for_trade(t, false))?;
+        recalculate_holdings_inner(conn, false)?;
         Ok(())
     })
 }
 
+/// Compute the cash delta for a single trade.
+/// `reverse=true` negates the effect (for undoing a trade on delete/update).
+fn cash_delta_for_trade(t: &Trade, reverse: bool) -> f64 {
+    let amount = t.amount.unwrap_or(0.0);
+    let sign = if reverse { -1.0 } else { 1.0 };
+    match t.action.as_str() {
+        "buy" => -amount * sign,
+        "sell" => amount * sign,
+        "cash_adjust" => amount * sign,
+        _ => 0.0,
+    }
+}
+
+/// Apply a cash delta atomically via a single UPDATE (no read-modify-write).
+fn apply_cash_delta_sql(conn: &Connection, delta: f64) -> Result<(), String> {
+    if delta == 0.0 {
+        return Ok(());
+    }
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    conn.execute(
+        "UPDATE cash SET available = available + ?1, updated_at = ?2 WHERE id = 1",
+        params![delta, now],
+    )
+    .map_err(|e| format!("update cash delta: {}", e))?;
+    Ok(())
+}
+
 /// Recalculate cash balance from initial_balance + trade history.
 /// Must be called within an active connection/transaction.
-/// buy, sell, and convert_watch_to_hold trades affect the derived cash balance.
-/// cash_adjust and other non-cash trades are ignored.
+/// buy, sell, and cash_adjust trades affect the derived cash balance.
 fn recalculate_cash_inner(conn: &Connection, trades: &[Trade]) -> Result<(), String> {
     let initial = get_initial_cash_inner(conn).unwrap_or(0.0);
-
     let mut cash = initial;
     for t in trades {
-        let amount = t.amount.unwrap_or(0.0);
-        match t.action.as_str() {
-            "buy" | "convert_watch_to_hold" => cash -= amount,
-            "sell" => cash += amount,
-            _ => {}
-        }
+        cash += cash_delta_for_trade(t, false);
     }
-
     set_cash_inner(conn, cash)
 }
 
+/// Look up a single trade by ID. Returns error if not found.
+fn get_trade_by_id(conn: &Connection, id: &str) -> Result<Trade, String> {
+    let mut stmt = conn
+        .prepare(&format!("SELECT {TRADE_COLUMNS} FROM trades WHERE id = ?1"))
+        .map_err(|e| format!("prepare: {}", e))?;
+    let mut rows = stmt
+        .query_map(params![id], trade_from_row)
+        .map_err(|e| format!("query: {}", e))?;
+    match rows.next() {
+        Some(row) => row.map_err(|e| format!("row: {}", e)),
+        None => Err("Trade not found".to_string()),
+    }
+}
+
 /// Replay all trades from scratch to rebuild the holdings table.
-/// This is an internal helper that must be called within an active connection.
-/// Wrapped in a transaction to ensure atomicity; notional values are preserved
+/// When `recalc_cash=true`, also recomputes cash from initial_balance + trades.
+/// When `recalc_cash=false`, callers handle cash separately (delta-based).
+/// Wrapped in a transaction for atomicity; notional values are preserved
 /// from existing holdings so that recalculation does not corrupt user-edited data.
-fn recalculate_holdings_inner(conn: &Connection) -> Result<(), String> {
-    // Preserve existing notional and asset_type values before DELETE
-    // (Finding 2: notional=0 corruption fix; asset_type NOT NULL constraint fix)
+fn recalculate_holdings_inner(conn: &Connection, recalc_cash: bool) -> Result<(), String> {
     let mut notional_map: HashMap<(String, String, String), f64> = HashMap::new();
     let mut asset_type_map: HashMap<(String, String, String), String> = HashMap::new();
     {
@@ -207,11 +242,8 @@ fn recalculate_holdings_inner(conn: &Connection) -> Result<(), String> {
         }
     }
 
-    // Wrap DELETE + INSERTs in a transaction for atomicity (Finding 3: no transaction fix)
     conn.execute_batch("BEGIN").map_err(|e| format!("begin transaction: {}", e))?;
-
-    let result = recalculate_holdings_inner_body(conn, &notional_map, &asset_type_map);
-
+    let result = recalculate_holdings_inner_body(conn, &notional_map, &asset_type_map, recalc_cash);
     match result {
         Ok(()) => {
             conn.execute_batch("COMMIT").map_err(|e| format!("commit transaction: {}", e))?;
@@ -232,6 +264,7 @@ fn recalculate_holdings_inner_body(
     conn: &Connection,
     notional_map: &HashMap<(String, String, String), f64>,
     asset_type_map: &HashMap<(String, String, String), String>,
+    recalc_cash: bool,
 ) -> Result<(), String> {
     // 1. Clear all existing holdings
     conn.execute("DELETE FROM holdings", [])
@@ -423,20 +456,6 @@ fn recalculate_holdings_inner_body(
                     }
                 }
             }
-            "convert_watch_to_hold" => {
-                // Remove from watch, add to hold
-                let watch_key = (t.symbol.clone(), t.currency.clone(), "watch".to_string());
-                let hold_key = (t.symbol.clone(), t.currency.clone(), "hold".to_string());
-                if let Some(watch_entry) = map.remove(&watch_key) {
-                    let hold_entry = map.entry(hold_key).or_default();
-                    hold_entry.copy_core_fields_from(&watch_entry);
-                    // Use shares from the trade record, not from watch entry
-                    // (watch entries have null/0 shares; the actual quantity is in the trade)
-                    hold_entry.shares = t.shares.unwrap_or(0.0);
-                    hold_entry.recompute_notional();
-                    hold_entry.notes = Some("converted from watchlist".to_string());
-                }
-            }
             "convert_hold_to_watch" => {
                 // Remove from hold, add to watch
                 let hold_key = (t.symbol.clone(), t.currency.clone(), "hold".to_string());
@@ -475,13 +494,14 @@ fn recalculate_holdings_inner_body(
         }
     }
 
-    // 4. Recalculate cash from initial_balance + trade history
-    //    This ensures cash stays consistent whenever trades change,
-    //    eliminating the need for frontend to separately call update_cash.
-    recalculate_cash_inner(conn, &trades)?;
+    // 4. Recalculate cash from initial_balance + trade history (if requested).
+    //    When skip_cash=true, the caller handles cash separately (delta-based).
+    if recalc_cash {
+        recalculate_cash_inner(conn, &trades)?;
+    }
 
     // 5. Write rebuilt holdings to database
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     for ((symbol, currency, kind), h) in &map {
         // Skip zero-share holdings (but preserve watch items which have no shares)
         if h.shares <= 0.0001 && !h.is_watch {
@@ -516,25 +536,25 @@ fn recalculate_holdings_inner_body(
 
 /// Replay all trades from scratch to rebuild the holdings table.
 pub fn recalculate_holdings() -> Result<(), String> {
-    with_conn(|conn| recalculate_holdings_inner(conn))
+    with_conn(|conn| recalculate_holdings_inner(conn, true))
 }
 
 pub fn delete_trade(id: &str) -> Result<(), String> {
     with_conn(|conn| {
-        let changed = conn
-            .execute("DELETE FROM trades WHERE id = ?1", params![id])
+        let old_trade = get_trade_by_id(conn, id)?;
+        apply_cash_delta_sql(conn, cash_delta_for_trade(&old_trade, true))?;
+        conn.execute("DELETE FROM trades WHERE id = ?1", params![id])
             .map_err(|e| format!("delete trade: {}", e))?;
-        if changed == 0 {
-            Err("Trade not found".to_string())
-        } else {
-            recalculate_holdings_inner(conn)?;
-            Ok(())
-        }
+        recalculate_holdings_inner(conn, false)?;
+        Ok(())
     })
 }
 
 pub fn update_trade(t: &Trade) -> Result<(), String> {
     with_conn(|conn| {
+        let old_trade = get_trade_by_id(conn, &t.id)?;
+        let old_delta = cash_delta_for_trade(&old_trade, true);
+        let new_delta = cash_delta_for_trade(t, false);
         let changed = conn
             .execute(
                 "UPDATE trades SET symbol=?2, currency=?3, kind=?4, action=?5, shares=?6, price=?7, amount=?8, notes=?9, name=?10, trade_date=?11, asset_type=?12 WHERE id=?1",
@@ -542,11 +562,11 @@ pub fn update_trade(t: &Trade) -> Result<(), String> {
             )
             .map_err(|e| format!("update trade: {}", e))?;
         if changed == 0 {
-            Err("Trade not found".to_string())
-        } else {
-            recalculate_holdings_inner(conn)?;
-            Ok(())
+            return Err("Trade not found".to_string());
         }
+        apply_cash_delta_sql(conn, old_delta + new_delta)?;
+        recalculate_holdings_inner(conn, false)?;
+        Ok(())
     })
 }
 
@@ -576,15 +596,16 @@ pub fn list_trades(symbol: Option<&str>, limit: Option<i64>) -> Result<Vec<Trade
 }
 
 pub fn get_cash() -> Result<f64, String> {
-    with_conn(|conn| {
-        let result = conn
-            .query_row("SELECT available FROM cash WHERE id = 1", [], |row| row.get::<_, f64>(0));
-        match result {
-            Ok(v) => Ok(v),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(0.0),
-            Err(e) => Err(format!("get cash: {}", e)),
-        }
-    })
+    with_conn(|conn| get_cash_inner(conn))
+}
+
+fn get_cash_inner(conn: &Connection) -> Result<f64, String> {
+    let result = conn.query_row("SELECT available FROM cash WHERE id = 1", [], |row| row.get::<_, f64>(0));
+    match result {
+        Ok(v) => Ok(v),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(0.0),
+        Err(e) => Err(format!("get cash: {}", e)),
+    }
 }
 
 /// Get the initial cash balance (starting capital). Returns 0 if not set.
@@ -610,7 +631,7 @@ pub fn set_cash(amount: f64) -> Result<(), String> {
 }
 
 fn set_cash_inner(conn: &Connection, amount: f64) -> Result<(), String> {
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     // Only set `available`; leave `initial_balance` as NULL on INSERT so that
     // `set_initial_cash` is the sole writer of that column.  The previous
     // `VALUES (1, ?1, ?1, ?2)` would corrupt `initial_balance` whenever the
@@ -684,7 +705,7 @@ pub fn set_initial_cash(amount: f64) -> Result<(), String> {
             .map_err(|e| format!("set initial cash: {}", e))?;
         if changed == 0 {
             // No cash row yet — create it
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
             conn.execute(
                 "INSERT INTO cash (id, available, initial_balance, updated_at) VALUES (1, 0, ?1, ?2)",
                 params![amount, now],

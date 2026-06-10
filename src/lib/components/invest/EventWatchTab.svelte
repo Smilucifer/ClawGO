@@ -15,7 +15,7 @@
     store.fetchScanStatus();
   });
 
-  function handleTimeWindowChange(window: '24h' | '48h' | '7d') {
+  function handleTimeWindowChange(window: 'all' | '24h' | '48h' | '7d') {
     store.setEventFilter({ timeWindow: window });
   }
 
@@ -138,11 +138,11 @@
   <div class="flex items-center gap-2 px-[var(--space-4)] py-[var(--space-2)] border-b border-border">
     <!-- Time window -->
     <div class="flex rounded-[var(--radius-md)] overflow-hidden border border-border">
-      {#each ['24h', '48h', '7d'] as tw}
+      {#each ['all', '24h', '48h', '7d'] as tw}
         <button
-          onclick={() => handleTimeWindowChange(tw as '24h' | '48h' | '7d')}
+          onclick={() => handleTimeWindowChange(tw as 'all' | '24h' | '48h' | '7d')}
           class="px-2 py-0.5 text-[12px] {store.eventFilter.timeWindow === tw ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]' : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'}"
-        >{tw}</button>
+        >{tw === 'all' ? t('invest.eventWatch.filterAll') : tw}</button>
       {/each}
     </div>
 

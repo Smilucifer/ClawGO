@@ -1,8 +1,6 @@
 use super::config;
 use crate::storage::invest::scheduler::{is_trading_day, log_task_end, log_task_start};
 use crate::tushare::client::TushareClient;
-use chrono::TimeZone;
-use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
@@ -93,53 +91,12 @@ where
                     continue;
                 }
 
-                // Check if it's time to fire
-                let should_fire = if let Some(interval) = job.interval_min {
-                    // Interval-based: next_fire = last_run + interval
-                    match &job.last_run {
-                        Some(last) => {
-                            let Ok(last_dt) = chrono::NaiveDateTime::parse_from_str(
-                                last, "%Y-%m-%dT%H:%M:%S",
-                            ) else {
-                                continue;
-                            };
-                            let next = last_dt + chrono::Duration::minutes(interval);
-                            chrono::Local::now().naive_local() >= next
-                        }
-                        None => true, // never run -> fire now
-                    }
-                } else {
-                    // Cron-based
-                    let Ok(schedule) = cron::Schedule::from_str(&job.cron_expr) else {
-                        continue;
-                    };
-                    let after = match &job.last_run {
-                        Some(last) => chrono::NaiveDateTime::parse_from_str(
-                            last,
-                            "%Y-%m-%dT%H:%M:%S",
-                        )
-                        .ok(),
-                        None => None,
-                    };
-                    match after {
-                        Some(after) => {
-                            // Convert naive back to local for cron schedule comparison
-                            let after_local = chrono::Local
-                                .from_local_datetime(&after)
-                                .single();
-                            match after_local {
-                                Some(after_local) => {
-                                    if let Some(next) = schedule.after(&after_local).next() {
-                                        chrono::Local::now() >= next
-                                    } else {
-                                        false
-                                    }
-                                }
-                                None => true, // ambiguous/invalid local time -> fire
-                            }
-                        }
-                        None => true, // never run -> fire now
-                    }
+                // Check if it's time to fire using pre-computed next_run
+                let should_fire = match &job.next_run {
+                    Some(next) => chrono::NaiveDateTime::parse_from_str(next, "%Y-%m-%dT%H:%M:%S")
+                        .map(|dt| chrono::Local::now().naive_local() >= dt)
+                        .unwrap_or(true), // parse failure -> fire
+                    None => true, // never run -> fire now
                 };
 
                 if !should_fire {
@@ -171,7 +128,7 @@ where
                     }
                 }
 
-                // Update last_run in config
+                // Update last_run/last_status and persist (single load + save)
                 let now = chrono::Local::now()
                     .format("%Y-%m-%dT%H:%M:%S")
                     .to_string();
@@ -179,13 +136,11 @@ where
                 if let Some(j) = jobs_mut.iter_mut().find(|j| j.id == job.id) {
                     j.last_run = Some(now);
                     j.last_status = Some(
-                        if result.is_ok() {
-                            "ok"
-                        } else {
-                            "error"
-                        }
-                        .into(),
+                        if result.is_ok() { "ok" } else { "error" }.into(),
                     );
+                    // Recompute next_run in-memory (load_jobs already does this,
+                    // but we mutated last_run so recompute for the saved copy)
+                    j.next_run = config::compute_next_run_for_job(j);
                     if let Err(e) = config::save_jobs(&jobs_mut) {
                         log::error!("Failed to save job state: {e}");
                     }

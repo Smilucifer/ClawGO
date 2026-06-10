@@ -5,6 +5,7 @@ Eliminates duplication of session management, keyword matching, and
 timestamp parsing across jinshi, eastmoney, akshare_news, and future providers.
 """
 
+import sys
 from datetime import datetime
 
 # ---------------------------------------------------------------------------
@@ -41,7 +42,64 @@ def create_session(referer: str, origin: str | None = None):
 
 
 # ---------------------------------------------------------------------------
-# Keyword matching
+# Lazy session with sentinel (avoids retry-on-every-call when requests missing)
+# ---------------------------------------------------------------------------
+
+_UNINITIALIZED = object()
+
+
+class LazySession:
+    """Lazy-initialized requests.Session that logs once on failure.
+
+    Usage::
+
+        _session = LazySession("my_provider", referer="https://example.com/")
+
+        def fetch():
+            session = _session.get()   # None if requests unavailable
+            if session is None:
+                return []
+            ...
+    """
+
+    def __init__(self, provider_name: str, referer: str, origin: str | None = None):
+        self._provider = provider_name
+        self._referer = referer
+        self._origin = origin
+        self._session = _UNINITIALIZED
+
+    def get(self):
+        if self._session is _UNINITIALIZED:
+            self._session = create_session(
+                referer=self._referer,
+                origin=self._origin,
+            )
+            if self._session is None:
+                print(
+                    f"[{self._provider}] requests library not available — provider disabled",
+                    file=sys.stderr,
+                    flush=True,
+                )
+        return self._session
+
+
+# ---------------------------------------------------------------------------
+# DataFrame cleaning (EastMoney APIs use "-" for empty cells)
+# ---------------------------------------------------------------------------
+
+def clean_dataframe(df):
+    """Clean a pandas DataFrame from EastMoney data sources.
+
+    Replaces NaN and literal "-" (EastMoney's empty-cell sentinel) with
+    empty strings, so downstream code never sees ``"nan"`` or ``"-"`` as
+    field values.
+
+    Args:
+        df: A pandas DataFrame.
+    Returns:
+        The same DataFrame, modified in-place (fillna) and with "-" replaced.
+    """
+    return df.fillna("").replace("-", "")
 # ---------------------------------------------------------------------------
 
 def matches_query(title: str, query: str) -> bool:

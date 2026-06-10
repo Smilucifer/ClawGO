@@ -67,6 +67,12 @@ impl JsonRpcClient {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            // Force UTF-8 for stdin/stdout/stderr — Windows defaults to the
+            // system ANSI code page (e.g. GBK on zh-CN), which cannot encode
+            // characters like U+200B (zero-width space) that appear in Jin10
+            // and AkShare news data.  Without this, `print()` in server.py
+            // raises UnicodeEncodeError and the process crashes.
+            .env("PYTHONIOENCODING", "utf-8")
             .hide_console()
             // Prevent orphan Python processes on restart/panic — matches codebase
             // convention used by all other child-process spawns.

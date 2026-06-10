@@ -80,6 +80,15 @@ def handle_request(req: dict) -> dict:
         return {"jsonrpc": "2.0", "error": {"code": -32000, "message": str(e)}, "id": req_id}
 
 
+def _safe_print(text: str) -> bool:
+    """Write to stdout, returning False if the pipe is broken or encoding fails."""
+    try:
+        print(text, flush=True)
+        return True
+    except (BrokenPipeError, OSError, UnicodeEncodeError):
+        return False
+
+
 def main():
     # Register providers
     register_provider("yahoo", "yahoo")
@@ -98,11 +107,25 @@ def main():
             req = json.loads(line)
         except json.JSONDecodeError as e:
             resp = {"jsonrpc": "2.0", "error": {"code": -32700, "message": f"Parse error: {e}"}, "id": None}
-            print(json.dumps(resp), flush=True)
+            if not _safe_print(json.dumps(resp)):
+                break
             continue
 
-        resp = handle_request(req)
-        print(json.dumps(resp, ensure_ascii=False), flush=True)
+        try:
+            resp = handle_request(req)
+        except BaseException as e:
+            # Last-resort catch: prevent the server loop from dying on ANY
+            # unhandled error (including SystemExit, MemoryError, etc.).
+            req_id = req.get("id")
+            tb = traceback.format_exc()
+            try:
+                print(f"[server] Unhandled error in main loop: {e}\n{tb}", file=sys.stderr, flush=True)
+            except (BrokenPipeError, OSError):
+                pass  # stderr also broken — nothing we can do
+            resp = {"jsonrpc": "2.0", "error": {"code": -32603, "message": f"Internal error: {e}"}, "id": req_id}
+
+        if not _safe_print(json.dumps(resp, ensure_ascii=False)):
+            break
 
 
 if __name__ == "__main__":

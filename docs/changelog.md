@@ -1,32 +1,145 @@
 # Changelog / 更新日志
 
+## v5.3.1 (2026-06-10)
+
+### Python RPC UnicodeEncodeError 修复: Jin10/AkShare 数据源崩溃
+
+**Root Cause:** Python server 在 Windows 上 stdout 默认编码为 GBK，当 Jin10/AkShare 返回的新闻包含 GBK 无法编码的 Unicode 字符（如 U+200B 零宽空格）时，`print()` 抛出 `UnicodeEncodeError`，server 进程崩溃退出，Rust 端收到 `BrokenPipe` 错误。
+
+**修复 (2 项):**
+1. **`bridge.rs`**: spawn Python 进程时设置 `PYTHONIOENCODING=utf-8` 环境变量，强制 UTF-8 编码 stdin/stdout/stderr。
+2. **`server.py`**: `_safe_print` 的 except 增加 `UnicodeEncodeError` 捕获，作为防御性措施。
+
+**失败方案记录:** `docs/discarded_sol.md`
+
+### 定时任务 cron 格式修复: 5 字段→6 字段 + 后端归一化
+
+**Root Cause:** Rust `cron` crate v0.15 要求 6 字段格式 (`秒 分 时 日 月 周`)，但前端 SchedulerTab 生成和预设的 cron 表达式为 5 字段（无秒字段），导致 `update_cron_schedule` 保存时 `Schedule::from_str` 解析失败。DreamingConfigPanel 的自由文本输入和 `DreamConfig::default()` 也存在同样的 5 字段问题。
+
+**修复 (5 项):**
+1. **`SchedulerTab.svelte` PRESETS**: 7 个预设从 5 字段 (`'0 17 * * 1-5'`) 改为 6 字段 (`'0 0 17 * * 1-5'`)。
+2. **`SchedulerTab.svelte` fieldsToCron**: 输出前补 `0` 作为秒字段。
+3. **`SchedulerTab.svelte` stripSeconds**: 提取共享辅助函数，消除 `parseCronToFields` 和 `humanCron` 之间的重复秒字段剥离逻辑。
+4. **`config.rs` normalize_cron_6field**: 后端归一化函数，在 `update_cron` 和 `save_dream_config` 入口处自动将 5 字段表达式补上秒字段 `0`，防御性保护所有前端调用方。
+5. **`dreaming/mod.rs` DreamConfig::default()**: 默认 `invest_cron` 从 `"0 3 * * *"` (5 字段) 改为 `"0 0 3 * * *"` (6 字段)，与 scheduler 默认统一。
+
+**Simplify 审查 (4 路):**
+- Reuse: 提取 `stripSeconds()` 消除 2 处重复
+- Simplification: `isPresetCron` round-trip 跳过（亚微秒开销）
+- Efficiency: 无问题
+- Altitude: 后端归一化 + DreamConfig 默认修复
+
+---
+
+## v5.3.0 (2026-06-10)
+
+### 定时任务调度面板重设计 + 后端 next_run + 状态映射合并
+
+**调度面板重设计 (1 项):**
+1. **SchedulerTab Card 布局**: 表格 → 卡片布局，状态圆点+倒计时+展开详情面板。7 个预设调度 + "Custom" 5 字段可视化 cron 生成器（分钟/小时/日/月/星期），运行时间线，启用/禁用开关。
+
+**后端 next_run 计算 (2 项):**
+2. **`compute_next_run_for_job`**: `config.rs` 新增函数，基于 `cron` crate 计算下次触发时间（支持 interval 和 cron 两种模式）。`load_jobs()` 结尾自动填充每个 job 的 `next_run` 字段。
+3. **Runner 简化**: `runner.rs` 的 `should_fire` 45 行调度逻辑替换为 `job.next_run <= now` 5 行比较。执行后更新合并为单次 load+save（原 3 次读 2 次写 → 1 次读 1 次写）。
+
+**状态映射合并 (1 项):**
+4. **`invest-status.ts` 共享模块**: `investStatusDotClass()` + `investStatusTextClass()` 统一查找表，覆盖 ok/completed/error/failed/skipped/rolled_back。SchedulerTab 和 DreamingConfigPanel 移除本地重复函数。
+
+**代码审查优化 (4 项 simplify):**
+5. **`load_jobs_base` 提取**: `config.rs` 共享覆盖逻辑提取为基础函数，`load_jobs` 和原 `load_jobs_raw`（已删除）共用，消除 35 行复制。
+6. **`persist_next_run` 删除**: 该函数实际为空操作（`next_run` 从未写入 `JobOverride`，仅在 load 时计算）。runner 改为在 save 前直接 recompute。
+7. **`should_fire` 调度逻辑消除**: runner 改用 `job.next_run` 比较，与 `compute_next_run_for_job` 单一真相源。
+8. **`STATUS_MAP` 查找表**: `invest-status.ts` 双 if-chain 合并为单一 Record，新增状态只需改一处。
+
+**i18n (18 keys):**
+- `invest_scheduler_next_run/countdown/paused/trading_day/presets/custom/recent_runs/no_runs/view_all_logs/footer`
+- `invest_scheduler_cron_minute/hour/day/month/weekday/preview/generated`
+
+**涉及文件:**
+- `src/lib/components/invest/SchedulerTab.svelte` — 全面重写（269→600+ 行 card 布局+cron builder）
+- `src-tauri/src/invest/scheduler/config.rs` — `load_jobs_base` + `compute_next_run_for_job` + 删除 `persist_next_run`/`load_jobs_raw`
+- `src-tauri/src/invest/scheduler/runner.rs` — `should_fire` 简化 + 单次 load+save
+- `src/lib/utils/invest-status.ts` — 新共享模块
+- `src/lib/components/invest/DreamingConfigPanel.svelte` — 使用共享状态函数
+- `messages/en.json` / `messages/zh-CN.json` — 18 个新 i18n key
+
+### convert_watch_to_hold 移除 + 现金管理重构 + 时间格式统一
+
+**convert_watch_to_hold 移除 (3 项):**
+1. **前端 `convertWatchToHold` 重构**: 4 次 IPC 调用 (`delete_holding` + `add_holding` + `record_trade(convert_watch_to_hold)`) 精简为 2 次 `record_trade` (`delete_watch` + `buy`)。移除冗余 `delete_holding`/`add_holding`（recalculate 会从 trade 历史重建 holdings）。回滚改为 best-effort（首条 trade 已持久化）。
+2. **后端 `convert_watch_to_hold` 分支移除**: `recalculate_holdings_inner_body` 中删除 `convert_watch_to_hold` match 分支；`recalculate_cash_inner` 中移除 `convert_watch_to_hold` 现金等价逻辑；CHECK 约束移除该 action。
+3. **CHECK 迁移兼容**: `migrate_trades_table` 在 `INSERT OR IGNORE` 前执行 `UPDATE trades SET action='buy' WHERE action='convert_watch_to_hold'`，避免历史记录被静默丢弃。
+
+**现金管理重构 (4 项):**
+4. **增量现金替代全量重算**: `record_trade`/`delete_trade`/`update_trade` 改用 `apply_cash_delta_sql`（单条 `UPDATE cash SET available = available + ?`）代替 `recalculate_cash_inner`（从 `initial_balance` 全量重算），解决 `cash_adjust` 被忽略导致现金被重置的根因。
+5. **`cash_delta_for_trade` 提取**: `apply_cash_delta`/`reverse_cash_delta`/`recalculate_cash_inner` 三处共享同一 action→delta 映射，新增 action 只需改一处。
+6. **`get_trade_by_id` 提取**: `delete_trade`/`update_trade` 中 12 行重复的 SELECT-by-ID 提取为共享函数。
+7. **`recalculate_holdings_inner` 合并**: `recalculate_holdings_inner_without_cash`（40 行复制）合并为 `recalculate_holdings_inner(conn, recalc_cash: bool)`，消除 DRY 违规。
+8. **`get_cash_inner` 错误处理修复**: 从静默返回 0.0 恢复为 `QueryReturnedNoRows => 0.0` + 其他错误传播，避免 DB 损坏时的静默数据错误。
+
+**时间格式统一 (2 项):**
+9. **invest 模块 `created_at` 统一为毫秒精度**: `chrono::Utc::now().to_rfc3339()` → `to_rfc3339_opts(SecondsFormat::Millis, true)`，统一为 29 字符格式 `2026-06-10T00:48:14.808+00:00`。覆盖 `portfolio.rs`(4)、`commands/invest.rs`(7)、`scheduler.rs`(2)、`strategy.rs`(1) 共 14 处。
+10. **DB 历史数据归一化**: Python 脚本将 97 条 trades + 9 条 holdings + 1 条 cash + 1 条 strategy 的时间戳从混合精度（6 位微秒/9 位纳秒）截断为 3 位毫秒。
+
+**代码审查优化 (7 项 simplify):**
+11. **`cash_delta_for_trade` 单一真相源**: 3 处 action→delta match 合并为一个函数。
+12. **`apply_cash_delta_sql` 原子 UPDATE**: 从 read-modify-write（SELECT+UPSERT）改为单条 UPDATE，消除额外查询。
+13. **`get_trade_by_id` 提取**: 12 行重复查询合并为共享 helper。
+14. **`recalculate_holdings_inner` 合并**: 40 行复制函数合并为带 bool 参数的单一函数。
+15. **`get_cash_inner` 错误传播**: 区分 NoRows 和真实 DB 错误。
+16. **CHECK 迁移数据保护**: 迁移前 UPDATE 旧 action，防止 `INSERT OR IGNORE` 静默丢弃。
+17. **前端 IPC 精简**: 4 次 IPC → 2 次，移除被 recalculate 覆盖的冗余操作。
+
+**涉及文件:**
+- `src/lib/stores/invest-store.svelte.ts` — `convertWatchToHold` 重构（4→2 次 IPC）
+- `src-tauri/src/storage/invest/portfolio.rs` — 现金增量管理 + 函数合并 + `get_trade_by_id` + 时间格式
+- `src-tauri/src/storage/invest/mod.rs` — CHECK 约束 + 迁移数据保护
+- `src-tauri/src/commands/invest.rs` — 时间格式统一（7 处）
+- `src-tauri/src/storage/invest/scheduler.rs` — 时间格式统一（2 处）
+- `src-tauri/src/storage/invest/strategy.rs` — 时间格式统一（1 处）
+
 ## v5.2.19 (2026-06-09)
 
 ### Python RPC 崩溃修复 + Provider 共享工具 + 代码清理
 
-**Python RPC 崩溃修复 (3 项):**
+**Python RPC 崩溃修复 (5 项):**
 1. **Lazy import 模式**: `jinshi.py` 和 `eastmoney.py` 的 `import requests` 从模块级移至 `_get_session()` 内部，缺失时返回 None 而非崩溃整个 RPC 子进程。
 2. **server.py ImportError 处理**: `get_provider()` 捕获 ImportError 并转为 ValueError，附带缺失依赖提示。
 3. **bridge.rs 简化**: 移除 `exit_status` 字段（仅存硬编码字符串），stderr 日志从 3 个 `contains` 判断简化为 `log::info!` 全量记录，error message 预格式化避免 N 次重复分配。
+4. **server.py BaseException 保护**: `handle_request()` 外层 `except BaseException` 防止任何未捕获异常（含 `SystemExit`、`MemoryError`）杀死 RPC 主循环；`_safe_print()` 封装 stdout 写入，`BrokenPipeError` 时优雅退出而非崩溃。
+5. **server.py stderr 保护**: `BaseException` handler 内的 stderr `print` 本身用 `try/except (BrokenPipeError, OSError): pass` 保护，避免二次崩溃。
 
-**Provider 共享工具 (1 项):**
-4. **`providers/utils.py` 提取**: `matches_query()`、`parse_timestamp()`、`create_session()` 三个共享函数消除 `jinshi.py`/`eastmoney.py`/`akshare_news.py` 中的重复代码（`_matches_query`×3、`_parse_*_time`×3、`_get_session`×2）。
+**Provider 共享工具 (3 项):**
+6. **`providers/utils.py` 提取**: `matches_query()`、`parse_timestamp()`、`create_session()` 三个共享函数消除 `jinshi.py`/`eastmoney.py`/`akshare_news.py` 中的重复代码（`_matches_query`×3、`_parse_*_time`×3、`_get_session`×2）。
+7. **`LazySession` 类**: 哨兵模式 (`_UNINITIALIZED`) 的延迟初始化 session，失败时只打印一次 stderr 日志，后续调用直接返回 None。`jinshi.py` 和 `eastmoney.py` 统一使用，消除 `eastmoney.py` 每次调用 retry 的 latent bug。
+8. **`clean_dataframe()` 函数**: EastMoney 数据通用清洗——`fillna("")` + `replace("-", "")`，`akshare_news.py` 使用，消除 DataFrame 中的 "nan" 和 "-" 占位符。
 
 **PnL 快照修复 (1 项):**
-5. **`get_previous_day_snapshot`**: `run_pnl_snapshot` 使用前一天快照而非最近快照计算日收益，避免同日多次运行时的重复计算。
+9. **`get_previous_day_snapshot`**: `run_pnl_snapshot` 使用前一天快照而非最近快照计算日收益，避免同日多次运行时的重复计算。
+
+**资金流向当日注入 (1 项):**
+10. **资金流向双注入**: `MoneyflowDc` 新增 `format_moneyflow_summary_latest`（仅取最新一天）+ `MoneyflowCachePayload` typed 结构体 + `to_cache_json()` 方法。`AssetContext` 新增 `money_flow_daily_summary` 字段，Quant R1 prompt 同时注入当日+近5日资金流向（避免方向相反的误导信号）。旧缓存无 `daily_summary` 字段时 `#[serde(default)]` 兼容 fallback。`exec_moneyflow` 工具仍用 5 天汇总。
+
+**事件源修复 (1 项):**
+11. **Jin10 错误日志**: `fetch_jinshi_all_news` 从 `if let Ok` 改为 `match` + `log::warn!`，Python RPC 失败时记录错误而非静默返回空列表。
 
 **代码清理 (2 项):**
-6. **删除 17 个临时文件**: 12 个 test_*.py 测试脚本 + tushare_config.py + simplify_parsers.py + dragon_tiger_cache.py + screener_cache.db + output.txt + output_utf8.txt（含 2 个硬编码 Tushare API token）。
-7. **`.gitignore` 更新**: 新增 `output*.txt` 和 `*.db` 规则，清理 340 MB 陈旧 worktrees。
+12. **删除 17 个临时文件**: 12 个 test_*.py 测试脚本 + tushare_config.py + simplify_parsers.py + dragon_tiger_cache.py + screener_cache.db + output.txt + output_utf8.txt（含 2 个硬编码 Tushare API token）。
+13. **`.gitignore` 更新**: 新增 `output*.txt` 和 `*.db` 规则，清理 340 MB 陈旧 worktrees。
 
 **涉及文件:**
 - `src-tauri/src/python/bridge.rs` — exit_status 移除 + stderr 简化
 - `src-tauri/src/python/mod.rs` — get_client 简化
-- `src-tauri/python-runtime/scripts/server.py` — ImportError 处理
-- `src-tauri/python-runtime/scripts/providers/utils.py` — 新共享工具模块
-- `src-tauri/python-runtime/scripts/providers/jinshi.py` — lazy import + 共享 utils
-- `src-tauri/python-runtime/scripts/providers/eastmoney.py` — lazy import + 共享 utils + _empty_quote 提取
-- `src-tauri/python-runtime/scripts/providers/akshare_news.py` — 使用共享 parse_timestamp
+- `src-tauri/python-runtime/scripts/server.py` — ImportError 处理 + BaseException 保护 + _safe_print
+- `src-tauri/python-runtime/scripts/providers/utils.py` — 新共享工具模块 + LazySession + clean_dataframe
+- `src-tauri/python-runtime/scripts/providers/jinshi.py` — lazy import + 共享 utils + LazySession
+- `src-tauri/python-runtime/scripts/providers/eastmoney.py` — lazy import + 共享 utils + LazySession
+- `src-tauri/python-runtime/scripts/providers/akshare_news.py` — 共享 parse_timestamp + clean_dataframe
+- `src-tauri/src/invest/international.rs` — Jin10 错误日志
+- `src-tauri/src/invest/committee/orchestrator.rs` — money_flow_daily_summary + cache 扩展 + MoneyflowCachePayload typed 反序列化 + to_cache_json 去重
+- `src-tauri/src/invest/committee/roles.rs` — prompt 双占位符（当日+近5日）
+- `src-tauri/src/invest/committee/tools.rs` — exec_moneyflow typed 反序列化
+- `src-tauri/src/tushare/client.rs` — format_moneyflow_summary_latest + MoneyflowCachePayload + to_cache_json
 - `src-tauri/src/lib.rs` — PnL 快照使用 get_previous_day_snapshot
 - `.gitignore` — output*.txt + *.db 规则
 

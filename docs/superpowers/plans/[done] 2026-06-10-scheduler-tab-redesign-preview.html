@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SchedulerTab 重设计方案 C 预览</title>
+  <style>
+    :root {
+      --bg-page: #1a1a1e;
+      --bg-card: #242428;
+      --bg-hover: #2a2a2e;
+      --bg-input: #1e1e22;
+      --border: rgba(255,255,255,0.08);
+      --text-primary: #e8e6e3;
+      --text-secondary: #9a9a9a;
+      --text-tertiary: #666;
+      --accent: #c8a96e;
+      --accent-dim: rgba(200,169,110,0.15);
+      --color-ok: #5cb85c;
+      --color-error: #a87a7a;
+      --color-skipped: #666;
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 10px;
+      --font-mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: var(--bg-page);
+      color: var(--text-primary);
+      padding: 32px;
+      line-height: 1.5;
+    }
+    h2 { font-size: 15px; font-weight: 600; margin-bottom: 20px; }
+    .subtitle { font-size: 12px; color: var(--text-tertiary); margin-bottom: 24px; }
+
+    /* ── Card Grid ── */
+    .card-grid { display: flex; flex-direction: column; gap: 10px; }
+
+    .job-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      transition: border-color 0.15s;
+    }
+    .job-card:hover { border-color: rgba(200,169,110,0.25); }
+    .job-card.expanded { border-color: rgba(200,169,110,0.4); }
+
+    /* ── Card Header (always visible) ── */
+    .card-header {
+      display: grid;
+      grid-template-columns: 8px 1fr auto auto auto;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 18px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .card-header:hover { background: var(--bg-hover); }
+
+    /* Status indicator dot */
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status-dot.ok { background: var(--color-ok); box-shadow: 0 0 6px rgba(92,184,92,0.4); }
+    .status-dot.error { background: var(--color-error); box-shadow: 0 0 6px rgba(168,122,122,0.4); }
+    .status-dot.skipped { background: var(--color-skipped); }
+    .status-dot.pending { background: var(--text-tertiary); }
+
+    /* Name + description */
+    .job-info { min-width: 0; }
+    .job-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .job-desc {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    /* Next run countdown */
+    .next-run {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      text-align: right;
+      min-width: 120px;
+    }
+    .next-run .countdown {
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+
+    /* Cron display */
+    .cron-display {
+      font-size: 12px;
+      font-family: var(--font-mono);
+      color: var(--text-secondary);
+      min-width: 180px;
+    }
+    .cron-human {
+      font-family: inherit;
+      color: var(--text-primary);
+      font-size: 12px;
+    }
+
+    /* Toggle switch */
+    .toggle {
+      position: relative;
+      width: 36px; height: 20px;
+      border-radius: 10px;
+      background: var(--bg-hover);
+      border: none;
+      cursor: pointer;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    .toggle.on { background: var(--accent); }
+    .toggle::after {
+      content: '';
+      position: absolute;
+      top: 3px; left: 3px;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: #fff;
+      transition: transform 0.2s;
+    }
+    .toggle.on::after { transform: translateX(16px); }
+
+    /* ── Expanded Panel ── */
+    .card-detail {
+      display: none;
+      border-top: 1px solid var(--border);
+      padding: 16px 18px;
+      background: rgba(0,0,0,0.15);
+    }
+    .job-card.expanded .card-detail { display: block; }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    /* ── Preset Selector ── */
+    .section-label {
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-tertiary);
+      margin-bottom: 8px;
+    }
+    .preset-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .preset-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 10px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s;
+    }
+    .preset-item:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+    .preset-item.active {
+      background: var(--accent-dim);
+      border-color: rgba(200,169,110,0.3);
+      color: var(--accent);
+    }
+    .preset-cron {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-tertiary);
+    }
+    .preset-item.active .preset-cron { color: rgba(200,169,110,0.6); }
+
+    /* Custom input */
+    .custom-input-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .custom-input {
+      flex: 1;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 6px 10px;
+      font-size: 12px;
+      font-family: var(--font-mono);
+      color: var(--text-primary);
+      outline: none;
+    }
+    .custom-input:focus { border-color: var(--accent); }
+    .custom-input::placeholder { color: var(--text-tertiary); }
+
+    /* ── Timeline ── */
+    .timeline {
+      position: relative;
+      padding-left: 16px;
+    }
+    .timeline::before {
+      content: '';
+      position: absolute;
+      left: 4px; top: 4px; bottom: 4px;
+      width: 1px;
+      background: var(--border);
+    }
+    .timeline-item {
+      position: relative;
+      padding: 4px 0 12px 0;
+    }
+    .timeline-item:last-child { padding-bottom: 0; }
+    .timeline-dot {
+      position: absolute;
+      left: -14px; top: 7px;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      border: 2px solid var(--bg-card);
+    }
+    .timeline-dot.ok { background: var(--color-ok); }
+    .timeline-dot.error { background: var(--color-error); }
+    .timeline-dot.skipped { background: var(--color-skipped); }
+    .timeline-time {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-tertiary);
+    }
+    .timeline-meta {
+      display: flex;
+      gap: 10px;
+      margin-top: 2px;
+    }
+    .timeline-status {
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .timeline-status.ok { color: var(--color-ok); }
+    .timeline-status.error { color: var(--color-error); }
+    .timeline-status.skipped { color: var(--color-skipped); }
+    .timeline-duration {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-tertiary);
+    }
+    .timeline-msg {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 280px;
+    }
+
+    /* ── Action buttons ── */
+    .card-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+    .btn {
+      padding: 5px 14px;
+      border-radius: var(--radius-md);
+      font-size: 12px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .btn.primary {
+      background: var(--accent-dim);
+      border-color: rgba(200,169,110,0.3);
+      color: var(--accent);
+    }
+    .btn.primary:hover { background: rgba(200,169,110,0.25); }
+
+    /* ── Footer info ── */
+    .footer-info {
+      margin-top: 20px;
+      padding: 12px 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      font-size: 11px;
+      color: var(--text-tertiary);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* ── Trading day badge ── */
+    .badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 500;
+    }
+    .badge.trading-day {
+      background: rgba(200,169,110,0.12);
+      color: var(--accent);
+    }
+
+    /* Responsive */
+    @media (max-width: 700px) {
+      .detail-grid { grid-template-columns: 1fr; }
+      .card-header { grid-template-columns: 8px 1fr auto; }
+      .next-run, .cron-display { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<h2>定时任务调度面板</h2>
+<p class="subtitle">管理 invest 模块的 6 个定时任务 — 点击卡片展开详情</p>
+
+<div class="card-grid">
+
+  <!-- ── Card 1: PnL Snapshot (ok, enabled) ── -->
+  <div class="job-card expanded" onclick="toggleCard(this, event)">
+    <div class="card-header">
+      <div class="status-dot ok"></div>
+      <div class="job-info">
+        <div class="job-name">PnL 快照</div>
+        <div class="job-desc">定时记录持仓市值快照 <span class="badge trading-day">交易日</span></div>
+      </div>
+      <div class="cron-display">
+        <div class="cron-human">Weekdays 9:30, 11:00</div>
+        <div style="font-size:10px;color:var(--text-tertiary);margin-top:1px">30 9,11 * * 1-5</div>
+      </div>
+      <div class="next-run">
+        下次: <span class="countdown">1h 23m</span>
+      </div>
+      <button class="toggle on" onclick="event.stopPropagation()"></button>
+    </div>
+    <div class="card-detail">
+      <div class="detail-grid">
+        <!-- Left: Preset selector -->
+        <div>
+          <div class="section-label">调度预设</div>
+          <div class="preset-list">
+            <div class="preset-item" onclick="event.stopPropagation()">
+              <span>工作日 9:30, 11:00</span>
+              <span class="preset-cron">30 9,11 * * 1-5</span>
+            </div>
+            <div class="preset-item" onclick="event.stopPropagation()">
+              <span>工作日 13:00, 15:00</span>
+              <span class="preset-cron">0 13,15 * * 1-5</span>
+            </div>
+            <div class="preset-item" onclick="event.stopPropagation()">
+              <span>工作日 17:00</span>
+              <span class="preset-cron">0 17 * * 1-5</span>
+            </div>
+            <div class="preset-item" onclick="event.stopPropagation()">
+              <span>每天 03:00</span>
+              <span class="preset-cron">0 3 * * *</span>
+            </div>
+            <div class="preset-item" onclick="event.stopPropagation()">
+              <span>自定义…</span>
+              <span class="preset-cron"></span>
+            </div>
+          </div>
+          <div class="custom-input-row" style="display:none">
+            <input class="custom-input" placeholder="30 9,11 * * 1-5" onclick="event.stopPropagation()" />
+            <button class="btn primary" onclick="event.stopPropagation()">保存</button>
+          </div>
+        </div>
+        <!-- Right: Timeline -->
+        <div>
+          <div class="section-label">最近运行</div>
+          <div class="timeline">
+            <div class="timeline-item">
+              <div class="timeline-dot ok"></div>
+              <div class="timeline-time">2026-06-09 11:00:02</div>
+              <div class="timeline-meta">
+                <span class="timeline-status ok">ok</span>
+                <span class="timeline-duration">1.2s</span>
+              </div>
+              <div class="timeline-msg">PnL snapshot saved: 5 holdings, total ¥328,450</div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-dot ok"></div>
+              <div class="timeline-time">2026-06-09 09:30:01</div>
+              <div class="timeline-meta">
+                <span class="timeline-status ok">ok</span>
+                <span class="timeline-duration">0.8s</span>
+              </div>
+              <div class="timeline-msg">PnL snapshot saved: 5 holdings, total ¥327,100</div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-dot ok"></div>
+              <div class="timeline-time">2026-06-08 11:00:02</div>
+              <div class="timeline-meta">
+                <span class="timeline-status ok">ok</span>
+                <span class="timeline-duration">1.1s</span>
+              </div>
+              <div class="timeline-msg">PnL snapshot saved: 5 holdings, total ¥325,800</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card-actions">
+        <button class="btn primary" onclick="event.stopPropagation()">立即运行</button>
+        <button class="btn" onclick="event.stopPropagation()">查看全部日志</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Card 2: Event Scan (ok, enabled) ── -->
+  <div class="job-card" onclick="toggleCard(this, event)">
+    <div class="card-header">
+      <div class="status-dot ok"></div>
+      <div class="job-info">
+        <div class="job-name">Event Watch 扫描</div>
+        <div class="job-desc">扫描财经新闻和公告 <span class="badge trading-day">交易日</span></div>
+      </div>
+      <div class="cron-display">
+        <div class="cron-human">Weekdays every 30min (8-22h)</div>
+        <div style="font-size:10px;color:var(--text-tertiary);margin-top:1px">*/30 8-22 * * 1-5</div>
+      </div>
+      <div class="next-run">
+        下次: <span class="countdown">12m</span>
+      </div>
+      <button class="toggle on" onclick="event.stopPropagation()"></button>
+    </div>
+    <div class="card-detail"></div>
+  </div>
+
+  <!-- ── Card 3: Verdict Review (ok, enabled) ── -->
+  <div class="job-card" onclick="toggleCard(this, event)">
+    <div class="card-header">
+      <div class="status-dot ok"></div>
+      <div class="job-info">
+        <div class="job-name">Verdict Review</div>
+        <div class="job-desc">回溯验证裁决命中率 <span class="badge trading-day">交易日</span></div>
+      </div>
+      <div class="cron-display">
+        <div class="cron-human">Weekdays 17:00</div>
+        <div style="font-size:10px;color:var(--text-tertiary);margin-top:1px">0 17 * * 1-5</div>
+      </div>
+      <div class="next-run">
+        下次: <span class="countdown">5h 48m</span>
+      </div>
+      <button class="toggle on" onclick="event.stopPropagation()"></button>
+    </div>
+    <div class="card-detail"></div>
+  </div>
+
+  <!-- ── Card 4: Dreaming (error, enabled) ── -->
+  <div class="job-card" onclick="toggleCard(this, event)">
+    <div class="card-header">
+      <div class="status-dot error"></div>
+      <div class="job-info">
+        <div class="job-name">Dreaming (投资)</div>
+        <div class="job-desc">投资洞察管线</div>
+      </div>
+      <div class="cron-display">
+        <div class="cron-human">Daily 03:00</div>
+        <div style="font-size:10px;color:var(--text-tertiary);margin-top:1px">0 0 3 * * *</div>
+      </div>
+      <div class="next-run">
+        下次: <span class="countdown">19h 15m</span>
+      </div>
+      <button class="toggle on" onclick="event.stopPropagation()"></button>
+    </div>
+    <div class="card-detail"></div>
+  </div>
+
+  <!-- ── Card 5: Daily Report (ok, enabled) ── -->
+  <div class="job-card" onclick="toggleCard(this, event)">
+    <div class="card-header">
+      <div class="status-dot ok"></div>
+      <div class="job-info">
+        <div class="job-name">每日报告</div>
+        <div class="job-desc">生成每日投资报告 <span class="badge trading-day">交易日</span></div>
+      </div>
+      <div class="cron-display">
+        <div class="cron-human">Weekdays 22:00</div>
+        <div style="font-size:10px;color:var(--text-tertiary);margin-top:1px">0 22 * * 1-5</div>
+      </div>
+      <div class="next-run">
+        下次: <span class="countdown">10h 15m</span>
+      </div>
+      <button class="toggle on" onclick="event.stopPropagation()"></button>
+    </div>
+    <div class="card-detail"></div>
+  </div>
+
+  <!-- ── Card 6: Macro Refresh (ok, disabled) ── -->
+  <div class="job-card" onclick="toggleCard(this, event)">
+    <div class="card-header">
+      <div class="status-dot pending"></div>
+      <div class="job-info">
+        <div class="job-name">宏观指标缓存刷新</div>
+        <div class="job-desc">刷新12个宏观指标 <span class="badge trading-day">交易日</span></div>
+      </div>
+      <div class="cron-display">
+        <div class="cron-human">Weekdays every 15min (8-22h)</div>
+        <div style="font-size:10px;color:var(--text-tertiary);margin-top:1px">*/15 8-22 * * 1-5</div>
+      </div>
+      <div class="next-run">
+        <span style="color:var(--text-tertiary)">已暂停</span>
+      </div>
+      <button class="toggle" onclick="event.stopPropagation()"></button>
+    </div>
+    <div class="card-detail"></div>
+  </div>
+
+</div>
+
+<div class="footer-info">
+  <span>调度器每 60 秒检查一次 · 交易日守卫已启用的任务在非交易日自动跳过</span>
+  <span>上次检查: 2026-06-09 10:15:00</span>
+</div>
+
+<script>
+function toggleCard(card, e) {
+  // Don't toggle if clicking buttons/inputs inside
+  if (e.target.closest('.toggle') || e.target.closest('.btn') || e.target.closest('.custom-input') || e.target.closest('.preset-item')) return;
+  card.classList.toggle('expanded');
+}
+</script>
+
+</body>
+</html>

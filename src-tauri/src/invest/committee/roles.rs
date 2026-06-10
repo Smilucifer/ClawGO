@@ -191,6 +191,7 @@ pub fn load_prompt_for_round(
         .replace("{{pb}}", &fmt(asset_context.pb, 2))
         .replace("{{roe}}", &fmt(asset_context.roe, 1))
         .replace("{{turnover_rate}}", &fmt(asset_context.turnover_rate, 2))
+        .replace("{{money_flow_daily_summary}}", asset_context.money_flow_daily_summary.as_deref().unwrap_or("N/A"))
         .replace("{{money_flow_summary}}", asset_context.money_flow_summary.as_deref().unwrap_or("N/A"))
         .replace("{{latest_close}}", &fmt(asset_context.latest_close, 2))
         .replace("{{pre_close}}", &fmt(asset_context.pre_close, 2))
@@ -341,7 +342,8 @@ STRATEGY_HINT: <对应 regime 下的策略偏好>
 **资产上下文**（系统注入）：
 - 标的类型: {{asset_type}}
 - 所属行业: {{industry}}（ETF 可能为 N/A）
-- 资金流向: {{money_flow_summary}}（可能为 N/A）
+- 资金流向（当日）: {{money_flow_daily_summary}}（可能为 N/A）
+- 资金流向（近5日）: {{money_flow_summary}}（可能为 N/A）
 - 估值数据: PE={{pe_ttm}}, PB={{pb}}, ROE={{roe}}%, 换手率={{turnover_rate}}%（可能为 N/A）
 
 **输出要求**：

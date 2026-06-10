@@ -359,18 +359,18 @@ pub async fn scan_events(
         .into_iter()
         .filter(|ev| classify_severity(&ev.title, &ev.body).is_some())
         .collect();
-    let filtered = filtered_events.len();
+    let dropped = fetched.saturating_sub(filtered_events.len());
 
     log::info!(
         "After keyword filtering: {} events remain (dropped {})",
-        filtered,
-        fetched.saturating_sub(filtered)
+        filtered_events.len(),
+        dropped
     );
 
     if filtered_events.is_empty() {
         return Ok(ScanResult {
             fetched,
-            filtered: 0,
+            filtered: dropped,
             saved: 0,
             sources_scanned,
             errors,
@@ -436,11 +436,11 @@ pub async fn scan_events(
         }
     }
 
-    log::info!("Scan complete: {} fetched, {} filtered, {} saved", fetched, filtered, saved);
+    log::info!("Scan complete: {} fetched, {} dropped, {} saved", fetched, dropped, saved);
 
     Ok(ScanResult {
         fetched,
-        filtered,
+        filtered: dropped,
         saved,
         sources_scanned,
         errors,

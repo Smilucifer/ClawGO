@@ -7,7 +7,7 @@ Uses AkShare library (stock_news_em) for EastMoney per-stock news.
 import re
 from datetime import datetime
 
-from .utils import parse_timestamp
+from .utils import clean_dataframe, parse_timestamp
 
 
 def stock_news(symbol: str = "", count: int = 10) -> list:
@@ -27,8 +27,8 @@ def stock_news(symbol: str = "", count: int = 10) -> list:
     except Exception:
         return []
 
-    # Fill NaN with empty strings to avoid "nan" checks per field
-    df = df.fillna("")
+    # Clean NaN and literal "-" (EastMoney empty-cell sentinel).
+    df = clean_dataframe(df)
     items = []
     for row in df.to_dict("records"):
         title = str(row.get("新闻标题", "")).strip()

@@ -140,10 +140,13 @@ impl InternationalClient {
     /// Fetch all flash news from Jin10 (金十数据) — macro + international.
     /// No query filter, returns the full feed.
     pub async fn fetch_jinshi_all_news(&self, max_items: usize) -> Vec<YahooNewsItem> {
-        if let Ok(items) = self.fetch_jinshi_news("", max_items as u32).await {
-            return items;
+        match self.fetch_jinshi_news("", max_items as u32).await {
+            Ok(items) => items,
+            Err(e) => {
+                log::warn!("fetch_jinshi_all_news failed: {}", e);
+                Vec::new()
+            }
         }
-        Vec::new()
     }
 
     // -- AkShare provider (东财个股新闻 via AkShare) ---------------------------

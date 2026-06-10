@@ -86,7 +86,7 @@ pub fn list_strategies() -> Result<Vec<Strategy>, String> {
 
 pub fn save_strategy(s: &Strategy) -> Result<(), String> {
     with_conn(|conn| {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
         let updated = if s.updated_at.is_empty() { &now } else { &s.updated_at };
         let targets_json =
             serde_json::to_string(&s.targets).map_err(|e| format!("serialize targets: {e}"))?;

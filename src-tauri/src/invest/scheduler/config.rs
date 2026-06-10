@@ -1,4 +1,6 @@
 use super::CronJob;
+use chrono::{Local, TimeZone};
+use cron::Schedule;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -31,8 +33,17 @@ fn config_path() -> PathBuf {
     home.join(".claw-go").join("invest").join("scheduler.json")
 }
 
-/// Load jobs: start from defaults, overlay user overrides from scheduler.json.
+/// Load jobs: start from defaults, overlay user overrides, compute next_run.
 pub fn load_jobs() -> Vec<CronJob> {
+    let mut jobs = load_jobs_base();
+    for job in &mut jobs {
+        job.next_run = compute_next_run_for_job(job);
+    }
+    jobs
+}
+
+/// Shared base: defaults + disk overlay. No derived-field computation.
+fn load_jobs_base() -> Vec<CronJob> {
     let mut jobs = super::default_jobs();
     let path = config_path();
     if !path.exists() {
@@ -67,6 +78,34 @@ pub fn load_jobs() -> Vec<CronJob> {
         }
     }
     jobs
+}
+
+/// Compute the next fire time for a job based on its schedule.
+pub fn compute_next_run_for_job(job: &CronJob) -> Option<String> {
+    if !job.enabled {
+        return None;
+    }
+    let now = Local::now();
+    if let Some(interval) = job.interval_min {
+        // Interval-based: next = last_run + interval, or now if never run
+        let next = match &job.last_run {
+            Some(last) => {
+                let last_dt = chrono::NaiveDateTime::parse_from_str(last, "%Y-%m-%dT%H:%M:%S").ok()?;
+                let next_naive = last_dt + chrono::Duration::minutes(interval);
+                if next_naive <= now.naive_local() {
+                    now
+                } else {
+                    Local.from_local_datetime(&next_naive).single()?
+                }
+            }
+            None => now,
+        };
+        return Some(next.format("%Y-%m-%dT%H:%M:%S").to_string());
+    }
+    // Cron-based
+    let schedule = Schedule::from_str(&job.cron_expr).ok()?;
+    let next = schedule.after(&now).next()?;
+    Some(next.format("%Y-%m-%dT%H:%M:%S").to_string())
 }
 
 /// Save user overrides (only changed fields) to scheduler.json.
@@ -119,11 +158,23 @@ pub fn toggle_job(id: &str, enabled: bool) -> Result<(), String> {
     save_jobs(&jobs)
 }
 
+/// Normalize a cron expression to 6-field format (second minute hour dom month dow).
+/// If the expression has exactly 5 fields, prepend "0 " for the seconds field.
+fn normalize_cron_6field(expr: &str) -> String {
+    let fields: Vec<&str> = expr.split_whitespace().collect();
+    if fields.len() == 5 {
+        format!("0 {}", expr)
+    } else {
+        expr.to_string()
+    }
+}
+
 /// Update a single job's cron expression and persist.
 pub fn update_cron(id: &str, cron_expr: &str) -> Result<(), String> {
     // Validate cron expression (trim whitespace and stray characters)
     let cleaned = cron_expr.trim();
     let cleaned: String = cleaned.chars().filter(|c| c.is_ascii_alphanumeric() || " */,-".contains(*c)).collect();
+    let cleaned = normalize_cron_6field(&cleaned);
     cron::Schedule::from_str(&cleaned).map_err(|e| format!("Invalid cron: {e}"))?;
     let mut jobs = load_jobs();
     let job = jobs
@@ -173,9 +224,10 @@ pub fn save_dream_config(config: &super::super::dreaming::DreamConfig) -> Result
     let cleaned_cron: String = if config.invest_cron.is_empty() {
         String::new()
     } else {
-        config.invest_cron.trim().chars()
+        let filtered: String = config.invest_cron.trim().chars()
             .filter(|c| c.is_ascii_alphanumeric() || " */,-".contains(*c))
-            .collect()
+            .collect();
+        normalize_cron_6field(&filtered)
     };
     if !cleaned_cron.is_empty() {
         cron::Schedule::from_str(&cleaned_cron)

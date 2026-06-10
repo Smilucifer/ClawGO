@@ -1872,7 +1872,7 @@ export interface ScanResult {
 }
 
 export interface EventFilter {
-  timeWindow: "24h" | "48h" | "7d";
+  timeWindow: "all" | "24h" | "48h" | "7d";
   severity: "all" | "high" | "medium" | "low";
   search: string;
 }
