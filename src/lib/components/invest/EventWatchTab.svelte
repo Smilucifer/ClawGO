@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from '$lib/i18n/index.svelte';
-  import { fmtRelative } from '$lib/i18n/format';
+  import { fmtRelative, fmtDateTime } from '$lib/i18n/format';
   import { investStore } from '$lib/stores/invest-store.svelte';
   import EventTriggerDialog from './EventTriggerDialog.svelte';
   import type { InvestEvent } from '$lib/types';
@@ -196,7 +196,7 @@
               {/if}
               <div class="flex items-center gap-2 mt-1">
                 <span class="text-[10px] text-[var(--text-tertiary)]">{event.source}</span>
-                <span class="text-[10px] text-[var(--text-tertiary)]">{fmtRelative(event.createdAt)}</span>
+                <span class="text-[10px] text-[var(--text-tertiary)]" title={fmtDateTime(event.createdAt)}>{fmtRelative(event.createdAt)}</span>
                 {#if event.symbols}
                   <div class="flex gap-1">
                     {#each event.symbols.split(',').filter(Boolean) as sym}

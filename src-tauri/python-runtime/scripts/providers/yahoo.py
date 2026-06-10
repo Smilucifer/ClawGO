@@ -74,7 +74,7 @@ def history(symbol: str, days: int = 30) -> list:
 def news(query: str, count: int = 10) -> list:
     """Search Yahoo Finance news.
 
-    Returns list of dicts matching Rust YahooNewsItem struct:
+    Returns list of dicts matching Rust NewsItem struct:
     [{uuid, title, publisher, link, provider_publish_time, related_tickers}]
     """
     # yfinance doesn't have a direct news search API,

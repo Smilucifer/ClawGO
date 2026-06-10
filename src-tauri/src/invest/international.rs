@@ -37,10 +37,11 @@ pub struct YahooBar {
     pub volume: u64,
 }
 
-/// A single news item from Yahoo Finance search API.
+/// A single news item from various providers (Yahoo Finance, AkShare, Jin10, etc.).
+///
+/// All Python providers emit snake_case keys, so no `rename_all` is applied.
 #[derive(Debug, Clone, serde::Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct YahooNewsItem {
+pub struct NewsItem {
     pub uuid: String,
     pub title: String,
     pub publisher: String,
@@ -124,12 +125,12 @@ impl InternationalClient {
     // -- Jin10 provider (金十数据) --------------------------------------------
 
     /// Fetch flash news from Jin10 (金十数据).
-    /// Returns items compatible with YahooNewsItem schema.
+    /// Returns items compatible with NewsItem schema.
     pub async fn fetch_jinshi_news(
         &self,
         query: &str,
         count: u32,
-    ) -> Result<Vec<YahooNewsItem>, String> {
+    ) -> Result<Vec<NewsItem>, String> {
         self.rpc_call(
             "jinshi.news",
             serde_json::json!({"query": query, "count": count}),
@@ -139,7 +140,7 @@ impl InternationalClient {
 
     /// Fetch all flash news from Jin10 (金十数据) — macro + international.
     /// No query filter, returns the full feed.
-    pub async fn fetch_jinshi_all_news(&self, max_items: usize) -> Vec<YahooNewsItem> {
+    pub async fn fetch_jinshi_all_news(&self, max_items: usize) -> Vec<NewsItem> {
         match self.fetch_jinshi_news("", max_items as u32).await {
             Ok(items) => items,
             Err(e) => {
@@ -157,7 +158,7 @@ impl InternationalClient {
         &self,
         symbol: &str,
         count: u32,
-    ) -> Result<Vec<YahooNewsItem>, String> {
+    ) -> Result<Vec<NewsItem>, String> {
         self.rpc_call(
             "akshare.stock_news",
             serde_json::json!({"symbol": symbol, "count": count}),

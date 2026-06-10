@@ -13,7 +13,7 @@ from .utils import clean_dataframe, parse_timestamp
 def stock_news(symbol: str = "", count: int = 10) -> list:
     """Fetch per-stock news from EastMoney via AkShare.
 
-    Returns list of dicts matching YahooNewsItem schema:
+    Returns list of dicts matching NewsItem schema:
     [{uuid, title, publisher, link, provider_publish_time, related_tickers}]
 
     Uses AkShare stock_news_em which wraps EastMoney's search API.

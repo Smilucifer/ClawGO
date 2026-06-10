@@ -286,8 +286,8 @@ pub async fn scan_events(
         let client = InternationalClient::from_settings();
         let fallback_time = now.format("%Y-%m-%dT%H:%M:%S").to_string();
 
-        // Helper: convert YahooNewsItem to RawEvent
-        let mut add_news_items = |items: &[crate::invest::international::YahooNewsItem], source_name: &str| {
+        // Helper: convert NewsItem to RawEvent
+        let mut add_news_items = |items: &[crate::invest::international::NewsItem], source_name: &str| {
             if items.is_empty() {
                 log::info!("{source_name} returned 0 items");
                 return;

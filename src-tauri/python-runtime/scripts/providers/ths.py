@@ -19,7 +19,7 @@ _session.headers.update({
 def news(query: str = "", count: int = 15) -> list:
     """Fetch stock news from THS (同花顺).
 
-    Returns list of dicts matching YahooNewsItem schema:
+    Returns list of dicts matching NewsItem schema:
     [{uuid, title, publisher, link, provider_publish_time, related_tickers}]
 
     Uses THS's public news API (no auth required).

@@ -14,7 +14,7 @@ _session = LazySession("jinshi", referer="https://www.jin10.com/", origin="https
 def news(query: str = "", count: int = 15) -> list:
     """Fetch flash news from Jin10 (金十数据).
 
-    Returns list of dicts matching YahooNewsItem schema:
+    Returns list of dicts matching NewsItem schema:
     [{uuid, title, publisher, link, provider_publish_time, related_tickers}]
     """
     url = "https://flash-api.jin10.com/get_flash_list"

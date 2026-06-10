@@ -29,6 +29,21 @@
 - Efficiency: 无问题
 - Altitude: 后端归一化 + DreamConfig 默认修复
 
+### NewsItem 反序列化修复 + 结构体重命名 + 绝对时间展示
+
+**Root Cause:** `YahooNewsItem` 结构体使用 `#[serde(rename_all = "camelCase")]`，Rust 端期望 `providerPublishTime`，但 Python 端返回 `provider_publish_time`（snake_case），导致反序列化失败。
+
+**修复 (3 项):**
+1. **`international.rs` NewsItem 重命名**: `YahooNewsItem` → `NewsItem`，反映多数据源共用事实。移除 `rename_all = "camelCase"`（Python 端全部返回 snake_case），消除 `related_tickers` 等字段的潜在同类问题。
+2. **`EventWatchTab.svelte` 绝对时间**: 导入 `fmtDateTime`，在相对时间 tooltip 展示绝对时间（如"6/10 14:30"）。
+3. **全局注释同步**: 5 个 Python provider + changelog 中 `YahooNewsItem` 引用更新为 `NewsItem`。
+
+**Simplify 审查 (4 路):**
+- Reuse: 无问题（`fmtDateTime` 已有函数）
+- Simplification: 无问题
+- Efficiency: 无问题
+- Altitude: 发现 `rename_all = "camelCase"` 对 `related_tickers` 等字段的隐患 → 移除 `rename_all` 根本解决
+
 ---
 
 ## v5.3.0 (2026-06-10)
@@ -150,10 +165,10 @@
 **数据源替换 (3 项):**
 1. **移除 Yahoo Finance 新闻**: 删除 `fetch_yahoo_news`、`fetch_china_finance_news`、`fetch_eastmoney_news`、`fetch_eastmoney_quote` 4 个死方法。Yahoo 429 限流问题彻底解决。
 2. **移除 Tushare 新闻**: `event_scanner` 不再调用 `major_news` API（该端点在自定义代理上返回 0 条）。Tushare 公告 (`anns_d`) 保留。
-3. **新增 Jin10 + AkShare 双源架构**: Jin10 (`channel=-8200`) 获取全量快讯（宏观+国际），AkShare (`stock_news_em`) 对持仓/观望标的逐个获取个股新闻。两源并发 (`tokio::join!`)，归一化为 `YahooNewsItem` schema 后去重+严重性分类+LLM 归一化入 DB。
+3. **新增 Jin10 + AkShare 双源架构**: Jin10 (`channel=-8200`) 获取全量快讯（宏观+国际），AkShare (`stock_news_em`) 对持仓/观望标的逐个获取个股新闻。两源并发 (`tokio::join!`)，归一化为 `NewsItem` schema 后去重+严重性分类+LLM 归一化入 DB。
 
 **新增 Python Provider (1 项):**
-4. **`akshare_news.py`**: 通过 AkShare 库调用东财搜索 API，返回 `YahooNewsItem` 格式。`fillna("")` + `to_dict("records")` 简化 DataFrame 处理。
+4. **`akshare_news.py`**: 通过 AkShare 库调用东财搜索 API，返回 `NewsItem` 格式。`fillna("")` + `to_dict("records")` 简化 DataFrame 处理。
 
 **代码质量优化 (5 项 simplify):**
 5. **`rpc_call<T>` 泛型方法**: `international.rs` 7 个 RPC 方法从 3 行体变为 1 行调用，消除机械重复。

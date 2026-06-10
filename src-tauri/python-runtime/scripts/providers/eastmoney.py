@@ -28,7 +28,7 @@ def _empty_quote(symbol: str) -> dict:
 def news(query: str = "", count: int = 15) -> list:
     """Search EastMoney financial news.
 
-    Returns list of dicts matching YahooNewsItem schema:
+    Returns list of dicts matching NewsItem schema:
     [{uuid, title, publisher, link, provider_publish_time, related_tickers}]
     """
     url = "https://np-listapi.eastmoney.com/comm/web/getNewsByColumns"

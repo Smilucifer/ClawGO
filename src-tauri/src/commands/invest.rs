@@ -1336,7 +1336,7 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
     async fn probe_news(
         name: &str,
         now: &str,
-        result: Result<Vec<crate::invest::international::YahooNewsItem>, String>,
+        result: Result<Vec<crate::invest::international::NewsItem>, String>,
     ) -> DataSourceStatus {
         match result {
             Ok(items) => {
