@@ -117,6 +117,19 @@
   function openAddWatch() { dialogMode = 'add_watch'; dialogPrefill = undefined; }
   function openEditHolding(h: Holding) { dialogMode = 'edit_holding'; dialogPrefill = { symbol: h.symbol, name: h.name ?? undefined, holding: h }; }
   function closeDialog() { dialogMode = null; dialogPrefill = undefined; }
+  /** Convert a HOLD to Watch: sell all shares first (auto-converts to watch), or delete if no shares. */
+  function convertToWatch(h: Holding) {
+    if (h.shares && h.shares > 0) {
+      // Open sell dialog — selling all shares auto-converts to watch
+      openSell(h);
+    } else {
+      // No shares — delete directly; user can re-add to watch
+      investStore.deleteWatch(h.symbol).catch(e => console.error('[invest] convertToWatch:', e));
+    }
+  }
+  function deleteWatchFromTable(h: Holding) {
+    investStore.deleteWatch(h.symbol).catch(e => console.error('[invest] deleteWatch:', e));
+  }
 </script>
 
 <div class="flex h-full flex-col bg-[var(--bg-base)]" data-invest-scope>
@@ -174,7 +187,7 @@
         <button class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]" onclick={() => investStore.refreshPrices(tushareToken)}>{t('invest_refresh_prices')}</button>
       </div>
 
-      <HoldingsTable onBuy={openBuyFromHolding} onSell={openSell} onAddWatch={openAddWatch} onEdit={openEditHolding} {tushareToken} />
+      <HoldingsTable onBuy={openBuyFromHolding} onSell={openSell} onAddWatch={openAddWatch} onEdit={openEditHolding} onConvertToWatch={convertToWatch} onDeleteWatch={deleteWatchFromTable} {tushareToken} />
 
       <div class="mt-[var(--space-6)]">
         <PnlChart />

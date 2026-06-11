@@ -166,9 +166,19 @@ fn migrate_trades_table(conn: &mut Connection) -> Result<(), String> {
     // Get existing columns from old trades table (fail fast on introspection error)
     let old_columns: HashSet<String> = get_table_columns(conn, "trades")?.into_iter().collect();
 
-    // Early-return if schema already matches (skip redundant table rebuild)
+    // Check if the CHECK constraint includes 'edit_holding' (latest action).
+    // If columns match AND CHECK is current, skip redundant table rebuild.
+    let current_check: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='trades'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or_default();
+    let check_is_current = current_check.contains("edit_holding");
+
     let expected: HashSet<String> = TRADES_COLUMNS.iter().map(|s| s.to_string()).collect();
-    if old_columns == expected {
+    if old_columns == expected && check_is_current {
         log::debug!("Trades table schema already up-to-date, skipping migration");
         return Ok(());
     }
@@ -196,7 +206,7 @@ fn migrate_trades_table(conn: &mut Connection) -> Result<(), String> {
             symbol TEXT NOT NULL,
             currency TEXT NOT NULL DEFAULT 'CNY',
             kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
-            action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust', 'add_watch', 'delete_watch')),
+            action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'cost_edit', 'cash_adjust', 'add_watch', 'delete_watch', 'edit_holding', 'unknown')),
             shares REAL,
             price REAL,
             amount REAL,
@@ -208,9 +218,14 @@ fn migrate_trades_table(conn: &mut Connection) -> Result<(), String> {
         );"
     ).map_err(|e| format!("create trades_new: {}", e))?;
 
-    // Convert deprecated actions before copying (avoids CHECK constraint violation)
-    tx.execute_batch("UPDATE trades SET action = 'buy' WHERE action = 'convert_watch_to_hold'")
-        .map_err(|e| format!("convert deprecated actions: {}", e))?;
+    // Convert deprecated actions before copying (avoids CHECK constraint violation).
+    // 'convert_hold_to_watch' maps to 'unknown' (not 'cost_edit') because the old action
+    // had different semantics (move hold→watch) that cost_edit does not replicate.
+    // 'unknown' trades are skipped during replay, which is safer than silently modifying cost.
+    tx.execute_batch(
+        "UPDATE trades SET action = 'buy' WHERE action = 'convert_watch_to_hold';
+         UPDATE trades SET action = 'unknown' WHERE action = 'convert_hold_to_watch';"
+    ).map_err(|e| format!("convert deprecated actions: {}", e))?;
 
     // Copy data with tolerant column handling
     let insert_sql = format!(
@@ -440,7 +455,7 @@ CREATE TABLE IF NOT EXISTS trades (
     symbol TEXT NOT NULL,
     currency TEXT NOT NULL DEFAULT 'CNY',
     kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
-    action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'convert_hold_to_watch', 'cost_edit', 'cash_adjust', 'add_watch', 'delete_watch')),
+    action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'cost_edit', 'cash_adjust', 'add_watch', 'delete_watch', 'edit_holding', 'unknown')),
     shares REAL,
     price REAL,
     amount REAL,

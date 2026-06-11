@@ -361,76 +361,55 @@ class InvestStore {
     const inHold = this.holdHoldings.find((h) => h.symbol === symbol);
     if (inHold) throw new Error(`${symbol} already in holdings`);
 
-    try {
-      await invoke("add_holding", {
-        symbol,
-        currency: "CNY",
-        kind: "watch",
-        name,
-        notional: 0,
-        avgCost: price,
-        shares: null,
-        entryDate: new Date().toISOString().split("T")[0],
-        linkedVerdictId: null,
-        notes: null,
-        assetType: assetType ?? "stock",
-      });
+    await invoke("record_trade", {
+      id: null,
+      symbol,
+      currency: "CNY",
+      kind: "watch",
+      action: "add_watch",
+      shares: null,
+      price,
+      amount: 0,
+      notes: null,
+      name: name || null,
+      tradeDate: null,
+      assetType: assetType ?? "stock",
+    });
 
-      await invoke("record_trade", {
-        id: null,
-        symbol,
-        currency: "CNY",
-        kind: "watch",
-        action: "add_watch",
-        shares: null,
-        price,
+    await this.loadAll();
+    // Pre-populate price cache so the watch item shows a price immediately
+    // without waiting for the next refreshPrices cycle (especially important
+    // when the market is closed and the isMarketOpen guard would skip).
+    if (price > 0) {
+      const updated = { ...this.priceMap };
+      updated[symbol] = {
+        tsCode: symbol,
+        name,
+        close: price,
+        change: 0,
+        pctChg: 0,
+        vol: 0,
         amount: 0,
-        notes: null,
-        name: name || null,
-        tradeDate: null,
-        assetType: assetType ?? "stock",
-      });
-    } finally {
-      await this.loadAll();
-      // Pre-populate price cache so the watch item shows a price immediately
-      // without waiting for the next refreshPrices cycle (especially important
-      // when the market is closed and the isMarketOpen guard would skip).
-      if (price > 0) {
-        const updated = { ...this.priceMap };
-        updated[symbol] = {
-          tsCode: symbol,
-          name,
-          close: price,
-          change: 0,
-          pctChg: 0,
-          vol: 0,
-          amount: 0,
-        };
-        this.priceMap = updated;
-      }
+      };
+      this.priceMap = updated;
     }
   }
 
   async deleteWatch(symbol: string): Promise<void> {
-    try {
-      await invoke("delete_holding", { symbol, currency: "CNY", kind: "watch" });
-
-      await invoke("record_trade", {
-        id: null,
-        symbol,
-        currency: "CNY",
-        kind: "watch",
-        action: "delete_watch",
-        shares: null,
-        price: null,
-        amount: 0,
-        notes: null,
-        name: null,
-        tradeDate: null,
-      });
-    } finally {
-      await this.loadAll();
-    }
+    await invoke("record_trade", {
+      id: null,
+      symbol,
+      currency: "CNY",
+      kind: "watch",
+      action: "delete_watch",
+      shares: null,
+      price: null,
+      amount: 0,
+      notes: null,
+      name: null,
+      tradeDate: null,
+    });
+    await this.loadAll();
   }
 
   async convertWatchToHold(
@@ -439,45 +418,15 @@ class InvestStore {
     qty: number,
     price: number,
   ): Promise<void> {
-    const amount = qty * price;
     const watchHolding = this.watchHoldings.find((h) => h.symbol === symbol);
-
-    try {
-      // Two trades: delete_watch removes watch entry, buy creates hold entry.
-      // record_trade triggers recalculate_holdings which rebuilds all holdings from trades.
-      await invoke("record_trade", {
-        id: null,
-        symbol,
-        currency: "CNY",
-        kind: "watch",
-        action: "delete_watch",
-        shares: null,
-        price: null,
-        amount: 0,
-        notes: null,
-        name: null,
-        tradeDate: null,
-      });
-
-      await invoke("record_trade", {
-        id: null,
-        symbol,
-        currency: "CNY",
-        kind: "hold",
-        action: "buy",
-        shares: qty,
-        price,
-        amount,
-        notes: null,
-        name: name || null,
-        tradeDate: null,
-        assetType: watchHolding?.assetType ?? "stock",
-      });
-    } catch (e) {
-      // Best-effort: reload state. The first trade (delete_watch) may already be persisted.
-      throw e;
-    }
-
+    await invoke("convert_watch_to_hold", {
+      symbol,
+      currency: watchHolding?.currency ?? "CNY",
+      name: name || null,
+      shares: qty,
+      price,
+      assetType: watchHolding?.assetType ?? "stock",
+    });
     await this.loadAll();
   }
 
@@ -678,7 +627,20 @@ class InvestStore {
     notes: string | null;
     assetType: string | null;
   }): Promise<void> {
-    await invoke("update_holding", params);
+    await invoke("record_trade", {
+      id: null,
+      symbol: params.symbol,
+      currency: params.currency,
+      kind: params.kind,
+      action: "edit_holding",
+      shares: params.shares,
+      price: params.avgCost,
+      amount: null,
+      notes: params.notes,
+      name: params.name,
+      tradeDate: params.entryDate,
+      assetType: params.assetType,
+    });
     await this.loadAll();
   }
 }

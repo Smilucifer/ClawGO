@@ -1,6 +1,115 @@
-use super::{is_etf_symbol, with_conn};
+use super::{is_etf_symbol, with_conn, with_conn_mut};
 use rusqlite::{params, Connection};
 use std::collections::{HashMap, HashSet};
+
+// ── Macro: Display + FromSql + ToSql for string-backed enums ─────────────
+
+macro_rules! sql_string_enum {
+    ($(#[$meta:meta])* $vis:vis enum $name:ident {
+        $( $(#[$vmeta:meta])* $variant:ident => $str:expr ),+ $(,)?
+    }) => {
+        $(#[$meta])*
+        $vis enum $name {
+            $( $(#[$vmeta])* $variant ),+
+        }
+
+        impl $name {
+            pub fn as_str(&self) -> &'static str {
+                match self { $(Self::$variant => $str),+ }
+            }
+        }
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
+
+        impl rusqlite::types::FromSql for $name {
+            fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+                let s = value.as_str()?;
+                Ok(s.parse::<$name>().unwrap_or_default())
+            }
+        }
+
+        impl rusqlite::types::ToSql for $name {
+            fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+                Ok(rusqlite::types::ToSqlOutput::from(self.as_str()))
+            }
+        }
+    };
+}
+
+// ── Type-safe enums ────────────────────────────────────────────────────────
+
+// Trade action type — replaces raw strings for type safety.
+// `Unknown` is a fallback for legacy DB values that survive migration
+// (e.g. `convert_hold_to_watch`). Such trades are ignored during replay.
+sql_string_enum! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    pub enum TradeAction {
+        Buy => "buy",
+        Sell => "sell",
+        CostEdit => "cost_edit",
+        CashAdjust => "cash_adjust",
+        AddWatch => "add_watch",
+        DeleteWatch => "delete_watch",
+        EditHolding => "edit_holding",
+        Unknown => "unknown",
+    }
+}
+
+impl Default for TradeAction {
+    fn default() -> Self { Self::Unknown }
+}
+
+impl std::str::FromStr for TradeAction {
+    type Err = std::convert::Infallible;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "buy" => Self::Buy,
+            "sell" => Self::Sell,
+            "cost_edit" => Self::CostEdit,
+            "cash_adjust" => Self::CashAdjust,
+            "add_watch" => Self::AddWatch,
+            "delete_watch" => Self::DeleteWatch,
+            "edit_holding" => Self::EditHolding,
+            _ => {
+                log::warn!("TradeAction::from_str: unrecognized action '{s}', falling back to Unknown");
+                Self::Unknown
+            }
+        })
+    }
+}
+
+// Holding kind — "hold" (position with shares) or "watch" (tracked without shares).
+sql_string_enum! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    pub enum HoldingKind {
+        Hold => "hold",
+        Watch => "watch",
+    }
+}
+
+impl Default for HoldingKind {
+    fn default() -> Self { Self::Hold }
+}
+
+impl std::str::FromStr for HoldingKind {
+    type Err = std::convert::Infallible;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "hold" => Self::Hold,
+            "watch" => Self::Watch,
+            _ => {
+                log::warn!("HoldingKind::from_str: unrecognized kind '{s}', falling back to Hold");
+                Self::Hold
+            }
+        })
+    }
+}
 
 /// 根据 symbol 推导 asset_type：优先使用 trade 提供的值，兜底从 symbol 前缀推导。
 fn resolve_asset_type(t: &Trade) -> String {
@@ -15,7 +124,7 @@ fn resolve_asset_type(t: &Trade) -> String {
 pub struct Holding {
     pub symbol: String,
     pub currency: String,
-    pub kind: String,
+    pub kind: HoldingKind,
     pub name: Option<String>,
     pub notional: f64,
     pub avg_cost: Option<f64>,
@@ -42,8 +151,8 @@ pub struct Trade {
     pub id: String,
     pub symbol: String,
     pub currency: String,
-    pub kind: String,
-    pub action: String,
+    pub kind: HoldingKind,
+    pub action: TradeAction,
     pub shares: Option<f64>,
     pub price: Option<f64>,
     pub amount: Option<f64>,
@@ -66,8 +175,8 @@ fn trade_from_row(row: &rusqlite::Row) -> rusqlite::Result<Trade> {
         id: row.get(0)?,
         symbol: row.get(1)?,
         currency: row.get(2)?,
-        kind: row.get(3)?,
-        action: row.get(4)?,
+        kind: row.get::<_, HoldingKind>(3)?,
+        action: row.get::<_, TradeAction>(4)?,
         shares: row.get(5)?,
         price: row.get(6)?,
         amount: row.get(7)?,
@@ -127,7 +236,26 @@ pub fn upsert_holding(h: &Holding) -> Result<(), String> {
     })
 }
 
-pub fn delete_holding(symbol: &str, currency: &str, kind: &str) -> Result<(), String> {
+/// Update only the notional (market value) of a holding.
+/// This is an explicit exception to the "single entry point" principle —
+/// used by the committee orchestrator to refresh market prices without
+/// creating trade log entries. Does NOT modify avg_cost, shares, or other fields.
+pub fn update_holding_notional(symbol: &str, currency: &str, kind: &HoldingKind, notional: f64) -> Result<(), String> {
+    with_conn(|conn| {
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let changed = conn.execute(
+            "UPDATE holdings SET notional = ?1, updated_at = ?2 WHERE symbol = ?3 AND currency = ?4 AND kind = ?5",
+            params![notional, now, symbol, currency, kind],
+        )
+        .map_err(|e| format!("update notional: {}", e))?;
+        if changed == 0 {
+            log::debug!("update_holding_notional: no holding found for {symbol}/{currency}/{kind}");
+        }
+        Ok(())
+    })
+}
+
+pub fn delete_holding(symbol: &str, currency: &str, kind: &HoldingKind) -> Result<(), String> {
     with_conn(|conn| {
         let changed = conn
             .execute(
@@ -143,17 +271,24 @@ pub fn delete_holding(symbol: &str, currency: &str, kind: &str) -> Result<(), St
     })
 }
 
+/// Insert a single trade row and apply its cash delta.
+/// Must be called within an active connection/transaction.
+fn insert_trade_sql(conn: &Connection, t: &Trade) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO trades (id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date, asset_type) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        params![t.id, t.symbol, t.currency, t.kind, t.action, t.shares, t.price, t.amount, t.notes, t.created_at, t.name, t.trade_date, t.asset_type],
+    )
+    .map_err(|e| format!("insert trade: {}", e))?;
+    apply_cash_delta_sql(conn, cash_delta_for_trade(t, false))?;
+    Ok(())
+}
+
 pub fn record_trade(t: &Trade) -> Result<(), String> {
     with_conn(|conn| {
-        conn.execute(
-            "INSERT INTO trades (id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date, asset_type) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
-            params![t.id, t.symbol, t.currency, t.kind, t.action, t.shares, t.price, t.amount, t.notes, t.created_at, t.name, t.trade_date, t.asset_type],
-        )
-        .map_err(|e| format!("record trade: {}", e))?;
-        // Apply cash delta for this trade, then recalculate holdings.
-        // Using delta instead of full recalculation avoids corrupting cash
-        // when initial_balance doesn't match actual starting capital.
-        apply_cash_delta_sql(conn, cash_delta_for_trade(t, false))?;
+        insert_trade_sql(conn, t)?;
+        // Recalculate holdings from trade history.
+        // Using delta-based cash above avoids corrupting cash when
+        // initial_balance doesn't match actual starting capital.
         recalculate_holdings_inner(conn, false)?;
         Ok(())
     })
@@ -164,12 +299,66 @@ pub fn record_trade(t: &Trade) -> Result<(), String> {
 fn cash_delta_for_trade(t: &Trade, reverse: bool) -> f64 {
     let amount = t.amount.unwrap_or(0.0);
     let sign = if reverse { -1.0 } else { 1.0 };
-    match t.action.as_str() {
-        "buy" => -amount * sign,
-        "sell" => amount * sign,
-        "cash_adjust" => amount * sign,
+    match t.action {
+        TradeAction::Buy => -amount * sign,
+        TradeAction::Sell => amount * sign,
+        TradeAction::CashAdjust => amount * sign,
         _ => 0.0,
     }
+}
+
+/// Atomic watch→hold conversion: delete_watch + buy in a single transaction.
+/// This replaces the previous two-step IPC pattern which had an atomicity defect
+/// (first trade persisted, second fails → data loss).
+pub fn convert_watch_to_hold(
+    symbol: &str,
+    currency: &str,
+    name: Option<String>,
+    shares: f64,
+    price: f64,
+    asset_type: Option<String>,
+) -> Result<(), String> {
+    with_conn_mut(|conn| {
+        let tx = conn.transaction().map_err(|e| format!("begin transaction: {}", e))?;
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+
+        let delete_trade = Trade {
+            id: uuid::Uuid::new_v4().to_string(),
+            symbol: symbol.to_string(),
+            currency: currency.to_string(),
+            kind: HoldingKind::Watch,
+            action: TradeAction::DeleteWatch,
+            shares: None,
+            price: None,
+            amount: Some(0.0),
+            notes: None,
+            created_at: now.clone(),
+            name: None,
+            trade_date: None,
+            asset_type: None,
+        };
+        let buy_trade = Trade {
+            id: uuid::Uuid::new_v4().to_string(),
+            symbol: symbol.to_string(),
+            currency: currency.to_string(),
+            kind: HoldingKind::Hold,
+            action: TradeAction::Buy,
+            shares: Some(shares),
+            price: Some(price),
+            amount: Some(shares * price),
+            notes: None,
+            created_at: now,
+            name,
+            trade_date: None,
+            asset_type: asset_type.or_else(|| Some("stock".to_string())),
+        };
+
+        insert_trade_sql(&tx, &delete_trade)?;
+        insert_trade_sql(&tx, &buy_trade)?;
+        recalculate_holdings_inner_no_tx(&tx, false)?;
+        tx.commit().map_err(|e| format!("commit transaction: {}", e))?;
+        Ok(())
+    })
 }
 
 /// Apply a cash delta atomically via a single UPDATE (no read-modify-write).
@@ -218,11 +407,22 @@ fn get_trade_by_id(conn: &Connection, id: &str) -> Result<Trade, String> {
 /// Wrapped in a transaction for atomicity; notional values are preserved
 /// from existing holdings so that recalculation does not corrupt user-edited data.
 fn recalculate_holdings_inner(conn: &Connection, recalc_cash: bool) -> Result<(), String> {
+    recalculate_holdings_inner_impl(conn, recalc_cash, true)
+}
+
+/// Same as `recalculate_holdings_inner` but skips BEGIN/COMMIT when the caller
+/// already manages the transaction (e.g. `convert_watch_to_hold`).
+fn recalculate_holdings_inner_no_tx(conn: &Connection, recalc_cash: bool) -> Result<(), String> {
+    recalculate_holdings_inner_impl(conn, recalc_cash, false)
+}
+
+fn recalculate_holdings_inner_impl(conn: &Connection, recalc_cash: bool, manage_tx: bool) -> Result<(), String> {
     let mut notional_map: HashMap<(String, String, String), f64> = HashMap::new();
     let mut asset_type_map: HashMap<(String, String, String), String> = HashMap::new();
+    let mut created_at_map: HashMap<(String, String, String), String> = HashMap::new();
     {
         let mut stmt = conn
-            .prepare("SELECT symbol, currency, kind, notional, asset_type FROM holdings")
+            .prepare("SELECT symbol, currency, kind, notional, asset_type, created_at FROM holdings")
             .map_err(|e| format!("prepare notional query: {}", e))?;
         let rows = stmt
             .query_map([], |row| {
@@ -232,30 +432,250 @@ fn recalculate_holdings_inner(conn: &Connection, recalc_cash: bool) -> Result<()
                     row.get::<_, String>(2)?,
                     row.get::<_, f64>(3)?,
                     row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
                 ))
             })
             .map_err(|e| format!("query notional: {}", e))?;
         for row in rows {
-            let (sym, cur, kind, notional, at) = row.map_err(|e| format!("notional row: {}", e))?;
+            let (sym, cur, kind, notional, at, ca) = row.map_err(|e| format!("notional row: {}", e))?;
             notional_map.insert((sym.clone(), cur.clone(), kind.clone()), notional);
-            asset_type_map.insert((sym, cur, kind), at);
+            asset_type_map.insert((sym.clone(), cur.clone(), kind.clone()), at);
+            created_at_map.insert((sym, cur, kind), ca);
         }
     }
 
-    conn.execute_batch("BEGIN").map_err(|e| format!("begin transaction: {}", e))?;
-    let result = recalculate_holdings_inner_body(conn, &notional_map, &asset_type_map, recalc_cash);
-    match result {
-        Ok(()) => {
-            conn.execute_batch("COMMIT").map_err(|e| format!("commit transaction: {}", e))?;
-            Ok(())
-        }
-        Err(e) => {
-            if let Err(rb_err) = conn.execute_batch("ROLLBACK") {
-                log::warn!("rollback failed: {rb_err}");
+    if manage_tx {
+        conn.execute_batch("BEGIN").map_err(|e| format!("begin transaction: {}", e))?;
+    }
+    let result = recalculate_holdings_inner_body(conn, &notional_map, &asset_type_map, &created_at_map, recalc_cash);
+    if manage_tx {
+        match result {
+            Ok(()) => {
+                conn.execute_batch("COMMIT").map_err(|e| format!("commit transaction: {}", e))?;
+                Ok(())
             }
-            Err(e)
+            Err(e) => {
+                if let Err(rb_err) = conn.execute_batch("ROLLBACK") {
+                    log::warn!("rollback failed: {rb_err}");
+                }
+                Err(e)
+            }
+        }
+    } else {
+        result
+    }
+}
+
+/// Check if P&L should expire based on date gap.
+/// P&L expires if there's >= 2 calendar days between cleared_date and buy_date,
+/// which approximates "at least 1 trading day without holding the symbol".
+fn is_pnl_expired(cleared_date: &str, buy_date: &str) -> bool {
+    use chrono::NaiveDate;
+    if let (Ok(d1), Ok(d2)) = (
+        NaiveDate::parse_from_str(cleared_date, "%Y-%m-%d"),
+        NaiveDate::parse_from_str(buy_date, "%Y-%m-%d"),
+    ) {
+        let days_gap = (d2 - d1).num_days();
+        // Gap >= 2 calendar days means at least 1 full day without position
+        // (e.g., sold Monday, buy Wednesday = 2 day gap, P&L expires)
+        days_gap >= 2
+    } else {
+        // If dates can't be parsed, conservatively expire P&L
+        true
+    }
+}
+
+/// Realized P&L tracker per symbol for day-trading (做T) cost adjustment.
+/// P&L is amortized into new cost basis unless there's a gap of >= 1 trading day
+/// without holding the symbol (i.e., cleared and not re-bought within the next trading day).
+struct PnlTracker {
+    realized_pnl: f64,
+    cleared_date: Option<String>, // Date when position was fully closed
+}
+
+/// In-memory holding entry used during trade replay to rebuild holdings.
+#[derive(Default)]
+struct MemHolding {
+    name: Option<String>,
+    shares: f64,
+    avg_cost: f64,
+    notional: f64, // preserved from existing holdings (Finding 2 fix)
+    entry_date: Option<String>,
+    linked_verdict_id: Option<String>,
+    notes: Option<String>,
+    asset_type: Option<String>,
+    is_watch: bool, // true for add_watch entries (no shares, preserved across recalc)
+}
+
+impl MemHolding {
+    fn recompute_notional(&mut self) {
+        self.notional = self.avg_cost * self.shares;
+    }
+
+    /// Copy core identity/valuation fields from another entry.
+    /// Used by hold↔watch conversions to avoid repeating field lists.
+    fn copy_core_fields_from(&mut self, src: &MemHolding) {
+        self.name = src.name.clone();
+        self.avg_cost = src.avg_cost;
+        self.notional = src.notional;
+        self.entry_date = src.entry_date.clone();
+        self.asset_type = src.asset_type.clone();
+    }
+}
+
+/// Shared mutable state passed to process_* functions during trade replay.
+struct RecalcContext<'a> {
+    map: &'a mut HashMap<(String, String, String), MemHolding>,
+    pnl_tracker: &'a mut HashMap<String, PnlTracker>,
+    watch_deleted: &'a mut HashSet<String>,
+}
+
+// ── process_* functions for each TradeAction ────────────────────────────────
+
+fn process_buy(ctx: &mut RecalcContext, key: (String, String, String), t: &Trade) {
+    let shares = t.shares.unwrap_or(0.0);
+    let price = t.price.unwrap_or(0.0);
+    let entry = ctx.map.entry(key).or_default();
+    if entry.asset_type.is_none() {
+        entry.asset_type = Some(resolve_asset_type(t));
+    }
+    // Preserve name from trade (set on first buy)
+    if entry.name.is_none() {
+        entry.name = t.name.clone();
+    }
+
+    // Day-trading (做T) cost adjustment:
+    // P&L from previous sells is amortized into new cost basis,
+    // UNLESS there was a gap of >= 1 trading day without holding
+    // the symbol (cleared and not re-bought within next trading day).
+    let realized_pnl = if let Some(tracker) = ctx.pnl_tracker.remove(&t.symbol) {
+        // Check if P&L has expired (cleared date gap >= 2 calendar days ≈ 1 trading day)
+        if let Some(ref cleared_date) = tracker.cleared_date {
+            let buy_date = &t.created_at[..10];
+            if is_pnl_expired(cleared_date, buy_date) {
+                // P&L expired: trading day gap means no amortization
+                0.0
+            } else {
+                tracker.realized_pnl
+            }
+        } else {
+            // No clear date recorded (partial sell), use P&L
+            tracker.realized_pnl
+        }
+    } else {
+        0.0
+    };
+
+    // Unified cost basis calculation (works for both new and existing positions)
+    let existing_cost_basis = entry.avg_cost * entry.shares;
+    let buy_cost = price * shares;
+    let new_shares = entry.shares + shares;
+    let adjusted_cost_basis = existing_cost_basis + buy_cost - realized_pnl;
+    entry.avg_cost = if new_shares > 0.0 {
+        (adjusted_cost_basis / new_shares).max(0.0)
+    } else {
+        0.0
+    };
+    entry.shares = new_shares;
+    // Compute notional as cost basis (avg_cost * shares).
+    // Will be updated to current market value in PortfolioData::load.
+    entry.recompute_notional();
+}
+
+fn process_sell(ctx: &mut RecalcContext, key: (String, String, String), t: &Trade) {
+    let shares = t.shares.unwrap_or(0.0);
+    let sell_price = t.price.unwrap_or(0.0);
+    let should_convert = if let Some(entry) = ctx.map.get_mut(&key) {
+        // Calculate realized P&L for this sell trade
+        // realized_pnl = shares_sold * (sell_price - avg_cost)
+        if entry.shares > 0.0 && entry.avg_cost > 0.0 {
+            let pnl = shares * (sell_price - entry.avg_cost);
+            let tracker = ctx.pnl_tracker.entry(t.symbol.clone()).or_insert(PnlTracker {
+                realized_pnl: 0.0,
+                cleared_date: None,
+            });
+            tracker.realized_pnl += pnl;
+        }
+        entry.shares = (entry.shares - shares).max(0.0);
+        entry.recompute_notional();
+        // Auto-convert to watch when all shares are sold,
+        // but skip if the user explicitly deleted this symbol from watch
+        let is_cleared = entry.shares <= 0.0001 && !entry.is_watch && !ctx.watch_deleted.contains(&t.symbol);
+        // Record cleared date for P&L expiry tracking
+        if is_cleared {
+            let trade_date = &t.created_at[..10];
+            let tracker = ctx.pnl_tracker.entry(t.symbol.clone()).or_insert(PnlTracker {
+                realized_pnl: 0.0,
+                cleared_date: None,
+            });
+            tracker.cleared_date = Some(trade_date.to_string());
+        }
+        is_cleared
+    } else {
+        false
+    };
+    if should_convert {
+        let watch_key = (t.symbol.clone(), t.currency.clone(), HoldingKind::Watch.to_string());
+        if let Some(hold_entry) = ctx.map.remove(&key) {
+            let watch_entry = ctx.map.entry(watch_key).or_default();
+            watch_entry.copy_core_fields_from(&hold_entry);
+            watch_entry.is_watch = true;
         }
     }
+}
+
+fn process_cost_edit(ctx: &mut RecalcContext, key: (String, String, String), t: &Trade) {
+    if let Some(price) = t.price {
+        if let Some(entry) = ctx.map.get_mut(&key) {
+            entry.avg_cost = price;
+            entry.recompute_notional();
+        }
+    }
+}
+
+fn process_edit_holding(ctx: &mut RecalcContext, key: (String, String, String), t: &Trade) {
+    // Metadata edit: update cost, shares, entry date, notes, name, asset_type.
+    // price/shares here are target values, not trade execution values.
+    // amount must be null; cash_delta_for_trade returns 0 for this action.
+    if let Some(entry) = ctx.map.get_mut(&key) {
+        let cost_changed = t.price.is_some_and(|p| (p - entry.avg_cost).abs() > f64::EPSILON);
+        if let Some(p) = t.price { entry.avg_cost = p; }
+        if let Some(s) = t.shares { entry.shares = s; }
+        if let Some(ref d) = t.trade_date { entry.entry_date = Some(d.clone()); }
+        if let Some(ref n) = t.notes { entry.notes = Some(n.clone()); }
+        if t.name.is_some() { entry.name = t.name.clone(); }
+        if t.asset_type.is_some() { entry.asset_type = t.asset_type.clone(); }
+        entry.recompute_notional();
+        // Only clear P&L tracker when cost basis actually changed.
+        // Metadata-only edits (notes, entry_date) should preserve day-trading P&L.
+        if cost_changed {
+            ctx.pnl_tracker.remove(&t.symbol);
+        }
+    }
+}
+
+fn process_add_watch(ctx: &mut RecalcContext, key: (String, String, String), t: &Trade) {
+    let entry = ctx.map.entry(key).or_default();
+    // Create or preserve the watch entry in the map so it survives recalculation
+    entry.is_watch = true;
+    if entry.asset_type.is_none() {
+        entry.asset_type = Some(resolve_asset_type(t));
+    }
+    // Preserve name from trade (preferred) or existing entry
+    if entry.name.is_none() {
+        entry.name = t.name.clone().or_else(|| Some(t.symbol.clone()));
+    }
+    if let Some(p) = t.price {
+        entry.avg_cost = p;
+    }
+    entry.entry_date.get_or_insert_with(|| t.created_at[..10].to_string());
+}
+
+fn process_delete_watch(ctx: &mut RecalcContext, t: &Trade) {
+    // Record the symbol so sell→watch auto-convert won't resurrect it
+    ctx.watch_deleted.insert(t.symbol.clone());
+    let key = (t.symbol.clone(), t.currency.clone(), t.kind.to_string());
+    ctx.map.remove(&key);
 }
 
 /// Inner body of recalculate_holdings, separated so the transaction wrapper
@@ -264,6 +684,7 @@ fn recalculate_holdings_inner_body(
     conn: &Connection,
     notional_map: &HashMap<(String, String, String), f64>,
     asset_type_map: &HashMap<(String, String, String), String>,
+    created_at_map: &HashMap<(String, String, String), String>,
     recalc_cash: bool,
 ) -> Result<(), String> {
     // 1. Clear all existing holdings
@@ -284,65 +705,10 @@ fn recalculate_holdings_inner_body(
 
     // 3. Replay trades into an in-memory holdings map
     //    Key: (symbol, currency, kind)
-    #[derive(Default)]
-    struct MemHolding {
-        name: Option<String>,
-        shares: f64,
-        avg_cost: f64,
-        notional: f64, // preserved from existing holdings (Finding 2 fix)
-        entry_date: Option<String>,
-        linked_verdict_id: Option<String>,
-        notes: Option<String>,
-        asset_type: Option<String>,
-        is_watch: bool, // true for add_watch entries (no shares, preserved across recalc)
-    }
-
-    impl MemHolding {
-        fn recompute_notional(&mut self) {
-            self.notional = self.avg_cost * self.shares;
-        }
-
-        /// Copy core identity/valuation fields from another entry.
-        /// Used by hold↔watch conversions to avoid repeating field lists.
-        fn copy_core_fields_from(&mut self, src: &MemHolding) {
-            self.name = src.name.clone();
-            self.avg_cost = src.avg_cost;
-            self.notional = src.notional;
-            self.entry_date = src.entry_date.clone();
-            self.asset_type = src.asset_type.clone();
-        }
-    }
-
-    /// Check if P&L should expire based on date gap.
-    /// P&L expires if there's >= 2 calendar days between cleared_date and buy_date,
-    /// which approximates "at least 1 trading day without holding the symbol".
-    fn is_pnl_expired(cleared_date: &str, buy_date: &str) -> bool {
-        use chrono::NaiveDate;
-        if let (Ok(d1), Ok(d2)) = (
-            NaiveDate::parse_from_str(cleared_date, "%Y-%m-%d"),
-            NaiveDate::parse_from_str(buy_date, "%Y-%m-%d"),
-        ) {
-            let days_gap = (d2 - d1).num_days();
-            // Gap >= 2 calendar days means at least 1 full day without position
-            // (e.g., sold Monday, buy Wednesday = 2 day gap, P&L expires)
-            days_gap >= 2
-        } else {
-            // If dates can't be parsed, conservatively expire P&L
-            true
-        }
-    }
-
     let mut map: HashMap<(String, String, String), MemHolding> = HashMap::new();
     // Track symbols explicitly deleted from watchlist so that the sell→watch
     // auto-convert does not "resurrect" entries the user already removed.
     let mut watch_deleted: HashSet<String> = HashSet::new();
-    // Track realized P&L per symbol for day-trading (做T) cost adjustment.
-    // P&L is amortized into new cost basis unless there's a gap of >= 1 trading day
-    // without holding the symbol (i.e., cleared and not re-bought within the next trading day).
-    struct PnlTracker {
-        realized_pnl: f64,
-        cleared_date: Option<String>,  // Date when position was fully closed
-    }
     let mut pnl_tracker_map: HashMap<String, PnlTracker> = HashMap::new();
 
     // Restore preserved notional and asset_type values into the in-memory map
@@ -355,142 +721,25 @@ fn recalculate_holdings_inner_body(
         entry.asset_type = Some(at.clone());
     }
 
+    let mut ctx = RecalcContext {
+        map: &mut map,
+        pnl_tracker: &mut pnl_tracker_map,
+        watch_deleted: &mut watch_deleted,
+    };
+
     for t in &trades {
-        let key = (t.symbol.clone(), t.currency.clone(), t.kind.clone());
-        match t.action.as_str() {
-            "buy" => {
-                let shares = t.shares.unwrap_or(0.0);
-                let price = t.price.unwrap_or(0.0);
-                let entry = map.entry(key).or_default();
-                if entry.asset_type.is_none() {
-                    entry.asset_type = Some(resolve_asset_type(t));
-                }
-                // Preserve name from trade (set on first buy)
-                if entry.name.is_none() {
-                    entry.name = t.name.clone();
-                }
-
-                // Day-trading (做T) cost adjustment:
-                // P&L from previous sells is amortized into new cost basis,
-                // UNLESS there was a gap of >= 1 trading day without holding
-                // the symbol (cleared and not re-bought within next trading day).
-                let realized_pnl = if let Some(tracker) = pnl_tracker_map.remove(&t.symbol) {
-                    // Check if P&L has expired (cleared date gap >= 2 calendar days ≈ 1 trading day)
-                    if let Some(ref cleared_date) = tracker.cleared_date {
-                        let buy_date = &t.created_at[..10];
-                        if is_pnl_expired(cleared_date, buy_date) {
-                            // P&L expired: trading day gap means no amortization
-                            0.0
-                        } else {
-                            tracker.realized_pnl
-                        }
-                    } else {
-                        // No clear date recorded (partial sell), use P&L
-                        tracker.realized_pnl
-                    }
-                } else {
-                    0.0
-                };
-
-                // Unified cost basis calculation (works for both new and existing positions)
-                let existing_cost_basis = entry.avg_cost * entry.shares;
-                let buy_cost = price * shares;
-                let new_shares = entry.shares + shares;
-                let adjusted_cost_basis = existing_cost_basis + buy_cost - realized_pnl;
-                entry.avg_cost = if new_shares > 0.0 {
-                    (adjusted_cost_basis / new_shares).max(0.0)
-                } else {
-                    0.0
-                };
-                entry.shares = new_shares;
-                // Compute notional as cost basis (avg_cost * shares).
-                // Will be updated to current market value in PortfolioData::load.
-                entry.recompute_notional();
+        let key = (t.symbol.clone(), t.currency.clone(), t.kind.to_string());
+        match t.action {
+            TradeAction::Buy => process_buy(&mut ctx, key, t),
+            TradeAction::Sell => process_sell(&mut ctx, key, t),
+            TradeAction::CostEdit => process_cost_edit(&mut ctx, key, t),
+            TradeAction::EditHolding => process_edit_holding(&mut ctx, key, t),
+            TradeAction::AddWatch => process_add_watch(&mut ctx, key, t),
+            TradeAction::DeleteWatch => process_delete_watch(&mut ctx, t),
+            TradeAction::CashAdjust => {}
+            TradeAction::Unknown => {
+                log::warn!("replay: skipping trade {} with Unknown action (symbol={})", t.id, t.symbol);
             }
-            "sell" => {
-                let shares = t.shares.unwrap_or(0.0);
-                let sell_price = t.price.unwrap_or(0.0);
-                let should_convert = if let Some(entry) = map.get_mut(&key) {
-                    // Calculate realized P&L for this sell trade
-                    // realized_pnl = shares_sold * (sell_price - avg_cost)
-                    if entry.shares > 0.0 && entry.avg_cost > 0.0 {
-                        let pnl = shares * (sell_price - entry.avg_cost);
-                        let tracker = pnl_tracker_map.entry(t.symbol.clone()).or_insert(PnlTracker {
-                            realized_pnl: 0.0,
-                            cleared_date: None,
-                        });
-                        tracker.realized_pnl += pnl;
-                    }
-                    entry.shares = (entry.shares - shares).max(0.0);
-                    entry.recompute_notional();
-                    // Auto-convert to watch when all shares are sold,
-                    // but skip if the user explicitly deleted this symbol from watch
-                    let is_cleared = entry.shares <= 0.0001 && !entry.is_watch && !watch_deleted.contains(&t.symbol);
-                    // Record cleared date for P&L expiry tracking
-                    if is_cleared {
-                        let trade_date = &t.created_at[..10];
-                        let tracker = pnl_tracker_map.entry(t.symbol.clone()).or_insert(PnlTracker {
-                            realized_pnl: 0.0,
-                            cleared_date: None,
-                        });
-                        tracker.cleared_date = Some(trade_date.to_string());
-                    }
-                    is_cleared
-                } else {
-                    false
-                };
-                if should_convert {
-                    let watch_key = (t.symbol.clone(), t.currency.clone(), "watch".to_string());
-                    if let Some(hold_entry) = map.remove(&key) {
-                        let watch_entry = map.entry(watch_key).or_default();
-                        watch_entry.copy_core_fields_from(&hold_entry);
-                        watch_entry.is_watch = true;
-                    }
-                }
-            }
-            "cost_edit" => {
-                if let Some(price) = t.price {
-                    if let Some(entry) = map.get_mut(&key) {
-                        entry.avg_cost = price;
-                        entry.recompute_notional();
-                    }
-                }
-            }
-            "convert_hold_to_watch" => {
-                // Remove from hold, add to watch
-                let hold_key = (t.symbol.clone(), t.currency.clone(), "hold".to_string());
-                let watch_key = (t.symbol.clone(), t.currency.clone(), "watch".to_string());
-                if let Some(hold_entry) = map.remove(&hold_key) {
-                    let watch_entry = map.entry(watch_key).or_default();
-                    watch_entry.copy_core_fields_from(&hold_entry);
-                    watch_entry.shares = hold_entry.shares;
-                    watch_entry.notes = Some("converted from hold".to_string());
-                    watch_entry.is_watch = true;
-                }
-            }
-            "add_watch" => {
-                // Create or preserve the watch entry in the map so it survives recalculation
-                let entry = map.entry(key).or_default();
-                entry.is_watch = true;
-                if entry.asset_type.is_none() {
-                    entry.asset_type = Some(resolve_asset_type(t));
-                }
-                // Preserve name from trade (preferred) or existing entry
-                if entry.name.is_none() {
-                    entry.name = t.name.clone().or_else(|| Some(t.symbol.clone()));
-                }
-                if let Some(p) = t.price {
-                    entry.avg_cost = p;
-                }
-                entry.entry_date.get_or_insert_with(|| t.created_at[..10].to_string());
-            }
-            "delete_watch" => {
-                // Record the symbol so sell→watch auto-convert won't resurrect it
-                watch_deleted.insert(t.symbol.clone());
-                map.remove(&key);
-            }
-            // cash_adjust is trade-log-only; holdings are managed separately
-            _ => {}
         }
     }
 
@@ -509,6 +758,11 @@ fn recalculate_holdings_inner_body(
         }
         // Watch items have no shares; write null to DB
         let shares_val: Option<f64> = if h.is_watch { None } else { Some(h.shares) };
+        // Preserve original created_at if available, otherwise use now
+        let created_at = created_at_map
+            .get(&(symbol.clone(), currency.clone(), kind.clone()))
+            .cloned()
+            .unwrap_or_else(|| now.clone());
         conn.execute(
             "INSERT INTO holdings (symbol, currency, kind, name, notional, avg_cost, shares, entry_date, linked_verdict_id, notes, asset_type, created_at, updated_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
@@ -524,7 +778,7 @@ fn recalculate_holdings_inner_body(
                 h.linked_verdict_id,
                 h.notes,
                 h.asset_type,
-                now,
+                created_at,
                 now,
             ],
         )

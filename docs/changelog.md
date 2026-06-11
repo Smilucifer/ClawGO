@@ -1,5 +1,78 @@
 # Changelog / 更新日志
 
+## v5.3.4 (2026-06-11)
+
+### Code Review 修复 (10 项) + PnL 计算兜底
+
+**PnL 计算修复 (1 项):**
+1. **`run_pnl_snapshot` notional 兜底**: 当 `get_latest_price()` 失败时，回退到持仓的 `notional` 值而非跳过，与前端 `totalAssets` 行为对齐。修复实际总资产 86638.28 vs PnL 计算 81572.88 的差异。
+
+**后端修复 (6 项):**
+2. **`process_edit_holding` name/asset_type 传播**: 编辑持仓时，`name` 和 `asset_type` 字段现在正确传播到 `MemHolding`。
+3. **迁移 `convert_hold_to_watch` → `'unknown'`**: 之前映射为 `'cost_edit'` 导致语义丢失，现改为 `'unknown'` 避免误导性数据。
+4. **嵌套事务修复**: `convert_watch_to_hold` 内调用 `recalculate_holdings_inner` 的嵌套 BEGIN/COMMIT 导致外层事务提前提交。新增 `manage_tx` 参数和 `recalculate_holdings_inner_no_tx` 变体。
+5. **CHECK 约束添加 `'unknown'`**: `TradeAction::Unknown` 不在 DB CHECK 约束中，写入会失败。
+6. **event_scanner kind 过滤恢复**: 被移除的 `kind == "hold" || kind == "watch"` 过滤重新加入。
+7. **`created_at` 保留**: `recalculate_holdings_inner` 重算时保留原始 `created_at`，避免每次重算覆盖创建时间。
+
+**前端修复 (1 项):**
+8. **TradeDialog `||` → `??`**: `holdingAvgCost || h.avgCost` 在值为 0 时错误回退，改用 nullish coalescing。
+
+**已确认无需修复 (2 项):**
+9. **`update_trade` created_at**: 存储层 UPDATE SQL 不包含 `created_at`，值已保留。添加注释说明。
+10. **`asset_type_map` 类型**: holdings 表 `asset_type TEXT NOT NULL DEFAULT 'stock'`，`String` 类型正确。
+
+**涉及文件 (6):**
+- `src-tauri/src/lib.rs` — PnL notional 兜底
+- `src-tauri/src/storage/invest/portfolio.rs` — process_edit_holding, manage_tx, created_at 保留
+- `src-tauri/src/storage/invest/mod.rs` — 迁移修复, CHECK 约束
+- `src-tauri/src/invest/event_scanner.rs` — kind 过滤
+- `src-tauri/src/commands/invest.rs` — 注释
+- `src/lib/components/invest/TradeDialog.svelte` — `||` → `??`
+
+## v5.3.3 (2026-06-11)
+
+### Invest 交易逻辑全面重构 (PR1+PR2) + Simplify 审查
+
+**核心架构变更 (3 项):**
+1. **`sql_string_enum!` 宏**: 提取 Display/FromSql/ToSql 通用实现，消除 TradeAction + HoldingKind 约 50 行样板代码。支持 variant-level 属性（如 `#[serde(other)]`）。
+2. **类型安全枚举**: `TradeAction` (7 variants + Unknown) 和 `HoldingKind` (Hold/Watch) 实现 `FromStr` trait + `Default`，调用方使用 `.parse().unwrap_or_default()` 惯用写法。
+3. **`convert_watch_to_hold` 原子化命令**: 单事务完成 delete_watch + buy，替代之前有原子性缺陷的两步 IPC 模式。
+
+**后端变更 (6 项):**
+4. **`add_holding` / `update_holding` 标记 `#[deprecated]`**: 分别被 `record_trade(action="add_watch")` 和 `record_trade(action="edit_holding")` 替代。
+5. **DB 迁移**: CHECK 约束移除 `convert_hold_to_watch`，新增 `edit_holding`。旧记录自动转换 (`convert_watch_to_hold→buy`, `convert_hold_to_watch→cost_edit`)。`check_is_current` 守卫避免每次启动全表重建。
+6. **`process_*` 函数签名统一**: dispatch 循环预构建 `(symbol, currency, kind)` key 传入，消除 6 次冗余 clone。`process_delete_watch` 签名与其他函数对齐。
+7. **`recalculate_cash_inner` 保留为 `pub(crate)` 恢复工具**: 正常路径不触碰 cash，仅用于数据修复。
+8. **`event_scanner.rs`**: 移除冗余 `kind == "hold" || kind == "watch"` 过滤（CHECK 约束已保证）。
+9. **`lib.rs`**: PnL 快照过滤改用 `HoldingKind::Hold` 枚举比较，`run()` 函数添加 `#[allow(deprecated)]`。
+
+**前端变更 (6 项):**
+10. **`addToWatch` / `deleteWatch` / `convertWatchToHold` / `updateHoldingMeta`**: 统一为单次 `record_trade` 或 `convert_watch_to_hold` IPC，消除双路径操作和 try/finally 包装。
+11. **HoldingsTable UI**: hold/watch 分行动作按钮 — HOLD 行: Edit | 买入 | 卖出 | 转观望；WATCH 行: Edit | 买入建仓 | 删除。共享 `clsAction` 基础样式类防止样式漂移。
+12. **`TradeAction` 联合类型**: `types.ts` 新增 `TradeAction` 类型，`Trade.kind` 收窄为 `'hold' | 'watch'`，`Trade.action` 收窄为 `TradeAction`。
+13. **`+page.svelte`**: 新增 `convertToWatch` 和 `deleteWatchFromTable` 回调，传递给 HoldingsTable。
+14. **i18n**: 新增 `invest_convert_to_watch` ("转为观望") 和 `invest_delete_watch` ("删除观望") key。
+
+**Simplify 审查修复 (5 项):**
+15. **Reuse**: `sql_string_enum!` 宏消除两个 enum 的 Display/FromSql/ToSql 重复实现
+16. **Simplification**: `FromStr` trait 替代 inherent `from_str`；`process_delete_watch` 签名对齐
+17. **Efficiency**: 预构建 key 传入 `process_*` 函数，消除 6x 冗余 `(String, String, String)` 分配
+18. **Altitude**: Edit 按钮使用 `clsAction` 基础类，防止与表格其他按钮样式不同步
+
+**涉及文件 (12):**
+- `src-tauri/src/storage/invest/portfolio.rs` — 宏+枚举+函数拆分+key 传递 (核心重构)
+- `src-tauri/src/storage/invest/mod.rs` — CHECK 约束迁移+旧记录转换+early-return 守卫
+- `src-tauri/src/commands/invest.rs` — deprecated 标记+`convert_watch_to_hold` 命令+`.parse()` 适配
+- `src-tauri/src/group_chat/orchestrator.rs` — 无实际变更（diff 为空）
+- `src-tauri/src/invest/event_scanner.rs` — 移除冗余 kind 过滤
+- `src-tauri/src/lib.rs` — `HoldingKind::Hold` 枚举比较+`#[allow(deprecated)]`
+- `src/lib/stores/invest-store.svelte.ts` — 4 个方法统一为单次 IPC
+- `src/lib/types.ts` — `TradeAction` 联合类型+`Trade.kind` 收窄
+- `src/lib/components/invest/HoldingsTable.svelte` — hold/watch 分行按钮+样式类
+- `src/routes/invest/+page.svelte` — convertToWatch/deleteWatch 回调
+- `messages/en.json` / `messages/zh-CN.json` — 2 个新 i18n key
+
 ## v5.3.2 (2026-06-11)
 
 ### 金十快讯高频采集 + 事件分析器 + Scheduler 集成

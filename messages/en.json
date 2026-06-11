@@ -572,6 +572,8 @@
   "invest_trade_amount": "Amount",
   "invest_trade_notes": "Notes",
   "invest_convert_to_hold": "Convert to HOLD",
+  "invest_convert_to_watch": "Convert to Watch",
+  "invest_delete_watch": "Remove from Watch",
   "invest_add_watch": "Add to Watch",
   "invest_watch_price": "Watch Price",
   "invest_no_watchlist": "No watchlist items. Click + to add.",

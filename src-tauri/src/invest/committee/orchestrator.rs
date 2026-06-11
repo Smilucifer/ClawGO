@@ -180,7 +180,7 @@ impl PortfolioData {
     /// DB for holdings whose price changed by >0.01 CNY.  When `dry_run=true`,
     /// prices are still fetched (for accurate notional) but nothing is persisted.
     async fn load_and_refresh_prices(dry_run: bool) -> Self {
-        use crate::storage::invest::portfolio::{get_cash, list_holdings, upsert_holding};
+        use crate::storage::invest::portfolio::{get_cash, list_holdings, update_holding_notional};
         use futures_util::StreamExt;
 
         let mut holdings = list_holdings().unwrap_or_else(|e| {
@@ -231,7 +231,7 @@ impl PortfolioData {
                         if (new_notional - old_notional).abs() > 0.01 {
                             h.notional = new_notional;
                             if !dry_run {
-                                if let Err(e) = upsert_holding(h) {
+                                if let Err(e) = update_holding_notional(&h.symbol, &h.currency, &h.kind, h.notional) {
                                     log::warn!(
                                         "portfolio: failed to update notional for {}: {}",
                                         h.symbol, e

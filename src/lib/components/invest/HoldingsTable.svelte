@@ -3,13 +3,21 @@
   import { t } from '$lib/i18n/index.svelte';
   import type { Holding } from '$lib/types';
 
-  let { onBuy, onSell, onAddWatch, onEdit, tushareToken }: {
+  let { onBuy, onSell, onAddWatch, onEdit, onConvertToWatch, onDeleteWatch, tushareToken }: {
     onBuy: (h: Holding) => void;
     onSell: (h: Holding) => void;
     onAddWatch: () => void;
     onEdit: (h: Holding) => void;
+    onConvertToWatch: (h: Holding) => void;
+    onDeleteWatch: (h: Holding) => void;
     tushareToken: string;
   } = $props();
+
+  // Shared button style classes
+  const clsAction = 'ml-[4px] rounded-[var(--radius-md)] border px-[8px] py-[2px] text-[11px] font-medium transition-colors';
+  const clsBuy = `${clsAction} border-[rgba(138,154,118,0.3)] bg-[rgba(138,154,118,0.15)] text-[#8a9a76] hover:bg-[rgba(138,154,118,0.25)]`;
+  const clsSell = `${clsAction} border-[rgba(168,122,122,0.3)] bg-transparent text-[#a87a7a] hover:bg-[rgba(168,122,122,0.1)]`;
+  const clsAccent = `${clsAction} border-[var(--accent-muted)] bg-transparent text-[var(--accent)] hover:bg-[var(--accent-muted)]`;
 
   let filter = $state<'all' | 'hold' | 'watch'>('all');
 
@@ -118,17 +126,17 @@
             </td>
             <td class="px-[var(--space-4)] py-[var(--space-3)]">
               <button
-                class="rounded-[var(--radius-md)] border border-border bg-transparent px-[8px] py-[2px] text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
+                class="{clsAction} border-border text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                 onclick={() => onEdit(h)}
               >{t('invest_edit')}</button>
-              <button
-                class="ml-[4px] rounded-[var(--radius-md)] border border-[rgba(138,154,118,0.3)] bg-[rgba(138,154,118,0.15)] px-[8px] py-[2px] text-[11px] font-medium text-[#8a9a76] transition-colors hover:bg-[rgba(138,154,118,0.25)]"
-                onclick={() => onBuy(h)}
-              >{t('invest_buy')}</button>
-              <button
-                class="ml-[4px] rounded-[var(--radius-md)] border border-[rgba(168,122,122,0.3)] bg-transparent px-[8px] py-[2px] text-[11px] font-medium text-[#a87a7a] transition-colors hover:bg-[rgba(168,122,122,0.1)]"
-                onclick={() => onSell(h)}
-              >{t('invest_sell')}</button>
+              {#if h.kind === 'hold'}
+                <button class={clsBuy} onclick={() => onBuy(h)}>{t('invest_buy')}</button>
+                <button class={clsSell} onclick={() => onSell(h)}>{t('invest_sell')}</button>
+                <button class={clsAccent} onclick={() => onConvertToWatch(h)}>{t('invest_convert_to_watch')}</button>
+              {:else}
+                <button class={clsBuy} onclick={() => onBuy(h)}>{t('invest_convert_to_hold')}</button>
+                <button class={clsSell} onclick={() => onDeleteWatch(h)}>{t('invest_delete_watch')}</button>
+              {/if}
             </td>
           </tr>
         {/each}

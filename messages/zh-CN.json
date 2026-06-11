@@ -572,6 +572,8 @@
   "invest_trade_amount": "金额",
   "invest_trade_notes": "备注",
   "invest_convert_to_hold": "转为持仓",
+  "invest_convert_to_watch": "转为观望",
+  "invest_delete_watch": "删除观望",
   "invest_add_watch": "加入观望",
   "invest_watch_price": "关注价格",
   "invest_no_watchlist": "暂无观望列表，点击 + 添加",

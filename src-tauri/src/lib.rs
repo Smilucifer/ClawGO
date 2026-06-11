@@ -82,7 +82,7 @@ pub async fn run_pnl_snapshot() -> Result<String, String> {
         .ok_or("no tushare_token configured")?;
 
     let holdings = portfolio::list_holdings()?;
-    let hold_items: Vec<_> = holdings.iter().filter(|h| h.kind == "hold").collect();
+    let hold_items: Vec<_> = holdings.iter().filter(|h| h.kind == portfolio::HoldingKind::Hold).collect();
     if hold_items.is_empty() {
         return Ok("no holdings, skipping".to_string());
     }
@@ -92,10 +92,13 @@ pub async fn run_pnl_snapshot() -> Result<String, String> {
     let client = crate::tushare::TushareClient::with_token_and_proxy(token, settings.tushare_proxy_url);
     let mut holdings_value = 0.0;
     for h in &hold_items {
-        if let (Some(shares), Some(_cost)) = (h.shares, h.avg_cost) {
+        if let Some(shares) = h.shares {
             match client.get_latest_price(&h.symbol).await {
                 Ok(p) => holdings_value += p * shares,
-                Err(e) => log::warn!("[invest-pnl] price fetch failed for {}: {}", h.symbol, e),
+                Err(e) => {
+                    log::warn!("[invest-pnl] price fetch failed for {}: {}, falling back to notional", h.symbol, e);
+                    holdings_value += h.notional;
+                }
             }
         }
     }
@@ -167,6 +170,7 @@ async fn run_event_scan_once() -> Result<crate::invest::event_scanner::ScanResul
     crate::invest::event_scanner::scan_events(&tushare, &client, &llm_config, None, crate::invest::event_scanner::DEFAULT_LANGUAGE).await
 }
 
+#[allow(deprecated)] // deprecated invest IPC commands kept for backward compatibility
 pub fn run() {
     // Initialize logging — our crate at debug level by default
     // Override with RUST_LOG env var, e.g. RUST_LOG=warn cargo tauri dev
@@ -431,6 +435,7 @@ pub fn run() {
             commands::invest::add_holding,
             commands::invest::update_holding,
             commands::invest::delete_holding,
+            commands::invest::convert_watch_to_hold,
             commands::invest::record_trade,
             commands::invest::get_trades,
             commands::invest::delete_trade,

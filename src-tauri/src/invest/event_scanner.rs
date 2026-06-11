@@ -238,9 +238,10 @@ pub async fn scan_events(
     // 1. Fetch Tushare announcements for HOLD + WATCH holdings
     let holdings = crate::storage::invest::portfolio::list_holdings()
         .unwrap_or_default();
+    // Explicit filter: old DBs may lack the CHECK constraint on kind
     let active_symbols: Vec<&str> = holdings
         .iter()
-        .filter(|h| h.kind == "hold" || h.kind == "watch")
+        .filter(|h| h.kind == crate::storage::invest::portfolio::HoldingKind::Hold || h.kind == crate::storage::invest::portfolio::HoldingKind::Watch)
         .map(|h| h.symbol.as_str())
         .collect();
 

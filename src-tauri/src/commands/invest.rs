@@ -17,6 +17,9 @@ pub fn get_holdings() -> Result<Vec<Holding>, String> {
     portfolio::list_holdings()
 }
 
+/// Deprecated: use `record_trade(action="add_watch")` instead.
+#[deprecated(note = "use record_trade with action='add_watch' instead")]
+#[allow(deprecated)]
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub fn add_holding(
@@ -36,7 +39,7 @@ pub fn add_holding(
     let h = Holding {
         symbol,
         currency,
-        kind,
+        kind: kind.parse().unwrap_or_default(),
         name,
         notional,
         avg_cost,
@@ -51,6 +54,9 @@ pub fn add_holding(
     portfolio::upsert_holding(&h)
 }
 
+/// Deprecated: use `record_trade(action="edit_holding")` instead.
+#[deprecated(note = "use record_trade with action='edit_holding' instead")]
+#[allow(deprecated)]
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub fn update_holding(
@@ -70,7 +76,7 @@ pub fn update_holding(
     let h = Holding {
         symbol,
         currency,
-        kind,
+        kind: kind.parse().unwrap_or_default(),
         name,
         notional,
         avg_cost,
@@ -87,7 +93,21 @@ pub fn update_holding(
 
 #[tauri::command]
 pub fn delete_holding(symbol: String, currency: String, kind: String) -> Result<(), String> {
-    portfolio::delete_holding(&symbol, &currency, &kind)
+    portfolio::delete_holding(&symbol, &currency, &kind.parse().unwrap_or_default())
+}
+
+/// Atomic watch→hold conversion: delete_watch + buy in a single transaction.
+/// Replaces the previous two-step IPC pattern which had an atomicity defect.
+#[tauri::command]
+pub fn convert_watch_to_hold(
+    symbol: String,
+    currency: String,
+    name: Option<String>,
+    shares: f64,
+    price: f64,
+    asset_type: Option<String>,
+) -> Result<(), String> {
+    portfolio::convert_watch_to_hold(&symbol, &currency, name, shares, price, asset_type)
 }
 
 // ── Trades ──────────────────────────────────────────────────────────────────
@@ -114,8 +134,8 @@ pub fn record_trade(
         id: trade_id,
         symbol,
         currency,
-        kind,
-        action,
+        kind: kind.parse().unwrap_or_default(),
+        action: action.parse().unwrap_or_default(),
         shares,
         price,
         amount,
@@ -158,13 +178,13 @@ pub fn update_trade(
         id,
         symbol,
         currency,
-        kind,
-        action,
+        kind: kind.parse().unwrap_or_default(),
+        action: action.parse().unwrap_or_default(),
         shares,
         price,
         amount,
         notes,
-        created_at: String::new(),
+        created_at: String::new(), // unused — UPDATE SQL preserves original
         name,
         trade_date,
         asset_type,
@@ -507,7 +527,7 @@ pub async fn migrate_legacy_portfolio() -> Result<String, String> {
             let holding = portfolio::Holding {
                 symbol: symbol.to_string(),
                 currency: "CNY".to_string(),
-                kind: kind.to_string(),
+                kind: kind.parse().unwrap_or_default(),
                 name,
                 notional: 0.0,
                 avg_cost,

@@ -1751,12 +1751,18 @@ export interface Holding {
   updatedAt: string;
 }
 
+/** Trade action type — matches Rust TradeAction enum (snake_case). */
+export type TradeAction =
+  | 'buy' | 'sell' | 'cost_edit' | 'cash_adjust'
+  | 'add_watch' | 'delete_watch' | 'edit_holding'
+  | 'unknown';
+
 export interface Trade {
   id: string;
   symbol: string;
   currency: string;
-  kind: string;
-  action: string;
+  kind: 'hold' | 'watch';
+  action: TradeAction;
   shares: number | null;
   price: number | null;
   amount: number | null;
