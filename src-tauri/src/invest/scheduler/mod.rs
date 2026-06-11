@@ -22,6 +22,10 @@ pub struct CronJob {
     pub last_status: Option<String>,
     #[serde(default)]
     pub description: String,
+    /// If true, this job runs on its own dedicated timer loop with a fixed
+    /// interval (ignoring cron_expr). The main scheduler loop skips it.
+    #[serde(default)]
+    pub dedicated: bool,
 }
 
 pub fn default_jobs() -> Vec<CronJob> {
@@ -37,6 +41,7 @@ pub fn default_jobs() -> Vec<CronJob> {
             next_run: None,
             last_status: None,
             description: "定时记录持仓市值快照".into(),
+            dedicated: false,
         },
         CronJob {
             id: "verdict_review".into(),
@@ -49,6 +54,7 @@ pub fn default_jobs() -> Vec<CronJob> {
             next_run: None,
             last_status: None,
             description: "回溯验证裁决命中率".into(),
+            dedicated: false,
         },
         CronJob {
             id: "event_scan".into(),
@@ -61,6 +67,7 @@ pub fn default_jobs() -> Vec<CronJob> {
             next_run: None,
             last_status: None,
             description: "扫描财经新闻和公告".into(),
+            dedicated: false,
         },
         CronJob {
             id: "jin10_collector".into(),
@@ -73,6 +80,7 @@ pub fn default_jobs() -> Vec<CronJob> {
             next_run: None,
             last_status: None,
             description: "每15秒采集金十A股快讯".into(),
+            dedicated: true,
         },
         CronJob {
             id: "event_analyzer".into(),
@@ -85,6 +93,7 @@ pub fn default_jobs() -> Vec<CronJob> {
             next_run: None,
             last_status: None,
             description: "每10分钟分析未处理事件".into(),
+            dedicated: true,
         },
         CronJob {
             id: "dream_invest".into(),
@@ -97,6 +106,7 @@ pub fn default_jobs() -> Vec<CronJob> {
             next_run: None,
             last_status: None,
             description: "投资洞察管线: Light→REM→Deep".into(),
+            dedicated: false,
         },
         CronJob {
             id: "daily_report".into(),
@@ -109,6 +119,7 @@ pub fn default_jobs() -> Vec<CronJob> {
             next_run: None,
             last_status: None,
             description: "生成每日投资报告并存档".into(),
+            dedicated: false,
         },
         CronJob {
             id: "macro_refresh".into(),
@@ -121,6 +132,7 @@ pub fn default_jobs() -> Vec<CronJob> {
             next_run: None,
             last_status: None,
             description: "每15分钟刷新12个宏观指标到macro_cache表".into(),
+            dedicated: false,
         },
     ]
 }

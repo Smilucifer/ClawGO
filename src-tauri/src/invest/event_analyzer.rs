@@ -25,6 +25,9 @@ pub struct AnalyzerResult {
 
 /// Run analysis on unanalyzed events.
 /// Queries pending events, normalizes via LLM, updates DB.
+///
+/// Events classified as LOW by the LLM keep their original severity
+/// (preserving jin10 collector events that haven't been keyword-filtered).
 pub async fn analyze_pending_events(
     llm_client: &dyn InvestLlmClient,
     llm_config: &LlmConfig,
@@ -56,18 +59,11 @@ pub async fn analyze_pending_events(
 
     // Update each event
     for (event, norm) in pending.iter().zip(normalized.iter()) {
-        // Skip events LLM reclassified as LOW
         if norm.severity == Severity::Low {
-            log::debug!("  [skip] '{}' — LLM classified as LOW", short(&event.title));
+            // Keep original severity — preserves jin10 events not keyword-filtered
+            log::debug!("  [keep] '{}' — LLM classified as LOW, preserving original '{}'", short(&event.title), event.severity);
             skipped += 1;
-
-            // Still mark as analyzed to avoid re-processing
-            let _ = update_event_analysis(
-                &event.id,
-                "low",
-                &norm.stance,
-                None,
-            );
+            let _ = update_event_analysis(&event.id, &event.severity, &norm.stance, None);
             continue;
         }
 

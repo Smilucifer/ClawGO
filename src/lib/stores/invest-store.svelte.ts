@@ -186,12 +186,8 @@ class InvestStore {
       );
     }
 
-    // Sort: HIGH severity first, then by created_at desc
-    result.sort((a, b) => {
-      if (a.e.severity === "high" && b.e.severity !== "high") return -1;
-      if (b.e.severity === "high" && a.e.severity !== "high") return 1;
-      return b.ts - a.ts;
-    });
+    // Sort by created_at desc (newest first), all severities treated equally
+    result.sort((a, b) => b.ts - a.ts);
 
     return result.map((item) => item.e);
   });

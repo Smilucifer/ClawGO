@@ -45,6 +45,31 @@
 - `src/lib/types.ts` — InvestEvent 新字段
 - `messages/en.json` / `messages/zh-CN.json` — "invest.eventWatch.pending"
 
+### 事件去重 + 排序修复 + 专用定时器 + Simplify 审查
+
+**Bug 修复 (3 项):**
+1. **DB 去重迁移守卫**: `DELETE FROM events` 去重 SQL 改为仅在 UNIQUE 索引不存在时执行（`sqlite_master` 检查），避免每次启动全表扫描。
+2. **事件排序修复**: 前端 `filteredEvents` 排序移除 severity 优先级（`pending` 被误排到与 `high` 同级），改为纯 `created_at` 降序。
+3. **金十快讯不丢弃**: `event_analyzer` 移除 `overwrite_low` 参数，LLM 分类为 LOW 的事件保留原始 severity（jin10 事件保持 `"pending"`），仅标记 `analyzed=1`。
+
+**架构改进 (2 项):**
+4. **专用定时器**: `jin10_collector` 和 `event_analyzer` 从主 scheduler 循环分离，各运行独立 tokio spawn 循环，精确 15s/10min 间隔。
+5. **CronJob `dedicated` 字段**: 新增 `dedicated: bool` 数据驱动标记，主循环用 `!j.dedicated` 过滤，消除硬编码 job ID 列表。
+
+**Simplify 审查修复 (7 项):**
+- **Reuse (2)**: 专用循环复用 `dispatch_job()` 消除内联逻辑重复、提取 `persist_job_status()` + `execute_and_log()` 共享辅助函数
+- **Simplification (2)**: `event_analyzer` 两个 LOW 分支合并为单分支、移除始终为 `false` 的 `overwrite_low` 参数
+- **Efficiency (2)**: 状态更新改用 `load_jobs_base()` 跳过无用 cron 计算、`Instant::now()` 扣除执行时间消除 sleep 漂移
+- **Altitude (1)**: `dedicated` 字段替代硬编码过滤列表，防止新增 job 时遗漏
+
+**涉及文件 (5):**
+- `src-tauri/src/invest/scheduler/mod.rs` — CronJob `dedicated` 字段 + 默认值
+- `src-tauri/src/invest/scheduler/config.rs` — `load_jobs_base` 改为 `pub(crate)`
+- `src-tauri/src/invest/scheduler/runner.rs` — 全面重写: 专用循环 + 共享辅助 + 精确计时
+- `src-tauri/src/invest/event_analyzer.rs` — LOW 分支合并 + 移除 `overwrite_low`
+- `src-tauri/src/storage/invest/mod.rs` — 去重迁移索引存在性守卫
+- `src/lib/stores/invest-store.svelte.ts` — 排序改为纯时间降序
+
 ---
 
 ## v5.3.1 (2026-06-10)

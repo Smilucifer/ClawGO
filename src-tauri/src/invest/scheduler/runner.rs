@@ -3,7 +3,7 @@ use crate::storage::invest::scheduler::{is_trading_day, log_task_end, log_task_s
 use crate::tushare::client::TushareClient;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, Duration, Instant};
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
 
@@ -90,8 +90,54 @@ pub async fn dispatch_job(id: &str) -> Result<String, String> {
     }
 }
 
-/// Start the scheduler loop. Call once from lib.rs setup.
-/// The `dispatch` callback maps job_id to the async function to execute.
+/// Persist job run status to scheduler config (shared by main loop and dedicated loops).
+///
+/// When `compute_next` is true, `next_run` is recalculated from the cron schedule.
+/// Dedicated-loop jobs pass `false` since their timing is not cron-driven.
+fn persist_job_status(job_id: &str, ok: bool, compute_next: bool) {
+    let now = chrono::Local::now()
+        .format("%Y-%m-%dT%H:%M:%S")
+        .to_string();
+    // Use load_jobs_base to avoid computing next_run for every job on each tick.
+    // We only compute next_run for the specific job if requested.
+    let mut jobs = config::load_jobs_base();
+    if let Some(j) = jobs.iter_mut().find(|j| j.id == job_id) {
+        j.last_run = Some(now);
+        j.last_status = Some(if ok { "ok".into() } else { "error".into() });
+        if compute_next {
+            j.next_run = config::compute_next_run_for_job(j);
+        } else {
+            j.next_run = None;
+        }
+        if let Err(e) = config::save_jobs(&jobs) {
+            log::error!("Failed to save job state: {e}");
+        }
+    }
+}
+
+/// Execute a job with logging and status persistence.
+/// Shared by both the main cron loop and dedicated timer loops.
+async fn execute_and_log(job_id: &str, result: Result<String, String>, compute_next: bool) {
+    let log_id = log_task_start(job_id).ok();
+    match &result {
+        Ok(msg) => {
+            if let Some(id) = log_id {
+                let _ = log_task_end(id, "ok", Some(msg));
+            }
+        }
+        Err(err) => {
+            if let Some(id) = log_id {
+                let _ = log_task_end(id, "error", Some(err));
+            }
+        }
+    }
+    persist_job_status(job_id, result.is_ok(), compute_next);
+}
+
+/// Start the scheduler loop and dedicated timers. Call once from lib.rs setup.
+///
+/// Jobs with `dedicated: true` run on their own precise timer loops;
+/// all other jobs go through the main cron loop.
 pub fn start<F, Fut>(dispatch: F)
 where
     F: Fn(String) -> Fut + Send + Sync + 'static,
@@ -100,6 +146,12 @@ where
     if RUNNING.swap(true, Ordering::SeqCst) {
         return; // already running
     }
+
+    // Spawn dedicated loops for high-frequency jobs
+    start_dedicated_loop("jin10_collector", Duration::from_secs(10), Duration::from_secs(15));
+    start_dedicated_loop("event_analyzer", Duration::from_secs(30), Duration::from_secs(10 * 60));
+
+    // Main scheduler loop for all non-dedicated jobs
     let dispatch = Arc::new(dispatch);
     tauri::async_runtime::spawn(async move {
         // Initial delay to let app finish setup
@@ -108,10 +160,11 @@ where
             let mut jobs = config::load_jobs();
             let today = crate::invest::date_utils::get_invest_date();
 
-            // Collect IDs of enabled jobs that should fire (avoid borrow conflict)
+            // Collect IDs of enabled, non-dedicated jobs that should fire
             let to_fire: Vec<String> = jobs
                 .iter()
                 .filter(|j| j.enabled)
+                .filter(|j| !j.dedicated)
                 .filter(|j| {
                     match &j.next_run {
                         Some(next) => chrono::NaiveDateTime::parse_from_str(next, "%Y-%m-%dT%H:%M:%S")
@@ -134,32 +187,15 @@ where
                 .collect();
 
             for job_id in to_fire {
-                // Execute
-                let log_id = log_task_start(&job_id).ok();
                 let result = (dispatch)(job_id.clone()).await;
+                execute_and_log(&job_id, result, true).await;
 
-                match &result {
-                    Ok(msg) => {
-                        if let Some(id) = log_id {
-                            let _ = log_task_end(id, "ok", Some(msg));
-                        }
-                    }
-                    Err(err) => {
-                        if let Some(id) = log_id {
-                            let _ = log_task_end(id, "error", Some(err));
-                        }
-                    }
-                }
-
-                // Update last_run/last_status in the single mutable jobs vec
+                // Update last_run/last_status in the local jobs vec for next_run computation
                 let now = chrono::Local::now()
                     .format("%Y-%m-%dT%H:%M:%S")
                     .to_string();
                 if let Some(j) = jobs.iter_mut().find(|j| j.id == job_id) {
                     j.last_run = Some(now);
-                    j.last_status = Some(
-                        if result.is_ok() { "ok" } else { "error" }.into(),
-                    );
                     j.next_run = config::compute_next_run_for_job(j);
                     if let Err(e) = config::save_jobs(&jobs) {
                         log::error!("Failed to save job state: {e}");
@@ -168,6 +204,27 @@ where
             }
 
             sleep(Duration::from_secs(60)).await;
+        }
+    });
+}
+
+/// Spawn a dedicated timer loop for a high-frequency job.
+/// Uses `dispatch_job` for the actual work, maintaining a single source of truth.
+fn start_dedicated_loop(job_id: &'static str, initial_delay: Duration, interval: Duration) {
+    tauri::async_runtime::spawn(async move {
+        sleep(initial_delay).await;
+        log::info!("[{job_id}] dedicated timer started ({}s interval)", interval.as_secs());
+
+        loop {
+            let start = Instant::now();
+            let result = dispatch_job(job_id).await;
+            execute_and_log(job_id, result, false).await;
+
+            // Account for execution time to maintain precise cadence
+            let elapsed = start.elapsed();
+            if elapsed < interval {
+                sleep(interval - elapsed).await;
+            }
         }
     });
 }

@@ -43,7 +43,7 @@ pub fn load_jobs() -> Vec<CronJob> {
 }
 
 /// Shared base: defaults + disk overlay. No derived-field computation.
-fn load_jobs_base() -> Vec<CronJob> {
+pub(crate) fn load_jobs_base() -> Vec<CronJob> {
     let mut jobs = super::default_jobs();
     let path = config_path();
     if !path.exists() {

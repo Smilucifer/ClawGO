@@ -269,7 +269,24 @@ fn init_db_inner(db_path: &Path) -> Result<Connection, String> {
             .map_err(|e| format!("Failed to add asset_type column: {}", e))?;
     }
 
-    // Add UNIQUE index on (source, title) for event dedup
+    // Add UNIQUE index on (source, title) for event dedup.
+    // If the index doesn't exist yet, deduplicate first to avoid UNIQUE constraint failure.
+    let has_dedup_index: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_events_source_title'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .unwrap_or(0)
+        > 0;
+    if !has_dedup_index {
+        conn.execute_batch(
+            "DELETE FROM events WHERE rowid NOT IN (
+                SELECT MIN(rowid) FROM events GROUP BY source, title
+            );"
+        )
+        .map_err(|e| format!("Failed to deduplicate events: {}", e))?;
+    }
     conn.execute_batch(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_events_source_title ON events(source, title);"
     )
