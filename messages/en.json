@@ -748,6 +748,7 @@
   "invest.eventWatch.filterHigh": "HIGH",
   "invest.eventWatch.filterMedium": "MEDIUM",
   "invest.eventWatch.filterLow": "LOW",
+  "invest.eventWatch.pending": "Pending",
   "invest.eventWatch.stanceBullish": "Bullish",
   "invest.eventWatch.stanceBearish": "Bearish",
   "invest.eventWatch.stanceNeutral": "Neutral",

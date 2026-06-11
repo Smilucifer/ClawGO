@@ -110,8 +110,19 @@ fn ensure_conn(guard: &mut Option<Connection>) -> Result<(), String> {
     Ok(())
 }
 
+/// Validate that a name is a safe SQL identifier (alphanumeric + underscore).
+fn assert_safe_identifier(name: &str) {
+    debug_assert!(
+        !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_'),
+        "unsafe SQL identifier: {:?}",
+        name
+    );
+}
+
 /// Check whether a table column exists.
 fn has_column(conn: &Connection, table: &str, col: &str) -> bool {
+    assert_safe_identifier(table);
+    assert_safe_identifier(col);
     conn.query_row(
         &format!("SELECT COUNT(*) FROM pragma_table_info('{}') WHERE name='{}'", table, col),
         [],
@@ -123,6 +134,7 @@ fn has_column(conn: &Connection, table: &str, col: &str) -> bool {
 
 /// Get list of column names for a table.
 fn get_table_columns(conn: &Connection, table: &str) -> Result<Vec<String>, String> {
+    assert_safe_identifier(table);
     let mut stmt = conn
         .prepare(&format!("PRAGMA table_info('{}')", table))
         .map_err(|e| format!("prepare table_info for {}: {}", table, e))?;
@@ -153,6 +165,13 @@ fn migrate_trades_table(conn: &mut Connection) -> Result<(), String> {
 
     // Get existing columns from old trades table (fail fast on introspection error)
     let old_columns: HashSet<String> = get_table_columns(conn, "trades")?.into_iter().collect();
+
+    // Early-return if schema already matches (skip redundant table rebuild)
+    let expected: HashSet<String> = TRADES_COLUMNS.iter().map(|s| s.to_string()).collect();
+    if old_columns == expected {
+        log::debug!("Trades table schema already up-to-date, skipping migration");
+        return Ok(());
+    }
 
     // Build SELECT clause: use existing column if available, NULL if missing
     let column_list = TRADES_COLUMNS.join(", ");
@@ -228,6 +247,20 @@ fn init_db_inner(db_path: &Path) -> Result<Connection, String> {
     if !has_column(&conn, "events", "stance") {
         conn.execute_batch("ALTER TABLE events ADD COLUMN stance TEXT DEFAULT 'neutral';")
             .map_err(|e| format!("Failed to add stance column: {}", e))?;
+    }
+
+    // Migration: add analyzed, analyzed_at, channels columns to events table if missing
+    if !has_column(&conn, "events", "analyzed") {
+        conn.execute_batch("ALTER TABLE events ADD COLUMN analyzed INTEGER DEFAULT 0;")
+            .map_err(|e| format!("Failed to add analyzed column: {}", e))?;
+    }
+    if !has_column(&conn, "events", "analyzed_at") {
+        conn.execute_batch("ALTER TABLE events ADD COLUMN analyzed_at TEXT;")
+            .map_err(|e| format!("Failed to add analyzed_at column: {}", e))?;
+    }
+    if !has_column(&conn, "events", "channels") {
+        conn.execute_batch("ALTER TABLE events ADD COLUMN channels TEXT DEFAULT '[]';")
+            .map_err(|e| format!("Failed to add channels column: {}", e))?;
     }
 
     // Migration: add asset_type column to holdings table if missing
@@ -441,9 +474,13 @@ CREATE TABLE IF NOT EXISTS events (
     body TEXT,
     symbols TEXT,
     severity TEXT DEFAULT 'info',
+    stance TEXT DEFAULT 'neutral',
     triggered INTEGER DEFAULT 0,
     trigger_verdict_id TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    analyzed INTEGER DEFAULT 0,
+    analyzed_at TEXT,
+    channels TEXT DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS event_sources (

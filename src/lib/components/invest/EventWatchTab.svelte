@@ -36,6 +36,7 @@
     switch (severity) {
       case 'high': return 'text-[#a87a7a] bg-[var(--color-error-bg)] border-[var(--color-error-bg)]';
       case 'medium': return 'text-[#b89a6a] bg-[var(--color-warning-bg)] border-[var(--color-warning-bg)]';
+      case 'pending': return 'text-[var(--text-tertiary)] bg-[var(--bg-input)] border-border animate-pulse';
       default: return 'text-[var(--text-secondary)] bg-[var(--bg-hover)] border-border';
     }
   }
@@ -44,6 +45,7 @@
     switch (stance) {
       case 'bullish': return 'text-[var(--color-success)]';
       case 'bearish': return 'text-[var(--color-error)]';
+      case 'pending': return 'text-[var(--text-tertiary)] animate-pulse';
       default: return 'text-[var(--text-tertiary)]';
     }
   }
@@ -53,6 +55,7 @@
       case 'high': return t('invest.eventWatch.filterHigh');
       case 'medium': return t('invest.eventWatch.filterMedium');
       case 'low': return t('invest.eventWatch.filterLow');
+      case 'pending': return t('invest.eventWatch.pending');
       default: return severity;
     }
   }
@@ -62,6 +65,7 @@
       case 'bullish': return t('invest.eventWatch.stanceBullish');
       case 'bearish': return t('invest.eventWatch.stanceBearish');
       case 'neutral': return t('invest.eventWatch.stanceNeutral');
+      case 'pending': return '...';
       default: return stance;
     }
   }

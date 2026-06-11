@@ -3,6 +3,22 @@ use serde::{Deserialize, Serialize};
 use crate::invest::international::InternationalClient;
 use crate::invest::llm::{InvestLlmClient, LlmConfig, Message, collect_stream};
 
+/// Truncate string at char boundary for logging (≤40 chars).
+pub fn short(s: &str) -> &str {
+    &s[..s.floor_char_boundary(40.min(s.len()))]
+}
+
+/// Convert Unix timestamp to ISO 8601 string, with a fallback for zero/invalid timestamps.
+pub fn format_provider_timestamp(ts: i64, fallback: &str) -> String {
+    if ts > 0 {
+        chrono::DateTime::from_timestamp(ts, 0)
+            .map(|dt| dt.format("%Y-%m-%dT%H:%M:%S").to_string())
+            .unwrap_or_else(|| fallback.to_string())
+    } else {
+        fallback.to_string()
+    }
+}
+
 /// Normalize Tushare date strings to ISO 8601 format.
 /// Handles "20260609" → "2026-06-09T00:00:00" and passes through valid ISO strings.
 fn normalize_tushare_date(raw: &str, fallback: &str) -> String {
@@ -70,7 +86,7 @@ pub struct RawEvent {
 // ── Source count limits ──
 
 /// Max Jin10 flash news items per scan.
-const JIN10_COUNT: usize = 30;
+pub const JIN10_COUNT: usize = 30;
 /// Max AkShare per-stock news items per symbol.
 const AKSHARE_PER_STOCK_COUNT: u32 = 8;
 
@@ -177,7 +193,7 @@ pub async fn normalize_events(
         Ok(s) => s,
         Err(e) => {
             log::warn!("Event normalizer LLM call failed: {}, falling back to rule-based", e);
-            return raw_events.iter().map(fallback_normalize).collect();
+            return raw_events.iter().map(|ev| fallback_normalize_from(&ev.title, &ev.body)).collect();
         }
     };
 
@@ -185,7 +201,7 @@ pub async fn normalize_events(
     let content = collected.content;
 
     // Parse JSON response
-    parse_normalized_response(&content, raw_events)
+    parse_normalized_response(&content, raw_events, |ev| fallback_normalize_from(&ev.title, &ev.body))
 }
 
 /// Result of a scan run.
@@ -294,13 +310,7 @@ pub async fn scan_events(
             }
             log::info!("{source_name} returned {} items", items.len());
             for item in items {
-                let created_at = if item.provider_publish_time > 0 {
-                    chrono::DateTime::from_timestamp(item.provider_publish_time, 0)
-                        .map(|dt| dt.format("%Y-%m-%dT%H:%M:%S").to_string())
-                        .unwrap_or_else(|| fallback_time.clone())
-                } else {
-                    fallback_time.clone()
-                };
+                let created_at = format_provider_timestamp(item.provider_publish_time, &fallback_time);
                 raw_events.push(RawEvent {
                     source: source_name.to_string(),
                     event_type: "news".to_string(),
@@ -325,10 +335,11 @@ pub async fn scan_events(
             .collect();
 
         // Run Jin10 + all per-stock fetches concurrently
+        // Use A-share channel filter to get only A-share related news
+        sources_scanned.push("jinshi_flash".to_string());
         let jin10_client = client.clone();
         let jin10_future = async {
-            sources_scanned.push("jinshi_flash".to_string());
-            jin10_client.fetch_jinshi_all_news(JIN10_COUNT).await
+            jin10_client.fetch_jinshi_a_share_news(JIN10_COUNT).await
         };
 
         let (jin10_result, stock_results) = tokio::join!(
@@ -353,6 +364,17 @@ pub async fn scan_events(
 
     let fetched = raw_events.len();
     log::info!("Total raw events before filtering: {}", fetched);
+
+    // 3. Deduplicate raw_events by (source, title) to avoid duplicate LLM calls
+    {
+        use std::collections::HashSet;
+        let mut seen: HashSet<(String, String)> = HashSet::new();
+        raw_events.retain(|ev| seen.insert((ev.source.clone(), ev.title.clone())));
+        let dedup_count = fetched - raw_events.len();
+        if dedup_count > 0 {
+            log::info!("Deduplicated {} duplicate events by (source, title)", dedup_count);
+        }
+    }
 
     // 4. Filter by keyword severity (drop LOW)
     let filtered_events: Vec<RawEvent> = raw_events
@@ -383,7 +405,6 @@ pub async fn scan_events(
 
     // 6. Save to DB (dedup by source+title via INSERT OR IGNORE)
     let mut saved = 0usize;
-    fn short(s: &str) -> &str { &s[..s.floor_char_boundary(40)] }
     for (ev, norm) in filtered_events.iter().zip(normalized.iter()) {
 
         // Log LLM classification for diagnostics
@@ -422,6 +443,9 @@ pub async fn scan_events(
             triggered: false,
             trigger_verdict_id: None,
             created_at: ev.created_at.clone(),
+            analyzed: true,
+            analyzed_at: Some(chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string()),
+            channels: "[]".to_string(),
         };
         match crate::storage::invest::events::save_event(&event) {
             Ok(()) => saved += 1,
@@ -447,8 +471,13 @@ pub async fn scan_events(
     })
 }
 
-/// Parse LLM JSON response, matching results to raw events by index.
-fn parse_normalized_response(content: &str, raw_events: &[RawEvent]) -> Vec<NormalizedEvent> {
+/// Parse LLM JSON response, matching results to items by index.
+/// Generic over input type — callers provide a fallback closure.
+pub fn parse_normalized_response<T>(
+    content: &str,
+    items: &[T],
+    fallback: impl Fn(&T) -> NormalizedEvent,
+) -> Vec<NormalizedEvent> {
     // Extract JSON array from response (handle markdown code blocks)
     let json_str = content.trim();
     let json_str = if json_str.starts_with("```") {
@@ -468,27 +497,28 @@ fn parse_normalized_response(content: &str, raw_events: &[RawEvent]) -> Vec<Norm
         Ok(results) => {
             // Pad or truncate to match input length
             let mut normalized = results;
-            normalized.truncate(raw_events.len());
-            while normalized.len() < raw_events.len() {
+            normalized.truncate(items.len());
+            while normalized.len() < items.len() {
                 let idx = normalized.len();
-                normalized.push(fallback_normalize(&raw_events[idx]));
+                normalized.push(fallback(&items[idx]));
             }
             normalized
         }
         Err(e) => {
             log::warn!("Failed to parse normalizer response: {}, falling back to rule-based", e);
-            raw_events.iter().map(fallback_normalize).collect()
+            items.iter().map(fallback).collect()
         }
     }
 }
 
-/// Fallback: use rule-based severity, neutral stance, no symbols.
-fn fallback_normalize(ev: &RawEvent) -> NormalizedEvent {
-    let severity = classify_severity(&ev.title, &ev.body)
+/// Fallback normalization from title + body text.
+/// Used by both RawEvent and Event via `fallback_normalize_for`.
+pub fn fallback_normalize_from(title: &str, body: &str) -> NormalizedEvent {
+    let severity = classify_severity(title, body)
         .unwrap_or(Severity::Low);
 
     NormalizedEvent {
-        one_line_claim: ev.title.chars().take(30).collect(),
+        one_line_claim: title.chars().take(30).collect(),
         stance: "neutral".to_string(),
         severity,
         affected_symbols: vec![],
@@ -528,7 +558,7 @@ mod tests {
             created_at: "2026-05-29T10:00:00Z".into(),
         }];
         let json = r#"[{"one_line_claim":"央行降准50基点","stance":"bullish","severity":"high","affected_symbols":["600519"]}]"#;
-        let result = parse_normalized_response(json, &raw);
+        let result = parse_normalized_response(json, &raw, |ev| fallback_normalize_from(&ev.title, &ev.body));
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].stance, "bullish");
         assert_eq!(result[0].affected_symbols, vec!["600519"]);
@@ -555,7 +585,7 @@ mod tests {
             },
         ];
         let wrapped = "```json\n[{\"one_line_claim\":\"claim 1\",\"stance\":\"neutral\",\"severity\":\"low\",\"affected_symbols\":[]}]\n```";
-        let result = parse_normalized_response(wrapped, &raw);
+        let result = parse_normalized_response(wrapped, &raw, |ev| fallback_normalize_from(&ev.title, &ev.body));
         assert_eq!(result.len(), 2); // 1 parsed + 1 fallback for missing
         assert_eq!(result[0].stance, "neutral");
         // Second event falls back

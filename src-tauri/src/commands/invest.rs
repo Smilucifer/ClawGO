@@ -303,6 +303,9 @@ pub fn save_event(
         triggered: false,
         trigger_verdict_id: None,
         created_at: now,
+        analyzed: true,
+        analyzed_at: Some(chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string()),
+        channels: "[]".to_string(),
     };
     events::save_event(&e)
 }
@@ -1371,7 +1374,7 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
     }
 
     sources.push(probe_news("AkShare 个股", &now_str, intl_client.fetch_akshare_stock_news("000001", 1).await).await);
-    sources.push(probe_news("金十数据", &now_str, intl_client.fetch_jinshi_news("", 1).await).await);
+    sources.push(probe_news("金十数据", &now_str, intl_client.fetch_jinshi_news("", 1, None).await).await);
 
     // Yahoo Finance (VIX, TNX, DXY, Gold, Oil, USDCNY)
     match intl_client.fetch_yahoo_quote("^VIX").await {

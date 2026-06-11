@@ -126,25 +126,43 @@ impl InternationalClient {
 
     /// Fetch flash news from Jin10 (金十数据).
     /// Returns items compatible with NewsItem schema.
+    ///
+    /// # Arguments
+    /// * `query` - Optional keyword filter
+    /// * `count` - Max items to return
+    /// * `channel` - Channel filter (None=all, Some(2)=A-share, Some(3)=commodity, Some(4)=bond, Some(5)=international)
     pub async fn fetch_jinshi_news(
         &self,
         query: &str,
         count: u32,
+        channel: Option<u32>,
     ) -> Result<Vec<NewsItem>, String> {
-        self.rpc_call(
-            "jinshi.news",
-            serde_json::json!({"query": query, "count": count}),
-        )
-        .await
+        let mut params = serde_json::json!({"query": query, "count": count});
+        if let Some(ch) = channel {
+            params["channel"] = serde_json::json!(ch);
+        }
+        self.rpc_call("jinshi.news", params).await
     }
 
-    /// Fetch all flash news from Jin10 (金十数据) — macro + international.
+    /// Fetch all flash news from Jin10 (金十数据) — all channels.
     /// No query filter, returns the full feed.
     pub async fn fetch_jinshi_all_news(&self, max_items: usize) -> Vec<NewsItem> {
-        match self.fetch_jinshi_news("", max_items as u32).await {
+        match self.fetch_jinshi_news("", max_items as u32, None).await {
             Ok(items) => items,
             Err(e) => {
                 log::warn!("fetch_jinshi_all_news failed: {}", e);
+                Vec::new()
+            }
+        }
+    }
+
+    /// Fetch A-share related flash news from Jin10 (金十数据).
+    /// Filters for A-share channel (channel=2).
+    pub async fn fetch_jinshi_a_share_news(&self, max_items: usize) -> Vec<NewsItem> {
+        match self.fetch_jinshi_news("", max_items as u32, Some(2)).await {
+            Ok(items) => items,
+            Err(e) => {
+                log::warn!("fetch_jinshi_a_share_news failed: {}", e);
                 Vec::new()
             }
         }

@@ -15,6 +15,9 @@ pub struct Event {
     pub triggered: bool,
     pub trigger_verdict_id: Option<String>,
     pub created_at: String,
+    pub analyzed: bool,
+    pub analyzed_at: Option<String>,
+    pub channels: String,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -29,12 +32,32 @@ pub struct EventSource {
     pub created_at: String,
 }
 
+/// Map a SQLite row to an Event struct.
+fn row_to_event(row: &rusqlite::Row) -> rusqlite::Result<Event> {
+    Ok(Event {
+        id: row.get(0)?,
+        source: row.get(1)?,
+        event_type: row.get(2)?,
+        title: row.get(3)?,
+        body: row.get(4)?,
+        symbols: row.get(5)?,
+        severity: row.get(6)?,
+        stance: row.get(7)?,
+        triggered: row.get::<_, i32>(8)? != 0,
+        trigger_verdict_id: row.get(9)?,
+        created_at: row.get(10)?,
+        analyzed: row.get::<_, i32>(11)? != 0,
+        analyzed_at: row.get(12)?,
+        channels: row.get(13)?,
+    })
+}
+
 pub fn save_event(e: &Event) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute(
-            "INSERT OR IGNORE INTO events (id, source, event_type, title, body, symbols, severity, stance, triggered, trigger_verdict_id, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            params![e.id, e.source, e.event_type, e.title, e.body, e.symbols, e.severity, e.stance, e.triggered as i32, e.trigger_verdict_id, e.created_at],
+            "INSERT OR IGNORE INTO events (id, source, event_type, title, body, symbols, severity, stance, triggered, trigger_verdict_id, created_at, analyzed, analyzed_at, channels)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            params![e.id, e.source, e.event_type, e.title, e.body, e.symbols, e.severity, e.stance, e.triggered as i32, e.trigger_verdict_id, e.created_at, e.analyzed as i32, e.analyzed_at, e.channels],
         )
         .map_err(|e| format!("save event: {}", e))?;
         Ok(())
@@ -46,31 +69,17 @@ pub fn list_events(source: Option<&str>, limit: Option<i64>) -> Result<Vec<Event
         let limit_val = limit.unwrap_or(100);
         let (sql, query_params): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = match source {
             Some(s) => (
-                "SELECT id, source, event_type, title, body, symbols, severity, stance, triggered, trigger_verdict_id, created_at FROM events WHERE source = ?1 ORDER BY created_at DESC LIMIT ?2",
+                "SELECT id, source, event_type, title, body, symbols, severity, stance, triggered, trigger_verdict_id, created_at, analyzed, analyzed_at, channels FROM events WHERE source = ?1 ORDER BY created_at DESC LIMIT ?2",
                 vec![Box::new(s.to_string()), Box::new(limit_val)],
             ),
             None => (
-                "SELECT id, source, event_type, title, body, symbols, severity, stance, triggered, trigger_verdict_id, created_at FROM events ORDER BY created_at DESC LIMIT ?1",
+                "SELECT id, source, event_type, title, body, symbols, severity, stance, triggered, trigger_verdict_id, created_at, analyzed, analyzed_at, channels FROM events ORDER BY created_at DESC LIMIT ?1",
                 vec![Box::new(limit_val)],
             ),
         };
         let mut stmt = conn.prepare(sql).map_err(|e| format!("prepare: {}", e))?;
         let rows = stmt
-            .query_map(rusqlite::params_from_iter(query_params.iter()), |row| {
-                Ok(Event {
-                    id: row.get(0)?,
-                    source: row.get(1)?,
-                    event_type: row.get(2)?,
-                    title: row.get(3)?,
-                    body: row.get(4)?,
-                    symbols: row.get(5)?,
-                    severity: row.get(6)?,
-                    stance: row.get(7)?,
-                    triggered: row.get::<_, i32>(8)? != 0,
-                    trigger_verdict_id: row.get(9)?,
-                    created_at: row.get(10)?,
-                })
-            })
+            .query_map(rusqlite::params_from_iter(query_params.iter()), row_to_event)
             .map_err(|e| format!("query: {}", e))?;
         let mut items = Vec::new();
         for row in rows {
@@ -125,6 +134,50 @@ pub fn get_event_stats() -> Result<(usize, usize, usize, Option<String>), String
             Err(e) => return Err(format!("last event: {}", e)),
         };
         Ok((total, high, untriggered_high, last_at))
+    })
+}
+
+/// Query unanalyzed events (analyzed = 0).
+pub fn list_unanalyzed_events(limit: Option<i64>) -> Result<Vec<Event>, String> {
+    with_conn(|conn| {
+        let limit_val = limit.unwrap_or(100);
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, source, event_type, title, body, symbols, severity, stance, triggered, trigger_verdict_id, created_at, analyzed, analyzed_at, channels
+                 FROM events WHERE analyzed = 0 ORDER BY created_at DESC LIMIT ?1"
+            )
+            .map_err(|e| format!("prepare: {}", e))?;
+        let rows = stmt
+            .query_map(params![limit_val], row_to_event)
+            .map_err(|e| format!("query: {}", e))?;
+        let mut items = Vec::new();
+        for row in rows {
+            items.push(row.map_err(|e| format!("row: {}", e))?);
+        }
+        Ok(items)
+    })
+}
+
+/// Update event analysis results (severity, stance, symbols, analyzed flag).
+pub fn update_event_analysis(
+    event_id: &str,
+    severity: &str,
+    stance: &str,
+    symbols: Option<&str>,
+) -> Result<(), String> {
+    with_conn(|conn| {
+        let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+        let changed = conn
+            .execute(
+                "UPDATE events SET severity = ?1, stance = ?2, symbols = ?3, analyzed = 1, analyzed_at = ?4 WHERE id = ?5 AND analyzed = 0",
+                params![severity, stance, symbols, now, event_id],
+            )
+            .map_err(|e| format!("update analysis: {}", e))?;
+        if changed == 0 {
+            Err("Event not found or already analyzed".to_string())
+        } else {
+            Ok(())
+        }
     })
 }
 

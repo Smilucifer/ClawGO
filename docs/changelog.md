@@ -1,5 +1,52 @@
 # Changelog / 更新日志
 
+## v5.3.2 (2026-06-11)
+
+### 金十快讯高频采集 + 事件分析器 + Scheduler 集成
+
+**架构设计:** 两阶段事件处理流水线 — 高频采集器 (15s) 写入原始事件，低频分析器 (10min) LLM 归一化。
+
+**新增模块 (2 项):**
+1. **`jin10_collector.rs`**: 每 15 秒轮询金十 A 股快讯，写入 events 表 (`analyzed=false`)。内存 HashSet 去重 + DB UNIQUE 索引双重去重。`cleanup_seen_ids` 防内存泄漏 (>5000 时清理至 2000)。
+2. **`event_analyzer.rs`**: 每 10 分钟查询未分析事件，批量 LLM 归一化 (severity/stance/symbols)，更新 DB。跳过 LLM 重新分类为 LOW 的事件（仍标记 analyzed 避免重复处理）。
+
+**Events 表扩展 (3 字段):**
+3. **`analyzed` / `analyzed_at` / `channels`**: 新增列 + DB 迁移。`list_unanalyzed_events` 查询 `WHERE analyzed=0`。`update_event_analysis` 更新 severity/stance/symbols 并设置 `analyzed=1`。
+
+**Scheduler 集成 (2 jobs):**
+4. **`jin10_collector` job**: `*/15 * * * * *` (6 字段秒级 cron)，`requires_trading_day=false`。
+5. **`event_analyzer` job**: `0 */10 * * * *`，`requires_trading_day=false`。
+
+**Python Jin10 Provider 增强 (4 项):**
+6. **`_clean_html()`**: HTML → 纯文本，处理 `<br>`、`&nbsp;` 等实体。
+7. **`_should_skip()`**: 5 条过滤规则 — 广告、HTML 列表、空/短内容、标题党、摘要长文。
+8. **Channel 参数**: `news()` 新增 `channel` 参数，客户端过滤。`news_a_share()` 便捷函数 (`channel=2`)。
+9. **`fetch_jinshi_a_share_news`**: Rust 端 `InternationalClient` 新增 A 股快捷方法。
+
+**Simplify 审查修复 (13 项):**
+- **Reuse (6)**: `parse_normalized_response` 泛型化、`fallback_normalize_from` 共享、`short()` 公共化、`format_provider_timestamp` 共享、`JIN10_COUNT` 单一位置、`row_to_event` 提取
+- **Simplification (2)**: `row_to_event` 消除 list_events/list_unanalyzed_events 重复映射、`has_column` 标识符验证
+- **Efficiency (4)**: `cleanup_seen_ids` 效率优化、`Local::now()` 循环前预计算、`load_jobs()` N+1→单次 load、`sources_scanned.push` 移出 async block
+- **Altitude (1)**: `migrate_trades_table` schema 匹配时提前返回
+
+**涉及文件 (15):**
+- `src-tauri/src/invest/jin10_collector.rs` — 新模块
+- `src-tauri/src/invest/event_analyzer.rs` — 新模块
+- `src-tauri/src/invest/event_scanner.rs` — 共享 helpers 提取
+- `src-tauri/src/invest/mod.rs` — 模块声明
+- `src-tauri/src/invest/scheduler/mod.rs` — 2 个默认 job
+- `src-tauri/src/invest/scheduler/runner.rs` — dispatch + 单次 load 重构
+- `src-tauri/src/invest/international.rs` — channel 参数 + A 股方法
+- `src-tauri/src/storage/invest/events.rs` — schema 扩展 + row_to_event
+- `src-tauri/src/storage/invest/mod.rs` — 迁移 + 标识符验证 + schema 提前返回
+- `src-tauri/src/commands/invest.rs` — channel 参数适配
+- `src-tauri/python-runtime/scripts/providers/jinshi.py` — HTML 清理 + 过滤 + channel
+- `src/lib/components/invest/EventWatchTab.svelte` — pending 状态 UI
+- `src/lib/types.ts` — InvestEvent 新字段
+- `messages/en.json` / `messages/zh-CN.json` — "invest.eventWatch.pending"
+
+---
+
 ## v5.3.1 (2026-06-10)
 
 ### Python RPC UnicodeEncodeError 修复: Jin10/AkShare 数据源崩溃

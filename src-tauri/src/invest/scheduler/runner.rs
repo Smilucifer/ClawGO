@@ -31,6 +31,28 @@ pub async fn dispatch_job(id: &str) -> Result<String, String> {
                 result.fetched, result.saved
             ))
         }
+        "jin10_collector" => {
+            let result = crate::invest::jin10_collector::collect_jin10_news().await?;
+            Ok(format!(
+                "Collected: {} fetched, {} new, {} duplicates",
+                result.fetched, result.new_saved, result.duplicates_skipped
+            ))
+        }
+        "event_analyzer" => {
+            let (_, llm_client, llm_config) =
+                crate::commands::invest::build_scan_clients()?;
+            let result = crate::invest::event_analyzer::analyze_pending_events(
+                &llm_client,
+                &llm_config,
+                None,
+                crate::invest::event_scanner::DEFAULT_LANGUAGE,
+            )
+            .await?;
+            Ok(format!(
+                "Analyzed: {} pending, {} analyzed, {} skipped",
+                result.total_pending, result.analyzed, result.skipped
+            ))
+        }
         "verdict_review" => {
             let settings = crate::storage::settings::get_user_settings();
             let tushare_token = settings
@@ -83,37 +105,38 @@ where
         // Initial delay to let app finish setup
         sleep(Duration::from_secs(10)).await;
         loop {
-            let jobs = config::load_jobs();
+            let mut jobs = config::load_jobs();
             let today = crate::invest::date_utils::get_invest_date();
 
-            for job in jobs {
-                if !job.enabled {
-                    continue;
-                }
-
-                // Check if it's time to fire using pre-computed next_run
-                let should_fire = match &job.next_run {
-                    Some(next) => chrono::NaiveDateTime::parse_from_str(next, "%Y-%m-%dT%H:%M:%S")
-                        .map(|dt| chrono::Local::now().naive_local() >= dt)
-                        .unwrap_or(true), // parse failure -> fire
-                    None => true, // never run -> fire now
-                };
-
-                if !should_fire {
-                    continue;
-                }
-
-                // Trading day guard
-                if job.requires_trading_day && !is_trading_day(&today).unwrap_or(false) {
-                    if let Ok(id) = log_task_start(&job.id) {
-                        let _ = log_task_end(id, "skipped", Some("non-trading day"));
+            // Collect IDs of enabled jobs that should fire (avoid borrow conflict)
+            let to_fire: Vec<String> = jobs
+                .iter()
+                .filter(|j| j.enabled)
+                .filter(|j| {
+                    match &j.next_run {
+                        Some(next) => chrono::NaiveDateTime::parse_from_str(next, "%Y-%m-%dT%H:%M:%S")
+                            .map(|dt| chrono::Local::now().naive_local() >= dt)
+                            .unwrap_or(true),
+                        None => true,
                     }
-                    continue;
-                }
+                })
+                .filter(|j| {
+                    if j.requires_trading_day && !is_trading_day(&today).unwrap_or(false) {
+                        if let Ok(id) = log_task_start(&j.id) {
+                            let _ = log_task_end(id, "skipped", Some("non-trading day"));
+                        }
+                        false
+                    } else {
+                        true
+                    }
+                })
+                .map(|j| j.id.clone())
+                .collect();
 
+            for job_id in to_fire {
                 // Execute
-                let log_id = log_task_start(&job.id).ok();
-                let result = (dispatch)(job.id.clone()).await;
+                let log_id = log_task_start(&job_id).ok();
+                let result = (dispatch)(job_id.clone()).await;
 
                 match &result {
                     Ok(msg) => {
@@ -128,20 +151,17 @@ where
                     }
                 }
 
-                // Update last_run/last_status and persist (single load + save)
+                // Update last_run/last_status in the single mutable jobs vec
                 let now = chrono::Local::now()
                     .format("%Y-%m-%dT%H:%M:%S")
                     .to_string();
-                let mut jobs_mut = config::load_jobs();
-                if let Some(j) = jobs_mut.iter_mut().find(|j| j.id == job.id) {
+                if let Some(j) = jobs.iter_mut().find(|j| j.id == job_id) {
                     j.last_run = Some(now);
                     j.last_status = Some(
                         if result.is_ok() { "ok" } else { "error" }.into(),
                     );
-                    // Recompute next_run in-memory (load_jobs already does this,
-                    // but we mutated last_run so recompute for the saved copy)
                     j.next_run = config::compute_next_run_for_job(j);
-                    if let Err(e) = config::save_jobs(&jobs_mut) {
+                    if let Err(e) = config::save_jobs(&jobs) {
                         log::error!("Failed to save job state: {e}");
                     }
                 }

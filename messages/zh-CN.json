@@ -748,6 +748,7 @@
   "invest.eventWatch.filterHigh": "高",
   "invest.eventWatch.filterMedium": "中",
   "invest.eventWatch.filterLow": "低",
+  "invest.eventWatch.pending": "待分析",
   "invest.eventWatch.stanceBullish": "看涨",
   "invest.eventWatch.stanceBearish": "看跌",
   "invest.eventWatch.stanceNeutral": "中性",

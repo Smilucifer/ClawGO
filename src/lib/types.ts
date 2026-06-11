@@ -1854,6 +1854,9 @@ export interface InvestEvent {
   triggered: boolean;
   triggerVerdictId: string | null;
   createdAt: string;
+  analyzed: boolean;
+  analyzedAt: string | null;
+  channels: string;
 }
 
 export interface ScanStatus {
