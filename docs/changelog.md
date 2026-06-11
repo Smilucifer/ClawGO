@@ -70,6 +70,15 @@
 - `src-tauri/src/storage/invest/mod.rs` — 去重迁移索引存在性守卫
 - `src/lib/stores/invest-store.svelte.ts` — 排序改为纯时间降序
 
+### 事件时间戳时区修复 (UTC→东八区)
+
+**Root Cause:** `event_scanner.rs::format_provider_timestamp` 使用 `DateTime::from_timestamp(ts, 0)` 生成 UTC 时间后直接格式化为 `"%Y-%m-%dT%H:%M:%S"`（无时区后缀），前端按本地时间显示导致所有事件时间比东八区晚 8 小时。
+
+**修复:** 加入 `.with_timezone(&chrono::Local)` 将 UTC 转为本地时区后再格式化，与 invest 模块其他时间戳生成点（`jin10_collector.rs`、`storage/invest/events.rs`）保持一致。
+
+**涉及文件 (1):**
+- `src-tauri/src/invest/event_scanner.rs` — `format_provider_timestamp` UTC→Local
+
 ---
 
 ## v5.3.1 (2026-06-10)

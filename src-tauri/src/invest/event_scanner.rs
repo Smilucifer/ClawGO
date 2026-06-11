@@ -8,11 +8,11 @@ pub fn short(s: &str) -> &str {
     &s[..s.floor_char_boundary(40.min(s.len()))]
 }
 
-/// Convert Unix timestamp to ISO 8601 string, with a fallback for zero/invalid timestamps.
+/// Convert Unix timestamp to local-time ISO 8601 string (UTC+8), with a fallback for zero/invalid timestamps.
 pub fn format_provider_timestamp(ts: i64, fallback: &str) -> String {
     if ts > 0 {
         chrono::DateTime::from_timestamp(ts, 0)
-            .map(|dt| dt.format("%Y-%m-%dT%H:%M:%S").to_string())
+            .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%dT%H:%M:%S").to_string())
             .unwrap_or_else(|| fallback.to_string())
     } else {
         fallback.to_string()

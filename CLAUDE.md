@@ -394,7 +394,7 @@ Key phases and their status:
 | 10+ (v5.3.1) | Python RPC UnicodeEncodeError 修复: bridge.rs PYTHONIOENCODING=utf-8 环境变量+server.py _safe_print UnicodeEncodeError 捕获+4 路 simplify 审查通过 | [done] |
 | 10+ (v5.3.1) | 定时任务 cron 格式修复: PRESETS/fieldsToCron 5→6 字段+stripSeconds 提取+normalize_cron_6field 后端归一化+DreamConfig 默认修复+4 路 simplify 审查通过 | [done] |
 | 10+ (v5.3.1) | NewsItem 反序列化修复+重命名: YahooNewsItem→NewsItem+移除 rename_all="camelCase"(Python snake_case 根因修复)+绝对时间 tooltip+4 路 simplify(Altitude: related_tickers 隐患→移除 rename_all) | [done] |
-| 10+ (v5.3.2) | 金十快讯高频采集+事件分析器: jin10_collector.rs(15s 轮询/内存去重/analyzed=false)+event_analyzer.rs(10min LLM 归一化)+events 表 3 字段扩展+Scheduler 2 jobs+Python Jin10 增强(_clean_html/_should_skip/channel)+13 项 simplify(泛型化 parse_normalized_response/shared helpers/row_to_event/load_jobs N+1 修复/migrate_trades_table 提前返回)+事件去重+排序修复+专用定时器+7 项 simplify(dedicated 字段/dispatch_job 复用/persist_job_status 共享/LOW 分支合并/sleep 漂移修复/load_jobs_base/去重迁移守卫) | [done] |
+| 10+ (v5.3.2) | 金十快讯高频采集+事件分析器: jin10_collector.rs(15s 轮询/内存去重/analyzed=false)+event_analyzer.rs(10min LLM 归一化)+events 表 3 字段扩展+Scheduler 2 jobs+Python Jin10 增强(_clean_html/_should_skip/channel)+13 项 simplify(泛型化 parse_normalized_response/shared helpers/row_to_event/load_jobs N+1 修复/migrate_trades_table 提前返回)+事件去重+排序修复+专用定时器+7 项 simplify(dedicated 字段/dispatch_job 复用/persist_job_status 共享/LOW 分支合并/sleep 漂移修复/load_jobs_base/去重迁移守卫)+事件时间戳时区修复(format_provider_timestamp UTC→Local) | [done] |
 
 Detailed plans and review responses are in `docs/`.
 
