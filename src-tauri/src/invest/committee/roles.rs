@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use super::parser::matches_key_line;
+
 // ---------------------------------------------------------------------------
 // Committee roles (4 variants — R1/R2 handled by Round enum)
 // ---------------------------------------------------------------------------
@@ -273,20 +275,9 @@ pub fn hard_truncate(text: &str, role: CommitteeRole, _attempt: u32) -> (String,
 
     for line in text.lines() {
         let trimmed = line.trim();
-        let is_critical = critical_keys.iter().any(|key| {
-            let colon_fmt = format!("{}:", key);
-            let cn_colon_fmt = format!("{}：", key);
-            let bold_colon_fmt = format!("**{}**:", key);
-            let bold_cn_colon_fmt = format!("**{}**：", key);
-            let equals_fmt = format!("{}=", key);
-            let bold_equals_fmt = format!("**{}**=", key);
-            trimmed.starts_with(&bold_colon_fmt)
-                || trimmed.starts_with(&bold_cn_colon_fmt)
-                || trimmed.starts_with(&bold_equals_fmt)
-                || trimmed.starts_with(&colon_fmt)
-                || trimmed.starts_with(&cn_colon_fmt)
-                || trimmed.starts_with(&equals_fmt)
-        });
+        let is_critical = critical_keys
+            .iter()
+            .any(|key| matches_key_line(trimmed, key).is_some());
         if is_critical {
             critical_lines.push(line.to_string());
         } else {

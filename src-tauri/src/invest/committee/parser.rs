@@ -903,6 +903,24 @@ mod tests {
     // ── Task 1: Flexible format variant tests ──────────────────────────
 
     #[test]
+    fn test_matches_key_line_all_variants() {
+        assert_eq!(matches_key_line("SIGNAL: risk_on", "SIGNAL"), Some(" risk_on"));
+        assert_eq!(matches_key_line("SIGNAL：risk_on", "SIGNAL"), Some("risk_on"));
+        assert_eq!(matches_key_line("**SIGNAL**: risk_on", "SIGNAL"), Some(" risk_on"));
+        assert_eq!(matches_key_line("**SIGNAL**：risk_on", "SIGNAL"), Some("risk_on"));
+        assert_eq!(matches_key_line("SIGNAL=risk_on", "SIGNAL"), Some("risk_on"));
+        assert_eq!(matches_key_line("**SIGNAL**=risk_on", "SIGNAL"), Some("risk_on"));
+        assert_eq!(matches_key_line("no match here", "SIGNAL"), None);
+        assert_eq!(matches_key_line("SIGNALX: risk_on", "SIGNAL"), None);
+    }
+
+    #[test]
+    fn test_matches_key_line_chinese_key() {
+        assert_eq!(matches_key_line("信号: risk_on", "信号"), Some(" risk_on"));
+        assert_eq!(matches_key_line("**信号**：risk_on", "信号"), Some("risk_on"));
+    }
+
+    #[test]
     fn test_extract_field_equals_format() {
         // Format: KEY=value (no colon)
         let text = "SIGNAL=risk_on\nSTRENGTH=7";
