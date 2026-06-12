@@ -244,22 +244,90 @@ pub fn length_constraint_suffix(role: CommitteeRole) -> String {
     )
 }
 
-/// Hard-truncate output text to the role's max character count.
-/// 尽量在行边界（`\n`）处截断，避免截断行中间。
-/// Returns (truncated_text, was_truncated).
+/// Hard-truncate LLM output to role's max_chars, preserving critical fields.
+///
+/// Strategy:
+/// 1. If text fits within max_chars, return as-is.
+/// 2. Extract lines containing critical fields.
+/// 3. Truncate non-critical lines to fit within remaining budget.
+/// 4. Reconstruct with critical fields appended at the end.
 pub fn hard_truncate(text: &str, role: CommitteeRole, _attempt: u32) -> (String, bool) {
     let max = role.max_chars();
     if text.chars().count() <= max {
         return (text.to_string(), false);
     }
 
-    // 在 max 字符位置之前找到最后一个换行符，确保不在行中间截断
-    let truncated: String = text.chars().take(max).collect();
-    if let Some(last_newline) = truncated.rfind('\n') {
-        (truncated[..last_newline].to_string(), true)
-    } else {
-        (truncated, true)
+    let critical_keys = role.critical_field_keys();
+
+    // Split lines into critical and non-critical
+    let mut critical_lines: Vec<String> = Vec::new();
+    let mut non_critical_lines: Vec<String> = Vec::new();
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        let is_critical = critical_keys.iter().any(|key| {
+            let colon_fmt = format!("{}:", key);
+            let cn_colon_fmt = format!("{}：", key);
+            let bold_colon_fmt = format!("**{}**:", key);
+            let bold_cn_colon_fmt = format!("**{}**：", key);
+            let equals_fmt = format!("{}=", key);
+            let bold_equals_fmt = format!("**{}**=", key);
+            trimmed.starts_with(&bold_colon_fmt)
+                || trimmed.starts_with(&bold_cn_colon_fmt)
+                || trimmed.starts_with(&bold_equals_fmt)
+                || trimmed.starts_with(&colon_fmt)
+                || trimmed.starts_with(&cn_colon_fmt)
+                || trimmed.starts_with(&equals_fmt)
+        });
+        if is_critical {
+            critical_lines.push(line.to_string());
+        } else {
+            non_critical_lines.push(line.to_string());
+        }
     }
+
+    // Calculate budget for non-critical content
+    let critical_chars: usize = critical_lines.iter().map(|l| l.chars().count()).sum();
+    let separator_chars = critical_lines.len(); // newlines
+    let budget = max.saturating_sub(critical_chars).saturating_sub(separator_chars);
+
+    // Truncate non-critical lines to fit budget
+    let mut truncated_non_critical = String::new();
+    let mut current_chars = 0;
+    for line in &non_critical_lines {
+        let line_chars = line.chars().count();
+        if current_chars + line_chars + 1 <= budget {
+            if !truncated_non_critical.is_empty() {
+                truncated_non_critical.push('\n');
+                current_chars += 1;
+            }
+            truncated_non_critical.push_str(line);
+            current_chars += line_chars;
+        } else {
+            // Try to fit partial line
+            let remaining = budget.saturating_sub(current_chars).saturating_sub(1);
+            if remaining > 10 {
+                // Only add partial if meaningful (>10 chars)
+                if !truncated_non_critical.is_empty() {
+                    truncated_non_critical.push('\n');
+                }
+                let partial: String = line.chars().take(remaining).collect();
+                truncated_non_critical.push_str(&partial);
+            }
+            break;
+        }
+    }
+
+    // Reconstruct: non-critical first, then critical fields
+    let mut result = truncated_non_critical;
+    for critical_line in &critical_lines {
+        if !result.is_empty() {
+            result.push('\n');
+        }
+        result.push_str(critical_line);
+    }
+
+    (result, true)
 }
 
 // ---------------------------------------------------------------------------
@@ -830,5 +898,34 @@ mod tests {
     fn test_critical_field_keys_l4() {
         let keys = CommitteeRole::L4Officer.critical_field_keys();
         assert_eq!(keys, &["GUARD_CLAUSE", "卫语句"]);
+    }
+
+    // ── Task 8: Critical field preservation in truncation ──────────────
+
+    #[test]
+    fn test_hard_truncate_preserves_critical_fields() {
+        // Long text with SIGNAL at the end — should be preserved
+        let long_preamble = "这是一段很长的分析文本。".repeat(30);
+        let text = format!("{}SIGNAL: risk_on\nSTRENGTH: 7", long_preamble);
+        let (result, truncated) = hard_truncate(&text, CommitteeRole::Macro, 1);
+        assert!(truncated);
+        assert!(result.contains("SIGNAL: risk_on"), "Critical field SIGNAL must be preserved");
+    }
+
+    #[test]
+    fn test_hard_truncate_preserves_verdict_for_cio() {
+        let long_preamble = "详细分析过程...".repeat(30);
+        let text = format!("{}VERDICT: BUY\nCONFIDENCE: 0.8", long_preamble);
+        let (result, truncated) = hard_truncate(&text, CommitteeRole::Cio, 1);
+        assert!(truncated);
+        assert!(result.contains("VERDICT: BUY"), "Critical field VERDICT must be preserved");
+    }
+
+    #[test]
+    fn test_hard_truncate_noop_when_short() {
+        let text = "SIGNAL: risk_on\nSTRENGTH: 7";
+        let (result, was_truncated) = hard_truncate(text, CommitteeRole::Macro, 1);
+        assert!(!was_truncated);
+        assert_eq!(result, text);
     }
 }
