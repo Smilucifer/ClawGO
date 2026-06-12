@@ -1,4 +1,5 @@
 import { getTransport } from '$lib/transport';
+import { roleToBackendIdx } from '$lib/components/invest/pipeline-config';
 
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   return getTransport().invoke<T>(cmd, args);
@@ -243,11 +244,19 @@ class InvestCommitteeStore {
       case 'role_complete': {
         const p = progress.get(event.symbol);
         if (p) {
+          const failedSteps = p.failedSteps ? new Set(p.failedSteps) : new Set<number>();
+          if (event.summary.parsed?.fallbackReason) {
+            const stepIdx = roleToBackendIdx(event.role, event.round);
+            if (stepIdx !== -1) {
+              failedSteps.add(stepIdx);
+            }
+          }
           progress.set(event.symbol, {
             ...p,
             activeStep: -1,
             completedSteps: p.completedSteps + 1,
             completedRounds: [...p.completedRounds, event.summary],
+            failedSteps,
           });
         }
         break;

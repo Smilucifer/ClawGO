@@ -1113,9 +1113,13 @@ async fn run_with_tool_loop(
                 RoundOutput {
                     role,
                     round,
-                    parsed: ParsedFields {
-                        raw_text: "[WORKER_UNAVAILABLE]".to_string(),
-                        ..Default::default()
+                    parsed: {
+                        let mut p = ParsedFields {
+                            raw_text: "[WORKER_UNAVAILABLE]".to_string(),
+                            ..Default::default()
+                        };
+                        p.fallback_reason = detect_fallback_reason(role, &p);
+                        p
                     },
                     latency_ms,
                     tokens_used: 0,
@@ -1185,19 +1189,23 @@ async fn run_with_tool_loop(
                 Err(e) => {
                     log::warn!("LLM second-pass call failed for {:?} R{}: {}", role, round, e);
                     let latency_ms = start.elapsed().as_millis() as u64;
-                    return Ok((
-                        RoundOutput {
-                            role,
-                            round,
-                            parsed: ParsedFields {
-                                raw_text: "[WORKER_UNAVAILABLE]".to_string(),
-                                ..Default::default()
+                    return Ok({
+                        let mut p = ParsedFields {
+                            raw_text: "[WORKER_UNAVAILABLE]".to_string(),
+                            ..Default::default()
+                        };
+                        p.fallback_reason = detect_fallback_reason(role, &p);
+                        (
+                            RoundOutput {
+                                role,
+                                round,
+                                parsed: p,
+                                latency_ms,
+                                tokens_used: total_tokens,
                             },
-                            latency_ms,
-                            tokens_used: total_tokens,
-                        },
-                        total_tokens,
-                    ));
+                            total_tokens,
+                        )
+                    });
                 }
             };
         total_tokens += response2.usage.total_tokens;
@@ -1348,13 +1356,15 @@ async fn run_l4_officer_phase(
         Ok(o) => o,
         Err(e) => {
             log::warn!("L4 Officer phase failed for {}: {}", symbol, e);
+            let mut p = super::parser::ParsedFields {
+                raw_text: "[WORKER_UNAVAILABLE]".to_string(),
+                ..Default::default()
+            };
+            p.fallback_reason = detect_fallback_reason(role, &p);
             RoundOutput {
                 role,
                 round: 1,
-                parsed: super::parser::ParsedFields {
-                    raw_text: "[WORKER_UNAVAILABLE]".to_string(),
-                    ..Default::default()
-                },
+                parsed: p,
                 latency_ms: 0,
                 tokens_used: 0,
             }
