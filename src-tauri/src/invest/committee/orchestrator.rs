@@ -44,6 +44,9 @@ pub struct AssetContext {
     pub latest_close: Option<f64>,       // 最新价（rt_k 实时，不缓存）
     pub pre_close: Option<f64>,          // 昨收价
     pub data_quality: Vec<String>,       // 缺失字段清单，如 ["PE=N/A", "评级=N/A"]
+
+    // ── 预计算技术指标（仅 Quant R1 注入）──
+    pub precomputed_indicators: Option<String>,
 }
 
 /// Callback for emitting committee streaming events.
@@ -844,6 +847,72 @@ async fn build_asset_context(
         None
     };
 
+    // ── 9. 预计算技术指标（Quant R1 专用）──
+    let precomputed_indicators = {
+        use crate::invest::indicators;
+        let end_date = chrono::Local::now().format("%Y%m%d").to_string();
+        let start_date = (chrono::Local::now() - chrono::Duration::days(750))
+            .format("%Y%m%d")
+            .to_string();
+
+        match client.daily(symbol, &start_date, &end_date).await {
+            Ok(bars) if bars.len() >= 20 => {
+                // bars from daily() are newest-first
+                let closes_desc: Vec<f64> = bars.iter().map(|b| b.close).collect();
+                let latest = closes_desc[0];
+
+                let mean_all = closes_desc.iter().sum::<f64>() / closes_desc.len() as f64;
+                let ma5 = indicators::compute_ma(&closes_desc, 5);
+                let ma20 = indicators::compute_ma(&closes_desc, 20);
+                let ma60 = indicators::compute_ma(&closes_desc, 60);
+                let ma120 = indicators::compute_ma(&closes_desc, 120);
+
+                // RSI and volatility need chronological order
+                let mut closes_chrono = closes_desc.clone();
+                closes_chrono.reverse();
+                let rsi14 = indicators::compute_rsi14(&closes_chrono);
+                let volatility = indicators::compute_volatility(&closes_chrono);
+
+                let window_len = closes_desc.len().min(500);
+                let percentile =
+                    indicators::compute_price_percentile(latest, &closes_desc[..window_len]);
+
+                let trend = indicators::classify_trend(
+                    latest,
+                    ma5.unwrap_or(mean_all),
+                    ma20.unwrap_or(mean_all),
+                    ma60.unwrap_or(mean_all),
+                    ma120,
+                );
+
+                let fmt_ma = |v: Option<f64>| v.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "N/A".into());
+
+                let hv20_text = if volatility == 0.0 {
+                    format!("N/A (仅{}日数据)", bars.len())
+                } else {
+                    format!("{:.1}%", volatility * 100.0)
+                };
+
+                let pct_window = closes_desc.len().min(750);
+                Some(format!(
+                    "MA5={} | MA20={} | MA60={} | MA120={}\n\
+                     RSI14={:.1} | HV20(年化)={} | 价格分位({}日)={:.0}%\n\
+                     趋势={}",
+                    fmt_ma(ma5),
+                    fmt_ma(ma20),
+                    fmt_ma(ma60),
+                    fmt_ma(ma120),
+                    rsi14,
+                    hv20_text,
+                    pct_window,
+                    percentile,
+                    trend,
+                ))
+            }
+            _ => None,
+        }
+    };
+
     AssetContext {
         asset_type: asset_type.to_string(),
         industry,
@@ -864,6 +933,7 @@ async fn build_asset_context(
         latest_close,
         pre_close,
         data_quality,
+        precomputed_indicators,
     }
 }
 

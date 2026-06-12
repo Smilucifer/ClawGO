@@ -1,5 +1,41 @@
 # Changelog / 更新日志
 
+## v5.3.5 (2026-06-11)
+
+### 委员会指标预计算 + 工具清理 + 2 轮代码审查修复
+
+**核心架构变更 (1 项):**
+1. **`indicators.rs` 共享指标模块**: 新建 `src-tauri/src/invest/indicators.rs`，提供 `compute_ma`、`compute_ma_series`、`compute_rsi14`、`compute_volatility`、`compute_price_percentile`、`classify_trend` 六个纯数学函数，消除 `regime.rs` 与 `tools.rs` 之间的代码重复。包含 12 个单元测试。
+
+**委员会管道优化 (3 项):**
+2. **Quant R1 预计算指标注入**: `build_asset_context` Step 9 计算 MA5/20/60/120、RSI-14、HV20 年化波动率、价格分位数、趋势分类，通过 `{{precomputed_indicators}}` 注入 Quant R1 prompt。LLM 直接引用，无需工具调用。
+3. **`get_company_info` 工具移除**: 数据已通过 `{{pe_ttm}}`/`{{pb}}`/`{{roe}}` 等 placeholder 注入，工具调用完全冗余。Quant 工具列表 5→4。
+4. **`get_company_news` AkShare 迁移**: 从 Tushare `major_news`（市场级快讯，无个股筛选）改为 AkShare `fetch_akshare_stock_news`（个股新闻）。
+
+**第一轮代码审查修复 (9 项):**
+5. **价格分位双倍缩放修复**: `compute_price_percentile` 返回 0-100，`regime.rs` 存储时 `/100.0` 转为 0.0-1.0 分位数，避免 `format_regime_context` 再乘 100 导致 7200% 错误。
+6. **零收盘守卫**: `compute_volatility` 对零收盘价（停牌/退市/数据错误）返回 0.0，防止 NaN/Inf 传播到 HV20 和 Prompt。
+7. **`mean_all` 回退**: MA5/20/60 数据不足时用全量均值回退，而非 `latest`，避免 `classify_trend` 自相矛盾。
+8. **RSI 平坦价格守卫**: 全部收盘价相等时（avg_gain=0, avg_loss=0）返回 50.0（中性），而非 100.0（超买）。
+9. **HV20 不足数据提示**: 波动率=0.0 且 bars<21 时显示 `N/A (仅N日数据)` 而非误导性的 `0.0%`。
+10. **Quant Prompt 更新**: 添加预计算指标说明，工具描述改为"补充"，移除 `get_company_info` 引用，估值评估改为"系统注入"。
+11. **CommitteeToolsTab 更新**: 移除 `get_company_info` 条目，工具矩阵 9→8。
+
+**第二轮代码审查修复 (3 项):**
+12. **`compute_ma` period=0 守卫**: 防止除零产生 NaN。
+13. **零收盘守卫缩窄**: 从扫描全部 750 根 K 线改为仅检查最近 21 根收盘价（用于 20 日收益计算），避免远期数据错误影响当前波动率。
+14. **价格分位窗口动态化**: 硬编码 "500日" 改为 `pct_window = closes_desc.len().min(750)`，显示实际窗口大小。
+
+**涉及文件 (8):**
+- `src-tauri/src/invest/indicators.rs` — 新建，12 单元测试
+- `src-tauri/src/invest/mod.rs` — 添加 `pub mod indicators`
+- `src-tauri/src/invest/regime.rs` — 复用 indicators，删除私有 RSI
+- `src-tauri/src/invest/committee/tools.rs` — 移除 get_company_info，迁移 get_company_news，清理重复代码
+- `src-tauri/src/invest/committee/roles.rs` — Quant R1 prompt 注入预计算指标
+- `src-tauri/src/invest/committee/orchestrator.rs` — build_asset_context Step 9
+- `src/lib/components/invest/CommitteeToolsTab.svelte` — 工具矩阵更新
+- `docs/committee-precompute-indicators.md` — 实施计划
+
 ## v5.3.4 (2026-06-11)
 
 ### Code Review 修复 (10 项) + PnL 计算兜底

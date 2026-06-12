@@ -1,3 +1,4 @@
+use crate::invest::indicators;
 use crate::tushare::client::TushareClient;
 use chrono::{Duration as ChronoDur, Local};
 use serde::Serialize;
@@ -76,38 +77,26 @@ pub async fn compute_regime_for_symbol(
     let n = closes.len();
     let latest = closes[n - 1];
 
+    // Newest-first for indicator helpers (which follow Tushare convention)
+    let mut desc_closes = closes.clone();
+    desc_closes.reverse();
+
     // ── MA20 / MA60 ────────────────────────────────────────────────────
-    let ma20 = closes[n - 20..].iter().sum::<f64>() / 20.0;
-    let ma60 = if n >= 60 {
-        closes[n - 60..].iter().sum::<f64>() / 60.0
-    } else {
-        closes.iter().sum::<f64>() / n as f64
-    };
+    let ma20 = indicators::compute_ma(&desc_closes, 20)
+        .unwrap_or(closes.iter().sum::<f64>() / n as f64);
+    let ma60 = indicators::compute_ma(&desc_closes, 60)
+        .unwrap_or(closes.iter().sum::<f64>() / n as f64);
 
     // ── RSI-14 (Wilder smoothing) ─────────────────────────────────────
-    let rsi14 = compute_rsi14(&closes);
+    let rsi14 = indicators::compute_rsi14(&closes);
 
     // ── 20-day annualized volatility ──────────────────────────────────
-    if closes.iter().any(|&c| c == 0.0) {
-        return Err(format!(
-            "Zero close price detected for {symbol}, cannot compute volatility"
-        ));
-    }
-    let returns: Vec<f64> = closes.windows(2).map(|w| w[1] / w[0] - 1.0).collect();
-    let recent_returns = &returns[returns.len().saturating_sub(20)..];
-    let mean_ret = recent_returns.iter().sum::<f64>() / recent_returns.len() as f64;
-    let variance = recent_returns
-        .iter()
-        .map(|r| (r - mean_ret).powi(2))
-        .sum::<f64>()
-        / recent_returns.len() as f64;
-    let volatility = variance.sqrt() * 252.0_f64.sqrt();
+    let volatility = indicators::compute_volatility(&closes);
 
     // ── 2-year price quantile (500-bar window) ────────────────────────
-    let window_start = n.saturating_sub(500);
-    let window = &closes[window_start..];
-    let below_count = window.iter().filter(|&&c| c < latest).count();
-    let price_quantile = below_count as f64 / window.len() as f64;
+    // compute_price_percentile returns 0-100; RegimeMetrics stores 0.0-1.0 fraction
+    let window_len = desc_closes.len().min(500);
+    let price_quantile = indicators::compute_price_percentile(latest, &desc_closes[..window_len]) / 100.0;
 
     // ── 5-day drawdown ────────────────────────────────────────────────
     let five_day_ago = if n >= 6 { closes[n - 6] } else { closes[0] };
@@ -207,75 +196,32 @@ pub fn format_regime_context(result: &RegimeResult) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Private helpers
-// ---------------------------------------------------------------------------
-
-/// Compute RSI-14 using Wilder's smoothing method.
-///
-/// Returns a value in [0.0, 100.0]. Returns 50.0 if there are fewer than 15
-/// data points (not enough for a meaningful RSI).
-fn compute_rsi14(closes: &[f64]) -> f64 {
-    if closes.len() < 15 {
-        return 50.0;
-    }
-
-    // Compute period-by-period gains and losses
-    let mut gains = Vec::with_capacity(closes.len() - 1);
-    let mut losses = Vec::with_capacity(closes.len() - 1);
-    for w in closes.windows(2) {
-        let diff = w[1] - w[0];
-        if diff > 0.0 {
-            gains.push(diff);
-            losses.push(0.0);
-        } else {
-            gains.push(0.0);
-            losses.push(-diff);
-        }
-    }
-
-    // First averages: simple mean of first 14 periods
-    let mut avg_gain: f64 = gains[..14].iter().sum::<f64>() / 14.0;
-    let mut avg_loss: f64 = losses[..14].iter().sum::<f64>() / 14.0;
-
-    // Wilder smoothing for subsequent periods
-    for i in 14..gains.len() {
-        avg_gain = (avg_gain * 13.0 + gains[i]) / 14.0;
-        avg_loss = (avg_loss * 13.0 + losses[i]) / 14.0;
-    }
-
-    if avg_loss == 0.0 {
-        return 100.0;
-    }
-    let rs = avg_gain / avg_loss;
-    100.0 - 100.0 / (1.0 + rs)
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::invest::indicators;
 
     #[test]
     fn rsi_all_gains() {
         let closes: Vec<f64> = (0..20).map(|i| 100.0 + i as f64).collect();
-        let rsi = compute_rsi14(&closes);
+        let rsi = indicators::compute_rsi14(&closes);
         assert!((rsi - 100.0).abs() < f64::EPSILON);
     }
 
     #[test]
     fn rsi_all_losses() {
         let closes: Vec<f64> = (0..20).map(|i| 120.0 - i as f64).collect();
-        let rsi = compute_rsi14(&closes);
+        let rsi = indicators::compute_rsi14(&closes);
         assert!((rsi - 0.0).abs() < f64::EPSILON);
     }
 
     #[test]
     fn rsi_insufficient_data() {
         let closes = vec![100.0; 10];
-        assert_eq!(compute_rsi14(&closes), 50.0);
+        assert_eq!(indicators::compute_rsi14(&closes), 50.0);
     }
 
     #[test]
@@ -287,7 +233,7 @@ mod tests {
             price += if i % 2 == 0 { 1.0 } else { -0.5 };
             closes.push(price);
         }
-        let rsi = compute_rsi14(&closes);
+        let rsi = indicators::compute_rsi14(&closes);
         assert!(rsi > 40.0 && rsi < 70.0, "RSI was {rsi}");
     }
 

@@ -1,6 +1,7 @@
 pub mod daily_report;
 pub mod date_utils;
 pub mod dreaming;
+pub mod indicators;
 pub mod llm;
 pub mod committee;
 pub mod event_scanner;

@@ -202,6 +202,7 @@ pub fn load_prompt_for_round(
         .replace("{{np_yoy}}", &fmt(asset_context.np_yoy, 1))
         .replace("{{rating_summary}}", asset_context.rating_summary.as_deref().unwrap_or("N/A"))
         .replace("{{total_mv_yi}}", &fmt(asset_context.total_mv_yi, 2))
+        .replace("{{precomputed_indicators}}", asset_context.precomputed_indicators.as_deref().unwrap_or("N/A"))
 }
 
 /// Save a custom prompt for a role to disk, using round-aware filename mapping
@@ -321,14 +322,15 @@ STRATEGY_HINT: <对应 regime 下的策略偏好>
   - REGIME=crash → SIGNAL=neutral（崩盘期任何方向都不可执行）
   - REGIME=unknown → 走原判定标准
 
-**你有工具可调用，主动决策需要看什么数据**：
-- `analyze_multi_timeframe(symbol="{{asset_symbol}}")` → 多周期 RSI/MA/分位数（**核心**）
+**预计算指标**（系统已在资产上下文中注入 MA5/20/60/120、RSI14、波动率、价格分位、趋势判断——**直接引用，无需再调用工具获取**）。
+
+**你有工具可调用（仅在预计算指标不够详细时使用）**：
+- `analyze_multi_timeframe(symbol="{{asset_symbol}}")` → 补充更细粒度的多周期分析（预计算已覆盖基础数据，仅在需要额外细节时调用）
 - `get_history_data(symbol, days)` → 拉具体周期日线，查异常波动 / 关键 anchor
 - `get_recent_committee_verdicts(symbol="{{asset_symbol}}")` → 看上次自己给的 SIGNAL，避免观点漂移
 - `get_moneyflow(symbol="{{asset_symbol}}")` → 个股资金流向（主力/散户净流入流出，近5日）
-- `get_company_info(symbol="{{asset_symbol}}")` → 估值数据（PE/PB/ROE/市值/换手率）
 
-**估值评估**（系统注入 + tool 补充）：
+**估值评估**（系统注入）：
 - PE/PB 分位数：当前估值在历史中的位置（高估/合理/低估）
 - ROE：盈利质量（>15% 优秀，10-15% 良好，<10% 一般）
 - 换手率：活跃度（与近5日均值对比判断放量/缩量）
@@ -345,6 +347,8 @@ STRATEGY_HINT: <对应 regime 下的策略偏好>
 - 资金流向（当日）: {{money_flow_daily_summary}}（可能为 N/A）
 - 资金流向（近5日）: {{money_flow_summary}}（可能为 N/A）
 - 估值数据: PE={{pe_ttm}}, PB={{pb}}, ROE={{roe}}%, 换手率={{turnover_rate}}%（可能为 N/A）
+- 预计算技术指标（系统确定性计算，直接引用）:
+  {{precomputed_indicators}}
 
 **输出要求**：
 - 必须中文回复

@@ -117,23 +117,6 @@ pub fn get_moneyflow_def() -> ToolDef {
     }
 }
 
-pub fn get_company_info_def() -> ToolDef {
-    ToolDef {
-        name: "get_company_info".to_string(),
-        description: "获取公司估值数据：PE/PB/ROE/总市值/流通市值/换手率。用于估值评估和标的风险判断。".to_string(),
-        parameters: json!({
-            "type": "object",
-            "properties": {
-                "symbol": {
-                    "type": "string",
-                    "description": "股票代码，如 600519.SH"
-                }
-            },
-            "required": ["symbol"]
-        }),
-    }
-}
-
 pub fn get_company_news_def() -> ToolDef {
     ToolDef {
         name: "get_company_news".to_string(),
@@ -192,7 +175,6 @@ pub fn role_tool_defs(role: CommitteeRole, round: u8) -> Option<Vec<ToolDef>> {
             analyze_multi_timeframe_def(),
             get_recent_committee_verdicts_def(),
             get_moneyflow_def(),
-            get_company_info_def(),
         ]),
         CommitteeRole::Risk => Some(vec![
             query_dreaming_insights_def(),
@@ -243,10 +225,6 @@ pub async fn execute_tool(
             let sym = args["symbol"].as_str().unwrap_or(symbol);
             exec_moneyflow(sym).await
         }
-        "get_company_info" => {
-            let sym = args["symbol"].as_str().unwrap_or(symbol);
-            exec_company_info(sym).await
-        }
         "get_company_news" => {
             let sym = args["symbol"].as_str().unwrap_or(symbol);
             exec_company_news(sym).await
@@ -254,29 +232,6 @@ pub async fn execute_tool(
         "get_recent_events" => exec_recent_events(),
         _ => Err(format!("unknown tool: {}", tool_name)),
     }
-}
-
-// ---------------------------------------------------------------------------
-// Data helpers (shared between orchestrator and tool implementations)
-// ---------------------------------------------------------------------------
-
-/// 获取估值数据（PE/PB/ROE/换手率/市值），供多个模块复用避免重复 API 调用。
-/// 返回 (pe_ttm, pb, roe, turnover_rate_f, total_mv_yi)。
-pub async fn fetch_valuation_data(
-    client: &TushareClient,
-    symbol: &str,
-) -> Option<(Option<f64>, Option<f64>, Option<f64>, Option<f64>, Option<f64>)> {
-    let daily = client.daily_basic(symbol, None, None, None).await.ok()?;
-    let latest = daily.first()?;
-    let fina = client.fina_indicator(symbol, None, None, None).await.ok()?;
-    let latest_fina = fina.last();
-    Some((
-        latest.pe_ttm,
-        latest.pb,
-        latest_fina.and_then(|f| f.roe),
-        latest.turnover_rate_f,
-        latest.total_mv.map(|v| v / 10000.0), // 转为亿元
-    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -432,84 +387,42 @@ async fn exec_multi_timeframe(symbol: &str) -> Result<String, String> {
         return Ok(format!("{} 数据不足，无法进行多时间框架分析", symbol));
     }
 
-    let ma5: f64 = bars.iter().take(5).map(|b| b.close).sum::<f64>() / 5.0;
-    let ma20 = if bars.len() >= 20 {
-        bars.iter().take(20).map(|b| b.close).sum::<f64>() / 20.0
-    } else {
-        bars.iter().map(|b| b.close).sum::<f64>() / bars.len() as f64
-    };
-    let ma60 = if bars.len() >= 60 {
-        bars.iter().take(60).map(|b| b.close).sum::<f64>() / 60.0
-    } else {
-        bars.iter().map(|b| b.close).sum::<f64>() / bars.len() as f64
-    };
-    let ma120 = if bars.len() >= 120 {
-        Some(bars.iter().take(120).map(|b| b.close).sum::<f64>() / 120.0)
-    } else {
-        None
-    };
+    use crate::invest::indicators;
 
-    let latest_close = bars[0].close;
+    let closes_desc: Vec<f64> = bars.iter().map(|b| b.close).collect();
+    let latest_close = closes_desc[0];
 
-    // 20-day historical volatility (annualized)
-    let hv20_text = if bars.len() < 20 {
-        format!("N/A (仅{}日数据)", bars.len())
-    } else {
-        let returns: Vec<f64> = bars
-            .windows(2)
-            .take(20)
-            .map(|w| {
-                if w[1].close > 0.0 {
-                    (w[0].close - w[1].close) / w[1].close
-                } else {
-                    0.0
-                }
-            })
-            .collect();
-        let mean_ret = returns.iter().sum::<f64>() / returns.len().max(1) as f64;
-        let variance = returns.iter().map(|r| (r - mean_ret).powi(2)).sum::<f64>()
-            / returns.len().max(1) as f64;
-        let hv20 = variance.sqrt() * 252.0_f64.sqrt() * 100.0;
-        format!("{:.1}%", hv20)
-    };
+    let ma5 = indicators::compute_ma(&closes_desc, 5).unwrap_or(latest_close);
+    let ma20 = indicators::compute_ma(&closes_desc, 20)
+        .unwrap_or(closes_desc.iter().sum::<f64>() / closes_desc.len() as f64);
+    let ma60 = indicators::compute_ma(&closes_desc, 60)
+        .unwrap_or(closes_desc.iter().sum::<f64>() / closes_desc.len() as f64);
+    let ma120 = indicators::compute_ma(&closes_desc, 120);
 
-    // RSI(14) — Wilder smoothing
-    let rsi14 = compute_rsi14(&bars);
+    // Volatility and RSI need chronological order
+    let mut closes_chrono = closes_desc.clone();
+    closes_chrono.reverse();
+    let hv20 = indicators::compute_volatility(&closes_chrono);
+    let rsi14 = indicators::compute_rsi14(&closes_chrono);
 
-    // Price percentile over available data (up to 2-year window)
-    let window = bars.len().min(500);
-    let all_closes: Vec<f64> = bars.iter().take(window).map(|b| b.close).collect();
-    let price_percentile = compute_percentile(latest_close, &all_closes);
+    let window = closes_desc.len().min(500);
+    let price_percentile = indicators::compute_price_percentile(latest_close, &closes_desc[..window]);
 
     let vs_ma20 = if latest_close > ma20 { "上方（偏多）" } else { "下方（偏空）" };
+    let trend = indicators::classify_trend(latest_close, ma5, ma20, ma60, ma120);
 
-    let trend = if ma120.is_some() && bars.len() >= 120 {
-        let m120 = ma120.unwrap();
-        if latest_close > ma5 && ma5 > ma20 && ma20 > ma60 && ma60 > m120 {
-            "强势多头排列"
-        } else if latest_close > ma5 && ma5 > ma20 && ma20 > ma60 {
-            "多头排列"
-        } else if latest_close < ma5 && ma5 < ma20 && ma20 < ma60 && ma60 < m120 {
-            "强势空头排列"
-        } else if latest_close < ma5 && ma5 < ma20 && ma20 < ma60 {
-            "空头排列"
-        } else {
-            "震荡整理"
-        }
+    let hv20_text = if hv20 == 0.0 {
+        format!("N/A (仅{}日数据)", bars.len())
     } else {
-        if latest_close > ma5 && ma5 > ma20 && ma20 > ma60 {
-            "多头排列"
-        } else if latest_close < ma5 && ma5 < ma20 && ma20 < ma60 {
-            "空头排列"
-        } else {
-            "震荡整理"
-        }
+        format!("{:.1}%", hv20 * 100.0)
     };
+
+    let fmt_ma = |v: f64| format!("{:.3}", v);
 
     let mut output = format!(
         "【{} 多时间框架分析】\n\
-         MA5: {:.3} | MA20: {:.3} | MA60: {:.3}",
-        symbol, ma5, ma20, ma60
+         MA5: {} | MA20: {} | MA60: {}",
+        symbol, fmt_ma(ma5), fmt_ma(ma20), fmt_ma(ma60)
     );
 
     if let Some(m120) = ma120 {
@@ -526,59 +439,6 @@ async fn exec_multi_timeframe(symbol: &str) -> Result<String, String> {
     ));
 
     Ok(output)
-}
-
-/// Compute RSI(14) using Wilder's smoothing method.
-fn compute_rsi14(bars: &[crate::tushare::client::DailyBar]) -> f64 {
-    if bars.len() < 15 {
-        return 50.0; // insufficient data
-    }
-
-    // bars are newest-first; reverse for chronological calculation
-    let closes: Vec<f64> = bars.iter().rev().map(|b| b.close).collect();
-
-    let mut avg_gain = 0.0_f64;
-    let mut avg_loss = 0.0_f64;
-
-    // Initial 14-period averages
-    for i in 1..=14 {
-        let change = closes[i] - closes[i - 1];
-        if change > 0.0 {
-            avg_gain += change;
-        } else {
-            avg_loss -= change; // make positive
-        }
-    }
-    avg_gain /= 14.0;
-    avg_loss /= 14.0;
-
-    // Wilder smoothing for remaining periods
-    for i in 15..closes.len() {
-        let change = closes[i] - closes[i - 1];
-        let gain = if change > 0.0 { change } else { 0.0 };
-        let loss = if change < 0.0 { -change } else { 0.0 };
-        avg_gain = (avg_gain * 13.0 + gain) / 14.0;
-        avg_loss = (avg_loss * 13.0 + loss) / 14.0;
-    }
-
-    if avg_loss < f64::EPSILON {
-        100.0
-    } else {
-        let rs = avg_gain / avg_loss;
-        100.0 - 100.0 / (1.0 + rs)
-    }
-}
-
-/// Compute the percentile rank of `value` within the sorted data window.
-/// Returns 0.0–100.0.
-fn compute_percentile(value: f64, data: &[f64]) -> f64 {
-    if data.is_empty() {
-        return 50.0;
-    }
-    let mut sorted = data.to_vec();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let rank = sorted.iter().position(|&v| v >= value).unwrap_or(sorted.len());
-    rank as f64 / sorted.len() as f64 * 100.0
 }
 
 async fn exec_macro_snapshot() -> Result<String, String> {
@@ -765,78 +625,22 @@ async fn exec_moneyflow(symbol: &str) -> Result<String, String> {
     ))
 }
 
-/// Format valuation data into a standard output string.
-fn format_valuation(
-    symbol: &str,
-    pe: Option<f64>,
-    pb: Option<f64>,
-    roe: Option<f64>,
-    total_mv_yi: Option<f64>,
-    turnover: Option<f64>,
-) -> String {
-    let fmt = |v: Option<f64>, suffix: &str| -> String {
-        v.map(|v| format!("{:.2}{}", v, suffix)).unwrap_or_else(|| "N/A".into())
-    };
-    format!(
-        "【{} 估值数据】\nPE: {}, PB: {}, ROE: {}, 总市值: {}, 换手率: {}",
-        symbol,
-        fmt(pe, ""),
-        fmt(pb, ""),
-        fmt(roe, "%"),
-        total_mv_yi.map(|v| format!("{:.2}亿", v)).unwrap_or_else(|| "N/A".into()),
-        fmt(turnover, "%"),
-    )
-}
-
-/// 公司基本信息+估值：PE/PB/ROE/总市值/换手率
-/// Cache-first: 先从 stock_data_cache 读取，miss 时 fallback 到 API。
-async fn exec_company_info(symbol: &str) -> Result<String, String> {
-    use crate::tushare::client::DailyBasic;
-
-    // Cache-first: 用 load_all_latest_for_symbol 避免多次 DB 查询
-    let entries = stock_data_cache::load_all_latest_for_symbol(symbol).unwrap_or_default();
-    let find_json = |dt: &str| -> Option<String> {
-        entries.iter().find(|(t, _, _)| t == dt).map(|(_, _, j)| j.clone())
-    };
-
-    if let Some(json) = find_json("daily_basic") {
-        if let Ok(b) = serde_json::from_str::<DailyBasic>(&json) {
-            let roe = find_json("fina_indicator")
-                .and_then(|fj| serde_json::from_str::<serde_json::Value>(&fj).ok())
-                .and_then(|fv| fv["roe"].as_f64());
-            let total_mv_yi = b.total_mv.map(|v| v / 10000.0);
-            let turnover = b.turnover_rate_f.or(b.turnover_rate);
-            return Ok(format_valuation(symbol, b.pe_ttm, b.pb, roe, total_mv_yi, turnover));
-        }
-    }
-
-    // Fallback: API
-    let client = TushareClient::from_settings()?;
-    let (pe, pb, roe, turnover, mv) = fetch_valuation_data(&client, symbol).await
-        .unwrap_or((None, None, None, None, None));
-    Ok(format_valuation(symbol, pe, pb, roe, mv, turnover))
-}
-
-/// 个股风险新闻：最近5条相关新闻
+/// 个股风险新闻：最近5条相关新闻（AkShare 个股新闻源）
 async fn exec_company_news(symbol: &str) -> Result<String, String> {
-    let client = TushareClient::from_settings()?;
-    let today = chrono::Local::now().format("%Y%m%d").to_string();
-    let thirty_days_ago =
-        (chrono::Local::now() - chrono::Duration::days(30)).format("%Y%m%d").to_string();
+    // Strip exchange suffix (e.g. 600519.SH → 600519) for AkShare
+    let code = symbol.split('.').next().unwrap_or(symbol);
 
-    // 使用 major_news 获取最近新闻
-    match client
-        .major_news("mx-finance", &thirty_days_ago, &today)
-        .await
-    {
+    let client = crate::invest::international::InternationalClient::from_settings();
+    match client.fetch_akshare_stock_news(code, 5).await {
         Ok(items) => {
-            // 按 symbol 过滤（如果 items 中包含 symbol 信息）
-            // major_news 返回的是全市场新闻，这里取最近5条
             let recent: Vec<String> = items
                 .iter()
                 .take(5)
                 .map(|item| {
-                    format!("[{}] {} - {}", item.datetime, item.title, item.src)
+                    let date = chrono::DateTime::from_timestamp(item.provider_publish_time, 0)
+                        .map(|dt| dt.format("%Y-%m-%d").to_string())
+                        .unwrap_or_else(|| "N/A".to_string());
+                    format!("[{}] {} — {}", date, item.title, item.publisher)
                 })
                 .collect();
 
@@ -851,7 +655,7 @@ async fn exec_company_news(symbol: &str) -> Result<String, String> {
             }
         }
         Err(e) => {
-            log::warn!("exec_company_news: major_news failed: {}", e);
+            log::warn!("exec_company_news: akshare stock_news failed: {}", e);
             Ok("暂无风险新闻".to_string())
         }
     }
@@ -940,13 +744,12 @@ mod tests {
     #[test]
     fn test_role_tool_defs_quant_r1() {
         let defs = role_tool_defs(CommitteeRole::Quant, 1).unwrap();
-        assert_eq!(defs.len(), 5);
+        assert_eq!(defs.len(), 4);
         let names: Vec<&str> = defs.iter().map(|t| t.name.as_str()).collect();
         assert!(names.contains(&"get_history_data"));
         assert!(names.contains(&"analyze_multi_timeframe"));
         assert!(names.contains(&"get_recent_committee_verdicts"));
         assert!(names.contains(&"get_moneyflow"));
-        assert!(names.contains(&"get_company_info"));
     }
 
     #[test]
@@ -962,13 +765,12 @@ mod tests {
     #[test]
     fn test_role_tool_defs_quant_r2_has_tools() {
         let defs = role_tool_defs(CommitteeRole::Quant, 2).unwrap();
-        assert_eq!(defs.len(), 5);
+        assert_eq!(defs.len(), 4);
         let names: Vec<&str> = defs.iter().map(|t| t.name.as_str()).collect();
         assert!(names.contains(&"get_history_data"));
         assert!(names.contains(&"analyze_multi_timeframe"));
         assert!(names.contains(&"get_recent_committee_verdicts"));
         assert!(names.contains(&"get_moneyflow"));
-        assert!(names.contains(&"get_company_info"));
     }
 
     #[test]

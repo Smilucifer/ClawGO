@@ -6,7 +6,7 @@
 
   const store = investCommitteeStore;
 
-  // ── 9-tool × 5-role access matrix
+  // ── 8-tool × 5-role access matrix
   // Source of truth: src-tauri/src/invest/committee/tools.rs:184-206
   // (Macro: R1 only; Quant/Risk: R1+R2 same toolset; L4: query_dreaming_insights only; CIO: no tools)
   type RoleKey = 'macro' | 'quant' | 'risk' | 'l4_officer' | 'cio';
@@ -31,8 +31,6 @@
     { name: 'get_recent_events',             descKey: 'invest_tool_events_desc',
       access: { macro: 'R1', quant: '',      risk: '',      l4_officer: '',  cio: '' } },
     { name: 'get_moneyflow',                 descKey: 'invest_tool_moneyflow_desc',
-      access: { macro: '',   quant: 'R1+R2', risk: '',      l4_officer: '',  cio: '' } },
-    { name: 'get_company_info',              descKey: 'invest_tool_company_info_desc',
       access: { macro: '',   quant: 'R1+R2', risk: '',      l4_officer: '',  cio: '' } },
     { name: 'get_company_news',              descKey: 'invest_tool_company_news_desc',
       access: { macro: '',   quant: '',      risk: 'R1+R2', l4_officer: '',  cio: '' } },
