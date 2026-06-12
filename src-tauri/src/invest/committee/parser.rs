@@ -257,40 +257,48 @@ fn apply_r2_signal_override(parsed: &mut ParsedFields, text: &str) {
 
 /// Extract a list field, trying multiple keys (bilingual support).
 fn extract_list_field_any(text: &str, keys: &[&str]) -> Option<Vec<String>> {
+    // Use extract_field to check if any key exists (handles all 6 format variants)
+    let found = keys.iter().any(|key| extract_field(text, key).is_some());
+    if !found {
+        return None;
+    }
+
+    // Find the key line and collect subsequent list items
     let mut items = Vec::new();
-    let mut found_key = false;
+    let mut found_key_line = false;
     for line in text.lines() {
         let trimmed = line.trim();
-        if !found_key {
-            for key in keys {
-                if trimmed.strip_prefix(&format!("{}:", key)).is_some()
-                    || trimmed.strip_prefix(&format!("{}：", key)).is_some()
-                {
-                    found_key = true;
-                    break;
-                }
-            }
-            if found_key {
+        if !found_key_line {
+            if keys.iter().any(|key| {
+                // Check all format variants that extract_field supports
+                let colon_fmt = format!("{}:", key);
+                let cn_colon_fmt = format!("{}：", key);
+                let bold_colon_fmt = format!("**{}**:", key);
+                let bold_cn_colon_fmt = format!("**{}**：", key);
+                let equals_fmt = format!("{}=", key);
+                let bold_equals_fmt = format!("**{}**=", key);
+                trimmed.strip_prefix(&bold_colon_fmt).is_some()
+                    || trimmed.strip_prefix(&bold_cn_colon_fmt).is_some()
+                    || trimmed.strip_prefix(&bold_equals_fmt).is_some()
+                    || trimmed.strip_prefix(&colon_fmt).is_some()
+                    || trimmed.strip_prefix(&cn_colon_fmt).is_some()
+                    || trimmed.strip_prefix(&equals_fmt).is_some()
+            }) {
+                found_key_line = true;
                 continue;
             }
         } else {
-            // Collect ` - item` or `- item` lines until a non-list line or empty line
             if let Some(item) = trimmed.strip_prefix("- ").or_else(|| trimmed.strip_prefix("— ")) {
                 let item = item.trim().to_string();
                 if !item.is_empty() {
                     items.push(item);
                 }
             } else if trimmed.is_empty() || trimmed.contains(':') || trimmed.contains('：') {
-                // Reached next section — stop collecting
                 break;
             }
         }
     }
-    if found_key {
-        Some(items)
-    } else {
-        None
-    }
+    Some(items)
 }
 
 fn parse_macro(text: &str, parsed: &mut ParsedFields) {
@@ -925,5 +933,39 @@ mod tests {
         // Format: KEY:value (colon, no space)
         let text = "SIGNAL:risk_on";
         assert_eq!(extract_field(text, "SIGNAL"), Some("risk_on".to_string()));
+    }
+
+    // ── Task 2: List field format variants ─────────────────────────────
+
+    #[test]
+    fn test_extract_list_field_equals_format() {
+        // KEY_DATA=value1;value2 won't work for lists, but the key detection should still work
+        // The list items follow on subsequent lines with `- ` prefix
+        let text = "KEY_DATA=\n- PE=13.5\n- 北向资金净流入120亿";
+        let result = extract_list_field_any(text, &["KEY_DATA"]);
+        assert_eq!(
+            result,
+            Some(vec!["PE=13.5".to_string(), "北向资金净流入120亿".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_extract_list_field_bold_colon_format() {
+        let text = "**KEY_DATA**:\n- PE=13.5\n- volume up";
+        let result = extract_list_field_any(text, &["KEY_DATA"]);
+        assert_eq!(
+            result,
+            Some(vec!["PE=13.5".to_string(), "volume up".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_extract_list_field_bold_equals_format() {
+        let text = "**KEY_DATA**=\n- item1\n- item2";
+        let result = extract_list_field_any(text, &["KEY_DATA"]);
+        assert_eq!(
+            result,
+            Some(vec!["item1".to_string(), "item2".to_string()])
+        );
     }
 }
