@@ -24,7 +24,17 @@ export interface RoundOutputSummary {
   role: string;
   round: number;
   label: string;
-  parsed: { rawText: string; signal?: string; strength?: number };
+  parsed: {
+    rawText: string;
+    signal?: string;
+    strength?: number;
+    verdict?: string;
+    confidence?: number;
+    oneLiner?: string;
+    reasoning?: string;
+    truncated?: boolean;
+    fallbackReason?: string;
+  };
   latencyMs: number;
   tokensUsed: number;
 }
@@ -114,6 +124,7 @@ export interface SymbolProgress {
   error: string | null;
   result: CommitteeResult | null;
   regimeData: RegimeStepData | null;  // REGIME step output (populated during streaming)
+  failedSteps?: Set<number>;  // explicit per-step failure from orchestrator
 }
 
 // ── Store ───────────────────────────────────────────────────────────────────
@@ -180,6 +191,7 @@ class InvestCommitteeStore {
         error: null,
         result: null,
         regimeData: null,
+        failedSteps: new Set(),
       });
     }
     this.perSymbolProgress = progress;

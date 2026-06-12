@@ -41,16 +41,20 @@ export function roleToBackendIdx(role: string, round: number): number {
 }
 
 /**
- * 计算某个 step 的渲染状态：pending / active / done / error
+ * 计算某个 step 的渲染状态：pending / active / done / error / failed
  * 在 Live 和 Replay (simulate 模式) 之间共享
  */
 export function getStepState(
   symProgress: SymbolProgress | undefined,
   backendIdx: number,
-  pipelineStarted: boolean,
-): 'pending' | 'active' | 'done' | 'error' {
+  pipelineStarted?: boolean,
+): 'pending' | 'active' | 'done' | 'error' | 'failed' {
   if (!symProgress) return 'pending';
   if (backendIdx === -1) return pipelineStarted ? 'done' : 'pending';
+
+  // Check failed steps first (explicit failure from orchestrator)
+  if (symProgress.failedSteps?.has(backendIdx)) return 'failed';
+
   if (symProgress.activeStep === backendIdx) return 'active';
   for (const round of symProgress.completedRounds) {
     if (roleToBackendIdx(round.role, round.round) === backendIdx) return 'done';
