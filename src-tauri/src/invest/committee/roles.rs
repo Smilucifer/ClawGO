@@ -238,9 +238,17 @@ pub fn save_prompt(role: CommitteeRole, round: u8, content: &str) -> Result<(), 
 
 /// Append length constraint suffix to a prompt.
 pub fn length_constraint_suffix(role: CommitteeRole) -> String {
+    let max = role.max_chars();
+    let critical_hint = match role {
+        CommitteeRole::Macro => "SIGNAL",
+        CommitteeRole::Quant => "SIGNAL 和 REGIME",
+        CommitteeRole::Risk => "SIGNAL",
+        CommitteeRole::Cio => "VERDICT",
+        CommitteeRole::L4Officer => "GUARD_CLAUSE",
+    };
     format!(
-        "\n\n[输出限制：你的回复必须控制在{}个中文字符以内。]",
-        role.max_chars()
+        "\n\n[输出限制：你的回复必须控制在{}个中文字符以内。先输出关键字段（{}），再输出详细分析。]",
+        max, critical_hint
     )
 }
 
@@ -898,6 +906,39 @@ mod tests {
     fn test_critical_field_keys_l4() {
         let keys = CommitteeRole::L4Officer.critical_field_keys();
         assert_eq!(keys, &["GUARD_CLAUSE", "卫语句"]);
+    }
+
+    // ── Task 9: Prompt constraint ordering ─────────────────────────────
+
+    #[test]
+    fn test_length_constraint_mentions_critical_first() {
+        let constraint = length_constraint_suffix(CommitteeRole::Macro);
+        assert!(constraint.contains("SIGNAL"), "Must mention SIGNAL as critical field");
+        assert!(
+            constraint.contains("先输出") || constraint.contains("FIRST") || constraint.contains("first"),
+            "Must instruct LLM to output critical fields first"
+        );
+    }
+
+    #[test]
+    fn test_length_constraint_mentions_verdict_for_cio() {
+        let constraint = length_constraint_suffix(CommitteeRole::Cio);
+        assert!(constraint.contains("VERDICT"), "Must mention VERDICT as critical field");
+    }
+
+    #[test]
+    fn test_length_constraint_mentions_regime_for_quant() {
+        let constraint = length_constraint_suffix(CommitteeRole::Quant);
+        assert!(constraint.contains("REGIME"), "Must mention REGIME as critical field");
+    }
+
+    #[test]
+    fn test_length_constraint_mentions_guard_clause_for_l4() {
+        let constraint = length_constraint_suffix(CommitteeRole::L4Officer);
+        assert!(
+            constraint.contains("GUARD_CLAUSE") || constraint.contains("卫语句"),
+            "Must mention GUARD_CLAUSE as critical field"
+        );
     }
 
     // ── Task 8: Critical field preservation in truncation ──────────────
