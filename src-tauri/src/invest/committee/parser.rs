@@ -178,7 +178,7 @@ pub fn detect_fallback_reason(role: CommitteeRole, parsed: &ParsedFields) -> Opt
     // Role-specific critical field checks
     let missing = match role {
         CommitteeRole::Macro => parsed.signal.is_none(),
-        CommitteeRole::Quant => parsed.signal.is_none() && parsed.regime.is_none(),
+        CommitteeRole::Quant => parsed.signal.is_none() || parsed.regime.is_none(),
         CommitteeRole::Risk => parsed.signal.is_none(),
         CommitteeRole::Cio => parsed.verdict.is_none(),
         CommitteeRole::L4Officer => parsed.l4_guard_clause.is_none(),
@@ -191,7 +191,9 @@ pub fn detect_fallback_reason(role: CommitteeRole, parsed: &ParsedFields) -> Opt
     }
 }
 
-fn extract_field(text: &str, key: &str) -> Option<String> {
+/// Check if a trimmed line starts with one of the 6 supported key formats.
+/// Returns the value portion after the key+delimiter if matched.
+pub(crate) fn matches_key_line<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     let colon_fmt = format!("{}:", key);
     let cn_colon_fmt = format!("{}：", key);
     let bold_colon_fmt = format!("**{}**:", key);
@@ -199,29 +201,18 @@ fn extract_field(text: &str, key: &str) -> Option<String> {
     let equals_fmt = format!("{}=", key);
     let bold_equals_fmt = format!("**{}**=", key);
 
+    line.strip_prefix(&bold_colon_fmt)
+        .or_else(|| line.strip_prefix(&bold_cn_colon_fmt))
+        .or_else(|| line.strip_prefix(&bold_equals_fmt))
+        .or_else(|| line.strip_prefix(&colon_fmt))
+        .or_else(|| line.strip_prefix(&cn_colon_fmt))
+        .or_else(|| line.strip_prefix(&equals_fmt))
+}
+
+fn extract_field(text: &str, key: &str) -> Option<String> {
     for line in text.lines() {
         let line = line.trim();
-        // 1. **KEY**: value or **KEY**：value (bold + colon variants)
-        if let Some(rest) = line.strip_prefix(&bold_colon_fmt) {
-            return Some(rest.trim().to_string());
-        }
-        if let Some(rest) = line.strip_prefix(&bold_cn_colon_fmt) {
-            return Some(rest.trim().to_string());
-        }
-        // 2. **KEY**=value (bold + equals)
-        if let Some(rest) = line.strip_prefix(&bold_equals_fmt) {
-            return Some(rest.trim().to_string());
-        }
-        // 3. KEY: value (English colon)
-        if let Some(rest) = line.strip_prefix(&colon_fmt) {
-            return Some(rest.trim().to_string());
-        }
-        // 4. KEY：value (Chinese colon)
-        if let Some(rest) = line.strip_prefix(&cn_colon_fmt) {
-            return Some(rest.trim().to_string());
-        }
-        // 5. KEY=value (equals, no colon)
-        if let Some(rest) = line.strip_prefix(&equals_fmt) {
+        if let Some(rest) = matches_key_line(line, key) {
             return Some(rest.trim().to_string());
         }
     }
@@ -300,21 +291,10 @@ fn extract_list_field_any(text: &str, keys: &[&str]) -> Option<Vec<String>> {
     for line in text.lines() {
         let trimmed = line.trim();
         if !found_key_line {
-            if keys.iter().any(|key| {
-                // Check all format variants that extract_field supports
-                let colon_fmt = format!("{}:", key);
-                let cn_colon_fmt = format!("{}：", key);
-                let bold_colon_fmt = format!("**{}**:", key);
-                let bold_cn_colon_fmt = format!("**{}**：", key);
-                let equals_fmt = format!("{}=", key);
-                let bold_equals_fmt = format!("**{}**=", key);
-                trimmed.strip_prefix(&bold_colon_fmt).is_some()
-                    || trimmed.strip_prefix(&bold_cn_colon_fmt).is_some()
-                    || trimmed.strip_prefix(&bold_equals_fmt).is_some()
-                    || trimmed.strip_prefix(&colon_fmt).is_some()
-                    || trimmed.strip_prefix(&cn_colon_fmt).is_some()
-                    || trimmed.strip_prefix(&equals_fmt).is_some()
-            }) {
+            if keys
+                .iter()
+                .any(|key| matches_key_line(trimmed, key).is_some())
+            {
                 found_key_line = true;
                 continue;
             }
@@ -1033,6 +1013,34 @@ mod tests {
             signal: None,
             regime: None,
             raw_text: "some analysis".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            detect_fallback_reason(CommitteeRole::Quant, &parsed),
+            Some("missing_critical_fields".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_fallback_quant_missing_signal_only() {
+        let parsed = ParsedFields {
+            signal: None,
+            regime: Some("bull".to_string()),
+            raw_text: "REGIME: bull".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            detect_fallback_reason(CommitteeRole::Quant, &parsed),
+            Some("missing_critical_fields".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_fallback_quant_missing_regime_only() {
+        let parsed = ParsedFields {
+            signal: Some("risk_on".to_string()),
+            regime: None,
+            raw_text: "SIGNAL: risk_on".to_string(),
             ..Default::default()
         };
         assert_eq!(
