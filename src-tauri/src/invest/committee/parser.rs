@@ -161,13 +161,36 @@ pub fn parse_role_output(role: CommitteeRole, text: &str, truncated: bool) -> Pa
 }
 
 fn extract_field(text: &str, key: &str) -> Option<String> {
+    let colon_fmt = format!("{}:", key);
+    let cn_colon_fmt = format!("{}：", key);
+    let bold_colon_fmt = format!("**{}**:", key);
+    let bold_cn_colon_fmt = format!("**{}**：", key);
+    let equals_fmt = format!("{}=", key);
+    let bold_equals_fmt = format!("**{}**=", key);
+
     for line in text.lines() {
         let line = line.trim();
-        if let Some(rest) = line.strip_prefix(&format!("{}:", key)) {
+        // 1. **KEY**: value or **KEY**：value (bold + colon variants)
+        if let Some(rest) = line.strip_prefix(&bold_colon_fmt) {
             return Some(rest.trim().to_string());
         }
-        if let Some(rest) = line.strip_prefix(&format!("{}：", key)) {
-            // Chinese colon variant
+        if let Some(rest) = line.strip_prefix(&bold_cn_colon_fmt) {
+            return Some(rest.trim().to_string());
+        }
+        // 2. **KEY**=value (bold + equals)
+        if let Some(rest) = line.strip_prefix(&bold_equals_fmt) {
+            return Some(rest.trim().to_string());
+        }
+        // 3. KEY: value (English colon)
+        if let Some(rest) = line.strip_prefix(&colon_fmt) {
+            return Some(rest.trim().to_string());
+        }
+        // 4. KEY：value (Chinese colon)
+        if let Some(rest) = line.strip_prefix(&cn_colon_fmt) {
+            return Some(rest.trim().to_string());
+        }
+        // 5. KEY=value (equals, no colon)
+        if let Some(rest) = line.strip_prefix(&equals_fmt) {
             return Some(rest.trim().to_string());
         }
     }
@@ -856,5 +879,51 @@ mod tests {
         let text = "VERDICT: HOLD\nCONFIDENCE: 0.3\nSTOP_LOSS_CLEAR: no\nPOSITION_OK: no\nEMOTION_STABLE: no\nBUY_POINT_OK: no";
         let parsed = parse_role_output(CommitteeRole::Cio, text, false);
         assert_eq!(parsed.l4_execution_checks_passed, Some(0.0));
+    }
+
+    // ── Task 1: Flexible format variant tests ──────────────────────────
+
+    #[test]
+    fn test_extract_field_equals_format() {
+        // Format: KEY=value (no colon)
+        let text = "SIGNAL=risk_on\nSTRENGTH=7";
+        assert_eq!(extract_field(text, "SIGNAL"), Some("risk_on".to_string()));
+        assert_eq!(extract_field(text, "STRENGTH"), Some("7".to_string()));
+    }
+
+    #[test]
+    fn test_extract_field_colon_space_format() {
+        // Format: KEY: value (colon + space)
+        let text = "SIGNAL: risk_on";
+        assert_eq!(extract_field(text, "SIGNAL"), Some("risk_on".to_string()));
+    }
+
+    #[test]
+    fn test_extract_field_chinese_colon_space_format() {
+        // Format: KEY：value (Chinese colon, no space before value)
+        let text = "VERDICT：BUY";
+        assert_eq!(extract_field(text, "VERDICT"), Some("BUY".to_string()));
+    }
+
+    #[test]
+    fn test_extract_field_bold_asterisks_format() {
+        // Format: **KEY**: value (Markdown bold)
+        let text = "**SIGNAL**: risk_on\n**STRENGTH**: 8";
+        assert_eq!(extract_field(text, "SIGNAL"), Some("risk_on".to_string()));
+        assert_eq!(extract_field(text, "STRENGTH"), Some("8".to_string()));
+    }
+
+    #[test]
+    fn test_extract_field_bold_asterisks_equals_format() {
+        // Format: **KEY**=value (Markdown bold + equals)
+        let text = "**SIGNAL**=risk_on";
+        assert_eq!(extract_field(text, "SIGNAL"), Some("risk_on".to_string()));
+    }
+
+    #[test]
+    fn test_extract_field_colon_no_space_format() {
+        // Format: KEY:value (colon, no space)
+        let text = "SIGNAL:risk_on";
+        assert_eq!(extract_field(text, "SIGNAL"), Some("risk_on".to_string()));
     }
 }
