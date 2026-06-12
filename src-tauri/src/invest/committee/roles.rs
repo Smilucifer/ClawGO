@@ -296,8 +296,19 @@ pub fn hard_truncate(text: &str, role: CommitteeRole, _attempt: u32) -> (String,
 
     // Calculate budget for non-critical content
     let critical_chars: usize = critical_lines.iter().map(|l| l.chars().count()).sum();
-    let separator_chars = critical_lines.len(); // newlines
-    let budget = max.saturating_sub(critical_chars).saturating_sub(separator_chars);
+
+    // If critical content alone exceeds max, keep only the first critical line truncated
+    if critical_chars > max && !critical_lines.is_empty() {
+        let first = &critical_lines[0];
+        let take = max.saturating_sub(3); // reserve for "..."
+        let truncated_line: String = first.chars().take(take).collect();
+        return (format!("{}...", truncated_line), true);
+    }
+
+    let critical_newlines = critical_lines.len().saturating_sub(1); // between critical lines
+    let join_newline = if !critical_lines.is_empty() && !non_critical_lines.is_empty() { 1 } else { 0 };
+    let total_overhead = critical_newlines + join_newline;
+    let budget = max.saturating_sub(critical_chars).saturating_sub(total_overhead);
 
     // Truncate non-critical lines to fit budget
     let mut truncated_non_critical = String::new();
@@ -946,7 +957,7 @@ mod tests {
     #[test]
     fn test_hard_truncate_preserves_critical_fields() {
         // Long text with SIGNAL at the end — should be preserved
-        let long_preamble = "这是一段很长的分析文本。".repeat(30);
+        let long_preamble = "这是一段很长的分析文本。".repeat(100);
         let text = format!("{}SIGNAL: risk_on\nSTRENGTH: 7", long_preamble);
         let (result, truncated) = hard_truncate(&text, CommitteeRole::Macro, 1);
         assert!(truncated);
@@ -955,7 +966,7 @@ mod tests {
 
     #[test]
     fn test_hard_truncate_preserves_verdict_for_cio() {
-        let long_preamble = "详细分析过程...".repeat(30);
+        let long_preamble = "详细分析过程...".repeat(100);
         let text = format!("{}VERDICT: BUY\nCONFIDENCE: 0.8", long_preamble);
         let (result, truncated) = hard_truncate(&text, CommitteeRole::Cio, 1);
         assert!(truncated);
