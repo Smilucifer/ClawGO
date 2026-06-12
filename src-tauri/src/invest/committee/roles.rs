@@ -107,6 +107,17 @@ impl CommitteeRole {
     pub fn is_l4_role(&self) -> bool {
         matches!(self, Self::L4Officer)
     }
+
+    /// Critical field keys for this role (used by hard_truncate preservation and fallback detection).
+    pub fn critical_field_keys(&self) -> &'static [&'static str] {
+        match self {
+            CommitteeRole::Macro => &["SIGNAL", "信号"],
+            CommitteeRole::Quant => &["SIGNAL", "信号", "REGIME", "市场状态"],
+            CommitteeRole::Risk => &["SIGNAL", "信号"],
+            CommitteeRole::Cio => &["VERDICT", "裁决"],
+            CommitteeRole::L4Officer => &["GUARD_CLAUSE", "卫语句"],
+        }
+    }
 }
 
 impl std::fmt::Display for CommitteeRole {
@@ -787,5 +798,37 @@ mod tests {
         unique.sort();
         unique.dedup();
         assert_eq!(filenames.len(), unique.len(), "duplicate filenames detected");
+    }
+
+    // ── Task 7: Critical field keys tests ──────────────────────────────
+
+    #[test]
+    fn test_critical_field_keys_macro() {
+        let keys = CommitteeRole::Macro.critical_field_keys();
+        assert_eq!(keys, &["SIGNAL", "信号"]);
+    }
+
+    #[test]
+    fn test_critical_field_keys_quant() {
+        let keys = CommitteeRole::Quant.critical_field_keys();
+        assert_eq!(keys, &["SIGNAL", "信号", "REGIME", "市场状态"]);
+    }
+
+    #[test]
+    fn test_critical_field_keys_risk() {
+        let keys = CommitteeRole::Risk.critical_field_keys();
+        assert_eq!(keys, &["SIGNAL", "信号"]);
+    }
+
+    #[test]
+    fn test_critical_field_keys_cio() {
+        let keys = CommitteeRole::Cio.critical_field_keys();
+        assert_eq!(keys, &["VERDICT", "裁决"]);
+    }
+
+    #[test]
+    fn test_critical_field_keys_l4() {
+        let keys = CommitteeRole::L4Officer.critical_field_keys();
+        assert_eq!(keys, &["GUARD_CLAUSE", "卫语句"]);
     }
 }
