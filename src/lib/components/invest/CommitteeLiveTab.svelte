@@ -4,6 +4,7 @@
   import { investStore } from '$lib/stores/invest-store.svelte';
   import { STEP_DEFS, getStepState, getRoundForStep } from './pipeline-config';
   import { getVerdictBadgeStyle } from '$lib/utils/invest-verdict';
+  import { renderMarkdown } from '$lib/utils/markdown';
 
   let expandedSymbol = $state<string | null>(null);
   let includeWatch = $state(true);
@@ -60,6 +61,20 @@
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   // getStepState / getRoundForStep / getVerdictBadgeStyle 已抽到共享模块
+
+  function getFallbackMessage(fallbackReason: string | undefined, role: string): string {
+    if (!fallbackReason) return '';
+    switch (fallbackReason) {
+      case 'worker_unavailable':
+        return `${role} 分析服务暂时不可用，请稍后重试`;
+      case 'empty_text':
+        return `${role} 返回了空结果`;
+      case 'missing_critical_fields':
+        return `${role} 输出缺少关键字段，可能需要重新分析`;
+      default:
+        return `${role} 分析异常: ${fallbackReason}`;
+    }
+  }
 
   function toggleSelect(symbol: string) {
     const next = new Set(selectedSymbols);
@@ -254,12 +269,14 @@
                 ? `background:${step.color}25; color:${step.color};`
                 : state === 'active'
                   ? `background:rgba(59,130,246,0.2); color:#3b82f6;`
-                  : state === 'error'
-                    ? 'background:rgba(168,122,122,0.2); color:#a87a7a;'
-                    : 'background:var(--bg-input); color:var(--text-tertiary);'}
+                  : state === 'failed'
+                    ? 'background:rgba(255,193,7,0.2); color:#ffc107;'
+                    : state === 'error'
+                      ? 'background:rgba(168,122,122,0.2); color:#a87a7a;'
+                      : 'background:var(--bg-input); color:var(--text-tertiary);'}
               title={t(step.labelKey)}
             >
-              {#if state === 'done'}✓{:else if state === 'active'}◉{:else if state === 'error'}✗{:else}{step.key === 'regime' ? 'R' : step.key.charAt(0).toUpperCase()}{/if}
+              {#if state === 'done'}✓{:else if state === 'active'}◉{:else if state === 'failed'}⚠{:else if state === 'error'}✗{:else}{step.key === 'regime' ? 'R' : step.key.charAt(0).toUpperCase()}{/if}
             </div>
           {/each}
         </div>
@@ -305,9 +322,14 @@
                   <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-border border-t-[#3b82f6]"></span>
                   {t('invest_debate_waiting_llm')}
                 </div>
+              {:else if round?.parsed?.fallbackReason}
+                <div class="fallback-message">
+                  <span class="fallback-icon">⚠</span>
+                  <span>{getFallbackMessage(round.parsed.fallbackReason, t(step.labelKey))}</span>
+                </div>
               {:else if round?.parsed?.rawText}
                 <div class="max-h-[200px] overflow-y-auto whitespace-pre-wrap font-[var(--font-mono)] text-[12px] leading-[1.6] text-[var(--text-secondary)]">
-                  {round.parsed.rawText}
+                  {@html renderMarkdown(round.parsed.rawText)}
                 </div>
               {:else if step.key === 'regime' && state === 'done' && p?.regimeData}
                 <div class="space-y-[var(--space-2)] text-[12px]">
@@ -402,3 +424,22 @@
     </div>
   {/each}
 </div>
+
+<style>
+  .fallback-message {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--color-warning-bg, rgba(255, 193, 7, 0.1));
+    border: 1px solid var(--color-warning-border, rgba(255, 193, 7, 0.3));
+    border-radius: 6px;
+    color: var(--color-warning-text, #ffc107);
+    font-size: 0.875rem;
+  }
+
+  .fallback-icon {
+    font-size: 1.1rem;
+    flex-shrink: 0;
+  }
+</style>
