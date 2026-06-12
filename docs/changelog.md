@@ -1,5 +1,46 @@
 # Changelog / 更新日志
 
+## v5.3.6 (2026-06-12)
+
+### 委员会解析器增强 + 代码审查修复 (14 commits)
+
+**解析器格式容错 (PR-A, 3 项):**
+1. **`extract_field` 支持 6 种格式变体**: 分层 `strip_prefix` 匹配 `KEY: value`、`KEY：value`、`**KEY**: value`、`**KEY**：value`、`KEY=value`、`**KEY**=value`，消除 LLM 输出格式不一致导致的解析失败。
+2. **`extract_list_field_any` 复用 `matches_key_line`**: 列表字段提取统一使用共享格式匹配函数，消除内联重复。
+3. **`matches_key_line` 共享函数**: 从 `extract_field`、`extract_list_field_any`、`hard_truncate` 三处提取单一格式匹配源，新增格式变体只需修改一处。
+
+**前端错误状态提示 (PR-B, 4 项):**
+4. **`fallback_reason` 字段 + `detect_fallback_reason` 函数**: `ParsedFields` 新增 `fallback_reason`，检测 `worker_unavailable` / `empty_text` / `missing_critical_fields` 三种回退原因。
+5. **orchestrator 管道接入**: `run_with_tool_loop` 两条成功路径均调用 `detect_fallback_reason`。
+6. **前端 `failedSteps` + `getStepState` failed 状态**: `SymbolProgress` 新增 `failedSteps: Set<number>`，`getStepState` 支持 `'failed'` 返回值。
+7. **CommitteeLiveTab 友好错误展示**: `WORKER_UNAVAILABLE` 等哨兵文本替换为本地化友好提示，使用 `t()` 国际化。
+
+**hard_truncate 关键字段保留 (PR-C, 3 项):**
+8. **`critical_field_keys()` 方法**: 每个角色定义关键字段列表（Macro→SIGNAL, Quant→SIGNAL+REGIME, Risk→SIGNAL, CIO→VERDICT, L4→GUARD_CLAUSE）。
+9. **`hard_truncate` 保留关键字段**: 截断时优先保留关键字段行，非关键内容优先截断。关键字段超长时封顶到 `max_chars`。
+10. **prompt 约束优化**: `length_constraint_suffix` 指示 LLM 先输出关键字段再输出详细分析。
+
+**代码审查修复 (8 项):**
+11. **Fix 1: error 路径接入 `detect_fallback_reason`**: orchestrator 三条 `[WORKER_UNAVAILABLE]` early-return 路径均调用 `detect_fallback_reason`，`fallback_reason` 不再为 `None`。
+12. **Fix 2: `hard_truncate` max_chars 封顶**: 关键字段本身超长时，仅保留第一个关键字段截断到 `max_chars - 3` + `...`，不再超出硬上限。
+13. **Fix 3: budget off-by-one 修复**: 非关键块与首个关键行之间的 `\n` 分隔符正确计入预算。
+14. **Fix 4: `failedSteps` 填充**: store 的 `role_complete` 事件处理器检查 `fallbackReason`，有值时将对应步骤索引加入 `failedSteps`。
+15. **Fix 5: Quant 回退 AND→OR**: 任一关键字段缺失即触发回退（原逻辑需两者同时缺失）。
+16. **Fix 6: 测试修复**: `test_hard_truncate_preserves_*` 输入文本加长到超过角色 `max_chars`，确保截断逻辑真正执行。
+17. **Fix 7: 格式匹配去重**: 三处独立的 6 变体格式匹配统一为 `matches_key_line` 共享函数。
+18. **Fix 8: `getFallbackMessage` 国际化**: 硬编码中文替换为 `t()` 调用 + 4 个 i18n key。
+
+**涉及文件 (9):**
+- `src-tauri/src/invest/committee/parser.rs` — extract_field/matches_key_line/detect_fallback_reason/fallback_reason 字段
+- `src-tauri/src/invest/committee/roles.rs` — critical_field_keys/hard_truncate/length_constraint_suffix
+- `src-tauri/src/invest/committee/orchestrator.rs` — detect_fallback_reason 接入 (5 个调用点)
+- `src/lib/stores/invest-committee-store.svelte.ts` — RoundOutputSummary/SymbolProgress 类型扩展 + failedSteps 填充
+- `src/lib/components/invest/pipeline-config.ts` — getStepState failed 状态
+- `src/lib/components/invest/CommitteeLiveTab.svelte` — 友好错误展示 + i18n + renderMarkdown
+- `src/lib/components/invest/DebateBlock.svelte` — blockState 类型扩展
+- `messages/en.json` — 4 个 fallback i18n key
+- `messages/zh-CN.json` — 4 个 fallback i18n key
+
 ## v5.3.5 (2026-06-11)
 
 ### 委员会指标预计算 + 工具清理 + 2 轮代码审查修复
