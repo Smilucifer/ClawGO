@@ -126,6 +126,8 @@ pub struct ParsedFields {
     // -- Meta --
     /// Whether output was truncated by hard limit
     pub truncated: bool,
+    /// Reason for fallback if parsing detected missing critical fields
+    pub fallback_reason: Option<String>,
     /// Raw text (preserved for archiving)
     pub raw_text: String,
 }
@@ -158,6 +160,35 @@ pub fn parse_role_output(role: CommitteeRole, text: &str, truncated: bool) -> Pa
     }
 
     parsed
+}
+
+/// Detect fallback reason based on role-specific critical fields.
+/// Returns Some(reason) if the parsed output is missing essential data.
+pub fn detect_fallback_reason(role: CommitteeRole, parsed: &ParsedFields) -> Option<String> {
+    // Check for WORKER_UNAVAILABLE marker in raw text
+    if parsed.raw_text.contains("[WORKER_UNAVAILABLE]") {
+        return Some("worker_unavailable".to_string());
+    }
+
+    // Check for empty text
+    if parsed.raw_text.trim().is_empty() {
+        return Some("empty_text".to_string());
+    }
+
+    // Role-specific critical field checks
+    let missing = match role {
+        CommitteeRole::Macro => parsed.signal.is_none(),
+        CommitteeRole::Quant => parsed.signal.is_none() && parsed.regime.is_none(),
+        CommitteeRole::Risk => parsed.signal.is_none(),
+        CommitteeRole::Cio => parsed.verdict.is_none(),
+        CommitteeRole::L4Officer => parsed.l4_guard_clause.is_none(),
+    };
+
+    if missing {
+        Some("missing_critical_fields".to_string())
+    } else {
+        None
+    }
 }
 
 fn extract_field(text: &str, key: &str) -> Option<String> {
@@ -967,5 +998,107 @@ mod tests {
             result,
             Some(vec!["item1".to_string(), "item2".to_string()])
         );
+    }
+
+    // ── Task 3: Fallback reason detection ──────────────────────────────
+
+    #[test]
+    fn test_detect_fallback_unavailable_marker() {
+        let parsed = ParsedFields {
+            raw_text: "[WORKER_UNAVAILABLE] LLM call failed".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            detect_fallback_reason(CommitteeRole::Macro, &parsed),
+            Some("worker_unavailable".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_fallback_macro_missing_signal() {
+        let parsed = ParsedFields {
+            signal: None,
+            raw_text: "市场分析报告...".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            detect_fallback_reason(CommitteeRole::Macro, &parsed),
+            Some("missing_critical_fields".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_fallback_quant_missing_signal_regime() {
+        let parsed = ParsedFields {
+            signal: None,
+            regime: None,
+            raw_text: "some analysis".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            detect_fallback_reason(CommitteeRole::Quant, &parsed),
+            Some("missing_critical_fields".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_fallback_risk_missing_signal() {
+        let parsed = ParsedFields {
+            signal: None,
+            raw_text: "risk analysis".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            detect_fallback_reason(CommitteeRole::Risk, &parsed),
+            Some("missing_critical_fields".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_fallback_cio_missing_verdict() {
+        let parsed = ParsedFields {
+            verdict: None,
+            raw_text: "cio analysis".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            detect_fallback_reason(CommitteeRole::Cio, &parsed),
+            Some("missing_critical_fields".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_fallback_l4_missing_guard() {
+        let parsed = ParsedFields {
+            l4_guard_clause: None,
+            raw_text: "l4 analysis".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            detect_fallback_reason(CommitteeRole::L4Officer, &parsed),
+            Some("missing_critical_fields".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_fallback_empty_text() {
+        let parsed = ParsedFields {
+            raw_text: "".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            detect_fallback_reason(CommitteeRole::Macro, &parsed),
+            Some("empty_text".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detect_fallback_none_when_ok() {
+        let parsed = ParsedFields {
+            signal: Some("risk_on".to_string()),
+            raw_text: "SIGNAL: risk_on\nSTRENGTH: 7".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(detect_fallback_reason(CommitteeRole::Macro, &parsed), None);
     }
 }
