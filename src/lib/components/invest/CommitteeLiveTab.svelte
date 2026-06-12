@@ -66,13 +66,13 @@
     if (!fallbackReason) return '';
     switch (fallbackReason) {
       case 'worker_unavailable':
-        return `${role} 分析服务暂时不可用，请稍后重试`;
+        return t('invest_fallback_worker_unavailable', { role });
       case 'empty_text':
-        return `${role} 返回了空结果`;
+        return t('invest_fallback_empty_text', { role });
       case 'missing_critical_fields':
-        return `${role} 输出缺少关键字段，可能需要重新分析`;
+        return t('invest_fallback_missing_critical_fields', { role });
       default:
-        return `${role} 分析异常: ${fallbackReason}`;
+        return t('invest_fallback_unknown', { role, reason: fallbackReason });
     }
   }
 

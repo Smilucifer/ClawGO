@@ -2295,5 +2295,9 @@
   "invest_dreaming_rollback": "回滚",
   "invest_dreaming_loadingConfig": "加载配置中...",
   "invest_dreaming_dismiss": "关闭",
-  "invest_dreaming_rolledBack": "已成功回滚"
+  "invest_dreaming_rolledBack": "已成功回滚",
+  "invest_fallback_worker_unavailable": "{role} 分析服务暂时不可用，请稍后重试",
+  "invest_fallback_empty_text": "{role} 返回了空结果",
+  "invest_fallback_missing_critical_fields": "{role} 输出缺少关键字段，可能需要重新分析",
+  "invest_fallback_unknown": "{role} 分析异常: {reason}"
 }

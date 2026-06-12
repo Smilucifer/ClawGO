@@ -2295,5 +2295,9 @@
   "invest_dreaming_rollback": "Rollback",
   "invest_dreaming_loadingConfig": "Loading config...",
   "invest_dreaming_dismiss": "Dismiss",
-  "invest_dreaming_rolledBack": "Rolled back successfully"
+  "invest_dreaming_rolledBack": "Rolled back successfully",
+  "invest_fallback_worker_unavailable": "{role} analysis service temporarily unavailable, please try again later",
+  "invest_fallback_empty_text": "{role} returned empty result",
+  "invest_fallback_missing_critical_fields": "{role} output missing critical fields, may need re-analysis",
+  "invest_fallback_unknown": "{role} analysis error: {reason}"
 }
