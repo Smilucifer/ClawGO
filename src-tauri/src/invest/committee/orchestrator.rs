@@ -4,7 +4,7 @@ use super::analysis::{
 };
 use super::archive::archive_decision_full;
 use super::events::{step_index_for_role, CommitteeEvent};
-use super::parser::{parse_role_output, ParsedFields};
+use super::parser::{detect_fallback_reason, parse_role_output, ParsedFields};
 use super::roles::{
     hard_truncate, length_constraint_suffix, load_prompt_for_round, CommitteeRole,
 };
@@ -1203,7 +1203,8 @@ async fn run_with_tool_loop(
         total_tokens += response2.usage.total_tokens;
 
         let (text, truncated) = hard_truncate(&response2.content, role, 0);
-        let parsed = parse_role_output(role, &text, truncated);
+        let mut parsed = parse_role_output(role, &text, truncated);
+        parsed.fallback_reason = detect_fallback_reason(role, &parsed);
         let latency_ms = start.elapsed().as_millis() as u64;
 
         Ok((
@@ -1219,7 +1220,8 @@ async fn run_with_tool_loop(
     } else {
         // No tool calls — use first-pass content directly
         let (text, truncated) = hard_truncate(&response1.content, role, 0);
-        let parsed = parse_role_output(role, &text, truncated);
+        let mut parsed = parse_role_output(role, &text, truncated);
+        parsed.fallback_reason = detect_fallback_reason(role, &parsed);
         let latency_ms = start.elapsed().as_millis() as u64;
 
         Ok((
