@@ -145,6 +145,8 @@ impl ParsedFields {
 
 /// Parse LLM output for any role into structured fields.
 pub fn parse_role_output(role: CommitteeRole, text: &str, truncated: bool) -> ParsedFields {
+    // 预处理：合并多行续行，确保长值不被换行截断
+    let merged = merge_continuation_lines(text);
     let mut parsed = ParsedFields {
         raw_text: text.to_string(),
         truncated,
@@ -152,11 +154,11 @@ pub fn parse_role_output(role: CommitteeRole, text: &str, truncated: bool) -> Pa
     };
 
     match role {
-        CommitteeRole::Macro => parse_macro(text, &mut parsed),
-        CommitteeRole::Quant => parse_quant(text, &mut parsed),
-        CommitteeRole::Risk => parse_risk(text, &mut parsed),
-        CommitteeRole::Cio => parse_cio(text, &mut parsed),
-        CommitteeRole::L4Officer => parse_l4_officer(text, truncated, &mut parsed),
+        CommitteeRole::Macro => parse_macro(&merged, &mut parsed),
+        CommitteeRole::Quant => parse_quant(&merged, &mut parsed),
+        CommitteeRole::Risk => parse_risk(&merged, &mut parsed),
+        CommitteeRole::Cio => parse_cio(&merged, &mut parsed),
+        CommitteeRole::L4Officer => parse_l4_officer(&merged, truncated, &mut parsed),
     }
 
     parsed
@@ -209,11 +211,98 @@ pub(crate) fn matches_key_line<'a>(line: &'a str, key: &str) -> Option<&'a str> 
         .or_else(|| line.strip_prefix(&equals_fmt))
 }
 
+/// 清理 LLM 输出中的 markdown 格式标记。
+/// 移除 `**bold**`、`` `code` `` 等包裹符号，保留纯文本。
+fn strip_markdown_formatting(s: &str) -> String {
+    let mut out = s.to_string();
+    // **bold** → bold
+    loop {
+        let start = match out.find("**") {
+            Some(i) => i,
+            None => break,
+        };
+        if let Some(end) = out[start + 2..].find("**") {
+            let inner = out[start + 2..start + 2 + end].to_string();
+            out = format!("{}{}{}", &out[..start], inner, &out[start + 2 + end + 2..]);
+        } else {
+            break;
+        }
+    }
+    // `code` → code
+    loop {
+        let start = match out.find('`') {
+            Some(i) => i,
+            None => break,
+        };
+        if let Some(end) = out[start + 1..].find('`') {
+            let inner = out[start + 1..start + 1 + end].to_string();
+            out = format!("{}{}{}", &out[..start], inner, &out[start + 1 + end + 1..]);
+        } else {
+            break;
+        }
+    }
+    out
+}
+
+/// 预处理文本：将多行续行合并到上一个 KEY: 行。
+/// 续行定义：不以 KEY: 格式开头的非空行，拼接到前一个字段值末尾。
+/// 这样 LLM 输出的长值被换行时仍能被正确提取。
+fn merge_continuation_lines(text: &str) -> String {
+    let mut result = String::new();
+    let mut prev_was_key = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        // 精确检查：是否有 KEY: VALUE 模式（至少有一个字母/中文字符后跟冒号/等号）
+        let is_structured_key = is_structured_key_line(trimmed);
+        // 列表项（以 - 或 * 开头）不应被合并到前一个 key 的值中
+        let is_list_item = trimmed.starts_with("- ") || trimmed.starts_with("* ");
+
+        if is_structured_key {
+            // 新的 key 行，正常追加（带换行）
+            if !result.is_empty() && !result.ends_with('\n') {
+                result.push('\n');
+            }
+            result.push_str(line.trim_end());
+            result.push('\n');
+            prev_was_key = true;
+        } else if !trimmed.is_empty() && prev_was_key && !is_list_item {
+            // 续行：追加到前一个 key 的值末尾（用空格分隔）
+            if result.ends_with('\n') {
+                result.truncate(result.len() - 1); // 移除尾部换行
+            }
+            result.push(' ');
+            result.push_str(trimmed);
+            result.push('\n');
+            // prev_was_key 保持 true，允许连续续行
+        } else {
+            // 空行、列表项等，正常追加
+            if !result.is_empty() && !result.ends_with('\n') {
+                result.push('\n');
+            }
+            result.push_str(line.trim_end());
+            result.push('\n');
+            prev_was_key = false;
+        }
+    }
+    result
+}
+
+/// 检测一行是否为结构化 KEY: VALUE 格式。
+/// key 部分应为 1-30 个非空格字符，后跟中英文冒号或等号。
+fn is_structured_key_line(line: &str) -> bool {
+    if let Some(pos) = line.find(':').or_else(|| line.find('：')).or_else(|| line.find('=')) {
+        pos > 0 && pos < 30 && !line[..pos].contains(' ')
+    } else {
+        false
+    }
+}
+
 fn extract_field(text: &str, key: &str) -> Option<String> {
     for line in text.lines() {
         let line = line.trim();
         if let Some(rest) = matches_key_line(line, key) {
-            return Some(rest.trim().to_string());
+            let val = rest.trim().to_string();
+            return Some(strip_markdown_formatting(&val));
         }
     }
     None
@@ -267,8 +356,8 @@ fn extract_bool_any(text: &str, keys: &[&str]) -> Option<bool> {
 /// Returns `None` if the key is not found (empty list is distinguishable from missing).
 /// Apply R2 ADJUSTED_SIGNAL/ADJUSTED_STRENGTH override to parsed fields.
 fn apply_r2_signal_override(parsed: &mut ParsedFields, text: &str) {
-    // English keys: ADJUSTED_SIGNAL / 调整信号
-    if let Some(adjusted) = extract_field_any(text, &["ADJUSTED_SIGNAL", "调整信号"]) {
+    // English keys: ADJUSTED_SIGNAL / 调整信号 / 调整风险信号
+    if let Some(adjusted) = extract_field_any(text, &["ADJUSTED_SIGNAL", "调整信号", "调整风险信号"]) {
         parsed.signal = Some(adjusted);
     }
     // English keys: ADJUSTED_STRENGTH / 调整强度
@@ -359,8 +448,8 @@ fn parse_quant(text: &str, parsed: &mut ParsedFields) {
 }
 
 fn parse_risk(text: &str, parsed: &mut ParsedFields) {
-    // R1 fields
-    parsed.signal = extract_field_any(text, &["SIGNAL", "信号"]);
+    // R1 fields — "风险信号" is the preferred key to avoid confusion with Quant/Macro signal
+    parsed.signal = extract_field_any(text, &["SIGNAL", "信号", "风险信号"]);
     parsed.strength = extract_f64_any(text, &["STRENGTH", "强度"]);
     parsed.pnl_pct = extract_f64_any(text, &["PNL_PCT", "盈亏比"]);
     parsed.worst_case_loss_pct = extract_f64_any(text, &["WORST_CASE_LOSS_PCT_AT_-20", "最大回撤"]);
@@ -1126,5 +1215,97 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(detect_fallback_reason(CommitteeRole::Macro, &parsed), None);
+    }
+
+    // ── Markdown formatting strip tests ─────────────────────────────────
+
+    #[test]
+    fn test_strip_bold_asterisks() {
+        assert_eq!(strip_markdown_formatting("**risk_on**"), "risk_on");
+        assert_eq!(strip_markdown_formatting("**bull** market"), "bull market");
+    }
+
+    #[test]
+    fn test_strip_inline_code() {
+        assert_eq!(strip_markdown_formatting("`risk_on`"), "risk_on");
+        assert_eq!(strip_markdown_formatting("value is `7`"), "value is 7");
+    }
+
+    #[test]
+    fn test_strip_nested_formatting() {
+        assert_eq!(strip_markdown_formatting("**`bold_code`**"), "bold_code");
+    }
+
+    #[test]
+    fn test_strip_no_formatting() {
+        assert_eq!(strip_markdown_formatting("plain text"), "plain text");
+    }
+
+    // ── Continuation line merge tests ────────────────────────────────────
+
+    #[test]
+    fn test_merge_continuation_simple() {
+        let text = "SIGNAL: risk_on\nSTRENGTH: 7";
+        let merged = merge_continuation_lines(text);
+        assert!(merged.contains("SIGNAL: risk_on"));
+        assert!(merged.contains("STRENGTH: 7"));
+    }
+
+    #[test]
+    fn test_merge_continuation_wrapped_value() {
+        // 模拟 LLM 换行输出长值
+        let text = "REASONING: 北向资金持续流入\n同时宏观数据偏暖";
+        let merged = merge_continuation_lines(text);
+        // 续行应被合并到 REASONING 的值中
+        assert!(merged.contains("北向资金持续流入 同时宏观数据偏暖"));
+    }
+
+    #[test]
+    fn test_merge_continuation_list_items_untouched() {
+        let text = "KEY_DATA:\n- PE=13.5\n- volume up";
+        let merged = merge_continuation_lines(text);
+        // 列表项不应被合并到前一个 key 的值中
+        assert!(merged.contains("KEY_DATA:\n- PE=13.5\n- volume up"));
+    }
+
+    #[test]
+    fn test_merge_continuation_chinese_colon() {
+        let text = "推理：短期回调信号增强\n但中期偏多";
+        let merged = merge_continuation_lines(text);
+        assert!(merged.contains("短期回调信号增强 但中期偏多"));
+    }
+
+    #[test]
+    fn test_extract_field_with_markdown_value() {
+        let text = "SIGNAL: **risk_on**";
+        let val = extract_field(text, "SIGNAL").unwrap();
+        assert_eq!(val, "risk_on");
+    }
+
+    #[test]
+    fn test_extract_field_with_code_value() {
+        let text = "VERDICT: `BUY`";
+        let val = extract_field(text, "VERDICT").unwrap();
+        assert_eq!(val, "BUY");
+    }
+
+    #[test]
+    fn test_parse_with_continuation_and_markdown() {
+        // 综合测试：markdown 格式值 + 续行
+        let text = "SIGNAL: **risk_on**\nREASONING: 北向资金持续流入\n同时宏观数据偏暖\nSTRENGTH: 7";
+        let parsed = parse_role_output(CommitteeRole::Macro, text, false);
+        assert_eq!(parsed.signal.as_deref(), Some("risk_on"));
+        // REASONING 不是 Macro 字段，但强度应正常解析
+        assert_eq!(parsed.strength, Some(7.0));
+    }
+
+    #[test]
+    fn test_merge_continuation_long_key_preserved() {
+        // 超过 20 字符的英文 key 不应被当作续行
+        let text = "SIGNAL: risk_on\nWORST_CASE_LOSS_PCT_AT_-20: -12.5\nSTRENGTH: 7";
+        let merged = merge_continuation_lines(text);
+        assert!(merged.contains("WORST_CASE_LOSS_PCT_AT_-20: -12.5"));
+        // 确保该行独立存在，未被合并到 SIGNAL 的值中
+        assert!(merged.contains("risk_on\nWORST_CASE_LOSS_PCT_AT_-20"));
     }
 }

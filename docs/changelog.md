@@ -1,5 +1,14 @@
 # Changelog / 更新日志
 
+## v5.3.7 (2026-06-12)
+
+### 委员会单元测试修复 (1 项)
+
+1. **`roles.rs` 单元测试断言同步**: `test_max_chars` 断言从 `600/350/350` 更新为 `500/550/550`（匹配 v5.3.6 中 `max_chars()` 实现值变更）；`test_critical_field_keys_risk` 断言从 `["SIGNAL", "信号"]` 更新为 `["SIGNAL", "信号", "风险信号"]`（匹配 Risk 角色新增关键字段）。
+
+**涉及文件 (1):**
+- `src-tauri/src/invest/committee/roles.rs` — 4 处测试断言更新
+
 ## v5.3.6 (2026-06-12)
 
 ### 委员会解析器增强 + 代码审查修复 (14 commits)
@@ -40,6 +49,58 @@
 - `src/lib/components/invest/DebateBlock.svelte` — blockState 类型扩展
 - `messages/en.json` — 4 个 fallback i18n key
 - `messages/zh-CN.json` — 4 个 fallback i18n key
+
+### Bug 修复: Preview 面板 + 项目记忆 + 记忆提取配置 (3 项)
+
+**Preview 面板 HTML 预览修复 (1 项):**
+1. **`HtmlPreview.svelte` 预览方式重写**: 移除 blob URL + `$effect` 生命周期管理，改用 `srcdoc` 属性直接注入 HTML 内容。`srcdoc` 天然具有独立 origin，无需 `allow-same-origin`，安全性更高且代码更简洁。
+
+**项目记忆解析修复 (1 项):**
+2. **`memory/+page.svelte` 传递 `project_paths` 参数**: `refreshCandidates()` 和 `autoSelectFirst()` 调用 `api.listMemoryFiles()` 时新增 `projectPaths` 参数（`[projectCwd]`），后端据此扫描 `~/.claude/projects/{slug}/memory/` 目录下的项目记忆文件。之前只传 `cwd` 导致后端无法定位项目记忆目录。
+
+**Memory Extraction 配置状态修复 (1 项):**
+3. **`memory-mgmt/+page.svelte` 启用状态初始值修复**: `memoryExtractionEnabled` 默认值从 `true` 改为 `false`；`loadExtractionConfigFromSettings` 新增 `else` 分支，当 `embedding_config` 为 `None` 时重置所有字段；`ec.enabled` 回退值从 `?? true` 改为 `?? false`。根因：UI 显示"已启用"但实际从未配置过，用户无法通过关闭再开来修复（后端收到 `undefined` 清除配置，但下次加载 UI 仍显示"已启用"）。
+
+**涉及文件 (3):**
+- `src/lib/components/preview/HtmlPreview.svelte` — sandbox 属性
+- `src/routes/memory/+page.svelte` — listMemoryFiles project_paths 参数
+- `src/routes/memory-mgmt/+page.svelte` — 启用状态初始值 + 加载逻辑
+
+### 现金管理增强: 银证转入/转出 + 微调修正 + 7 项审查修复
+
+**现金操作重构 (4 项):**
+1. **TradeAction 枚举扩展**: 新增 `TransferIn` / `TransferOut` 变体，`cash_delta_for_trade` 正确处理转入（+金额）和转出（-金额）。
+2. **HoldingKind 枚举扩展**: 新增 `Cash` 变体，支持 `kind='cash'` 的交易记录。
+3. **DB Schema 迁移**: holdings/trades 表 CHECK 约束更新（kind 含 'cash'，action 含 transfer_in/transfer_out），`check_is_current` 探测字符串同步更新。
+4. **`recalculate_holdings_inner`**: TransferIn/TransferOut 为 no-op（不影响持仓计算）。
+
+**TradeDialog 重设计 (3 项):**
+5. **三子模式选择器**: 银证转入（绿色）、银证转出（红色）、微调修正（金色），通过 `CASH_MODES` 数据驱动渲染。
+6. **`handleSubmit` 重写**: 所有现金操作通过 `recordTrade()` 记录交易（保留审计轨迹），`fine_tune` 映射到存储层 `cash_adjust`。
+7. **`submitLabel` 提取**: 9 层嵌套三元替换为 `SUBMIT_LABELS` 查找表 + `$derived`。
+
+**TradeLogTab 更新 (2 项):**
+8. **SYSTEM_ACTIONS 扩展**: 新增 `transfer_in`、`transfer_out`，默认隐藏。
+9. **徽章颜色 + 方向过滤**: 转入/卖出=绿色，转出/买入=红色；过滤下拉框新增转入/转出/微调选项；CASH 符号显示本地化标签。
+
+**代码审查修复 (7 项):**
+10. **Fix 1: `fine_tune` → `cash_adjust` 映射**: UI 层 `fine_tune` 在提交时映射到存储层 `cash_adjust`，避免静默降级为 Unknown。
+11. **Fix 2: 注释/code 不匹配修复**: `check_is_current` 注释从 `edit_holding` 更新为 `transfer_out`。
+12. **Fix 3: 死方法 `updateCash()` 删除**: 现金操作统一走 `recordTrade()`，旧直接覆写路径移除。
+13. **Fix 4: 死三元分支折叠**: TradeLogTab 徽章颜色表达式移除冗余分支（`sell` 正确显示绿色）。
+14. **Fix 5: `submitLabel` 提取**: 9 层嵌套三元替换为 `SUBMIT_LABELS` + `$derived`。
+15. **Fix 6: pill-tab 按钮提取**: 3 个重复按钮替换为 `CASH_MODES` + `{#each}` + `{@const}`。
+16. **Fix 7: `cash_adjust` 方向过滤**: 过滤下拉框新增微调修正选项。
+
+**涉及文件 (8):**
+- `src-tauri/src/storage/invest/portfolio.rs` — TradeAction/HoldingKind 枚举 + cash_delta_for_trade + holdings no-op
+- `src-tauri/src/storage/invest/mod.rs` — DB CHECK 约束 + check_is_current 注释修复
+- `src/lib/components/invest/TradeDialog.svelte` — 三子模式重设计 + submitLabel + CASH_MODES
+- `src/lib/components/invest/TradeLogTab.svelte` — SYSTEM_ACTIONS + 徽章颜色 + 方向过滤 + CASH 标签
+- `src/lib/stores/invest-store.svelte.ts` — 删除 updateCash() 死方法
+- `src/lib/types.ts` — TradeAction 类型扩展
+- `src/routes/invest/+page.svelte` — 按钮文案改为"现金管理"
+- `messages/en.json` + `messages/zh-CN.json` — 12 个新 i18n key
 
 ## v5.3.5 (2026-06-11)
 

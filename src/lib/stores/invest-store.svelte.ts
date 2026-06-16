@@ -342,14 +342,6 @@ class InvestStore {
     await this.loadAll();
   }
 
-  async updateCash(newBalance: number, _reason?: string): Promise<void> {
-    // Set cash directly — backend recalculates from initial_balance + trades,
-    // so this manual override is only needed for external adjustments (deposits, etc.)
-    await invoke("update_cash", { available: newBalance });
-    this.cash = newBalance;
-    await this.loadAll();
-  }
-
   async addToWatch(
     symbol: string,
     name: string,

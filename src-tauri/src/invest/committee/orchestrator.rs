@@ -1052,11 +1052,20 @@ fn build_context_messages(
         context.push('\n');
     }
     for output in round_outputs {
+        // Use WORKER_UNAVAILABLE marker for fallback outputs so the CIO prompt's
+        // safety-valve rule ("任何 worker 输出含 [WORKER_UNAVAILABLE]") triggers correctly.
+        // For non-fallback outputs, use raw_text (pre-merge original) to preserve
+        // the LLM's full reasoning for downstream context.
+        let content = if output.parsed.fallback_reason.is_some() {
+            "[WORKER_UNAVAILABLE]"
+        } else {
+            &output.parsed.raw_text
+        };
         context.push_str(&format!(
             "\n=== {} Round {} ===\n{}\n",
             output.role.label(),
             output.round,
-            output.parsed.raw_text,
+            content,
         ));
     }
 
@@ -1064,6 +1073,47 @@ fn build_context_messages(
         "以下是委员会之前的分析结果：{}\n\n请基于以上信息给出你的分析。",
         context
     ))]
+}
+
+// ---------------------------------------------------------------------------
+// Shared retry-on-fallback helper
+// ---------------------------------------------------------------------------
+
+/// Retry an LLM call once if the parsed output has missing critical fields.
+/// Appends a format-reminder user message, re-calls the LLM, and uses the
+/// retry result only if it resolves the fallback. Returns the (possibly
+/// upgraded) parsed output and additional tokens consumed.
+async fn retry_on_fallback(
+    client: &dyn InvestLlmClient,
+    role: CommitteeRole,
+    round: u8,
+    system_prompt: &str,
+    messages: &mut Vec<Message>,
+    llm_config: &LlmConfig,
+    parsed: &mut ParsedFields,
+    total_tokens: &mut u32,
+) {
+    if parsed.fallback_reason.is_none() {
+        return;
+    }
+    log::info!("Parse fallback for {:?} R{}, retrying with format reminder", role, round);
+    let retry_prompt = format!(
+        "你的上一次输出缺少关键字段或格式不正确。请严格按照 KEY: value 格式重新输出，确保包含所有必需字段。角色：{}，轮次：{}。",
+        role.label(), round
+    );
+    messages.push(Message::user(retry_prompt));
+    if let Ok(retry_resp) = llm_call_with_retry(client, system_prompt, messages, None, llm_config).await {
+        *total_tokens += retry_resp.usage.total_tokens;
+        let (retry_text, retry_truncated) = hard_truncate(&retry_resp.content, role, 0);
+        let mut retry_parsed = parse_role_output(role, &retry_text, retry_truncated);
+        retry_parsed.fallback_reason = detect_fallback_reason(role, &retry_parsed);
+        if retry_parsed.fallback_reason.is_none() {
+            *parsed = retry_parsed;
+            log::info!("Retry resolved fallback for {:?} R{}", role, round);
+        } else {
+            log::warn!("Retry still has fallback for {:?} R{}: {:?}", role, round, retry_parsed.fallback_reason);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1213,6 +1263,9 @@ async fn run_with_tool_loop(
         let (text, truncated) = hard_truncate(&response2.content, role, 0);
         let mut parsed = parse_role_output(role, &text, truncated);
         parsed.fallback_reason = detect_fallback_reason(role, &parsed);
+
+        retry_on_fallback(client, role, round, system_prompt, messages, llm_config, &mut parsed, &mut total_tokens).await;
+
         let latency_ms = start.elapsed().as_millis() as u64;
 
         Ok((
@@ -1230,6 +1283,9 @@ async fn run_with_tool_loop(
         let (text, truncated) = hard_truncate(&response1.content, role, 0);
         let mut parsed = parse_role_output(role, &text, truncated);
         parsed.fallback_reason = detect_fallback_reason(role, &parsed);
+
+        retry_on_fallback(client, role, round, system_prompt, messages, llm_config, &mut parsed, &mut total_tokens).await;
+
         let latency_ms = start.elapsed().as_millis() as u64;
 
         Ok((

@@ -53,6 +53,8 @@ sql_string_enum! {
         Sell => "sell",
         CostEdit => "cost_edit",
         CashAdjust => "cash_adjust",
+        TransferIn => "transfer_in",
+        TransferOut => "transfer_out",
         AddWatch => "add_watch",
         DeleteWatch => "delete_watch",
         EditHolding => "edit_holding",
@@ -72,6 +74,8 @@ impl std::str::FromStr for TradeAction {
             "sell" => Self::Sell,
             "cost_edit" => Self::CostEdit,
             "cash_adjust" => Self::CashAdjust,
+            "transfer_in" => Self::TransferIn,
+            "transfer_out" => Self::TransferOut,
             "add_watch" => Self::AddWatch,
             "delete_watch" => Self::DeleteWatch,
             "edit_holding" => Self::EditHolding,
@@ -83,13 +87,15 @@ impl std::str::FromStr for TradeAction {
     }
 }
 
-// Holding kind — "hold" (position with shares) or "watch" (tracked without shares).
+// Holding kind — "hold" (position with shares), "watch" (tracked without shares),
+// or "cash" (cash transfer / adjustment, no holding created).
 sql_string_enum! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
     pub enum HoldingKind {
         Hold => "hold",
         Watch => "watch",
+        Cash => "cash",
     }
 }
 
@@ -103,6 +109,7 @@ impl std::str::FromStr for HoldingKind {
         Ok(match s {
             "hold" => Self::Hold,
             "watch" => Self::Watch,
+            "cash" => Self::Cash,
             _ => {
                 log::warn!("HoldingKind::from_str: unrecognized kind '{s}', falling back to Hold");
                 Self::Hold
@@ -303,6 +310,8 @@ fn cash_delta_for_trade(t: &Trade, reverse: bool) -> f64 {
         TradeAction::Buy => -amount * sign,
         TradeAction::Sell => amount * sign,
         TradeAction::CashAdjust => amount * sign,
+        TradeAction::TransferIn => amount * sign,
+        TradeAction::TransferOut => -amount * sign,
         _ => 0.0,
     }
 }
@@ -377,7 +386,7 @@ fn apply_cash_delta_sql(conn: &Connection, delta: f64) -> Result<(), String> {
 
 /// Recalculate cash balance from initial_balance + trade history.
 /// Must be called within an active connection/transaction.
-/// buy, sell, and cash_adjust trades affect the derived cash balance.
+/// buy, sell, cash_adjust, transfer_in, and transfer_out trades affect the derived cash balance.
 fn recalculate_cash_inner(conn: &Connection, trades: &[Trade]) -> Result<(), String> {
     let initial = get_initial_cash_inner(conn).unwrap_or(0.0);
     let mut cash = initial;
@@ -736,7 +745,7 @@ fn recalculate_holdings_inner_body(
             TradeAction::EditHolding => process_edit_holding(&mut ctx, key, t),
             TradeAction::AddWatch => process_add_watch(&mut ctx, key, t),
             TradeAction::DeleteWatch => process_delete_watch(&mut ctx, t),
-            TradeAction::CashAdjust => {}
+            TradeAction::CashAdjust | TradeAction::TransferIn | TradeAction::TransferOut => {}
             TradeAction::Unknown => {
                 log::warn!("replay: skipping trade {} with Unknown action (symbol={})", t.id, t.symbol);
             }
@@ -846,6 +855,28 @@ pub fn list_trades(symbol: Option<&str>, limit: Option<i64>) -> Result<Vec<Trade
             items.push(row.map_err(|e| format!("row: {}", e))?);
         }
         Ok(items)
+    })
+}
+
+/// Get net cash transfer between two dates (exclusive start, inclusive end).
+/// Returns sum(transfer_in amounts) - sum(transfer_out amounts).
+/// Used by PnL snapshot to exclude transfers from daily P&L calculation.
+pub fn get_net_transfer_between(from_date: &str, to_date: &str) -> Result<f64, String> {
+    with_conn(|conn| {
+        let result = conn.query_row(
+            "SELECT COALESCE(SUM(CASE WHEN action = 'transfer_in' THEN COALESCE(amount, 0.0) ELSE -COALESCE(amount, 0.0) END), 0.0)
+             FROM trades
+             WHERE action IN ('transfer_in', 'transfer_out')
+               AND trade_date > ?1
+               AND trade_date <= ?2",
+            params![from_date, to_date],
+            |row| row.get::<_, f64>(0),
+        );
+        match result {
+            Ok(v) => Ok(v),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(0.0),
+            Err(e) => Err(format!("get_net_transfer_between: {}", e)),
+        }
     })
 }
 
@@ -968,4 +999,98 @@ pub fn set_initial_cash(amount: f64) -> Result<(), String> {
         }
         Ok(())
     })
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cash_delta_transfer_in() {
+        let t = Trade {
+            id: "t1".into(),
+            symbol: "CASH".into(),
+            currency: "CNY".into(),
+            kind: HoldingKind::Cash,
+            action: TradeAction::TransferIn,
+            shares: None,
+            price: None,
+            amount: Some(10000.0),
+            notes: None,
+            name: None,
+            trade_date: "2026-06-12".into(),
+            created_at: "2026-06-12T10:00:00Z".into(),
+            asset_type: None,
+        };
+        assert_eq!(cash_delta_for_trade(&t, false), 10000.0);
+        assert_eq!(cash_delta_for_trade(&t, true), -10000.0);
+    }
+
+    #[test]
+    fn test_cash_delta_transfer_out() {
+        let t = Trade {
+            id: "t2".into(),
+            symbol: "CASH".into(),
+            currency: "CNY".into(),
+            kind: HoldingKind::Cash,
+            action: TradeAction::TransferOut,
+            shares: None,
+            price: None,
+            amount: Some(5000.0),
+            notes: None,
+            name: None,
+            trade_date: "2026-06-12".into(),
+            created_at: "2026-06-12T10:00:00Z".into(),
+            asset_type: None,
+        };
+        assert_eq!(cash_delta_for_trade(&t, false), -5000.0);
+        assert_eq!(cash_delta_for_trade(&t, true), 5000.0);
+    }
+
+    #[test]
+    fn test_cash_delta_cash_adjust_negative() {
+        let t = Trade {
+            id: "t3".into(),
+            symbol: "CASH".into(),
+            currency: "CNY".into(),
+            kind: HoldingKind::Cash,
+            action: TradeAction::CashAdjust,
+            shares: None,
+            price: None,
+            amount: Some(-200.0),
+            notes: None,
+            name: None,
+            trade_date: "2026-06-12".into(),
+            created_at: "2026-06-12T10:00:00Z".into(),
+            asset_type: None,
+        };
+        assert_eq!(cash_delta_for_trade(&t, false), -200.0);
+        assert_eq!(cash_delta_for_trade(&t, true), 200.0);
+    }
+
+    #[test]
+    fn test_cash_delta_non_cash_actions_are_zero() {
+        for action in [TradeAction::AddWatch, TradeAction::DeleteWatch, TradeAction::EditHolding, TradeAction::CostEdit] {
+            let t = Trade {
+                id: "t".into(),
+                symbol: "TEST".into(),
+                currency: "CNY".into(),
+                kind: HoldingKind::Hold,
+                action,
+                shares: Some(100.0),
+                price: Some(10.0),
+                amount: Some(1000.0),
+                notes: None,
+                name: None,
+                trade_date: "2026-06-12".into(),
+                created_at: "2026-06-12T10:00:00Z".into(),
+                asset_type: None,
+            };
+            assert_eq!(cash_delta_for_trade(&t, false), 0.0, "expected zero for {:?}", t.action);
+        }
+    }
 }

@@ -12,7 +12,14 @@
   let editingTrade = $state<Trade | null>(null);
   let showAddTrade = $state(false);
 
-  const SYSTEM_ACTIONS = new Set(['cash_adjust', 'cost_edit', 'add_watch', 'delete_watch']);
+  // Auto-enable showSystemActions when a system action filter is selected
+  $effect(() => {
+    if (SYSTEM_ACTIONS.has(directionFilter)) {
+      showSystemActions = true;
+    }
+  });
+
+  const SYSTEM_ACTIONS = new Set(['cash_adjust', 'cost_edit', 'add_watch', 'delete_watch', 'transfer_in', 'transfer_out']);
 
   /** symbol → assetType lookup from holdings */
   const assetTypeMap = $derived(
@@ -86,6 +93,9 @@
       <option value="all">{t('invest_trade_filter_all')}</option>
       <option value="buy">{t('invest_trade_filter_buy')}</option>
       <option value="sell">{t('invest_trade_filter_sell')}</option>
+      <option value="transfer_in">{t('invest_trade_filter_transfer_in')}</option>
+      <option value="transfer_out">{t('invest_trade_filter_transfer_out')}</option>
+      <option value="cash_adjust">{t('invest_fine_tune')}</option>
     </select>
     <label class="flex items-center gap-[var(--space-1)] text-[12px] text-[var(--text-secondary)] cursor-pointer select-none">
       <input type="checkbox" bind:checked={showSystemActions} class="rounded border border-border accent-[var(--accent)]" />
@@ -121,14 +131,18 @@
             <tr class="border-b border-border last:border-b-0 hover:bg-[var(--bg-hover)] transition-colors">
               <td class="px-[var(--space-3)] py-[var(--space-2)] text-[12px] text-[var(--text-secondary)]">{tradeDate(tr)}</td>
               <td class="px-[var(--space-3)] py-[var(--space-2)] font-medium text-[var(--text-primary)]">
-                <span>{nameMap.get(tr.symbol) ?? tr.symbol}</span>
-                {#if nameMap.has(tr.symbol)}
-                  <span class="ml-1 font-[var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">{tr.symbol}</span>
+                {#if tr.symbol === 'CASH'}
+                  <span>{t('invest_cash_account')}</span>
+                {:else}
+                  <span>{nameMap.get(tr.symbol) ?? tr.symbol}</span>
+                  {#if nameMap.has(tr.symbol)}
+                    <span class="ml-1 font-[var(--font-mono)] text-[10px] text-[var(--text-tertiary)]">{tr.symbol}</span>
+                  {/if}
                 {/if}
               </td>
               <td class="px-[var(--space-3)] py-[var(--space-2)]">
-                <span class={tr.action === 'buy' ? 'text-[var(--color-error)]' : 'text-[var(--color-success)]'}>
-                  {tr.action.toUpperCase()}
+                <span class={tr.action === 'buy' || tr.action === 'transfer_out' ? 'text-[var(--color-error)]' : 'text-[var(--color-success)]'}>
+                  {tr.action === 'transfer_in' ? t('invest_transfer_in') : tr.action === 'transfer_out' ? t('invest_transfer_out') : tr.action === 'cash_adjust' ? t('invest_fine_tune') : tr.action.toUpperCase()}
                 </span>
               </td>
               <td class="px-[var(--space-3)] py-[var(--space-2)] font-[var(--font-mono)] text-[var(--text-primary)]">{tr.shares ?? '-'}</td>

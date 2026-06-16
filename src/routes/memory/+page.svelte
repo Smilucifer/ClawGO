@@ -106,7 +106,10 @@
   async function refreshCandidates(opts?: { soft?: boolean }) {
     const seq = ++candidateSeq;
     try {
-      const result = await api.listMemoryFiles(projectCwd || undefined);
+      const result = await api.listMemoryFiles(
+        projectCwd || undefined,
+        projectCwd ? [projectCwd] : undefined,
+      );
       if (seq !== candidateSeq) return;
       candidates = result;
     } catch (e) {
@@ -160,7 +163,10 @@
   async function autoSelectFirst() {
     const seq = ++autoSelectSeq;
     try {
-      const all = candidates.length > 0 ? candidates : await api.listMemoryFiles(projectCwd || undefined);
+      const all = candidates.length > 0 ? candidates : await api.listMemoryFiles(
+        projectCwd || undefined,
+        projectCwd ? [projectCwd] : undefined,
+      );
       if (seq !== autoSelectSeq) return;
       if (candidates.length === 0) candidates = all;
       // Prefer MEMORY.md, then first existing project file

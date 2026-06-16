@@ -30,7 +30,7 @@
   }
 
   // ── Memory Extraction Config state ──
-  let memoryExtractionEnabled = $state(true);
+  let memoryExtractionEnabled = $state(false);
   let memoryExtractionChatEndpoint = $state("");
   let memoryExtractionChatModel = $state("");
   let memoryExtractionChatApiKey = $state("");
@@ -42,10 +42,15 @@
   function loadExtractionConfigFromSettings(s: UserSettings) {
     const ec = s.embedding_config;
     if (ec) {
-      memoryExtractionEnabled = ec.enabled ?? true;
-      memoryExtractionChatEndpoint = ec.chat_endpoint ?? "";
-      memoryExtractionChatModel = ec.chat_model ?? "";
-      memoryExtractionChatApiKey = ec.chat_api_key ?? "";
+      memoryExtractionEnabled = ec.enabled ?? false;
+      memoryExtractionChatEndpoint = ec.chat_endpoint ?? ec.endpoint ?? "";
+      memoryExtractionChatModel = ec.chat_model ?? ec.model ?? "";
+      memoryExtractionChatApiKey = ec.chat_api_key ?? ec.api_key ?? "";
+    } else {
+      memoryExtractionEnabled = false;
+      memoryExtractionChatEndpoint = "";
+      memoryExtractionChatModel = "";
+      memoryExtractionChatApiKey = "";
     }
   }
 

@@ -166,7 +166,7 @@ fn migrate_trades_table(conn: &mut Connection) -> Result<(), String> {
     // Get existing columns from old trades table (fail fast on introspection error)
     let old_columns: HashSet<String> = get_table_columns(conn, "trades")?.into_iter().collect();
 
-    // Check if the CHECK constraint includes 'edit_holding' (latest action).
+    // Check if the CHECK constraint includes 'transfer_out' (latest action).
     // If columns match AND CHECK is current, skip redundant table rebuild.
     let current_check: String = conn
         .query_row(
@@ -175,7 +175,7 @@ fn migrate_trades_table(conn: &mut Connection) -> Result<(), String> {
             |r| r.get(0),
         )
         .unwrap_or_default();
-    let check_is_current = current_check.contains("edit_holding");
+    let check_is_current = current_check.contains("transfer_out");
 
     let expected: HashSet<String> = TRADES_COLUMNS.iter().map(|s| s.to_string()).collect();
     if old_columns == expected && check_is_current {
@@ -205,8 +205,8 @@ fn migrate_trades_table(conn: &mut Connection) -> Result<(), String> {
             id TEXT PRIMARY KEY,
             symbol TEXT NOT NULL,
             currency TEXT NOT NULL DEFAULT 'CNY',
-            kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
-            action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'cost_edit', 'cash_adjust', 'add_watch', 'delete_watch', 'edit_holding', 'unknown')),
+            kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch', 'cash')),
+            action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'cost_edit', 'cash_adjust', 'transfer_in', 'transfer_out', 'add_watch', 'delete_watch', 'edit_holding', 'unknown')),
             shares REAL,
             price REAL,
             amount REAL,
@@ -436,7 +436,7 @@ const CREATE_TABLES_SQL: &str = "
 CREATE TABLE IF NOT EXISTS holdings (
     symbol TEXT NOT NULL,
     currency TEXT NOT NULL DEFAULT 'CNY',
-    kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
+    kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch', 'cash')),
     name TEXT,
     notional REAL NOT NULL DEFAULT 0,
     avg_cost REAL,
@@ -454,8 +454,8 @@ CREATE TABLE IF NOT EXISTS trades (
     id TEXT PRIMARY KEY,
     symbol TEXT NOT NULL,
     currency TEXT NOT NULL DEFAULT 'CNY',
-    kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch')),
-    action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'cost_edit', 'cash_adjust', 'add_watch', 'delete_watch', 'edit_holding', 'unknown')),
+    kind TEXT NOT NULL CHECK (kind IN ('hold', 'watch', 'cash')),
+    action TEXT NOT NULL CHECK (action IN ('buy', 'sell', 'cost_edit', 'cash_adjust', 'transfer_in', 'transfer_out', 'add_watch', 'delete_watch', 'edit_holding', 'unknown')),
     shares REAL,
     price REAL,
     amount REAL,

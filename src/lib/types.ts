@@ -1754,6 +1754,7 @@ export interface Holding {
 /** Trade action type — matches Rust TradeAction enum (snake_case). */
 export type TradeAction =
   | 'buy' | 'sell' | 'cost_edit' | 'cash_adjust'
+  | 'transfer_in' | 'transfer_out'
   | 'add_watch' | 'delete_watch' | 'edit_holding'
   | 'unknown';
 

@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v5.3.6, 2026-06-12). 委员会解析器增强 + 8 项审查修复: extract_field 6 格式变体 / matches_key_line 共享函数 / detect_fallback_reason / hard_truncate 关键字段保留 / failedSteps 填充 / i18n 国际化。See `docs/changelog.md`.
+**Current phase:** Phase 10+ (v5.3.7, 2026-06-12). 委员会单元测试修复。See `docs/changelog.md`.
 
 ## Standard workflow
 
@@ -398,7 +398,8 @@ Key phases and their status:
 | 10+ (v5.3.3) | Invest 交易逻辑全面重构(PR1+PR2): sql_string_enum! 宏+TradeAction/HoldingKind 类型安全枚举+FromStr trait+convert_watch_to_hold 原子化命令+add_holding/update_holding deprecated+前端 4 方法统一单次 IPC+HoldingsTable hold/watch 分行按钮+TradeAction 联合类型+DB CHECK 约束迁移(edit_holding)+process_* key 预传递+5 项 simplify 审查修复 | [done] |
 | 10+ (v5.3.4) | Code Review 10 项修复: PnL notional 兜底+process_edit_holding name/asset_type 传播+迁移 convert_hold_to_watch→unknown+嵌套事务 manage_tx+CHECK unknown+event_scanner kind 过滤+created_at 保留+TradeDialog \|\|→\?\?+update_trade 注释+asset_type_map 确认 | [done] |
 | 10+ (v5.3.5) | 委员会指标预计算+工具清理: indicators.rs 共享模块(6 函数+12 测试)/Quant R1 预计算注入({{precomputed_indicators}})/get_company_info 移除(5→4 工具)/get_company_news Tushare→AkShare/价格分位双倍缩放修复/零收盘守卫(缩窄到最近 21 根)/mean_all 回退/RSI 平坦价格守卫/HV20 不足数据提示/Quant Prompt 更新/CommitteeToolsTab 更新/compute_ma period=0 守卫/价格分位窗口动态化/2 轮审查 14 项修复 | [done] |
-| 10+ (v5.3.6) | 委员会解析器增强: extract_field 6 格式变体(分层 strip_prefix)/matches_key_line 共享函数(消除 3 处重复)/detect_fallback_reason(3 种回退原因)/hard_truncate 关键字段保留(critical_field_keys+budget 修复+max 封顶)/前端 failedSteps 填充+getStepState failed 状态/CommitteeLiveTab 友好错误+i18n/8 项审查修复(3 error 路径接入/AND→OR/测试修复/格式去重/i18n) | [done] |
+| 10+ (v5.3.6) | 委员会解析器增强+现金管理增强: extract_field 6 格式变体/matches_key_line 共享函数/detect_fallback_reason/hard_truncate 关键字段保留/failedSteps 填充+i18n/银证转入转出+微调修正(TradeAction TransferIn/TransferOut+HoldingKind Cash+DB CHECK 迁移)/TradeDialog 三子模式重设计+submitLabel+CASH_MODES/TradeLogTab SYSTEM_ACTIONS+徽章颜色+方向过滤/删除 updateCash 死方法/15 项审查修复(fine_tune→cash_adjust 映射/注释修复/死代码清理/三元折叠/pill-tab 提取/cash_adjust 过滤) | [done] |
+| 10+ (v5.3.7) | 委员会单元测试修复: test_max_chars 断言同步(500/550/550)/test_critical_field_keys_risk 断言同步(风险信号)/HtmlPreview changelog 描述修正(srcdoc 非 allow-same-origin) | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

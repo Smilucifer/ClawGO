@@ -110,7 +110,11 @@ pub async fn run_pnl_snapshot() -> Result<String, String> {
     // not the most recent snapshot which might be from today (if run multiple times)
     let prev = verdicts::get_previous_day_snapshot(&today)?;
     let (daily_pnl, daily_pnl_pct) = if let Some(last) = prev {
-        let pnl = total_value - last.total_value;
+        // Subtract net transfers between snapshots so that transfer_in/out
+        // do not inflate or deflate the daily P&L figure.
+        let net_transfer = portfolio::get_net_transfer_between(&last.snapshot_date, &today)
+            .unwrap_or(0.0);
+        let pnl = (total_value - last.total_value) - net_transfer;
         let pct = if last.total_value > 0.0 {
             (pnl / last.total_value) * 100.0
         } else {

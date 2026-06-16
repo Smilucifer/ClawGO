@@ -323,9 +323,19 @@
                   {t('invest_debate_waiting_llm')}
                 </div>
               {:else if round?.parsed?.fallbackReason}
-                <div class="fallback-message">
-                  <span class="fallback-icon">⚠</span>
-                  <span>{getFallbackMessage(round.parsed.fallbackReason, t(step.labelKey))}</span>
+                <div class="flex items-center gap-[var(--space-2)]">
+                  <div class="fallback-message flex-1">
+                    <span class="fallback-icon">⚠</span>
+                    <span>{getFallbackMessage(round.parsed.fallbackReason, t(step.labelKey))}</span>
+                  </div>
+                  <button
+                    class="shrink-0 rounded-[var(--radius-sm)] border border-border px-2 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                    onclick={() => store.runCommittee([asset.symbol])}
+                    disabled={store.streaming}
+                    title={t('invest_retry')}
+                  >
+                    {t('invest_retry')}
+                  </button>
                 </div>
               {:else if round?.parsed?.rawText}
                 <div class="max-h-[200px] overflow-y-auto whitespace-pre-wrap font-[var(--font-mono)] text-[12px] leading-[1.6] text-[var(--text-secondary)]">

@@ -183,7 +183,7 @@
 
       <div class="mb-[var(--space-4)] flex gap-[var(--space-2)]">
         <button class="rounded-[var(--radius-md)] bg-[var(--accent)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] font-medium text-[var(--bg-base)] transition-colors hover:opacity-90" onclick={openBuy}>{t('invest_buy')}</button>
-        <button class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]" onclick={openCash}>{t('invest_edit_cash')}</button>
+        <button class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]" onclick={openCash}>{t('invest_cash_management')}</button>
         <button class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]" onclick={() => investStore.refreshPrices(tushareToken)}>{t('invest_refresh_prices')}</button>
       </div>
 
