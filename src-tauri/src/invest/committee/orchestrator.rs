@@ -1812,6 +1812,7 @@ pub(crate) async fn run_committee(
     // ── Step 2: REGIME computation ─────────────────────────────────────
     // Compute quantitative regime metrics (RSI-14, MA, volatility, price
     // quantile) after Macro and inject into Quant/Risk/CIO context.
+    check_cancellation(cancel.as_ref(), &emitter, symbol)?;
     let regime_si = 1; // step_index for REGIME node
     let regime_context: Option<String> = {
         let regime_result = match crate::tushare::client::TushareClient::from_settings() {
@@ -2097,11 +2098,16 @@ pub async fn run_committee_batch_stream(
                         });
                     }
                     Err(e) => {
-                        emitter(CommitteeEvent::Error {
-                            symbol: sym.clone(),
-                            error: e.clone(),
-                        });
-                        log::warn!("committee batch task error for {}: {}", sym, e);
+                        // Cancellation already emitted SymbolAborted in
+                        // check_cancellation; don't re-emit as Error (which the
+                        // frontend would treat as `failed`, overwriting `aborted`).
+                        if !e.starts_with("aborted:") {
+                            emitter(CommitteeEvent::Error {
+                                symbol: sym.clone(),
+                                error: e.clone(),
+                            });
+                            log::warn!("committee batch task error for {}: {}", sym, e);
+                        }
                     }
                 }
                 completed += 1;

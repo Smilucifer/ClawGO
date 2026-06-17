@@ -171,7 +171,6 @@ export class InvestCommitteeStore {
 
   // Streaming state
   streaming = $state(false);
-  activeSymbols = $state<string[]>([]);
   perSymbolProgress = $state<Map<string, SymbolProgress>>(new Map());
   toolCallHistory = $state<ToolCallRecord[]>([]);
 

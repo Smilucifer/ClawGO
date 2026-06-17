@@ -108,7 +108,7 @@ pub fn save_queue(state: &CommitteeQueueState) -> Result<(), String> {
             .unwrap_or_default()
             .as_nanos()
     ));
-    let json = serde_json::to_string_pretty(state).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string(state).map_err(|e| e.to_string())?;
     fs::write(&tmp, &json).map_err(|e| format!("write tmp: {e}"))?;
     for attempt in 0..3u8 {
         match fs::rename(&tmp, &path) {

@@ -21,22 +21,6 @@
 
   const CONCURRENCY_OPTIONS = [1, 2, 3, 5, 8, 10];
 
-  const STEP_ICONS: Record<string, string> = {
-    macro: '🌐',
-    regime: '🧭',
-    quant_r1: '📊',
-    risk_r1: '🛡',
-    quant_r2: '📊',
-    risk_r2: '🛡',
-    cio: '👔',
-  };
-  const STEP_ROUND: Record<string, string> = {
-    quant_r1: 'R1',
-    risk_r1: 'R1',
-    quant_r2: 'R2',
-    risk_r2: 'R2',
-  };
-
   function stepDef(key: string) {
     return STEP_DEFS.find((s) => s.key === key)!;
   }
@@ -94,23 +78,28 @@
     return '¥' + v.toLocaleString();
   }
 
+  // O(1) per-row lookups for the symbol card list (avoids O(assets×n) scans).
+  const queueMap = $derived(new Map(store.queue.map((q) => [q.symbol, q])));
+  const toolMap = $derived.by(() => {
+    const m = new Map<string, typeof store.toolCallHistory>();
+    for (const tc of store.toolCallHistory) {
+      const bucket = m.get(tc.symbol);
+      if (bucket) bucket.push(tc);
+      else m.set(tc.symbol, [tc]);
+    }
+    return m;
+  });
+
   function buildSnapshot(): PortfolioSnapshot {
-    const holdings: SnapshotHolding[] = [
-      ...invest.holdHoldings.map((h) => ({
+    const holdings: SnapshotHolding[] = [...invest.holdHoldings, ...invest.watchHoldings].map(
+      (h) => ({
         symbol: h.symbol,
         name: h.name,
         shares: h.shares,
         notional: h.notional,
         kind: h.kind,
-      })),
-      ...invest.watchHoldings.map((h) => ({
-        symbol: h.symbol,
-        name: h.name,
-        shares: h.shares,
-        notional: h.notional,
-        kind: h.kind,
-      })),
-    ];
+      }),
+    );
     return {
       holdings,
       cash: invest.cash,
@@ -179,9 +168,9 @@
     <div class="step-head">
       <div class="step-dot {state}"></div>
       <span class="step-title">
-        {STEP_ICONS[stepKey]}
+        {def.icon}
         {t(def.labelKey)}
-        {#if STEP_ROUND[stepKey]}<span class="step-round">{STEP_ROUND[stepKey]}</span>{/if}
+        {#if def.round}<span class="step-round">{def.round}</span>{/if}
       </span>
       {#if round}
         <div class="step-meta">
@@ -308,8 +297,8 @@
   <!-- Symbol cards -->
   {#each allAssets as asset (asset.symbol)}
     {@const p = store.perSymbolProgress.get(asset.symbol)}
-    {@const queueItem = store.queue.find((q) => q.symbol === asset.symbol)}
-    {@const result = p?.result ?? store.results.find((r) => r.symbol === asset.symbol) ?? null}
+    {@const queueItem = queueMap.get(asset.symbol)}
+    {@const result = p?.result ?? null}
     {@const isExpanded = expandedSymbols.has(asset.symbol)}
     <div class="symbol-card" class:streaming={queueItem?.status === 'running'}>
       <div class="card-header" onclick={() => toggleExpand(asset.symbol)}>
@@ -360,7 +349,7 @@
       </div>
 
       {#if isExpanded}
-        {@const tools = store.toolCallHistory.filter((tc) => tc.symbol === asset.symbol)}
+        {@const tools = toolMap.get(asset.symbol) ?? []}
         <div class="card-body">
           <div class="flow-grid">
             <div class="fw">{@render stepCard('macro', p)}</div>
