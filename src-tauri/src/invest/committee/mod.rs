@@ -4,5 +4,6 @@ pub mod cli_executor;
 pub mod events;
 pub mod orchestrator;
 pub mod parser;
+pub mod queue;
 pub mod roles;
 pub mod tools;
