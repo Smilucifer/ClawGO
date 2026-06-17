@@ -19,6 +19,10 @@ use crate::tushare::client::TushareClient;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::Semaphore;
+
+/// Maximum number of symbol pipelines running concurrently.
+const MAX_CONCURRENT_SYMBOLS: usize = 5;
 
 /// 单个标的的上下文数据，注入到各角色 prompt 中
 #[derive(Debug, Clone, Default, Serialize)]
@@ -1314,6 +1318,82 @@ async fn run_macro_phase(
     asset_context: &AssetContext,
 ) -> Result<(RoundOutput, u32), String> {
     let role = CommitteeRole::Macro;
+    let start = std::time::Instant::now();
+
+    // --- Try CLI path first ---
+    if let Some(cli) = super::cli_executor::CliCommitteeExecutor::global() {
+        let asset_name = get_asset_name(symbol).unwrap_or_else(|| symbol.to_string());
+        let system_prompt = super::cli_executor::build_cli_macro_prompt(
+            &asset_name,
+            symbol,
+            asset_context,
+        );
+        let user_msg = if portfolio_summary.is_empty() {
+            format!(
+                "请分析 {} 的宏观环境和技术面，给出风险信号判断。",
+                symbol
+            )
+        } else {
+            format!(
+                "请分析 {} 的宏观环境和技术面，给出风险信号判断。\n\n{}",
+                symbol, portfolio_summary
+            )
+        };
+
+        log::info!("run_macro_phase: using CLI executor for {}", symbol);
+        let si = step_index_for_role(role, 1);
+        if let Some(ref emit) = emitter {
+            emit(CommitteeEvent::RoleStart {
+                symbol: symbol.to_string(),
+                role,
+                round: 1,
+                step_index: si,
+            });
+        }
+
+        match cli.run_role(&system_prompt, &user_msg, config.timeout_secs).await {
+            Ok(raw_text) => {
+                let (text, truncated) = hard_truncate(&raw_text, role, 0);
+                let mut parsed = parse_role_output(role, &text, truncated);
+                parsed.fallback_reason = detect_fallback_reason(role, &parsed);
+
+                if parsed.fallback_reason.is_some() {
+                    log::warn!(
+                        "run_macro_phase: CLI output has fallback reason for {}: {:?}",
+                        symbol, parsed.fallback_reason
+                    );
+                }
+
+                let latency_ms = start.elapsed().as_millis() as u64;
+                let round_output = RoundOutput {
+                    role,
+                    round: 1,
+                    parsed,
+                    latency_ms,
+                    tokens_used: 0, // CLI doesn't report tokens
+                };
+                if let Some(ref emit) = emitter {
+                    emit(CommitteeEvent::RoleComplete {
+                        symbol: symbol.to_string(),
+                        role,
+                        round: 1,
+                        summary: RoundOutputSummary::from(&round_output),
+                        step_index: si,
+                    });
+                }
+                return Ok((round_output, 0));
+            }
+            Err(e) => {
+                log::warn!(
+                    "run_macro_phase: CLI failed for {}: {}, falling back to API",
+                    symbol, e
+                );
+                // Fall through to API path below
+            }
+        }
+    }
+
+    // --- Fallback: existing API path (unchanged) ---
     let provider = resolve_provider(config, role);
     let llm_config = build_llm_config(provider, role, config.timeout_secs, config.model_override.as_deref());
 
@@ -2043,6 +2123,7 @@ pub async fn run_committee_batch(
     // Pre-load portfolio once and share across all tasks to avoid redundant
     // DB reads and price-fetch API calls.
     let portfolio_arc = std::sync::Arc::new(PortfolioData::load_with_timeout(dry_run).await);
+    let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_SYMBOLS));
 
     let mut handles = Vec::with_capacity(symbols.len());
 
@@ -2051,7 +2132,9 @@ pub async fn run_committee_batch(
         let config = config.clone();
         let symbol = symbol.clone();
         let portfolio = portfolio_arc.clone();
+        let permit = semaphore.clone().acquire_owned().await.unwrap();
         handles.push(tokio::spawn(async move {
+            let _permit = permit; // hold until task completes
             run_committee(&*client, &symbol, &config, None, dry_run, Some(portfolio)).await
         }));
     }
@@ -2084,6 +2167,7 @@ pub async fn run_committee_batch_stream(
 
     // Pre-load portfolio once and share across all tasks.
     let portfolio_arc = std::sync::Arc::new(PortfolioData::load_with_timeout(dry_run).await);
+    let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_SYMBOLS));
 
     let mut handles: Vec<(String, _)> = Vec::with_capacity(symbols.len());
 
@@ -2093,7 +2177,9 @@ pub async fn run_committee_batch_stream(
         let symbol = symbol.clone();
         let emitter = emitter.clone();
         let portfolio = portfolio_arc.clone();
+        let permit = semaphore.clone().acquire_owned().await.unwrap();
         handles.push((symbol.clone(), tokio::spawn(async move {
+            let _permit = permit; // hold until task completes
             run_committee(&*client, &symbol, &config, Some(emitter), dry_run, Some(portfolio)).await
         })));
     }
