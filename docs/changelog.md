@@ -2,7 +2,7 @@
 
 ## v5.4.3 (2026-06-17)
 
-### 宏观指标 Tencent/AkShare 集成+委员会 L4 移除+Sanity Check 简化
+### 宏观指标 Tencent/AkShare 集成+委员会 L4 移除+Sanity Check 简化+CIO 输出修复+Prompt 精简
 
 **宏观指标数据源集成 (7 项):**
 
@@ -14,31 +14,47 @@
 6. **`akshare_market.py` 新 provider**: `bond_yield_10y()` + `market_stats(date)`，注册到 server.py。`market_stats` API 全部失败时返回 `{}`（非交易日不缓存 0）。
 7. **`macro_cache` 15 指标全覆盖**: `ALL_INDICATORS` 全部有对应的 fetch 逻辑，测试断言从 12 更新为 15。
 
+**CIO 输出缺失修复 (4 项):**
+
+8. **CIO prompt 结构重组**: 16 个字段列表从 prompt 末尾移至最前面（紧接角色描述之后），确保模型优先输出 KEY: VALUE 格式。删除冗余"职责范围"段落和"现金仓位机会成本规则"。`length_constraint_suffix` 对 CIO 返回空（格式已在 prompt 中）。
+9. **空 verdict 漏洞修复**: `detect_fallback_reason` 从 `is_none()` 改为 `is_blank()` 统一检查空字符串/空白，Macro/Quant/Risk 的 critical field 同步加固。
+10. **Risk 用户行为模式分析删除**: Risk R1 删除 `query_dreaming_insights` 工具、情绪状态评估、历史模式；Risk R2 删除情绪化追涨规则、情绪重校准字段。减少 ~500 token prompt + 输出。
+11. **CIO prompt L4 引用清理**: 删除"红灯规则"、"安全阀"、"情绪稳定"字段，CIO 不再引用已移除的 L4 Officer。
+
 **委员会 L4 Officer 移除 (8 项):**
 
-8. **角色精简 5→4**: 移除 L4 Execution Officer 角色及全部关联代码。Pipeline 从 8 步缩减为 7 步（Macro R1 → Quant R1 → Risk R1 → Quant R2 → Risk R2 → CIO）。
-9. **`orchestrator.rs`**: 删除 `run_l4_officer_phase` 函数 + L4 启动/完成事件 + L4 相关 tool-call 逻辑（-160 行）。
-10. **`roles.rs`**: 删除 `L4_OFFICER_PROMPT`、L4 角色定义、`load_prompt_for_round` L4 分支（-137 行）。
-11. **`parser.rs`**: 删除 `parse_l4_output`、L4 相关解析逻辑（-154 行）。
-12. **`cli_executor.rs`**: 删除 `build_cli_l4_prompt`、L4 CLI 路径（-29 行）。
-13. **前端 5 文件**: CommitteeRolesTab 移除 L4 卡片、CommitteeToolsTab 5→4 列、DebateBlock/PipelineFlow 移除 L4 颜色/步骤、pipeline-config backendIdx 调整。
+12. **角色精简 5→4**: 移除 L4 Execution Officer 角色及全部关联代码。Pipeline 从 8 步缩减为 7 步（Macro R1 → Quant R1 → Risk R1 → Quant R2 → Risk R2 → CIO）。
+13. **`orchestrator.rs`**: 删除 `run_l4_officer_phase` 函数 + L4 启动/完成事件 + L4 相关 tool-call 逻辑（-160 行）。
+14. **`roles.rs`**: 删除 `L4_OFFICER_PROMPT`、L4 角色定义、`load_prompt_for_round` L4 分支（-137 行）。
+15. **`parser.rs`**: 删除 `parse_l4_officer`、`compute_red_light_score`、L4 相关解析逻辑（-154 行）。
+16. **`cli_executor.rs`**: 删除 `build_cli_l4_prompt`、dreaming cache/formatting（-95 行）。
+17. **前端 5 文件**: CommitteeRolesTab 移除 L4 卡片、CommitteeToolsTab 5→4 列、DebateBlock/PipelineFlow 移除 L4 颜色/步骤、pipeline-config backendIdx 7→6。
+18. **`events.rs`**: `step_index_for_role` L4Officer 改为 sentinel 99（防碰撞），CIO 改为 6。
+19. **`ParsedFields` 清理**: 移除 10 个 dead L4 字段（`l4_guard_clause`/`l4_guard_reason`/`l4_emotion_assessment`/`l4_red_light`/`l4_buy_point_ok`/`l4_check_emotion`/`execution_red_light_score`/`red_light`/`emotional_state`/`emotion_recalibrated`）+ `is_red_light()` 方法。
 
 **CIO Sanity Check 简化 (3 项):**
 
-14. **4 Gates → 2 Gates + Fallback**: 移除 Gate 3（子弹降级，v5.4.1 已标记始终 true）和 Gate 4（集中度调整）。新增 Gate 2 三重恶化守卫（macro risk_off + quant bearish + 深度亏损 → SELL）。Fallback 检查 WORKER_UNAVAILABLE + fallback_reason → HOLD。
-15. **`cio_sanity_check` 签名简化**: 6 参数 → 4 参数（移除 `_min_cash_reserve`、`_actual_cash_cny`、`actual_concentration`，新增 `macro_strength`）。`SanityCheckResult` 移除 `gate3_pass`、`gate4_pass` 字段。
-16. **`analysis.rs` 精简**: Gate 2 从集中度百分比检查改为三重恶化组合检查，`compute_red_light_score` 同步简化。
+20. **4 Gates → 2 Gates + Fallback**: 移除 Gate 3（子弹降级，v5.4.1 已标记始终 true）和 Gate 4（集中度调整）。新增 Gate 2 三重恶化守卫（macro risk_off + quant bearish + 深度亏损 → SELL）。Fallback 检查 WORKER_UNAVAILABLE + fallback_reason → HOLD。
+21. **`cio_sanity_check` 签名简化**: 6 参数 → 4 参数（移除 `_min_cash_reserve`、`_actual_cash_cny`、`actual_concentration`，新增 `macro_strength`）。`SanityCheckResult` 移除 `gate3_pass`、`gate4_pass` 字段。
+22. **`analysis.rs` 精简**: Gate 2 从集中度百分比检查改为三重恶化组合检查。
 
-**Simplify 审查修复 (8 项):**
+**Simplify 审查修复 (15 项):**
 
-17. **vol20 代码去重**: `compute_vol20(&[f64])` 提取到 `tencent_quotes.rs` 为共享函数，`macro_refresh.rs` 和 `fetch_csi300_kline` 均调用同一实现。
-18. **`fetch_two_market_volume` 并发化**: 两个腾讯 HTTP 请求从串行改为 `tokio::try_join!` 并发。
-19. **Match arms 错误分离**: `fetch_csi300` / `fetch_cgb_10y` 的 `_` catch-all 拆分为 `Ok(_)`（空数据，info 日志）+ `Err(e)`（错误，warn 日志）。
-20. **Python `bond_yield_10y` 性能**: `start_date=""` 改为近 90 天，从 19 页 HTTP 请求缩减为 1 页。
-21. **Python `market_stats` 失败语义**: 两个 API 全部失败时返回 `{}` 而非 0 填充字典，Rust 侧产生错误而非缓存假数据。
-22. **`compute_vol20` 签名**: `Vec<f64>` → `&[f64]`，消除调用侧不必要的堆分配。
-23. **内联单次调用函数**: `fetch_csi300_tencent` → `csi300_tencent_fallback`（语义更清晰），`fetch_cgb_10y_akshare` → `cgb_10y_akshare_fallback`。
-24. **测试简化**: vol20 测试直接调用 `compute_vol20()`，新增不足数据返回 `None` 测试。
+23. **vol20 代码去重**: `compute_vol20(&[f64])` 提取到 `tencent_quotes.rs` 为共享函数，`macro_refresh.rs` 和 `fetch_csi300_kline` 均调用同一实现。
+24. **`fetch_two_market_volume` 并发化**: 两个腾讯 HTTP 请求从串行改为 `tokio::try_join!` 并发。
+25. **Match arms 错误分离**: `fetch_csi300` / `fetch_cgb_10y` 的 `_` catch-all 拆分为 `Ok(_)`（空数据，info 日志）+ `Err(e)`（错误，warn 日志）。
+26. **Python `bond_yield_10y` 性能**: `start_date=""` 改为近 90 天，从 19 页 HTTP 请求缩减为 1 页。
+27. **Python `market_stats` 失败语义**: 两个 API 全部失败时返回 `{}` 而非 0 填充字典，Rust 侧产生错误而非缓存假数据。
+28. **`compute_vol20` 签名**: `Vec<f64>` → `&[f64]`，消除调用侧不必要的堆分配。
+29. **内联单次调用函数**: `fetch_csi300_tencent` → `csi300_tencent_fallback`（语义更清晰），`fetch_cgb_10y_akshare` → `cgb_10y_akshare_fallback`。
+30. **测试简化**: vol20 测试直接调用 `compute_vol20()`，新增不足数据返回 `None` 测试。
+31. **DebateBlock ROLE_COLORS 复用**: 本地重复定义改为 `import { ROLE_COLORS } from './pipeline-config'`。
+32. **CIO prompt 重复格式指令消除**: `length_constraint_suffix` 对 CIO 返回空（格式已在 prompt 中）。
+33. **Dead dreaming cache 删除**: `format_dreaming_insights_for_prompt`、`DREAMING_CACHE`、`clear_dreaming_cache` 及 orchestrator 两处调用。
+34. **Broken tests 修复**: 更新 `test_length_constraint_mentions_verdict_for_cio`（空断言）、删除 `test_length_constraint_mentions_guard_clause_for_l4`。
+35. **L4Officer step_index 碰撞修复**: 返回 sentinel 99 而非与 CIO 共享 6。
+36. **detect_fallback_reason L4 arm**: 从 `l4_guard_clause.is_none()`（永远 true）改为显式 `return Some("l4_removed")`。
+37. **Risk parser dead 提取清理**: 移除 `emotional_state`/`emotion_recalibrated` 提取行（prompt 已不输出这些字段）。
 
 ## v5.4.2 (2026-06-17)
 
