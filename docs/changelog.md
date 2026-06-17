@@ -19,6 +19,24 @@
 
 6. **`portfolio.rs` 测试编译修复**: `trade_date` 字段 `.into()` → `Some(...)` 适配 `Option<String>` 类型。
 
+### 委员会 CIO 回显误报修复+R2 解析增强+安全检查加固
+
+**CIO `[WORKER_UNAVAILABLE]` 回显修复 (3 项):**
+
+7. **`format_round_outputs_for_prompt` 使用原始 raw_text**: 不再将有 fallback 的输出替换为 `[WORKER_UNAVAILABLE]` 标记注入 prompt。旧方式导致 LLM 回显标记，`detect_fallback_reason` 误判 CIO 自身为 `worker_unavailable`。`cli_executor.rs` 和 `orchestrator.rs` 同步修改。
+8. **CIO prompt 删除两条 `[WORKER_UNAVAILABLE]` 规则**: Hard Rules 中的 "worker 输出含标记 → HOLD+confidence≤0.4" 和安全阀中的第 3 条。这些安全逻辑已由 `analysis.rs` post-merge 检查兜底，prompt 中重复声明是回显 bug 的根因。
+9. **`cio_sanity_check` 增加 `fallback_reason` 检查**: 原检查仅 `raw_text.contains("[WORKER_UNAVAILABLE]")`，`missing_critical_fields` 和 `empty_text` 不含标记不触发。现在同时检查 `fallback_reason.is_some()`，覆盖所有 fallback 场景。新增 `test_sanity_fallback_reason_without_marker` 测试。
+
+**Quant R2 解析增强 (2 项):**
+
+10. **`apply_r2_signal_override` 增加 signal key 变体**: 新增 `调整后信号`、`信号调整`。移除含空格的 `ADJUSTED SIGNAL`（`is_structured_key_line` 拒绝含空格的 key，会被 `merge_continuation_lines` 误判为续行）。
+11. **`parse_quant` 补上 `调整买点` 提取**: R2 prompt 要求输出 `调整买点` 但 parser 完全没提取。新增 `调整买点`/`ADJUSTED_BUY_POINT` key，R1 的 `买点评估` 优先（`is_none()` 守卫）。
+
+**i18n+文档 (2 项):**
+
+12. **角色配置 UI 描述更新**: `invest_roles_sanity_3` 和 `invest_roles_hard_cio_4` 从 `[WORKER_UNAVAILABLE]` 改为 "任何角色输出异常"。zh-CN、en、roles-config-demo.html 同步。
+13. **7 个新单元测试**: R2 signal 变体×3、调整买点×2、format_round_outputs×1、cio_sanity_check fallback_reason×1。
+
 ## v5.4.1 (2026-06-17)
 
 ### 委员会置信度逻辑重构+CLI 静默+hard_truncate 移除

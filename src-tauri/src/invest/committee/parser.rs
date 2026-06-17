@@ -366,11 +366,17 @@ fn extract_bool_any(text: &str, keys: &[&str]) -> Option<bool> {
 /// Returns `None` if the key is not found (empty list is distinguishable from missing).
 /// Apply R2 ADJUSTED_SIGNAL/ADJUSTED_STRENGTH override to parsed fields.
 fn apply_r2_signal_override(parsed: &mut ParsedFields, text: &str) {
-    // English keys: ADJUSTED_SIGNAL / 调整信号 / 调整风险信号
-    if let Some(adjusted) = extract_field_any(text, &["ADJUSTED_SIGNAL", "调整信号", "调整风险信号"]) {
+    // R2 signal keys — include common LLM output variants beyond the prompt-specified "调整信号"
+    // Note: "ADJUSTED SIGNAL" (with space) is intentionally excluded — is_structured_key_line
+    // rejects keys with spaces, and merge_continuation_lines would merge it into the previous
+    // key's value. "ADJUSTED_SIGNAL" (underscore) covers the English variant.
+    if let Some(adjusted) = extract_field_any(text, &[
+        "ADJUSTED_SIGNAL", "调整信号", "调整风险信号",
+        "调整后信号", "信号调整",
+    ]) {
         parsed.signal = Some(adjusted);
     }
-    // English keys: ADJUSTED_STRENGTH / 调整强度
+    // R2 strength keys
     if let Some(strength) = extract_f64_any(text, &["ADJUSTED_STRENGTH", "调整强度"]) {
         parsed.strength = Some(strength);
     }
@@ -453,6 +459,11 @@ fn parse_quant(text: &str, parsed: &mut ParsedFields) {
         extract_field_any(text, &["VALUATION_ASSESSMENT", "估值评估"]);
     // R2 fields — R2 overrides R1 where applicable
     apply_r2_signal_override(parsed, text);
+    // R2 buy point override (prompt uses "调整买点", R1 uses "买点评估")
+    if parsed.buy_point_assessment.is_none() {
+        parsed.buy_point_assessment =
+            extract_field_any(text, &["调整买点", "ADJUSTED_BUY_POINT"]);
+    }
     parsed.regime_protection_triggered = extract_bool_any(text, &["REGIME_PROTECTION_TRIGGERED", "保护触发"]);
     parsed.reasoning = extract_field_any(text, &["REASONING", "推理"]);
 }
@@ -1325,5 +1336,50 @@ mod tests {
         assert!(merged.contains("WORST_CASE_LOSS_PCT_AT_-20: -12.5"));
         // 确保该行独立存在，未被合并到 SIGNAL 的值中
         assert!(merged.contains("risk_on\nWORST_CASE_LOSS_PCT_AT_-20"));
+    }
+
+    // ── R2 signal variant tests ─────────────────────────────────────────
+
+    #[test]
+    fn test_quant_r2_signal_variant_adjusted_signal() {
+        // "调整后信号" 是 prompt 未指定但 LLM 可能使用的变体
+        let text = "调整后信号: bullish\n调整强度: 7\n保护触发: no";
+        let parsed = parse_role_output(CommitteeRole::Quant, text, false);
+        assert_eq!(parsed.signal.as_deref(), Some("bullish"));
+        assert_eq!(detect_fallback_reason(CommitteeRole::Quant, 2, &parsed), None);
+    }
+
+    #[test]
+    fn test_quant_r2_signal_variant_english_adjusted() {
+        // "ADJUSTED_SIGNAL" (underscore) is the valid English variant.
+        // "ADJUSTED SIGNAL" (space) is excluded — is_structured_key_line rejects keys with spaces.
+        let text = "ADJUSTED_SIGNAL: bearish\nADJUSTED_STRENGTH: 5";
+        let parsed = parse_role_output(CommitteeRole::Quant, text, false);
+        assert_eq!(parsed.signal.as_deref(), Some("bearish"));
+        assert_eq!(detect_fallback_reason(CommitteeRole::Quant, 2, &parsed), None);
+    }
+
+    #[test]
+    fn test_quant_r2_signal_variant_bold() {
+        let text = "**调整信号**: neutral\n**调整强度**: 3";
+        let parsed = parse_role_output(CommitteeRole::Quant, text, false);
+        assert_eq!(parsed.signal.as_deref(), Some("neutral"));
+        assert_eq!(detect_fallback_reason(CommitteeRole::Quant, 2, &parsed), None);
+    }
+
+    #[test]
+    fn test_quant_r2_buy_point_assessment() {
+        // R2 prompt 使用 "调整买点"，parser 应能提取
+        let text = "调整信号: bullish\n调整强度: 7\n调整买点: 低吸\n保护触发: no";
+        let parsed = parse_role_output(CommitteeRole::Quant, text, false);
+        assert_eq!(parsed.buy_point_assessment.as_deref(), Some("低吸"));
+    }
+
+    #[test]
+    fn test_quant_r1_buy_point_not_overridden_by_r2() {
+        // R1 的 "买点评估" 应优先于 R2 的 "调整买点"
+        let text = "买点评估: 突破\n调整买点: 低吸";
+        let parsed = parse_role_output(CommitteeRole::Quant, text, false);
+        assert_eq!(parsed.buy_point_assessment.as_deref(), Some("突破"));
     }
 }

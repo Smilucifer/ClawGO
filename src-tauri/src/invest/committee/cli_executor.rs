@@ -466,11 +466,12 @@ pub fn format_round_outputs_for_prompt(
 
     let mut out = String::from("【前序分析结果】\n");
     for output in round_outputs {
-        let content = if output.parsed.fallback_reason.is_some() {
-            "[WORKER_UNAVAILABLE]"
-        } else {
-            &output.parsed.raw_text
-        };
+        // Use raw_text directly — do NOT inject "[WORKER_UNAVAILABLE]" marker
+        // into the prompt, as the LLM may echo it back and trigger false
+        // worker_unavailable detection on the current role's own output.
+        // The post-merge safety check in analysis.rs still enforces HOLD
+        // when any round output's raw_text contains the marker.
+        let content = &output.parsed.raw_text;
         out.push_str(&format!(
             "\n=== {} Round {} ===\n{}\n",
             output.role.label(),
@@ -878,5 +879,43 @@ mod tests {
     fn test_format_macro_cache_empty() {
         let result = format_macro_cache_for_prompt();
         assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_format_round_outputs_uses_raw_text_not_marker() {
+        use crate::invest::committee::analysis::RoundOutput;
+        use crate::invest::committee::parser::ParsedFields;
+        use crate::invest::committee::roles::CommitteeRole;
+
+        // Simulate a failed output with [WORKER_UNAVAILABLE] in raw_text
+        let failed_output = RoundOutput {
+            role: CommitteeRole::Quant,
+            round: 2,
+            parsed: ParsedFields {
+                raw_text: "[WORKER_UNAVAILABLE] CLI failed: timeout".to_string(),
+                fallback_reason: Some("cli_error: timeout".to_string()),
+                ..Default::default()
+            },
+            latency_ms: 0,
+            tokens_used: 0,
+        };
+
+        let good_output = RoundOutput {
+            role: CommitteeRole::Risk,
+            round: 1,
+            parsed: ParsedFields {
+                raw_text: "SIGNAL: ok\nSTRENGTH: 5".to_string(),
+                signal: Some("ok".to_string()),
+                ..Default::default()
+            },
+            latency_ms: 100,
+            tokens_used: 200,
+        };
+
+        let result = format_round_outputs_for_prompt(&[failed_output, good_output]);
+        // Should contain the raw_text (including the marker as-is from the failed output)
+        assert!(result.contains("[WORKER_UNAVAILABLE] CLI failed: timeout"));
+        // Should NOT have replaced it with a bare "[WORKER_UNAVAILABLE]"
+        assert!(result.contains("SIGNAL: ok"));
     }
 }

@@ -586,7 +586,7 @@
             <code>|SUGGESTED_ALLOC_CNY|</code> &gt; 100,000 &rarr; clamp 到 &plusmn;100,000
           </li>
           <li>
-            输入含 <code>[WORKER_UNAVAILABLE]</code> &rarr; 强制 <strong>HOLD</strong> + <code>confidence &le; 0.4</code>
+            任何角色输出异常（CLI 失败/超时/空输出）&rarr; 系统强制 <strong>HOLD</strong> + <code>confidence &le; 0.4</code>
           </li>
           <li>
             <code>Risk=high_risk</code> &rarr; 即使 Quant+Macro bullish 也最多 <strong>ACCUMULATE</strong>，禁 BUY
@@ -763,7 +763,7 @@ If you flag high_risk and CIO still wants BUY, you must explicitly state: "Risk 
         <li>5 个 verdict: <strong>BUY / ACCUMULATE / HOLD / TRIM / SELL</strong></li>
         <li>Sanity: <strong>confidence&ge;0.95 + BUY &rarr; 自动降级 ACCUMULATE</strong></li>
         <li>Sanity: <strong>|alloc|&gt;100k &rarr; clamp 到 &plusmn;100k</strong></li>
-        <li>Sanity: 输入含 <strong>[WORKER_UNAVAILABLE] &rarr; 强制 HOLD + confidence&le;0.4</strong></li>
+        <li>Sanity: 任何角色输出异常 &rarr; 系统强制 <strong>HOLD + confidence&le;0.4</strong></li>
       </ul>
       <details class="prompt-section" open>
         <summary>完整 system prompt <span class="prompt-wordcount">(2622 字)</span></summary>

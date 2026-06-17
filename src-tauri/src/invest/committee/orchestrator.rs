@@ -1073,15 +1073,12 @@ fn build_context_messages(
         context.push('\n');
     }
     for output in round_outputs {
-        // Use WORKER_UNAVAILABLE marker for fallback outputs so the CIO prompt's
-        // safety-valve rule ("任何 worker 输出含 [WORKER_UNAVAILABLE]") triggers correctly.
-        // For non-fallback outputs, use raw_text (pre-merge original) to preserve
-        // the LLM's full reasoning for downstream context.
-        let content = if output.parsed.fallback_reason.is_some() {
-            "[WORKER_UNAVAILABLE]"
-        } else {
-            &output.parsed.raw_text
-        };
+        // Use raw_text directly — do NOT inject "[WORKER_UNAVAILABLE]" marker
+        // into the prompt, as the LLM may echo it back and trigger false
+        // worker_unavailable detection on the current role's own output.
+        // The post-merge safety check in analysis.rs still enforces HOLD
+        // when any round output's raw_text contains the marker.
+        let content = &output.parsed.raw_text;
         context.push_str(&format!(
             "\n=== {} Round {} ===\n{}\n",
             output.role.label(),

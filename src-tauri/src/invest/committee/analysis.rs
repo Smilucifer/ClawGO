@@ -204,16 +204,19 @@ pub fn cio_sanity_check(
         ));
     }
 
-    // Check for WORKER_UNAVAILABLE (retry exhaustion)
-    let has_unavailable = round_outputs
-        .iter()
-        .any(|o| o.parsed.raw_text.contains("[WORKER_UNAVAILABLE]"));
+    // Check for any role fallback (CLI failure, missing fields, empty output, etc.)
+    // Covers both [WORKER_UNAVAILABLE] marker in raw_text AND fallback_reason set by
+    // detect_fallback_reason (missing_critical_fields, empty_text, etc.)
+    let has_unavailable = round_outputs.iter().any(|o| {
+        o.parsed.raw_text.contains("[WORKER_UNAVAILABLE]")
+            || o.parsed.fallback_reason.is_some()
+    });
     if has_unavailable {
         result.final_verdict = "HOLD".to_string();
         result.final_confidence = result.final_confidence.min(0.4);
         result
             .notes
-            .push("工作节点不可用，降级为HOLD".to_string());
+            .push("工作节点不可用或输出异常，降级为HOLD".to_string());
     }
 
     result
@@ -376,6 +379,31 @@ mod tests {
             round: 1,
             parsed: ParsedFields {
                 raw_text: "[WORKER_UNAVAILABLE]".to_string(),
+                ..Default::default()
+            },
+            latency_ms: 0,
+            tokens_used: 0,
+        }];
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0, None, None);
+        assert_eq!(result.final_verdict, "HOLD");
+        assert!(result.final_confidence <= 0.4);
+    }
+
+    #[test]
+    fn test_sanity_fallback_reason_without_marker() {
+        // When fallback_reason is set (e.g., missing_critical_fields) but raw_text
+        // does NOT contain [WORKER_UNAVAILABLE], the safety check should still fire.
+        let cio = ParsedFields {
+            verdict: Some("BUY".to_string()),
+            confidence: Some(0.8),
+            ..Default::default()
+        };
+        let outputs = vec![RoundOutput {
+            role: CommitteeRole::Quant,
+            round: 2,
+            parsed: ParsedFields {
+                raw_text: "保护触发: yes".to_string(), // no [WORKER_UNAVAILABLE] marker
+                fallback_reason: Some("missing_critical_fields".to_string()),
                 ..Default::default()
             },
             latency_ms: 0,

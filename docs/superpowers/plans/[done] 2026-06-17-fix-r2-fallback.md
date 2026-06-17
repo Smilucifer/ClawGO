@@ -57,4 +57,29 @@ CommitteeRole::Quant => {
 1. `cargo check --manifest-path src-tauri/Cargo.toml`
 2. `cargo test --manifest-path src-tauri/Cargo.toml parser::tests -- --nocapture`
 3. `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings`
+
+---
+
+## 追加修复（代码审查后）
+
+### Fix 5: CIO `[WORKER_UNAVAILABLE]` 回显误报修复
+
+**根因**: `format_round_outputs_for_prompt` 将有 fallback 的输出替换为 `[WORKER_UNAVAILABLE]` 注入 prompt，LLM 回显标记导致 CIO 自身被 `detect_fallback_reason` 误判为 `worker_unavailable`。
+
+**修复**:
+- `cli_executor.rs` + `orchestrator.rs`: `format_round_outputs_for_prompt` 直接使用 `raw_text`，不再注入标记
+- `roles.rs`: 删除 CIO prompt 中两条 `[WORKER_UNAVAILABLE]` 冗余规则（Hard Rules + 安全阀第 3 条）
+- `analysis.rs`: `cio_sanity_check` 增加 `fallback_reason.is_some()` 检查，覆盖 `missing_critical_fields`/`empty_text` 场景
+- i18n: 角色配置 UI 描述更新
+
+### Fix 6: Quant R2 解析增强
+
+**修复**:
+- `parser.rs`: `apply_r2_signal_override` 增加 `调整后信号`/`信号调整` key 变体，移除含空格的 `ADJUSTED SIGNAL`（`is_structured_key_line` 拒绝含空格 key）
+- `parser.rs`: `parse_quant` 补上 `调整买点`/`ADJUSTED_BUY_POINT` 提取，R1 `买点评估` 优先
+
+### Fix 7: 代码审查发现修复
+
+1. **`is_structured_key_line` 空格 key**: 移除 `"ADJUSTED SIGNAL"`（含空格），保留 `"ADJUSTED_SIGNAL"` 和 `"调整信号"`
+2. **`cio_sanity_check` coverage gap**: `fallback_reason.is_some()` 纳入安全检查，新增 `test_sanity_fallback_reason_without_marker` 测试
 4. `npm run build`
