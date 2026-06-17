@@ -328,71 +328,6 @@ pub async fn fetch_company_news_for_prompt(symbol: &str) -> String {
     }
 }
 
-/// Cache for dreaming insights to avoid duplicate DB queries per symbol
-/// (Risk R1 and L4 both query the same symbol within a single pipeline run).
-static DREAMING_CACHE: once_cell::sync::Lazy<Mutex<std::collections::HashMap<String, String>>> =
-    once_cell::sync::Lazy::new(|| Mutex::new(std::collections::HashMap::new()));
-
-/// Format dreaming insights for CLI prompt injection (cached per symbol).
-pub fn format_dreaming_insights_for_prompt(symbol: &str) -> String {
-    // Check cache first
-    if let Ok(cache) = DREAMING_CACHE.lock() {
-        if let Some(cached) = cache.get(symbol) {
-            return cached.clone();
-        }
-    }
-    let result = format_dreaming_insights_inner(symbol);
-    // Store in cache
-    if let Ok(mut cache) = DREAMING_CACHE.lock() {
-        cache.insert(symbol.to_string(), result.clone());
-    }
-    result
-}
-
-/// Clear the dreaming insights cache (call between committee batch runs
-/// to avoid stale data if domain_insights change).
-pub fn clear_dreaming_cache() {
-    if let Ok(mut cache) = DREAMING_CACHE.lock() {
-        cache.clear();
-    }
-}
-
-fn format_dreaming_insights_inner(symbol: &str) -> String {
-    use crate::storage::invest::with_conn;
-
-    let results: Vec<String> = with_conn(|conn| {
-        let mut stmt = conn
-            .prepare(
-                "SELECT content, created_at FROM domain_insights WHERE symbol = ?1 \
-                 AND status = 'active' ORDER BY created_at DESC LIMIT ?2",
-            )
-            .map_err(|e| format!("prepare: {}", e))?;
-
-        let rows = stmt
-            .query_map(rusqlite::params![symbol, 3i64], |row| {
-                let content: String = row.get(0)?;
-                let created: String = row.get(1)?;
-                let date_part =
-                    if created.len() >= 10 { &created[..10] } else { &created };
-                Ok(format!("[{}] {}", date_part, content))
-            })
-            .map_err(|e| format!("query: {}", e))?;
-
-        let mut items = Vec::new();
-        for row in rows {
-            items.push(row.map_err(|e| format!("row: {}", e))?);
-        }
-        Ok(items)
-    })
-    .unwrap_or_default();
-
-    if results.is_empty() {
-        format!("投资洞察({}): 暂无", symbol)
-    } else {
-        format!("【投资洞察 - {}】\n{}", symbol, results.join("\n"))
-    }
-}
-
 /// Format risk metrics context for Risk role CLI prompt injection.
 /// Delegates to the canonical `build_risk_metrics_context` in orchestrator.
 pub(crate) fn format_risk_metrics_for_prompt(
@@ -562,15 +497,13 @@ pub(crate) fn build_cli_risk_r1_prompt(
     let stripped = strip_tool_section(&base_prompt);
 
     let risk_metrics = format_risk_metrics_for_prompt(portfolio_data, asset_symbol, asset_context);
-    let dreaming = format_dreaming_insights_for_prompt(asset_symbol);
     let verdicts = format_recent_verdicts_for_prompt(asset_symbol);
 
     let mut cli_additions = format!(
-        "\n\n{risk_metrics}\n\n{company_news}\n\n{dreaming}\n\n{verdicts}\n\n\
+        "\n\n{risk_metrics}\n\n{company_news}\n\n{verdicts}\n\n\
          **CLI 模式说明**：以上数据已由系统预取，无需调用工具。",
         risk_metrics = risk_metrics,
         company_news = company_news,
-        dreaming = dreaming,
         verdicts = verdicts,
     );
 
@@ -605,32 +538,6 @@ pub fn build_cli_risk_r2_prompt(
         "\n\n{}\n\n\
          **CLI 模式说明**：以上前序分析结果已由系统预取，无需调用工具。",
         prior_outputs,
-    );
-
-    format!("{}{}{}", stripped, cli_additions, length_constraint_suffix(role))
-}
-
-/// Build a complete system prompt for the L4 Officer role with data embedded.
-pub fn build_cli_l4_prompt(
-    asset_name: &str,
-    asset_symbol: &str,
-    asset_context: &crate::invest::committee::orchestrator::AssetContext,
-    round_outputs: &[crate::invest::committee::analysis::RoundOutput],
-) -> String {
-    use crate::invest::committee::roles::{length_constraint_suffix, load_prompt_for_round, CommitteeRole};
-
-    let role = CommitteeRole::L4Officer;
-    let base_prompt = load_prompt_for_round(role, 1, asset_name, asset_symbol, asset_context);
-    let stripped = strip_tool_section(&base_prompt);
-
-    let prior_outputs = format_round_outputs_for_prompt(round_outputs);
-    let dreaming = format_dreaming_insights_for_prompt(asset_symbol);
-
-    let cli_additions = format!(
-        "\n\n{}\n\n{}\n\n\
-         **CLI 模式说明**：以上数据已由系统预取，无需调用工具。",
-        prior_outputs,
-        dreaming,
     );
 
     format!("{}{}{}", stripped, cli_additions, length_constraint_suffix(role))

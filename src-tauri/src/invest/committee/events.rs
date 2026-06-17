@@ -8,8 +8,8 @@ use serde::Serialize;
 // ---------------------------------------------------------------------------
 
 /// Pipeline step index for a role (used by frontend PipelineFlow).
-/// Maps each role+round to its position in the 8-node pipeline:
-///   Macro(0) -> Regime(1) -> Quant/R1(2) -> Risk/R1(3) -> Quant/R2(4) -> Risk/R2(5) -> L4(6) -> CIO(7)
+/// Maps each role+round to its position in the 7-node pipeline:
+///   Macro(0) -> Regime(1) -> Quant/R1(2) -> Risk/R1(3) -> Quant/R2(4) -> Risk/R2(5) -> CIO(6)
 pub fn step_index_for_role(role: CommitteeRole, round: u8) -> usize {
     match (role, round) {
         (CommitteeRole::Macro, _) => 0,
@@ -18,8 +18,8 @@ pub fn step_index_for_role(role: CommitteeRole, round: u8) -> usize {
         (CommitteeRole::Risk, 1) => 3,
         (CommitteeRole::Quant, _) => 4,  // R2+
         (CommitteeRole::Risk, _) => 5,   // R2+
-        (CommitteeRole::L4Officer, _) => 6,
-        (CommitteeRole::Cio, _) => 7,
+        (CommitteeRole::L4Officer, _) => 99, // L4 removed — sentinel, should never be emitted
+        (CommitteeRole::Cio, _) => 6,
     }
 }
 

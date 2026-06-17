@@ -430,12 +430,6 @@
               <span class:opacity-40={!result.sanityCheck.gate2Pass} title={t('invest_gate2_desc')}>
                 {t('invest_gate2_label')} {result.sanityCheck.gate2Pass ? '✓' : '✗'}
               </span>
-              <span class:opacity-40={!result.sanityCheck.gate3Pass} title={t('invest_gate3_desc')}>
-                {t('invest_gate3_label')} {result.sanityCheck.gate3Pass ? '✓' : '✗'}
-              </span>
-              <span class:opacity-40={!result.sanityCheck.gate4Pass} title={t('invest_gate4_desc')}>
-                {t('invest_gate4_label')} {result.sanityCheck.gate4Pass ? '✓' : '✗'}
-              </span>
               <span class="ml-auto font-[var(--font-mono)]">
                 {result.totalTokens} tok / {(result.totalLatencyMs / 1000).toFixed(1)}s
               </span>

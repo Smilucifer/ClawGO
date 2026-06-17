@@ -50,6 +50,23 @@ pub struct NewsItem {
     pub related_tickers: Vec<String>,
 }
 
+/// China 10Y government bond yield from AkShare.
+#[derive(Debug, Clone, serde::Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BondYield10y {
+    pub yield_10y: f64,
+    pub date: String,
+}
+
+/// A-share market statistics from AkShare.
+#[derive(Debug, Clone, serde::Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketStats {
+    pub limit_up_count: u32,
+    pub limit_down_count: u32,
+    pub date: String,
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -180,6 +197,25 @@ impl InternationalClient {
         self.rpc_call(
             "akshare.stock_news",
             serde_json::json!({"symbol": symbol, "count": count}),
+        )
+        .await
+    }
+
+    // -- AkShare market stats (国债收益率 + 涨跌停家数) -------------------------
+
+    /// Fetch China 10Y government bond yield from AkShare.
+    pub async fn fetch_akshare_bond_yield(&self) -> Result<BondYield10y, String> {
+        self.rpc_call("akshare_market.bond_yield_10y", serde_json::json!({}))
+            .await
+    }
+
+    /// Fetch A-share market statistics (limit-up / limit-down counts) from AkShare.
+    ///
+    /// `date` is `"YYYYMMDD"` format; empty string defaults to today.
+    pub async fn fetch_akshare_market_stats(&self, date: &str) -> Result<MarketStats, String> {
+        self.rpc_call(
+            "akshare_market.market_stats",
+            serde_json::json!({"date": date}),
         )
         .await
     }

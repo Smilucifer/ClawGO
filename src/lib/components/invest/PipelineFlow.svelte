@@ -14,7 +14,6 @@
     { role: 'risk_r1', label: t('invest_pipeline_risk_r1'), color: '#f97316', icon: 'R1' },
     { role: 'quant_r2', label: t('invest_pipeline_quant_r2'), color: '#3b82f6', icon: 'Q2' },
     { role: 'risk_r2', label: t('invest_pipeline_risk_r2'), color: '#f97316', icon: 'R2' },
-    { role: 'l4_officer', label: t('invest_pipeline_l4_officer'), color: '#ef4444', icon: 'L4' },
     { role: 'cio', label: 'CIO', color: '#eab308', icon: 'C' },
   ]);
 

@@ -110,35 +110,34 @@ pub struct SentinelOverride {
 }
 
 // ---------------------------------------------------------------------------
-// CIO Sanity Check -- 4 Gates
+// CIO Sanity Check -- 2 Gates + fallback
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SanityCheckResult {
     pub gate1_pass: bool, // signal consistency
-    pub gate2_pass: bool, // concentration < 40%
-    pub gate3_pass: bool, // reserved (always true — dry powder no longer degrades confidence)
-    pub gate4_pass: bool, // position-aware confidence adjustment
+    pub gate2_pass: bool, // triple deterioration guard clause
     pub final_verdict: String,
     pub final_confidence: f64,
     pub notes: Vec<String>,
 }
 
-/// Run CIO Sanity Check 4 Gates on the parsed CIO output.
+/// Run CIO Sanity Check on the parsed CIO output.
+///
+/// Gates:
+/// - G1: Signal consistency (macro vs CIO direction)
+/// - G2: Triple deterioration guard clause (macro risk_off + quant bearish + deep loss → SELL)
+/// - Fallback: WORKER_UNAVAILABLE / fallback_reason → HOLD
 pub fn cio_sanity_check(
     cio_parsed: &ParsedFields,
     round_outputs: &[RoundOutput],
     macro_signal: &str,
-    _min_cash_reserve: f64,
-    _actual_cash_cny: Option<f64>,
-    actual_concentration: Option<f64>,
+    macro_strength: Option<f64>,
 ) -> SanityCheckResult {
     let mut result = SanityCheckResult {
         gate1_pass: true,
         gate2_pass: true,
-        gate3_pass: true,
-        gate4_pass: true,
         final_verdict: cio_parsed
             .verdict
             .clone()
@@ -161,47 +160,36 @@ pub fn cio_sanity_check(
             .push("G1: 宏观信号与CIO裁决不一致，降级为HOLD".to_string());
     }
 
-    // Gate 2 -- Concentration > 40%
-    // Fallback chain: CIO parsed → any round output → actual portfolio concentration.
-    let concentration = cio_parsed.concentration_pct.or_else(|| {
-        round_outputs
-            .iter()
-            .filter_map(|o| o.parsed.concentration_pct)
-            .last()
-    }).or(actual_concentration).unwrap_or(0.0);
-    if concentration > 40.0 {
+    // Gate 2 -- Triple deterioration guard clause (from L4 Officer)
+    // macro=risk_off + strength ≥ 7 + quant=bearish + strength ≥ 7 + loss ≥ 15% → SELL
+    let macro_guard = macro_is_risk_off
+        && macro_strength.map_or(false, |s| s >= 7.0);
+
+    // Find latest Quant output for signal + strength
+    let quant_output = round_outputs
+        .iter()
+        .filter(|o| o.role == CommitteeRole::Quant)
+        .last();
+    let quant_guard = quant_output.map_or(false, |o| {
+        o.parsed.signal.as_deref() == Some("bearish")
+            && o.parsed.strength.map_or(false, |s| s >= 7.0)
+    });
+
+    // Find latest Risk output for loss percentage (pnl_pct < -15 = 15% loss)
+    let loss_guard = round_outputs
+        .iter()
+        .filter(|o| o.role == CommitteeRole::Risk)
+        .last()
+        .and_then(|o| o.parsed.pnl_pct)
+        .map_or(false, |pnl| pnl <= -15.0);
+
+    if macro_guard && quant_guard && loss_guard {
         result.gate2_pass = false;
-        if !matches!(result.final_verdict.as_str(), "TRIM" | "SELL") {
-            result.final_verdict = "TRIM".to_string();
-            result.notes.push(format!(
-                "G2: 集中度 {:.1}% > 40%，强制减仓",
-                concentration
-            ));
-        }
-    }
-
-    // Gate 3 removed — dry powder (cash availability) no longer degrades confidence
-    // or forces verdict changes. Cash state is a portfolio position, not a signal quality issue.
-
-    // Gate 4 -- Position-aware confidence adjustment
-    // Reuses `concentration` from Gate 2 (same fallback chain).
-    // 4a: Position = 0 and verdict = HOLD → cash opportunity cost rule, cap confidence at 0.3
-    if concentration <= 0.0 && result.final_verdict == "HOLD" {
-        result.gate4_pass = false;
-        result.final_confidence = result.final_confidence.min(0.3);
+        result.final_verdict = "SELL".to_string();
+        result.final_confidence = 0.2;
         result.notes.push(
-            "G4a: 零仓位+HOLD，置信度上限0.3（现金机会成本）".to_string(),
+            "G2: 三重恶化（宏观risk_off≥7 + 技术bearish≥7 + 浮亏≥15%），强制清仓".to_string(),
         );
-    }
-    // 4b: CONCENTRATION_PCT < 20% and verdict = HOLD → low-conviction penalty
-    if concentration > 0.0 && concentration < 20.0 && result.final_verdict == "HOLD"
-    {
-        result.gate4_pass = false;
-        result.final_confidence = result.final_confidence.min(0.4);
-        result.notes.push(format!(
-            "G4b: 集中度 {:.1}% < 20% 且HOLD，置信度上限0.4",
-            concentration
-        ));
     }
 
     // Check for any role fallback (CLI failure, missing fields, empty output, etc.)
@@ -348,23 +336,70 @@ mod tests {
             ..Default::default()
         };
         let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_off", 100000.0, None, None);
+        let result = cio_sanity_check(&cio, &outputs, "risk_off", None);
         assert!(!result.gate1_pass);
         assert_eq!(result.final_verdict, "HOLD");
     }
 
     #[test]
-    fn test_sanity_gate2_high_concentration() {
+    fn test_sanity_gate2_triple_deterioration() {
+        // macro=risk_off + strength=8, quant=bearish + strength=7, loss=20%
+        let mut macro_parsed = ParsedFields::default();
+        macro_parsed.signal = Some("risk_off".to_string());
+        macro_parsed.strength = Some(8.0);
+        macro_parsed.raw_text = "macro output".to_string();
+
+        let mut quant_parsed = ParsedFields::default();
+        quant_parsed.signal = Some("bearish".to_string());
+        quant_parsed.strength = Some(7.0);
+        quant_parsed.raw_text = "quant output".to_string();
+
+        let mut risk_parsed = ParsedFields::default();
+        risk_parsed.signal = Some("high_risk".to_string());
+        risk_parsed.pnl_pct = Some(-20.0);
+        risk_parsed.raw_text = "risk output".to_string();
+
+        let outputs = vec![
+            RoundOutput { role: CommitteeRole::Macro, round: 1, parsed: macro_parsed, latency_ms: 0, tokens_used: 0 },
+            RoundOutput { role: CommitteeRole::Quant, round: 1, parsed: quant_parsed, latency_ms: 0, tokens_used: 0 },
+            RoundOutput { role: CommitteeRole::Risk, round: 1, parsed: risk_parsed, latency_ms: 0, tokens_used: 0 },
+        ];
         let cio = ParsedFields {
-            verdict: Some("BUY".to_string()),
-            confidence: Some(0.7),
-            concentration_pct: Some(45.0),
+            verdict: Some("HOLD".to_string()),
+            confidence: Some(0.5),
             ..Default::default()
         };
-        let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0, None, None);
+        let result = cio_sanity_check(&cio, &outputs, "risk_off", Some(8.0));
         assert!(!result.gate2_pass);
-        assert_eq!(result.final_verdict, "TRIM");
+        assert_eq!(result.final_verdict, "SELL");
+        assert_eq!(result.final_confidence, 0.2);
+    }
+
+    #[test]
+    fn test_sanity_gate2_no_trigger_weak_macro() {
+        // macro=risk_off but strength=5 (below threshold) → G2 should pass
+        let quant = ParsedFields {
+            signal: Some("bearish".to_string()),
+            strength: Some(8.0),
+            raw_text: "quant".to_string(),
+            ..Default::default()
+        };
+        let risk = ParsedFields {
+            pnl_pct: Some(-20.0),
+            raw_text: "risk".to_string(),
+            ..Default::default()
+        };
+        let outputs = vec![
+            RoundOutput { role: CommitteeRole::Quant, round: 1, parsed: quant, latency_ms: 0, tokens_used: 0 },
+            RoundOutput { role: CommitteeRole::Risk, round: 1, parsed: risk, latency_ms: 0, tokens_used: 0 },
+        ];
+        let cio = ParsedFields {
+            verdict: Some("HOLD".to_string()),
+            confidence: Some(0.5),
+            ..Default::default()
+        };
+        let result = cio_sanity_check(&cio, &outputs, "risk_off", Some(5.0));
+        assert!(result.gate2_pass);
     }
 
     #[test]
@@ -384,15 +419,13 @@ mod tests {
             latency_ms: 0,
             tokens_used: 0,
         }];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0, None, None);
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", None);
         assert_eq!(result.final_verdict, "HOLD");
         assert!(result.final_confidence <= 0.4);
     }
 
     #[test]
     fn test_sanity_fallback_reason_without_marker() {
-        // When fallback_reason is set (e.g., missing_critical_fields) but raw_text
-        // does NOT contain [WORKER_UNAVAILABLE], the safety check should still fire.
         let cio = ParsedFields {
             verdict: Some("BUY".to_string()),
             confidence: Some(0.8),
@@ -402,14 +435,14 @@ mod tests {
             role: CommitteeRole::Quant,
             round: 2,
             parsed: ParsedFields {
-                raw_text: "保护触发: yes".to_string(), // no [WORKER_UNAVAILABLE] marker
+                raw_text: "保护触发: yes".to_string(),
                 fallback_reason: Some("missing_critical_fields".to_string()),
                 ..Default::default()
             },
             latency_ms: 0,
             tokens_used: 0,
         }];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0, None, None);
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", None);
         assert_eq!(result.final_verdict, "HOLD");
         assert!(result.final_confidence <= 0.4);
     }
@@ -419,76 +452,12 @@ mod tests {
         let cio = ParsedFields {
             verdict: Some("ACCUMULATE".to_string()),
             confidence: Some(0.7),
-            concentration_pct: Some(20.0),
-            dry_powder_cny: Some(200000.0),
             ..Default::default()
         };
         let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0, None, None);
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", None);
         assert!(result.gate1_pass);
         assert!(result.gate2_pass);
-        assert!(result.gate3_pass);
-        assert!(result.gate4_pass);
         assert_eq!(result.final_verdict, "ACCUMULATE");
-    }
-
-    #[test]
-    fn test_sanity_gate2_uses_cio_concentration_directly() {
-        // When CIO output contains CONCENTRATION_PCT, it should be used directly.
-        let cio = ParsedFields {
-            verdict: Some("ACCUMULATE".to_string()),
-            confidence: Some(0.6),
-            concentration_pct: Some(50.0), // > 40%
-            ..Default::default()
-        };
-        let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0, None, None);
-        assert!(!result.gate2_pass);
-        assert_eq!(result.final_verdict, "TRIM");
-    }
-
-    #[test]
-    fn test_sanity_gate4a_zero_position_hold() {
-        let cio = ParsedFields {
-            verdict: Some("HOLD".to_string()),
-            confidence: Some(0.6),
-            concentration_pct: Some(0.0),
-            ..Default::default()
-        };
-        let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_off", 100000.0, None, None);
-        assert!(!result.gate4_pass);
-        assert!(result.final_confidence <= 0.3);
-    }
-
-    #[test]
-    fn test_sanity_gate4b_low_concentration_hold() {
-        let cio = ParsedFields {
-            verdict: Some("HOLD".to_string()),
-            confidence: Some(0.6),
-            concentration_pct: Some(15.0),
-            ..Default::default()
-        };
-        let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_off", 100000.0, None, None);
-        assert!(!result.gate4_pass);
-        assert!(result.final_confidence <= 0.4);
-    }
-
-    #[test]
-    fn test_sanity_gate4a_fallback_to_actual_concentration() {
-        // When CIO and round outputs have no concentration_pct,
-        // actual_concentration should be used as fallback.
-        // If actual concentration > 0, G4a should NOT trigger.
-        let cio = ParsedFields {
-            verdict: Some("HOLD".to_string()),
-            confidence: Some(0.6),
-            ..Default::default()
-        };
-        let outputs = vec![];
-        // actual_concentration = 25.0% → not zero position → G4a should pass
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0, None, Some(25.0));
-        assert!(result.gate4_pass);
-        assert!(!result.notes.iter().any(|n| n.contains("G4a")));
     }
 }

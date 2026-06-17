@@ -680,6 +680,41 @@ async fn llm_call_with_retry(
 // Asset context builder
 // ---------------------------------------------------------------------------
 
+/// 带重试的资金流向拉取（与 `call_api` 相同规则：429/5xx 自动重试，最多 3 次，指数退避 1s→2s→4s）。
+///
+/// `call_api` 已有 HTTP 级重试，但 orchestrator 层此前没有任何重试——3 次 HTTP 重试全部耗尽或
+/// 遇到 Tushare 业务层错误（`code != 0`）时直接失败，导致该标的的 moneyflow_dc 缓存缺失。
+/// 本函数在 orchestrator 层增加一层相同的重试逻辑作为兜底。
+async fn fetch_moneyflow_with_retry(
+    client: &TushareClient,
+    symbol: &str,
+    start_date: &str,
+    end_date: &str,
+) -> Result<Vec<crate::tushare::client::MoneyflowDc>, String> {
+    let max_retries = 3u32;
+    let mut last_err: Option<String> = None;
+
+    for attempt in 0..max_retries {
+        match client.moneyflow_dc(symbol, start_date, end_date).await {
+            Ok(data) => return Ok(data),
+            Err(e) => {
+                last_err = Some(e);
+                if attempt + 1 < max_retries {
+                    let backoff_ms = 1000 * (1u64 << attempt);
+                    log::info!(
+                        "fetch_moneyflow_with_retry: {symbol} attempt {}/{} failed, retrying in {backoff_ms}ms",
+                        attempt + 1,
+                        max_retries,
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                }
+            }
+        }
+    }
+
+    Err(last_err.unwrap_or_else(|| "max retries exceeded".into()))
+}
+
 /// 定向刷新资金流向缓存（核心数据齐全但 moneyflow_dc 缺失时调用）。
 ///
 /// 成功时写入缓存并返回更新后的 cache_entries（含新增条目）；
@@ -701,7 +736,7 @@ async fn refresh_moneyflow_cache(
         .format("%Y%m%d")
         .to_string();
 
-    match client.moneyflow_dc(symbol, &five_days_ago, &today).await {
+    match fetch_moneyflow_with_retry(client, symbol, &five_days_ago, &today).await {
         Ok(mf) if !mf.is_empty() => {
             let s = MoneyflowDc::to_cache_json(&mf);
             let _ = stock_data_cache::batch_upsert(&[(
@@ -973,12 +1008,12 @@ async fn refresh_asset_data(
         .format("%Y%m%d")
         .to_string();
 
-    // 并行调用独立 API
+    // 并行调用独立 API（moneyflow_dc 使用 orchestrator 层重试）
     let (basic_result, fina_result, rc_result, mf_result) = tokio::join!(
         client.daily_basic(symbol, None, None, None),
         client.fina_indicator(symbol, None, None, None),
         client.report_rc(symbol, None),
-        client.moneyflow_dc(symbol, &five_days_ago, &today),
+        fetch_moneyflow_with_retry(client, symbol, &five_days_ago, &today),
     );
 
     // ── 批量写入缓存（单事务，一次 fsync）──
@@ -1406,135 +1441,10 @@ async fn run_macro_phase(
 }
 
 // ---------------------------------------------------------------------------
-// L4 Officer phase (behavioral health check)
-// ---------------------------------------------------------------------------
-
-/// 运行 L4 Officer 阶段（在 Risk R2 之后、CIO 之前）
-///
-/// L4 Officer 不参与辩论轮次，只在所有前序分析完成后执行一次行为健康度检查。
-/// Rust 端计算行为红灯评分，LLM 只负责卫语句判定、情绪评估和买点合理性。
-async fn run_l4_officer_phase(
-    symbol: &str,
-    config: &CommitteeConfig,
-    round_outputs: &[RoundOutput],
-    macro_signal: &str,
-    min_cash_reserve: f64,
-    portfolio_summary: &str,
-    regime_context: Option<&str>,
-    emitter: &Option<EventEmitter>,
-    portfolio_data: &PortfolioData,
-    asset_context: &AssetContext,
-) -> RoundOutput {
-    let role = CommitteeRole::L4Officer;
-    let si = step_index_for_role(role, 1);
-
-    if let Some(ref emit) = emitter {
-        emit(CommitteeEvent::RoleStart {
-            symbol: symbol.to_string(),
-            role,
-            round: 1,
-            step_index: si,
-        });
-    }
-
-    // 使用通用 role_phase 执行 LLM 调用
-    let output = match run_role_phase(
-        symbol,
-        role,
-        1,
-        config,
-        round_outputs,
-        macro_signal,
-        min_cash_reserve,
-        portfolio_summary,
-        regime_context,
-        emitter,
-        portfolio_data,
-        asset_context,
-    )
-    .await
-    {
-        Ok(o) => o,
-        Err(e) => {
-            log::warn!("L4 Officer phase failed for {}: {}", symbol, e);
-            let mut p = super::parser::ParsedFields {
-                raw_text: "[WORKER_UNAVAILABLE]".to_string(),
-                ..Default::default()
-            };
-            p.fallback_reason = detect_fallback_reason(role, 1, &p);
-            RoundOutput {
-                role,
-                round: 1,
-                parsed: p,
-                latency_ms: 0,
-                tokens_used: 0,
-            }
-        }
-    };
-
-    // ── Rust 端计算行为红灯评分 ──
-    let emotional_state = output
-        .parsed
-        .l4_emotion_assessment
-        .as_deref()
-        .unwrap_or("stable");
-
-    let concentration_pct = output
-        .parsed
-        .concentration_pct
-        .or_else(|| {
-            // 从 Risk R1/R2 输出中提取集中度
-            round_outputs
-                .iter()
-                .filter(|o| o.role == CommitteeRole::Risk)
-                .rev()
-                .find_map(|o| o.parsed.concentration_pct)
-        })
-        .unwrap_or_else(|| concentration_for_symbol(symbol, portfolio_data));
-
-    // 获取近7天交易次数
-    let recent_trade_count = crate::storage::invest::portfolio::count_recent_trades(Some(symbol), 7)
-        .unwrap_or(0);
-
-    // 计算行为红灯评分
-    let (score, level) = super::parser::compute_red_light_score(
-        emotional_state,
-        concentration_pct,
-        recent_trade_count,
-    );
-
-    // 将评分写入 parsed 字段
-    let mut output = output;
-    output.parsed.execution_red_light_score = Some(score);
-
-    // 覆盖 L4 的行为红灯字段（Rust 端确定性计算优先于 LLM 输出）
-    log::info!(
-        "L4 Officer red light for {}: score={:.1}, level={}, trades_7d={}",
-        symbol,
-        score,
-        level,
-        recent_trade_count
-    );
-    output.parsed.l4_red_light = Some(level);
-
-    if let Some(ref emit) = emitter {
-        emit(CommitteeEvent::RoleComplete {
-            symbol: symbol.to_string(),
-            role,
-            round: 1,
-            summary: RoundOutputSummary::from(&output),
-            step_index: si,
-        });
-    }
-
-    output
-}
-
-// ---------------------------------------------------------------------------
 // Generic role phase (Quant, Risk, CIO)
 // ---------------------------------------------------------------------------
 
-/// Run a single role phase (Quant, Risk, L4, CIO) via CLI executor.
+/// Run a single role phase (Quant, Risk, CIO) via CLI executor.
 ///
 /// **Note:** `tokens_used` is always 0 in CLI mode — see `run_macro_phase` docs.
 async fn run_role_phase(
@@ -1599,9 +1509,7 @@ async fn run_role_phase(
             )
         }
         (CommitteeRole::L4Officer, _) => {
-            super::cli_executor::build_cli_l4_prompt(
-                &asset_name, symbol, asset_context, round_outputs,
-            )
+            return Err("L4 Officer has been removed".to_string());
         }
         (CommitteeRole::Cio, _) => {
             let strategy_ctx = build_strategy_context();
@@ -1773,14 +1681,13 @@ async fn run_debate_rounds(
 
 /// Run the full committee pipeline for a single symbol.
 ///
-/// Pipeline (8 steps):
+/// Pipeline (7 steps):
 /// 1. Macro (with tool-call loop) -> signal + strength
 /// 2. Regime computation (quantitative: RSI-14, MA, volatility, price quantile)
 /// 3. Debate rounds: Quant/R1 + Risk/R1, then Quant/R2 + Risk/R2, early convergence exit
-/// 4. L4 Officer (behavioral health check: guard clause, emotion, red light)
-/// 5. CIO verdict
-/// 6. Post-analysis: sentinel, convergence, sanity check
-/// 7. Archive (fire-and-forget)
+/// 4. CIO verdict
+/// 5. Post-analysis: sentinel, convergence, sanity check (guard clause from L4 merged here)
+/// 6. Archive (fire-and-forget)
 ///
 /// Portfolio data is built once as a shared context block and injected into
 /// Macro and subsequent roles — it is not a separate pipeline step.
@@ -1944,26 +1851,7 @@ pub(crate) async fn run_committee(
     )
     .await?;
 
-    // ── Step 4: L4 Officer phase (behavioral health check) ────────────
-    {
-        let l4_output = run_l4_officer_phase(
-            symbol,
-            config,
-            &round_outputs,
-            &macro_signal,
-            effective_buffer,
-            &portfolio_summary,
-            regime_context.as_deref(),
-            &emitter,
-            &portfolio_data,
-            &asset_context,
-        )
-        .await;
-        total_tokens += l4_output.tokens_used;
-        round_outputs.push(l4_output);
-    }
-
-    // ── Step 5: CIO verdict ────────────────────────────────────────────
+    // ── Step 4: CIO verdict ────────────────────────────────────────────
     {
         let si = step_index_for_role(CommitteeRole::Cio, 1);
         if let Some(ref emit) = emitter {
@@ -2005,7 +1893,7 @@ pub(crate) async fn run_committee(
         round_outputs.push(cio_output);
     }
 
-    // ── Step 6: Post-analysis ──────────────────────────────────────────
+    // ── Step 5: Post-analysis ──────────────────────────────────────────
     let sentinel = check_sentinel(&round_outputs);
 
     let cio_parsed = round_outputs
@@ -2015,14 +1903,11 @@ pub(crate) async fn run_committee(
         .map(|o| o.parsed.clone())
         .unwrap_or_default();
 
-    let actual_concentration = concentration_for_symbol(symbol, &portfolio_data);
     let sanity = cio_sanity_check(
         &cio_parsed,
         &round_outputs,
         &macro_signal,
-        effective_buffer,
-        Some(portfolio_data.cash),
-        Some(actual_concentration),
+        macro_strength,
     );
 
     // Determine final verdict — sentinel override takes priority
@@ -2036,7 +1921,7 @@ pub(crate) async fn run_committee(
     let total_latency_ms = start.elapsed().as_millis() as u64;
     let reasoning = cio_parsed.raw_text.clone();
 
-    // ── Step 7: Archive (fire-and-forget) ──────────────────────────────
+    // ── Step 6: Archive (fire-and-forget) ──────────────────────────────
     // Skip archiving in dry_run mode — results are returned but not persisted.
     // Uses daily-overwrite strategy: each symbol keeps only the latest
     // verdict per calendar day.
@@ -2099,9 +1984,6 @@ pub async fn run_committee_batch(
     config: &CommitteeConfig,
     dry_run: bool,
 ) -> Vec<Result<CommitteeResult, String>> {
-    // Clear per-symbol caches from prior runs
-    super::cli_executor::clear_dreaming_cache();
-
     // Pre-load portfolio once and share across all tasks to avoid redundant
     // DB reads and price-fetch API calls.
     let portfolio_arc = std::sync::Arc::new(PortfolioData::load_with_timeout(dry_run).await);
@@ -2140,9 +2022,6 @@ pub async fn run_committee_batch_stream(
     emitter: EventEmitter,
     dry_run: bool,
 ) -> Vec<Result<CommitteeResult, String>> {
-    // Clear per-symbol caches from prior runs
-    super::cli_executor::clear_dreaming_cache();
-
     // Emit batch-start event
     emitter(CommitteeEvent::CommitteeStart {
         symbols: symbols.to_vec(),

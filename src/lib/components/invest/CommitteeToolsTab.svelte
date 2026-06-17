@@ -6,10 +6,10 @@
 
   const store = investCommitteeStore;
 
-  // ── 8-tool × 5-role access matrix
+  // ── 8-tool × 4-role access matrix
   // Source of truth: src-tauri/src/invest/committee/tools.rs:184-206
-  // (Macro: R1 only; Quant/Risk: R1+R2 same toolset; L4: query_dreaming_insights only; CIO: no tools)
-  type RoleKey = 'macro' | 'quant' | 'risk' | 'l4_officer' | 'cio';
+  // (Macro: R1 only; Quant/Risk: R1+R2 same toolset; CIO: no tools)
+  type RoleKey = 'macro' | 'quant' | 'risk' | 'cio';
 
   interface MatrixRow {
     name: string;
@@ -19,28 +19,27 @@
 
   const TOOLS_MATRIX: MatrixRow[] = [
     { name: 'get_history_data',              descKey: 'invest_tool_history_desc',
-      access: { macro: 'R1', quant: 'R1+R2', risk: '',      l4_officer: '',  cio: '' } },
+      access: { macro: 'R1', quant: 'R1+R2', risk: '',      cio: '' } },
     { name: 'analyze_multi_timeframe',       descKey: 'invest_tool_mtf_desc',
-      access: { macro: 'R1', quant: 'R1+R2', risk: '',      l4_officer: '',  cio: '' } },
+      access: { macro: 'R1', quant: 'R1+R2', risk: '',      cio: '' } },
     { name: 'get_macro_snapshot',            descKey: 'invest_tool_macro_desc',
-      access: { macro: 'R1', quant: '',      risk: '',      l4_officer: '',  cio: '' } },
+      access: { macro: 'R1', quant: '',      risk: '',      cio: '' } },
     { name: 'query_dreaming_insights',       descKey: 'invest_tool_dreaming_desc',
-      access: { macro: 'R1', quant: '',      risk: 'R1+R2', l4_officer: '✓', cio: '' } },
+      access: { macro: 'R1', quant: '',      risk: 'R1+R2', cio: '' } },
     { name: 'get_recent_committee_verdicts', descKey: 'invest_tool_verdicts_desc',
-      access: { macro: 'R1', quant: 'R1+R2', risk: 'R1+R2', l4_officer: '',  cio: '' } },
+      access: { macro: 'R1', quant: 'R1+R2', risk: 'R1+R2', cio: '' } },
     { name: 'get_recent_events',             descKey: 'invest_tool_events_desc',
-      access: { macro: 'R1', quant: '',      risk: '',      l4_officer: '',  cio: '' } },
+      access: { macro: 'R1', quant: '',      risk: '',      cio: '' } },
     { name: 'get_moneyflow',                 descKey: 'invest_tool_moneyflow_desc',
-      access: { macro: '',   quant: 'R1+R2', risk: '',      l4_officer: '',  cio: '' } },
+      access: { macro: '',   quant: 'R1+R2', risk: '',      cio: '' } },
     { name: 'get_company_news',              descKey: 'invest_tool_company_news_desc',
-      access: { macro: '',   quant: '',      risk: 'R1+R2', l4_officer: '',  cio: '' } },
+      access: { macro: '',   quant: '',      risk: 'R1+R2', cio: '' } },
   ];
 
   const ROLE_COLUMNS: { key: RoleKey; label: string; color: string }[] = [
     { key: 'macro',      label: 'Macro',     color: ROLE_COLORS.macro },
     { key: 'quant',      label: 'Quant',     color: ROLE_COLORS.quant },
     { key: 'risk',       label: 'Risk',      color: ROLE_COLORS.risk },
-    { key: 'l4_officer', label: 'L4',        color: ROLE_COLORS.l4_officer },
     { key: 'cio',        label: 'CIO',       color: ROLE_COLORS.cio },
   ];
 
@@ -178,7 +177,7 @@
   {#if store.toolCallHistory.length > 0}
     <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)]">
       <div class="border-b border-border bg-[var(--bg-input)] px-[var(--space-4)] py-[var(--space-2)] text-[13px] font-medium text-[var(--text-primary)]">{t('invest_tools_by_role')}</div>
-      <div class="grid grid-cols-5 gap-[var(--space-3)] p-[var(--space-4)]">
+      <div class="grid grid-cols-4 gap-[var(--space-3)] p-[var(--space-4)]">
         {#each ROLE_COLUMNS as col}
           {@const stats = roleStats.get(col.key)}
           <div class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-card)] p-[var(--space-2)] text-center">

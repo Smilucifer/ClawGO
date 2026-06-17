@@ -419,12 +419,6 @@
                 <span class="rounded-[var(--radius-sm)] px-2 py-0.5 text-[10px] font-semibold {result.sanityCheck.gate2Pass ? 'bg-[rgba(138,154,118,0.15)] text-[#8a9a76]' : 'bg-[rgba(168,122,122,0.15)] text-[#a87a7a]'}">
                   {result.sanityCheck.gate2Pass ? '✓' : '✗'} {t('invest_gate2_label')}
                 </span>
-                <span class="rounded-[var(--radius-sm)] px-2 py-0.5 text-[10px] font-semibold {result.sanityCheck.gate3Pass ? 'bg-[rgba(138,154,118,0.15)] text-[#8a9a76]' : 'bg-[rgba(168,122,122,0.15)] text-[#a87a7a]'}">
-                  {result.sanityCheck.gate3Pass ? '✓' : '✗'} {t('invest_gate3_label')}
-                </span>
-                <span class="rounded-[var(--radius-sm)] px-2 py-0.5 text-[10px] font-semibold {result.sanityCheck.gate4Pass ? 'bg-[rgba(138,154,118,0.15)] text-[#8a9a76]' : 'bg-[rgba(168,122,122,0.15)] text-[#a87a7a]'}">
-                  {result.sanityCheck.gate4Pass ? '✓' : '✗'} {t('invest_gate4_label')}
-                </span>
               </div>
 
               <!-- Meta row -->

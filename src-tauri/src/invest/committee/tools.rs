@@ -490,6 +490,9 @@ pub fn format_macro_entries(entries: &[macro_cache::MacroCacheEntry]) -> Result<
                 "gold" => "国际金价(USD)",
                 "oil" => "国际油价(USD)",
                 "usdcny" => "USD/CNY汇率",
+                "limit_up_count" => "涨停家数",
+                "limit_down_count" => "跌停家数",
+                "two_market_volume" => "两市成交额(亿)",
                 _ => indicator,
             };
             let stale_marker = if macro_cache::is_stale(entry, 30) {

@@ -97,7 +97,6 @@ pub fn archive_decision_full(
         "has_sentinel_override": result.sentinel_override.is_some(),
         "sanity_gate1": result.sanity_check.gate1_pass,
         "sanity_gate2": result.sanity_check.gate2_pass,
-        "sanity_gate3": result.sanity_check.gate3_pass,
     });
 
     // Read existing lines and filter out entries for the same symbol+date
@@ -178,12 +177,8 @@ pub fn format_decision_markdown(
         gate_label(result.sanity_check.gate1_pass)
     ));
     md.push_str(&format!(
-        "| G2 集中度 | {} |\n",
+        "| G2 三重恶化 | {} |\n",
         gate_label(result.sanity_check.gate2_pass)
-    ));
-    md.push_str(&format!(
-        "| G3 子弹充足 | {} |\n",
-        gate_label(result.sanity_check.gate3_pass)
     ));
     if !result.sanity_check.notes.is_empty() {
         md.push_str("\n**备注:**\n");
@@ -326,12 +321,10 @@ mod tests {
             sentinel_override: None,
             sanity_check: SanityCheckResult {
                 gate1_pass: true,
-                gate2_pass: true,
-                gate3_pass: false,
-                gate4_pass: true,
+                gate2_pass: false,
                 final_verdict: "HOLD".to_string(),
                 final_confidence: 0.75,
-                notes: vec!["Gate 3 triggered: low dry powder".to_string()],
+                notes: vec!["G2: 三重恶化触发".to_string()],
             },
         }
     }
@@ -348,8 +341,8 @@ mod tests {
         assert!(md.contains("75.0%"));
         assert!(md.contains("risk_on"));
         assert!(md.contains("PASS"));
-        assert!(md.contains("FAIL")); // gate3
-        assert!(md.contains("Gate 3 triggered"));
+        assert!(md.contains("FAIL")); // gate2
+        assert!(md.contains("三重恶化触发"));
         assert!(md.contains("收敛"));
         assert!(md.contains("宏观分析师 R1"));
         assert!(md.contains("Macro analysis text"));

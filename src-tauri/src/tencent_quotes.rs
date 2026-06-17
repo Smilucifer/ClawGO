@@ -1,4 +1,5 @@
 use crate::tushare::client::RealtimeQuote;
+use serde::{Deserialize, Serialize};
 
 /// 将 Tushare ts_code (如 "159248.SZ") 转换为腾讯格式 (如 "sz159248")
 fn to_tencent_symbol(ts_code: &str) -> Option<String> {
@@ -144,6 +145,161 @@ pub async fn fetch_quotes(
     Ok(quotes)
 }
 
+// ---------------------------------------------------------------------------
+// Index quote (lightweight — close + amount only)
+// ---------------------------------------------------------------------------
+
+/// Lightweight index quote for macro indicators.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexQuote {
+    pub close: f64,
+    /// Turnover in yuan (两市成交额 use case: pass two index symbols and sum).
+    pub amount: f64,
+}
+
+/// Fetch a single index quote from Tencent Finance.
+///
+/// `symbol` is a raw Tencent-format symbol (e.g. `"sh000300"`, `"sh000001"`, `"sz399001"`).
+/// This is intentionally NOT the ts_code format used by `fetch_quotes` — index
+/// symbols are already in Tencent format.
+pub async fn fetch_index_quote(
+    client: &reqwest::Client,
+    symbol: &str,
+) -> Result<IndexQuote, String> {
+    let url = format!("http://qt.gtimg.cn/q={}", symbol);
+
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("tencent index request failed: {e}"))?;
+
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("tencent index response read failed: {e}"))?;
+
+    for line in body.lines() {
+        if let Some(quote) = parse_quote_line(line) {
+            if quote.close > 0.0 {
+                return Ok(IndexQuote {
+                    close: quote.close,
+                    amount: quote.amount,
+                });
+            }
+        }
+    }
+
+    Err(format!("tencent index {symbol}: no valid data"))
+}
+
+// ---------------------------------------------------------------------------
+// CSI300 K-line + 20-day volatility
+// ---------------------------------------------------------------------------
+
+/// CSI300 K-line result with latest close and 20-day annualized volatility.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Csi300KlineResult {
+    pub close: f64,
+    /// 20-day annualized volatility (percent), e.g. 19.96.
+    pub vol20: Option<f64>,
+}
+
+/// Fetch CSI300 daily K-line from Tencent Finance and compute 20-day volatility.
+///
+/// Uses the `web.ifzq.gtimg.cn` K-line API (same endpoint used by the web chart).
+/// `days` controls the lookback window (25 is enough for vol20 computation).
+pub async fn fetch_csi300_kline(
+    client: &reqwest::Client,
+    days: u32,
+) -> Result<Csi300KlineResult, String> {
+    let url = format!(
+        "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000300,day,,,{days},qfq"
+    );
+
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("tencent kline request failed: {e}"))?;
+
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("tencent kline parse failed: {e}"))?;
+
+    // Response: {"data":{"sh000300":{"day":[[date,open,close,high,low,vol],...], "qfqday":[...]}}}
+    let day_data = body
+        .get("data")
+        .and_then(|d| d.get("sh000300"))
+        .and_then(|s| {
+            s.get("day")
+                .or_else(|| s.get("qfqday"))
+                .and_then(|v| v.as_array())
+        })
+        .ok_or("tencent kline: missing data.sh000300.day")?;
+
+    if day_data.is_empty() {
+        return Err("tencent kline: empty day data".into());
+    }
+
+    // Parse closing prices (index 2 in each [date, open, close, high, low, vol] array)
+    let closes: Vec<f64> = day_data
+        .iter()
+        .filter_map(|bar| {
+            bar.as_array()
+                .and_then(|arr| arr.get(2))
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<f64>().ok())
+        })
+        .filter(|&c| c > 0.0)
+        .collect();
+
+    if closes.is_empty() {
+        return Err("tencent kline: no valid closing prices".into());
+    }
+
+    let latest_close = closes[0]; // newest first
+
+    Ok(Csi300KlineResult {
+        close: latest_close,
+        vol20: compute_vol20(&closes),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Shared volatility computation
+// ---------------------------------------------------------------------------
+
+/// Compute 20-day annualized volatility from closing prices (newest first).
+///
+/// Uses log returns on the first 21 closes, population variance,
+/// annualized by sqrt(252) * 100 (percent).
+/// Returns `None` if fewer than 21 closes are available.
+pub fn compute_vol20(closes: &[f64]) -> Option<f64> {
+    if closes.len() < 21 {
+        return None;
+    }
+    let returns: Vec<f64> = closes[..21]
+        .windows(2)
+        .filter_map(|w| {
+            if w[1] > 0.0 {
+                Some(((w[0] - w[1]) / w[1]).ln())
+            } else {
+                None
+            }
+        })
+        .collect();
+    if returns.is_empty() {
+        return None;
+    }
+    let mean = returns.iter().sum::<f64>() / returns.len() as f64;
+    let var = returns.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / returns.len() as f64;
+    Some(var.sqrt() * 252.0_f64.sqrt() * 100.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,5 +328,51 @@ mod tests {
         assert!((quote.close - 1.942).abs() < 0.001);
         assert!((quote.pre_close - 1.891).abs() < 0.001);
         assert!((quote.open - 1.896).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_index_quote_line() {
+        // Simulate an index quote line — reuse parse_quote_line then extract IndexQuote
+        let line = r#"v_sh000300="1~沪深300~000300~4931.39~4884.23~4859.70~276053950~0~0~0.000~0~0.000~0~0.000~0~0.000~0~0.000~0~0.000~0~0.000~0~0.000~0~0.000~0~0.000~0~15:00:00~20260617150000~47.16~0.97~4933.93~4859.70~4931.39/276053950/850367580000~276053950~850367~0.00~0.00~~4933.93~4859.70~1.53~850367.00~850367.00~0.00~0.00~0.00~0.00~0.00~0.00";"#;
+        let quote = parse_quote_line(line).unwrap();
+        assert_eq!(quote.ts_code, "000300.SH");
+        assert_eq!(quote.name, "沪深300");
+        assert!((quote.close - 4931.39).abs() < 0.01);
+        // amount = parts[37] * 10000; parts[37] = "850367.00" => 8503670000
+        assert!(quote.amount > 0.0);
+
+        let index_quote = super::IndexQuote {
+            close: quote.close,
+            amount: quote.amount,
+        };
+        assert!((index_quote.close - 4931.39).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_csi300_kline_vol20_calculation() {
+        // With constant 1% daily returns, vol20 should be near 0 (no variance)
+        let base = 4500.0_f64;
+        let constant_closes: Vec<f64> = (0..21).map(|i| base * 1.01_f64.powi(i)).collect();
+        let vol_constant = compute_vol20(&constant_closes).unwrap();
+        assert!(
+            vol_constant < 0.01,
+            "constant returns should yield ~0 vol, got {vol_constant}"
+        );
+
+        // With varying returns, vol20 should be a meaningful positive number
+        let varying: Vec<f64> = vec![
+            4500.0, 4520.0, 4480.0, 4510.0, 4490.0, 4530.0, 4470.0, 4500.0, 4520.0, 4480.0,
+            4510.0, 4490.0, 4530.0, 4470.0, 4500.0, 4520.0, 4480.0, 4510.0, 4490.0, 4530.0,
+            4470.0,
+        ];
+        let vol_varying = compute_vol20(&varying).unwrap();
+        assert!(
+            vol_varying > 5.0 && vol_varying < 100.0,
+            "varying returns should yield meaningful vol, got {vol_varying}"
+        );
+
+        // Too few closes should return None
+        let short: Vec<f64> = vec![4500.0; 10];
+        assert!(compute_vol20(&short).is_none());
     }
 }

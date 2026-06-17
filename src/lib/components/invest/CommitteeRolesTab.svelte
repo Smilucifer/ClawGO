@@ -195,16 +195,6 @@
       ],
     },
     {
-      key: 'l4_officer',
-      color: 'var(--color-error)',
-      badge: 'L4',
-      nameCn: t('invest_roles_l4_officer_cn'),
-      nameEn: 'L4 Execution Officer',
-      desc: t('invest_roles_l4_officer_desc'),
-      meta: 'temp 0.3 · tools ✗',
-      prompts: [{ key: 'l4_officer', label: t('invest_roles_prompt_full') }],
-    },
-    {
       key: 'cio',
       color: 'var(--color-success)',
       badge: 'CIO',
@@ -254,10 +244,6 @@
               t('invest_roles_hard_risk_1'),
               t('invest_roles_hard_risk_2'),
               t('invest_roles_hard_risk_3'),
-            ] : role.key === 'l4_officer' ? [
-              t('invest_roles_hard_l4_1'),
-              t('invest_roles_hard_l4_2'),
-              t('invest_roles_hard_l4_3'),
             ] : [
               t('invest_roles_hard_cio_1'),
               t('invest_roles_hard_cio_2'),

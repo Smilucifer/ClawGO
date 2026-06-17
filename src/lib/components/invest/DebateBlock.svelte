@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from '$lib/i18n/index.svelte';
   import type { RoundOutputSummary } from '$lib/stores/invest-committee-store.svelte';
+  import { ROLE_COLORS } from './pipeline-config';
 
   let { round, blockState = 'done', isStreaming = false }: {
     round: RoundOutputSummary;
@@ -10,15 +11,7 @@
 
   let collapsed = $state(false);
 
-  const ROLE_COLORS: Record<string, string> = {
-    macro: '#8b5cf6',
-    quant: '#3b82f6',
-    risk: '#f97316',
-    l4_officer: '#ef4444',
-    cio: '#eab308',
-  };
-
-  const roleColor = $derived(ROLE_COLORS[round.role] ?? '#6b7280');
+  const roleColor = $derived(ROLE_COLORS[round.role as keyof typeof ROLE_COLORS] ?? '#6b7280');
 </script>
 
 <div
