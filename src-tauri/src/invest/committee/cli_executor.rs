@@ -42,7 +42,7 @@ impl CliCommitteeExecutor {
 
     /// Get the global singleton, initializing if needed.
     pub fn global() -> Option<&'static CliCommitteeExecutor> {
-        CLI_EXECUTOR.get_or_init(|| Self::try_new()).as_ref()
+        CLI_EXECUTOR.get_or_init(Self::try_new).as_ref()
     }
 
     /// Execute a single committee role via `claude --print`.
