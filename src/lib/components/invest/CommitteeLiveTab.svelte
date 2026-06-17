@@ -1,19 +1,58 @@
 <script lang="ts">
   import { t } from '$lib/i18n/index.svelte';
-  import { investCommitteeStore } from '$lib/stores/invest-committee-store.svelte';
+  import {
+    investCommitteeStore,
+    type PortfolioSnapshot,
+    type SnapshotHolding,
+    type SymbolProgress,
+  } from '$lib/stores/invest-committee-store.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
   import { STEP_DEFS, getStepState, getRoundForStep } from './pipeline-config';
   import { getVerdictBadgeStyle } from '$lib/utils/invest-verdict';
   import { renderMarkdown } from '$lib/utils/markdown';
-
-  let expandedSymbol = $state<string | null>(null);
-  let includeWatch = $state(true);
-  let selectedSymbols = $state<Set<string>>(new Set());
+  import { onMount } from 'svelte';
 
   const store = investCommitteeStore;
   const invest = investStore;
 
-  // ── Derived ──────────────────────────────────────────────────────────────
+  let includeWatch = $state(true);
+  let selectedSymbols = $state<Set<string>>(new Set());
+  let expandedSymbols = $state<Set<string>>(new Set());
+
+  const CONCURRENCY_OPTIONS = [1, 2, 3, 5, 8, 10];
+
+  const STEP_ICONS: Record<string, string> = {
+    macro: '🌐',
+    regime: '🧭',
+    quant_r1: '📊',
+    risk_r1: '🛡',
+    quant_r2: '📊',
+    risk_r2: '🛡',
+    cio: '👔',
+  };
+  const STEP_ROUND: Record<string, string> = {
+    quant_r1: 'R1',
+    risk_r1: 'R1',
+    quant_r2: 'R2',
+    risk_r2: 'R2',
+  };
+
+  function stepDef(key: string) {
+    return STEP_DEFS.find((s) => s.key === key)!;
+  }
+
+  function started(p: SymbolProgress | undefined): boolean {
+    return !!p && (p.status === 'running' || p.completedSteps > 0 || p.done);
+  }
+
+  function segIcon(state: string): string {
+    if (state === 'done') return '✓';
+    if (state === 'active') return '◉';
+    if (state === 'failed') return '⚠';
+    if (state === 'error') return '✗';
+    if (state === 'aborted') return '⊘';
+    return '';
+  }
 
   const allAssets = $derived.by(() => {
     const assets: { symbol: string; name: string | null; kind: 'hold' | 'watch' }[] = [
@@ -26,7 +65,6 @@
     }
     return assets;
   });
-
 
   const portfolioStats = $derived.by(() => {
     const hv = invest.holdingsMarketValue;
@@ -49,145 +87,190 @@
     return { hv, cash: cashVal, total, ret, concentration: maxHolding };
   });
 
-  const pipelineStarted = $derived(store.streaming || store.results.length > 0);
-
-  const completedCount = $derived.by(() => {
-    let count = 0;
-    const activeSet = new Set(store.activeSymbols);
-    for (const [sym, p] of store.perSymbolProgress) {
-      if (p.done && activeSet.has(sym)) count++;
-    }
-    return count;
-  });
-
-  // ── Helpers ──────────────────────────────────────────────────────────────
-  // getStepState / getRoundForStep / getVerdictBadgeStyle 已抽到共享模块
-
-  function getFallbackMessage(fallbackReason: string | undefined, role: string): string {
-    if (!fallbackReason) return '';
-    switch (fallbackReason) {
-      case 'worker_unavailable':
-        return t('invest_fallback_worker_unavailable', { role });
-      case 'empty_text':
-        return t('invest_fallback_empty_text', { role });
-      case 'missing_critical_fields':
-        return t('invest_fallback_missing_critical_fields', { role });
-      default:
-        return t('invest_fallback_unknown', { role, reason: fallbackReason });
-    }
-  }
-
-  function toggleSelect(symbol: string) {
-    const next = new Set(selectedSymbols);
-    if (next.has(symbol)) {
-      next.delete(symbol);
-    } else {
-      next.add(symbol);
-    }
-    selectedSymbols = next;
-  }
-
-  function selectAll() {
-    selectedSymbols = new Set(allAssets.map((a) => a.symbol));
-  }
-
-  function clearSelection() {
-    selectedSymbols = new Set();
-  }
-
-  async function runSymbols(syms: string[]) {
-    if (syms.length === 0) return;
-    expandedSymbol = syms[0];
-    await store.runCommittee(syms);
-  }
-
-  /** Run All: skip already-completed symbols (incremental mode). */
-  function getRunnableSymbols(): string[] {
-    return allAssets
-      .filter((a) => {
-        const p = store.perSymbolProgress.get(a.symbol);
-        return !(p?.done && !p.error);
-      })
-      .map((a) => a.symbol);
-  }
-
-  function toggleExpand(symbol: string) {
-    expandedSymbol = expandedSymbol === symbol ? null : symbol;
-  }
-
   function formatCash(v: number): string {
     if (v >= 10000) {
       return '¥' + (v / 1000).toFixed(1) + 'K';
     }
     return '¥' + v.toLocaleString();
   }
+
+  function buildSnapshot(): PortfolioSnapshot {
+    const holdings: SnapshotHolding[] = [
+      ...invest.holdHoldings.map((h) => ({
+        symbol: h.symbol,
+        name: h.name,
+        shares: h.shares,
+        notional: h.notional,
+        kind: h.kind,
+      })),
+      ...invest.watchHoldings.map((h) => ({
+        symbol: h.symbol,
+        name: h.name,
+        shares: h.shares,
+        notional: h.notional,
+        kind: h.kind,
+      })),
+    ];
+    return {
+      holdings,
+      cash: invest.cash,
+      totalNotional: invest.holdingsMarketValue,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  function runSelected() {
+    const syms = Array.from(selectedSymbols);
+    if (syms.length === 0) return;
+    for (const s of syms) expandedSymbols.add(s);
+    expandedSymbols = new Set(expandedSymbols);
+    store.addToQueue(syms, buildSnapshot());
+  }
+
+  function runAll() {
+    const syms = allAssets.map((a) => a.symbol);
+    if (syms.length === 0) return;
+    store.addToQueue(syms, buildSnapshot());
+  }
+
+  function toggleSel(sym: string) {
+    const next = new Set(selectedSymbols);
+    if (next.has(sym)) next.delete(sym);
+    else next.add(sym);
+    selectedSymbols = next;
+  }
+
+  function toggleAll(checked: boolean) {
+    selectedSymbols = checked ? new Set(allAssets.map((a) => a.symbol)) : new Set();
+  }
+
+  function toggleExpand(sym: string) {
+    const next = new Set(expandedSymbols);
+    if (next.has(sym)) next.delete(sym);
+    else next.add(sym);
+    expandedSymbols = next;
+  }
+
+  function onConcurrencyChange(e: Event) {
+    store.setMaxConcurrent(Number((e.target as HTMLSelectElement).value));
+  }
+
+  onMount(() => {
+    store.loadQueue();
+  });
 </script>
 
-<div class="space-y-[var(--space-3)]">
-  <!-- ── Top action bar ─────────────────────────────────────────────────── -->
-  <div class="flex items-center justify-between rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-3)]">
-    <div class="flex items-center gap-[var(--space-3)]">
-      <!-- Run Selected Button -->
-      <button
-        class="flex items-center gap-[var(--space-2)] rounded-[var(--radius-md)] bg-[var(--accent)] px-[var(--space-4)] py-[var(--space-2)] text-[12px] font-medium text-[var(--bg-base)] transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-        disabled={store.running || selectedSymbols.size === 0}
-        onclick={() => runSymbols(Array.from(selectedSymbols))}
-      >
-        {#if store.running && selectedSymbols.size > 0}
-          <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-white"></span>
-          {t('invest_committee_running_progress', {
-            current: String(completedCount),
-            total: String(store.activeSymbols.length),
-          })}
-        {:else}
-          ▶ {t('invest_run_selected', { count: String(selectedSymbols.size) })}
-        {/if}
-      </button>
-      <!-- Run All Button -->
-      <button
-        class="flex items-center gap-[var(--space-2)] rounded-[var(--radius-md)] bg-[rgba(138,154,118,0.15)] px-[var(--space-4)] py-[var(--space-2)] text-[12px] font-medium text-[#8a9a76] transition-colors hover:bg-[rgba(138,154,118,0.25)] disabled:cursor-not-allowed disabled:opacity-40"
-        disabled={store.running || allAssets.length === 0}
-        onclick={() => runSymbols(getRunnableSymbols())}
-      >
-        {#if store.running && selectedSymbols.size === 0}
-          <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-[#8a9a76]"></span>
-          {t('invest_committee_running_progress', {
-            current: String(completedCount),
-            total: String(store.activeSymbols.length),
-          })}
-        {:else}
-          ▶ {t('invest_run_all_holdings')}
-        {/if}
-      </button>
-      <label class="flex items-center gap-[6px] text-[12px] text-[var(--text-tertiary)]">
-        <input type="checkbox" bind:checked={includeWatch} disabled={store.running} style="accent-color: var(--accent);" />
-        {t('invest_include_watch')}
-      </label>
-    </div>
-    <div class="flex items-center gap-[var(--space-3)]">
-      <!-- Selection controls -->
-      {#if selectedSymbols.size > 0}
-        <button
-          class="text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
-          onclick={clearSelection}
-        >
-          {t('invest_clear_selection')}
-        </button>
-      {:else}
-        <button
-          class="text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
-          onclick={selectAll}
-        >
-          {t('invest_select_all')}
-        </button>
-      {/if}
-      <span class="text-[12px] text-[var(--text-tertiary)]">
-        {t('invest_hold')} {invest.holdCount}{invest.watchCount > 0 ? ` + ${invest.watchCount} ${t('invest_watch')}` : ''}
+{#snippet pipelineBar(p: SymbolProgress | undefined)}
+  <div class="pipeline-bar">
+    {#each STEP_DEFS as step}
+      {@const state = getStepState(p, step.backendIdx, started(p))}
+      <div class="seg {state}" style="--seg-color:{step.color}" title={t(step.labelKey)}>
+        {segIcon(state)}
+      </div>
+    {/each}
+  </div>
+{/snippet}
+
+{#snippet stepCard(stepKey: string, p: SymbolProgress | undefined)}
+  {@const def = stepDef(stepKey)}
+  {@const state = getStepState(p, def.backendIdx, started(p))}
+  {@const round = getRoundForStep(p, def.backendIdx)}
+  <div class="step-card {state}" style="--sc:{def.color}">
+    <div class="step-head">
+      <div class="step-dot {state}"></div>
+      <span class="step-title">
+        {STEP_ICONS[stepKey]}
+        {t(def.labelKey)}
+        {#if STEP_ROUND[stepKey]}<span class="step-round">{STEP_ROUND[stepKey]}</span>{/if}
       </span>
+      {#if round}
+        <div class="step-meta">
+          <span>{(round.latencyMs / 1000).toFixed(1)}s</span>
+          <span>{round.tokensUsed} tok</span>
+        </div>
+      {/if}
+    </div>
+    <div class="step-body">
+      {#if state === 'active'}
+        <div class="waiting"><div class="spinner"></div><span>{t('invest_committee_analyzing')}</span></div>
+      {:else if state === 'aborted'}
+        <span class="muted">{t('invest_committee_aborted')}</span>
+      {:else if round?.parsed?.fallbackReason}
+        <div class="fallback-message">
+          <span class="fallback-icon">⚠</span><span>{round.parsed.fallbackReason}</span>
+        </div>
+      {:else if stepKey === 'regime' && p?.regimeData}
+        {@const rd = p.regimeData}
+        <div class="regime-box">
+          <span class="regime-tag">{rd.regime}</span>
+          <div class="regime-metrics">
+            <span>RSI-14 {rd.metrics.rsi14.toFixed(1)}</span>
+            <span>MA20 {rd.metrics.ma20.toFixed(2)}</span>
+            <span>MA60 {rd.metrics.ma60.toFixed(2)}</span>
+            <span>Vol {(rd.metrics.volatilityAnn * 100).toFixed(1)}%</span>
+            <span>{(rd.metrics.priceQuantile2y * 100).toFixed(0)}%</span>
+          </div>
+          <div class="regime-hint">{rd.strategyHint}</div>
+        </div>
+      {:else if round?.parsed?.rawText}
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+        {@html renderMarkdown(round.parsed.rawText)}
+      {:else}
+        <span class="muted">{t('invest_committee_waiting')}</span>
+      {/if}
     </div>
   </div>
+{/snippet}
 
-  <!-- ── Portfolio summary card ─────────────────────────────────────────── -->
+<div class="space-y-3" data-invest-scope>
+  <!-- Action Bar -->
+  <div class="action-bar">
+    <button class="btn primary" disabled={selectedSymbols.size === 0} onclick={runSelected}>
+      ▶ {t('invest_committee_run_selected')}
+    </button>
+    <button class="btn" disabled={allAssets.length === 0} onclick={runAll}>
+      ⏵ {t('invest_committee_add_all')}
+    </button>
+    {#if store.runningCount > 0}
+      <button class="btn danger" onclick={() => store.abortAll()}>
+        ⏹ {t('invest_committee_abort_all')}
+      </button>
+    {/if}
+    <div class="action-sep"></div>
+    <label class="checkbox-row">
+      <input type="checkbox" bind:checked={includeWatch} />
+      {t('invest_committee_include_watch')}
+    </label>
+    <label class="checkbox-row">
+      <input
+        type="checkbox"
+        checked={selectedSymbols.size === allAssets.length && allAssets.length > 0}
+        onchange={(e) => toggleAll(e.currentTarget.checked)}
+      />
+      {t('invest_committee_select_all')}
+    </label>
+    <div class="spacer"></div>
+    <label class="conc-row">
+      {t('invest_committee_concurrency')}
+      <select value={store.maxConcurrent} onchange={onConcurrencyChange}>
+        {#each CONCURRENCY_OPTIONS as n}
+          <option value={n}>{n}</option>
+        {/each}
+      </select>
+    </label>
+    {#if store.runningCount > 0 || store.queuedCount > 0}
+      <span class="progress-text">
+        <span class="dot"></span>
+        {t('invest_committee_in_progress', {
+          current: String(store.doneCount),
+          total: String(store.queue.length),
+          running: String(store.runningCount),
+        })}
+      </span>
+    {/if}
+  </div>
+
+  <!-- PRESERVE: portfolio summary -->
   {#if invest.holdCount > 0}
     <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-4)]">
       <div class="mb-[var(--space-3)] text-[14px] font-semibold text-[var(--text-primary)]">
@@ -222,251 +305,381 @@
     </div>
   {/if}
 
-  <!-- ── Error banner ───────────────────────────────────────────────────── -->
-  {#if store.runError}
-    <div class="rounded-[var(--radius-md)] border border-[rgba(168,122,122,0.3)] bg-[rgba(168,122,122,0.1)] px-[var(--space-3)] py-[var(--space-2)] text-[12px] text-[#a87a7a]">
-      {store.runError}
-    </div>
-  {/if}
-
-  <!-- ── Empty state ────────────────────────────────────────────────────── -->
-  {#if allAssets.length === 0 && !store.streaming}
-    <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-8)] text-center text-[12px] text-[var(--text-tertiary)]">
-      {t('invest_committee_no_holdings')}
-    </div>
-  {/if}
-
-  <!-- ── Per-symbol cards ───────────────────────────────────────────────── -->
+  <!-- Symbol cards -->
   {#each allAssets as asset (asset.symbol)}
     {@const p = store.perSymbolProgress.get(asset.symbol)}
-    {@const result = store.results.find((r) => r.symbol === asset.symbol)}
-    {@const isExpanded = expandedSymbol === asset.symbol}
-
-    <div class="overflow-hidden rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] transition-colors">
-      <!-- Card header (clickable) -->
-      <div
-        class="flex w-full items-center gap-[var(--space-3)] px-[var(--space-4)] py-[var(--space-3)] text-left transition-colors hover:bg-[var(--bg-hover)] cursor-pointer"
-        role="button"
-        tabindex="0"
-        onclick={() => toggleExpand(asset.symbol)}
-        onkeydown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) toggleExpand(asset.symbol); }}
-      >
-        <!-- Checkbox for selection -->
-        <div class="flex items-center shrink-0">
-          <input
-            type="checkbox"
-            checked={selectedSymbols.has(asset.symbol)}
-            onchange={() => toggleSelect(asset.symbol)}
-            onclick={(e) => e.stopPropagation()}
-            disabled={store.running}
-            style="accent-color: var(--accent);"
-            aria-label={t('invest_select_symbol', { symbol: asset.symbol })}
-          />
+    {@const queueItem = store.queue.find((q) => q.symbol === asset.symbol)}
+    {@const result = p?.result ?? store.results.find((r) => r.symbol === asset.symbol) ?? null}
+    {@const isExpanded = expandedSymbols.has(asset.symbol)}
+    <div class="symbol-card" class:streaming={queueItem?.status === 'running'}>
+      <div class="card-header" onclick={() => toggleExpand(asset.symbol)}>
+        <input
+          type="checkbox"
+          class="card-checkbox"
+          checked={selectedSymbols.has(asset.symbol)}
+          onclick={(e) => {
+            e.stopPropagation();
+            toggleSel(asset.symbol);
+          }}
+        />
+        <div class="card-id">
+          <span class="card-name">{asset.name ?? asset.symbol}</span>
+          <span class="card-ticker">{asset.symbol}</span>
         </div>
-        <!-- Name + ticker -->
-        <span class="min-w-[80px] text-[14px] font-semibold text-[var(--text-primary)]">{asset.name || asset.symbol}</span>
-        <span class="shrink-0 text-[12px] font-[var(--font-mono)] text-[var(--text-tertiary)]">{asset.symbol}</span>
-        <span class="shrink-0 rounded-[var(--radius-sm)] px-2 py-0.5 text-[10px] font-semibold {asset.kind === 'hold' ? 'bg-[rgba(138,154,118,0.15)] text-[#8a9a76]' : 'bg-[var(--accent-muted)] text-[var(--accent)]'}">
-          {asset.kind === 'hold' ? 'HOLD' : 'WATCH'}
-        </span>
-
-        <!-- 8-step progress dots -->
-        <div class="ml-auto mr-[var(--space-3)] flex shrink-0 items-center gap-[6px]">
-          {#each STEP_DEFS as step}
-            {@const state = getStepState(p, step.backendIdx, pipelineStarted)}
-            <div
-              class="flex h-[22px] w-[22px] items-center justify-center rounded-full text-[9px] font-bold transition-all {state === 'done' ? '' : state === 'active' ? 'animate-pulse' : ''}"
-              style={state === 'done'
-                ? `background:${step.color}25; color:${step.color};`
-                : state === 'active'
-                  ? `background:rgba(59,130,246,0.2); color:#3b82f6;`
-                  : state === 'failed'
-                    ? 'background:rgba(255,193,7,0.2); color:#ffc107;'
-                    : state === 'error'
-                      ? 'background:rgba(168,122,122,0.2); color:#a87a7a;'
-                      : 'background:var(--bg-input); color:var(--text-tertiary);'}
-              title={t(step.labelKey)}
-            >
-              {#if state === 'done'}✓{:else if state === 'active'}◉{:else if state === 'failed'}⚠{:else if state === 'error'}✗{:else}{step.key === 'regime' ? 'R' : step.key.charAt(0).toUpperCase()}{/if}
-            </div>
-          {/each}
-        </div>
-
-        <!-- Verdict badge -->
+        <span class="badge {asset.kind}">{asset.kind === 'hold' ? 'HOLD' : 'WATCH'}</span>
+        {@render pipelineBar(p)}
         {#if result}
-          <span
-            class="shrink-0 rounded-[var(--radius-full)] px-3 py-1 text-[11px] font-bold"
-            style={getVerdictBadgeStyle(result.finalVerdict)}
-          >
+          <span class="verdict-badge-sm" style={getVerdictBadgeStyle(result.finalVerdict)}>
             {result.finalVerdict}
           </span>
         {/if}
-
-        <!-- Retry button at symbol tag level (P1: visible without expanding) -->
-        {#if (p?.error || (p?.failedSteps && p.failedSteps.size > 0) || result) && !store.streaming}
+        {#if queueItem?.status === 'running'}
           <button
-            class="shrink-0 rounded-[var(--radius-sm)] border border-border px-2 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
-            onclick={(e) => { e.stopPropagation(); store.runCommittee([asset.symbol]); }}
-            disabled={store.streaming}
+            class="abort-btn"
+            onclick={(e) => {
+              e.stopPropagation();
+              store.abortSymbol(asset.symbol);
+            }}
+            title={t('invest_committee_abort')}
+          >
+            ⏹
+          </button>
+        {:else if queueItem && queueItem.status !== 'queued'}
+          <button
+            class="retry-btn"
+            onclick={(e) => {
+              e.stopPropagation();
+              store.retrySymbol(asset.symbol);
+            }}
             title={t('invest_retry')}
           >
-            🔄
+            ↻
           </button>
         {/if}
-
-        <!-- Expand arrow -->
-        <span class="shrink-0 text-[12px] text-[var(--text-tertiary)] transition-transform {isExpanded ? 'rotate-90' : ''}">▶</span>
+        <span class="expand-arrow" class:open={isExpanded}>▶</span>
       </div>
 
-      <!-- ── Expanded body ──────────────────────────────────────────────── -->
       {#if isExpanded}
-        <div class="space-y-[var(--space-2)] border-t border-border px-[var(--space-4)] pb-[var(--space-4)] pt-[var(--space-3)]">
-          {#each STEP_DEFS as step}
-            {@const state = getStepState(p, step.backendIdx, pipelineStarted)}
-            {@const round = getRoundForStep(p, step.backendIdx)}
+        {@const tools = store.toolCallHistory.filter((tc) => tc.symbol === asset.symbol)}
+        <div class="card-body">
+          <div class="flow-grid">
+            <div class="fw">{@render stepCard('macro', p)}</div>
+            <div class="fw">{@render stepCard('regime', p)}</div>
 
-            <div class="rounded-[var(--radius-md)] bg-[var(--bg-input)] p-[var(--space-3)]">
-              <!-- Step header -->
-              <div class="mb-[var(--space-2)] flex items-center justify-between">
-                <span class="text-[12px] font-semibold" style="color: {step.color}">{t(step.labelKey)}</span>
-                <span class="text-[10px] font-[var(--font-mono)] text-[var(--text-tertiary)]">
-                  {#if round?.latencyMs && round.latencyMs > 0}
-                    {(round.latencyMs / 1000).toFixed(1)}s
-                  {/if}
-                  {#if round?.tokensUsed && round.tokensUsed > 0}
-                    <span class="ml-[var(--space-2)]">{round.tokensUsed} tok</span>
-                  {/if}
-                </span>
-              </div>
-
-              <!-- Step body -->
-              {#if state === 'active'}
-                <div class="flex items-center gap-[var(--space-2)] text-[12px] text-[var(--text-secondary)]">
-                  <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-border border-t-[#3b82f6]"></span>
-                  {t('invest_debate_waiting_llm')}
-                </div>
-              {:else if round?.parsed?.fallbackReason}
-                <div class="flex items-center gap-[var(--space-2)]">
-                  <div class="fallback-message flex-1">
-                    <span class="fallback-icon">⚠</span>
-                    <span>{getFallbackMessage(round.parsed.fallbackReason, t(step.labelKey))}</span>
-                  </div>
-                  <button
-                    class="shrink-0 rounded-[var(--radius-sm)] border border-border px-2 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
-                    onclick={() => store.runCommittee([asset.symbol])}
-                    disabled={store.streaming}
-                    title={t('invest_retry')}
-                  >
-                    {t('invest_retry')}
-                  </button>
-                </div>
-              {:else if round?.parsed?.rawText}
-                <div class="max-h-[200px] overflow-y-auto whitespace-pre-wrap font-[var(--font-mono)] text-[12px] leading-[1.6] text-[var(--text-secondary)]">
-                  {@html renderMarkdown(round.parsed.rawText)}
-                </div>
-              {:else if step.key === 'regime' && state === 'done' && p?.regimeData}
-                <div class="space-y-[var(--space-2)] text-[12px]">
-                  <div class="flex flex-wrap gap-x-[var(--space-4)] gap-y-[var(--space-1)]">
-                    <span class="text-[var(--text-tertiary)]">
-                      {t('invest_regime_label')}: <span class="font-medium text-[#3b82f6]">{p.regimeData.regime}</span>
-                    </span>
-                    <span class="text-[var(--text-tertiary)]">
-                      {t('invest_regime_reason')}: <span class="text-[var(--text-secondary)]">{p.regimeData.reason}</span>
-                    </span>
-                  </div>
-                  <div class="text-[var(--text-tertiary)]">
-                    {t('invest_regime_hint')}: <span class="text-[var(--text-secondary)]">{p.regimeData.strategyHint}</span>
-                  </div>
-                  <div class="flex flex-wrap gap-x-[var(--space-4)] gap-y-[var(--space-1)] text-[11px] text-[var(--text-tertiary)]">
-                    <span>RSI-14: {p.regimeData.metrics.rsi14.toFixed(1)}</span>
-                    <span>MA20: {p.regimeData.metrics.ma20.toFixed(2)}</span>
-                    <span>MA60: {p.regimeData.metrics.ma60.toFixed(2)}</span>
-                    <span>Vol: {(p.regimeData.metrics.volatilityAnn * 100).toFixed(1)}%</span>
-                    <span>{t('invest_regime_inputs')}: {(p.regimeData.metrics.priceQuantile2y * 100).toFixed(0)}%</span>
-                  </div>
-                </div>
-              {:else if step.key === 'regime' && state === 'done'}
-                <div class="text-[12px] text-[var(--text-tertiary)]">{t('invest_committee_regime_computed')}</div>
-              {:else if state === 'pending'}
-                <div class="text-[12px] text-[var(--text-tertiary)]">{t('invest_overview_pending')}</div>
-              {/if}
+            <div class="connector">
+              <svg viewBox="0 0 400 32" preserveAspectRatio="xMidYMid meet">
+                <line x1="200" y1="4" x2="130" y2="28" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,3" />
+                <line x1="200" y1="4" x2="270" y2="28" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,3" />
+              </svg>
             </div>
-          {/each}
 
-          <!-- ── CIO Verdict Card ────────────────────────────────────────── -->
-          {#if result}
-            <div class="mt-[var(--space-3)] rounded-[var(--radius-lg)] border-2 border-border bg-[var(--bg-card)] p-[var(--space-4)]">
-              <div class="mb-[var(--space-3)] flex items-center gap-[var(--space-3)]">
-                <span class="text-[14px] font-bold text-[var(--text-primary)]">👔 {t('invest_replay_cio_verdict')}</span>
-                <span
-                  class="rounded-[var(--radius-full)] px-[14px] py-1 text-[14px] font-bold"
-                  style={getVerdictBadgeStyle(result.finalVerdict)}
-                >{result.finalVerdict}</span>
-                <span class="text-[13px] font-[var(--font-mono)] text-[var(--text-secondary)]">
-                  {t('invest_macro_signal')}: {(result.finalConfidence * 100).toFixed(0)}%
-                </span>
-              </div>
+            <div>{@render stepCard('quant_r1', p)}</div>
+            <div>{@render stepCard('risk_r1', p)}</div>
 
-              {#if result.reasoning}
-                <div class="mb-[var(--space-2)] text-[12px] leading-[1.7] text-[var(--text-secondary)]">{result.reasoning}</div>
-              {/if}
+            <div class="connector">
+              <svg viewBox="0 0 400 32" preserveAspectRatio="xMidYMid meet">
+                <line x1="130" y1="0" x2="130" y2="28" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,3" />
+                <line x1="270" y1="0" x2="270" y2="28" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,3" />
+              </svg>
+            </div>
 
-              <!-- Gate badges -->
-              <div class="mb-[var(--space-2)] flex gap-[var(--space-2)]">
-                <span class="rounded-[var(--radius-sm)] px-2 py-0.5 text-[10px] font-semibold {result.sanityCheck.gate1Pass ? 'bg-[rgba(138,154,118,0.15)] text-[#8a9a76]' : 'bg-[rgba(168,122,122,0.15)] text-[#a87a7a]'}">
-                  {result.sanityCheck.gate1Pass ? '✓' : '✗'} {t('invest_gate1_label')}
-                </span>
-                <span class="rounded-[var(--radius-sm)] px-2 py-0.5 text-[10px] font-semibold {result.sanityCheck.gate2Pass ? 'bg-[rgba(138,154,118,0.15)] text-[#8a9a76]' : 'bg-[rgba(168,122,122,0.15)] text-[#a87a7a]'}">
-                  {result.sanityCheck.gate2Pass ? '✓' : '✗'} {t('invest_gate2_label')}
-                </span>
-              </div>
+            <div>{@render stepCard('quant_r2', p)}</div>
+            <div>{@render stepCard('risk_r2', p)}</div>
 
-              <!-- Meta row -->
-              <div class="flex gap-[var(--space-3)] text-[11px] text-[var(--text-tertiary)]">
-                <span>{t('invest_committee_total_value')}: {(result.totalLatencyMs / 1000).toFixed(1)}s</span>
-                <span>{result.totalTokens} tok</span>
-                <span>{t('invest_committee_converged')}: {result.converged ? '✓' : '✗'}</span>
+            <div class="connector">
+              <svg viewBox="0 0 400 32" preserveAspectRatio="xMidYMid meet">
+                <line x1="130" y1="0" x2="200" y2="28" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,3" />
+                <line x1="270" y1="0" x2="200" y2="28" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,3" />
+              </svg>
+            </div>
+
+            <div class="fw">{@render stepCard('cio', p)}</div>
+
+            {#if result}
+              <div class="verdict-block">
+                <div class="verdict-row">
+                  <span class="verdict-action" style={getVerdictBadgeStyle(result.finalVerdict)}>
+                    {result.finalVerdict}
+                  </span>
+                  <span class="verdict-confidence">
+                    {t('invest_committee_confidence')}
+                    {result.finalConfidence}%
+                  </span>
+                  <span class="gate-badge {result.sanityCheck.gate1Pass ? 'pass' : 'fail'}">
+                    {result.sanityCheck.gate1Pass ? '✓' : '✗'} Gate 1
+                  </span>
+                  <span class="gate-badge {result.sanityCheck.gate2Pass ? 'pass' : 'fail'}">
+                    {result.sanityCheck.gate2Pass ? '✓' : '✗'} Gate 2
+                  </span>
+                </div>
+                <div class="verdict-reasoning">{result.reasoning}</div>
+                <div class="verdict-meta">
+                  <span class="meta-item">⏱ {(result.totalLatencyMs / 1000).toFixed(1)}s</span>
+                  <span class="meta-item">🔤 {result.totalTokens} tok</span>
+                  {#if result.converged}
+                    <span class="meta-item">✅ {t('invest_committee_converged')}</span>
+                  {/if}
+                </div>
+                {#if result.sanityCheck.notes.length > 0}
+                  <ul class="verdict-notes">
+                    {#each result.sanityCheck.notes as note}
+                      <li>{note}</li>
+                    {/each}
+                  </ul>
+                {/if}
                 {#if result.sentinelOverride}
-                  <span class="text-[#a87a7a]">⚠ {t('invest_committee_sentinel')}</span>
+                  <div class="sentinel-override">
+                    ⚠ {result.sentinelOverride.reason} → {result.sentinelOverride.forcedVerdict}
+                  </div>
                 {/if}
               </div>
+            {/if}
 
-              {#if result.sanityCheck.notes.length > 0}
-                <div class="mt-[var(--space-2)] space-y-0.5 text-[11px] text-[var(--text-tertiary)]">
-                  {#each result.sanityCheck.notes as note}
-                    <div>- {note}</div>
-                  {/each}
-                </div>
-              {/if}
-
-              {#if result.sentinelOverride}
-                <div class="mt-[var(--space-2)] rounded-[var(--radius-md)] bg-[rgba(168,122,122,0.1)] px-[var(--space-2)] py-[var(--space-1)] text-[11px] text-[#a87a7a]">
-                  {result.sentinelOverride.reason}
-                </div>
-              {/if}
-            </div>
-          {/if}
+            {#if tools.length > 0}
+              <div class="tool-strip">
+                🔧 {t('invest_committee_tools')}：
+                {#each tools as tc}
+                  <span class="tool-chip">{tc.toolName} <span class="tool-ms">{tc.latencyMs}ms</span></span>
+                {/each}
+              </div>
+            {/if}
+          </div>
         </div>
       {/if}
     </div>
   {/each}
+
+  {#if allAssets.length === 0}
+    <div class="empty-hint">{t('invest_committee_queue_empty')}</div>
+  {/if}
 </div>
 
 <style>
-  .fallback-message {
+  .action-bar {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    background: var(--color-warning-bg, rgba(255, 193, 7, 0.1));
-    border: 1px solid var(--color-warning-border, rgba(255, 193, 7, 0.3));
-    border-radius: 6px;
-    color: var(--color-warning-text, #ffc107);
-    font-size: 0.875rem;
+    gap: 10px;
+    padding: 12px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    flex-wrap: wrap;
   }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-input);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .btn:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--accent-muted); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn.primary { background: var(--accent); color: #111; border-color: var(--accent); }
+  .btn.danger { color: var(--color-error); border-color: var(--color-error); }
+  .btn.danger:hover:not(:disabled) { background: rgba(168, 122, 122, 0.12); }
+  .action-sep { width: 1px; height: 24px; background: var(--border); }
+  .spacer { flex: 1; }
+  .checkbox-row,
+  .conc-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .checkbox-row input { accent-color: var(--accent); cursor: pointer; }
+  .conc-row select {
+    border: 1px solid var(--border);
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    padding: 3px 6px;
+    font-size: 12px;
+  }
+  .progress-text { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+  .progress-text .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-  .fallback-icon {
-    font-size: 1.1rem;
+  .symbol-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .symbol-card:hover { border-color: var(--accent-muted); }
+  .symbol-card.streaming { border-color: var(--accent); }
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+  }
+  .card-header:hover { background: var(--bg-hover); }
+  .card-checkbox { accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+  .card-id { display: flex; flex-direction: column; min-width: 84px; }
+  .card-name { font-size: 14px; font-weight: 600; }
+  .card-ticker { font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
     flex-shrink: 0;
   }
+  .badge.hold { background: rgba(138, 154, 118, 0.15); color: var(--color-success); }
+  .badge.watch { background: rgba(196, 169, 110, 0.12); color: var(--accent-muted); }
+  .verdict-badge-sm {
+    padding: 3px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .abort-btn,
+  .retry-btn {
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-input);
+    font-size: 11px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .abort-btn { color: var(--color-error); border-color: var(--color-error); }
+  .abort-btn:hover { background: rgba(168, 122, 122, 0.12); }
+  .retry-btn { color: var(--color-warning); }
+  .retry-btn:hover { background: rgba(255, 193, 7, 0.1); border-color: var(--color-warning); }
+  .expand-arrow {
+    width: 20px; height: 20px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-tertiary);
+    transition: transform 0.2s;
+    flex-shrink: 0; font-size: 12px;
+  }
+  .expand-arrow.open { transform: rotate(90deg); }
+  .card-body { border-top: 1px solid var(--border); padding: 20px; }
+
+  /* Pipeline bar */
+  .pipeline-bar {
+    display: flex; flex: 1; height: 22px;
+    border-radius: var(--radius-sm); overflow: hidden;
+    background: var(--bg-input); gap: 2px; margin: 0 4px; min-width: 200px;
+  }
+  .seg {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    font-size: 9px; font-weight: 700; border-radius: 3px; transition: all 0.4s; color: transparent;
+  }
+  .seg.pending { background: var(--bg-input); }
+  .seg.active { background: color-mix(in srgb, var(--seg-color) 25%, transparent); color: var(--seg-color); animation: seg-pulse 1.5s ease-in-out infinite; }
+  .seg.done { background: color-mix(in srgb, var(--seg-color) 35%, transparent); color: var(--seg-color); }
+  .seg.failed { background: color-mix(in srgb, var(--color-warning) 25%, transparent); color: var(--color-warning); }
+  .seg.error { background: color-mix(in srgb, var(--color-error) 25%, transparent); color: var(--color-error); }
+  .seg.aborted { background: color-mix(in srgb, var(--text-tertiary) 25%, transparent); color: var(--text-tertiary); }
+  @keyframes seg-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  /* Debate flow grid */
+  .flow-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+    max-width: 1000px; margin: 0 auto; align-items: start;
+  }
+  .flow-grid .fw { grid-column: 1 / -1; justify-self: center; width: 65%; max-width: 560px; min-width: 320px; }
+  .connector { grid-column: 1 / -1; display: flex; justify-content: center; height: 28px; }
+  .connector svg { width: 100%; height: 100%; }
+  @media (max-width: 700px) {
+    .flow-grid { grid-template-columns: 1fr; }
+    .flow-grid .fw { width: 100%; max-width: none; }
+  }
+
+  /* Step card */
+  .step-card {
+    width: 100%; background: var(--bg-base); border: 1px solid var(--border);
+    border-radius: var(--radius-md); overflow: hidden; transition: border-color 0.3s, box-shadow 0.3s, opacity 0.4s;
+  }
+  .step-card.pending { opacity: 0.4; }
+  .step-card.active { border-color: var(--sc); box-shadow: 0 0 20px color-mix(in srgb, var(--sc) 12%, transparent); }
+  .step-card.done { border-color: color-mix(in srgb, var(--sc) 40%, transparent); }
+  .step-card.failed { border-color: var(--color-warning); }
+  .step-card.error { border-color: var(--color-error); }
+  .step-card.aborted { border-color: var(--text-tertiary); opacity: 0.6; }
+  .step-head {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    background: color-mix(in srgb, var(--sc) 6%, var(--bg-card));
+    border-bottom: 1px solid var(--border);
+  }
+  .step-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; transition: all 0.3s; }
+  .step-dot.pending { background: var(--bg-input); border: 1.5px solid var(--border); }
+  .step-dot.active { background: var(--sc); animation: dot-pulse 1.2s ease-in-out infinite; }
+  .step-dot.done { background: var(--sc); }
+  .step-dot.failed { background: var(--color-warning); }
+  .step-dot.error { background: var(--color-error); }
+  .step-dot.aborted { background: var(--text-tertiary); }
+  @keyframes dot-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.7); } }
+  .step-title { font-size: 13px; font-weight: 600; }
+  .step-round { font-size: 10px; color: var(--text-tertiary); padding: 1px 5px; border-radius: 3px; background: var(--bg-input); }
+  .step-meta { margin-left: auto; display: flex; gap: 10px; font-size: 10px; color: var(--text-tertiary); font-family: var(--font-mono); }
+  .step-body {
+    padding: 14px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.85;
+    max-height: 320px; overflow-y: auto; word-break: break-word;
+  }
+  .muted { color: var(--text-tertiary); }
+  .waiting { display: flex; align-items: center; gap: 8px; color: var(--text-tertiary); }
+  .spinner {
+    width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--sc);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .fallback-message {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.75rem 1rem; background: rgba(255, 193, 7, 0.1);
+    border: 1px solid rgba(255, 193, 7, 0.3); border-radius: 6px; color: var(--color-warning);
+  }
+  .fallback-icon { font-size: 1.1rem; flex-shrink: 0; }
+  .regime-box { display: flex; flex-direction: column; gap: 6px; }
+  .regime-tag { align-self: flex-start; padding: 2px 10px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--sc) 18%, transparent); color: var(--sc); font-weight: 600; font-size: 12px; }
+  .regime-metrics { display: flex; flex-wrap: wrap; gap: 10px; font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
+  .regime-hint { font-size: 12px; }
+
+  /* Verdict block */
+  .verdict-block {
+    grid-column: 1 / -1; justify-self: center; width: 65%; max-width: 560px; min-width: 320px;
+    background: var(--bg-base); border: 1px solid var(--accent-muted); border-radius: var(--radius-md);
+    padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .verdict-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .verdict-action { padding: 3px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 700; text-transform: uppercase; }
+  .verdict-confidence { font-size: 12px; color: var(--text-secondary); }
+  .gate-badge { font-size: 10px; padding: 2px 7px; border-radius: 3px; }
+  .gate-badge.pass { background: rgba(138, 154, 118, 0.18); color: var(--color-success); }
+  .gate-badge.fail { background: rgba(168, 122, 122, 0.18); color: var(--color-error); }
+  .verdict-reasoning { font-size: 12.5px; color: var(--text-secondary); line-height: 1.8; }
+  .verdict-meta { display: flex; gap: 14px; font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
+  .verdict-notes { margin: 0; padding-left: 18px; font-size: 11.5px; color: var(--text-tertiary); }
+  .sentinel-override { font-size: 12px; color: var(--color-warning); }
+
+  /* Tool strip */
+  .tool-strip {
+    grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    font-size: 11px; color: var(--text-tertiary);
+  }
+  .tool-chip { padding: 2px 8px; border-radius: var(--radius-sm); background: var(--bg-input); font-family: var(--font-mono); }
+  .tool-ms { opacity: 0.5; }
+  .empty-hint { padding: 32px; text-align: center; color: var(--text-tertiary); font-size: 13px; }
 </style>
