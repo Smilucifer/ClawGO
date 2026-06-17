@@ -102,7 +102,8 @@ export type CommitteeEventType =
   | { type: 'tool_call'; symbol: string; role: string; round: number; toolName: string; arguments: string; result?: string; success: boolean; latencyMs: number }
   | { type: 'symbol_complete'; symbol: string; result: CommitteeResult }
   | { type: 'done'; completed: number; total: number }
-  | { type: 'error'; symbol: string; error: string };
+  | { type: 'error'; symbol: string; error: string }
+  | { type: 'symbol_aborted'; symbol: string };
 
 export interface ToolCallRecord {
   symbol: string;
@@ -116,6 +117,8 @@ export interface ToolCallRecord {
   timestamp: number;
 }
 
+export type QueueItemStatus = 'queued' | 'running' | 'done' | 'failed' | 'aborted';
+
 export interface SymbolProgress {
   activeStep: number;       // stepIndex of currently running role (-1 if idle)
   completedSteps: number;   // how many roles finished
@@ -125,11 +128,40 @@ export interface SymbolProgress {
   result: CommitteeResult | null;
   regimeData: RegimeStepData | null;  // REGIME step output (populated during streaming)
   failedSteps?: Set<number>;  // explicit per-step failure from orchestrator
+  status: QueueItemStatus; // queue-level scheduling status
+}
+
+export interface QueueItem {
+  symbol: string;
+  status: QueueItemStatus;
+  error?: string;
+}
+
+export interface SnapshotHolding {
+  symbol: string;
+  name?: string | null;
+  shares?: number | null;
+  notional: number;
+  kind: string;
+}
+
+export interface PortfolioSnapshot {
+  holdings: SnapshotHolding[];
+  cash: number;
+  totalNotional: number;
+  timestamp: string;
+}
+
+export interface CommitteeQueueState {
+  items: QueueItem[];
+  snapshot?: PortfolioSnapshot | null;
+  maxConcurrent: number;
+  updatedAt: string;
 }
 
 // ── Store ───────────────────────────────────────────────────────────────────
 
-class InvestCommitteeStore {
+export class InvestCommitteeStore {
   llmConfig = $state<InvestLlmConfig | null>(null);
   configLoading = $state(false);
 
@@ -143,10 +175,237 @@ class InvestCommitteeStore {
   perSymbolProgress = $state<Map<string, SymbolProgress>>(new Map());
   toolCallHistory = $state<ToolCallRecord[]>([]);
 
+  // Queue scheduler state
+  queue = $state<QueueItem[]>([]);
+  maxConcurrent = $state(5);
+  portfolioSnapshot = $state<PortfolioSnapshot | null>(null);
+  private _saveTimer: ReturnType<typeof setTimeout> | null = null;
+
   rolePrompts = $state<RolePrompts>({});
   showConfigPanel = $state(false);
 
   private _unlisten: (() => void) | null = null;
+
+  // ── Derived counts ──────────────────────────────────────────────
+  get queuedCount() {
+    return this.queue.filter((q) => q.status === 'queued').length;
+  }
+  get runningCount() {
+    return this.queue.filter((q) => q.status === 'running').length;
+  }
+  get doneCount() {
+    return this.queue.filter((q) => q.status === 'done').length;
+  }
+
+  /** @deprecated compat shim — use addToQueue. Removed after Task 6. */
+  runCommittee(symbols: string[], _debateRounds?: number) {
+    return this.addToQueue(symbols);
+  }
+
+  /** Enqueue symbols and start draining. Optional snapshot is captured once. */
+  async addToQueue(symbols: string[], snapshot?: PortfolioSnapshot) {
+    if (symbols.length === 0) return;
+    await this._ensureListening();
+    if (snapshot && !this.portfolioSnapshot) {
+      this.portfolioSnapshot = snapshot;
+    }
+    for (const sym of symbols) {
+      const existing = this.queue.find((q) => q.symbol === sym);
+      if (existing && (existing.status === 'queued' || existing.status === 'running')) {
+        continue; // already pending — dedup
+      }
+      // Re-enqueue at tail: drop any prior entry, then push fresh.
+      this.queue = this.queue.filter((q) => q.symbol !== sym);
+      this.queue.push({ symbol: sym, status: 'queued' });
+      this.perSymbolProgress.set(sym, this._freshProgress('queued'));
+      this.results = this.results.filter((r) => r.symbol !== sym);
+      this.toolCallHistory = this.toolCallHistory.filter((e) => e.symbol !== sym);
+    }
+    this.queue = [...this.queue];
+    this.perSymbolProgress = new Map(this.perSymbolProgress);
+    this._recomputeRunning();
+    this._persistQueue();
+    this._drainQueue();
+  }
+
+  /** Re-run a finished/failed/aborted symbol — appended to the queue tail. */
+  async retrySymbol(symbol: string) {
+    await this.addToQueue([symbol]);
+  }
+
+  /** Cancel one in-flight symbol; backend also emits symbol_aborted. */
+  async abortSymbol(symbol: string) {
+    try {
+      await invoke('abort_committee_symbol', { symbol });
+    } catch (e) {
+      console.error('abort_committee_symbol failed:', e);
+    }
+    this._settleQueue(symbol, 'aborted');
+  }
+
+  /** Cancel everything in flight and clear queued items. */
+  async abortAll() {
+    try {
+      await invoke('abort_committee_all');
+    } catch (e) {
+      console.error('abort_committee_all failed:', e);
+    }
+    for (const item of this.queue) {
+      if (item.status === 'running' || item.status === 'queued') {
+        item.status = 'aborted';
+      }
+    }
+    this.queue = [...this.queue];
+    for (const [sym, p] of this.perSymbolProgress) {
+      if (p.status === 'running' || p.status === 'queued') {
+        this.perSymbolProgress.set(sym, { ...p, status: 'aborted', activeStep: -1 });
+      }
+    }
+    this.perSymbolProgress = new Map(this.perSymbolProgress);
+    this._recomputeRunning();
+    this._persistQueue();
+  }
+
+  setMaxConcurrent(n: number) {
+    this.maxConcurrent = n;
+    this._persistQueue();
+    this._drainQueue();
+  }
+
+  // ── Persistence ─────────────────────────────────────────────────
+  async loadQueue() {
+    try {
+      const state = await invoke<CommitteeQueueState>('load_committee_queue');
+      this.maxConcurrent = state.maxConcurrent && state.maxConcurrent > 0 ? state.maxConcurrent : 5;
+      this.portfolioSnapshot = state.snapshot ?? null;
+      // Restore queue for display; running items (interrupted by restart) → queued.
+      this.queue = (state.items ?? []).map((it) => ({
+        symbol: it.symbol,
+        status: it.status === 'running' ? ('queued' as QueueItemStatus) : it.status,
+        error: it.error,
+      }));
+      const progress = new Map<string, SymbolProgress>();
+      for (const item of this.queue) {
+        progress.set(item.symbol, this._freshProgress(item.status));
+      }
+      this.perSymbolProgress = progress;
+      this._recomputeRunning();
+    } catch (e) {
+      console.error('load_committee_queue failed:', e);
+    }
+  }
+
+  private _persistQueue() {
+    if (this._saveTimer) clearTimeout(this._saveTimer);
+    this._saveTimer = setTimeout(() => void this._flushQueue(), 300);
+  }
+
+  private async _flushQueue() {
+    const state: CommitteeQueueState = {
+      items: this.queue.map((q) => ({ symbol: q.symbol, status: q.status, error: q.error })),
+      snapshot: this.portfolioSnapshot,
+      maxConcurrent: this.maxConcurrent,
+      updatedAt: new Date().toISOString(),
+    };
+    try {
+      await invoke('save_committee_queue', { state });
+    } catch (e) {
+      console.error('save_committee_queue failed:', e);
+    }
+  }
+
+  // ── Internal scheduling ─────────────────────────────────────────
+  private _freshProgress(status: QueueItemStatus): SymbolProgress {
+    return {
+      activeStep: -1,
+      completedSteps: 0,
+      completedRounds: [],
+      done: false,
+      error: null,
+      result: null,
+      regimeData: null,
+      failedSteps: new Set(),
+      status,
+    };
+  }
+
+  private async _ensureListening() {
+    if (this._unlisten) return;
+    this._unlisten = await getTransport().listen<CommitteeEventType>(
+      'committee-event',
+      (event) => this._handleCommitteeEvent(event),
+    );
+  }
+
+  private _recomputeRunning() {
+    const active = this.queue.some((q) => q.status === 'queued' || q.status === 'running');
+    this.running = active;
+    this.streaming = active;
+  }
+
+  private _drainQueue() {
+    const running = this.runningCount;
+    let slots = this.maxConcurrent - running;
+    if (slots <= 0) return;
+    const toStart: string[] = [];
+    for (const item of this.queue) {
+      if (slots <= 0) break;
+      if (item.status !== 'queued') continue;
+      toStart.push(item.symbol);
+      slots -= 1;
+    }
+    for (const sym of toStart) this._startSymbol(sym);
+  }
+
+  private _startSymbol(symbol: string) {
+    this._markRunning(symbol);
+    invoke<CommitteeResult[]>('run_committee_stream', {
+      symbols: [symbol],
+      debateRounds: null,
+      dryRun: false,
+    }).catch((e) => {
+      // Whole invoke rejected without emitting symbol_complete/error.
+      const item = this.queue.find((q) => q.symbol === symbol);
+      if (item && item.status === 'running') {
+        this._settleQueue(symbol, 'failed', String(e));
+      }
+    });
+  }
+
+  private _markRunning(symbol: string) {
+    const item = this.queue.find((q) => q.symbol === symbol);
+    if (item) {
+      item.status = 'running';
+      item.error = undefined;
+      this.queue = [...this.queue];
+    }
+    const p = this.perSymbolProgress.get(symbol);
+    if (p) {
+      this.perSymbolProgress.set(symbol, { ...p, status: 'running' });
+      this.perSymbolProgress = new Map(this.perSymbolProgress);
+    }
+    this._recomputeRunning();
+  }
+
+  /** Move a symbol to a terminal/aborted status, then persist + drain. */
+  private _settleQueue(symbol: string, status: QueueItemStatus, error?: string) {
+    const item = this.queue.find((q) => q.symbol === symbol);
+    if (item && item.status !== status) {
+      item.status = status;
+      item.error = error;
+      this.queue = [...this.queue];
+    }
+    const p = this.perSymbolProgress.get(symbol);
+    if (p && p.status !== status) {
+      const next: SymbolProgress = { ...p, status };
+      if (status === 'aborted') next.activeStep = -1;
+      this.perSymbolProgress.set(symbol, next);
+      this.perSymbolProgress = new Map(this.perSymbolProgress);
+    }
+    this._recomputeRunning();
+    this._persistQueue();
+    this._drainQueue();
+  }
 
   // ── Config ─────────────────────────────────────────────────────────────
 
@@ -164,70 +423,6 @@ class InvestCommitteeStore {
   async saveConfig(config: InvestLlmConfig) {
     await invoke('save_llm_config', { config });
     this.llmConfig = config;
-  }
-
-  // ── Committee Run (streaming) ──────────────────────────────────────────
-
-  async runCommittee(symbols: string[], debateRounds?: number, dryRun?: boolean) {
-    // Guard against concurrent calls — tear down previous listener first
-    const prevUnlisten = this._unlisten;
-    this._unlisten = null;
-    prevUnlisten?.();
-
-    this.streaming = true;
-    this.running = true;
-    this.runError = null;
-    this.activeSymbols = symbols;
-
-    const runSet = new Set(symbols);
-
-    // Only remove results for symbols being re-run; preserve others
-    this.results = this.results.filter((r) => !runSet.has(r.symbol));
-
-    // Only remove tool call history for symbols being re-run; preserve others
-    this.toolCallHistory = this.toolCallHistory.filter((e) => !runSet.has(e.symbol));
-
-    // Only reset progress for symbols being re-run; preserve others
-    for (const s of symbols) {
-      this.perSymbolProgress.set(s, {
-        activeStep: -1,
-        completedSteps: 0,
-        completedRounds: [],
-        done: false,
-        error: null,
-        result: null,
-        regimeData: null,
-        failedSteps: new Set(),
-      });
-    }
-    // Trigger reactivity without replacing the entire Map
-    this.perSymbolProgress = new Map(this.perSymbolProgress);
-
-    try {
-      // Subscribe to streaming events
-      this._unlisten = await getTransport().listen<CommitteeEventType>(
-        'committee-event',
-        (event) => this._handleCommitteeEvent(event),
-      );
-
-      // Invoke the streaming command — results arrive via events,
-      // but the final return value is also captured.
-      const batchResults = await invoke<CommitteeResult[]>('run_committee_stream', {
-        symbols,
-        debateRounds: debateRounds ?? null,
-        dryRun: dryRun ?? false,
-      });
-      // Merge: replace results for this batch, preserve results from previous runs
-      const preserved = this.results.filter((r) => !runSet.has(r.symbol));
-      this.results = [...preserved, ...batchResults];
-    } catch (e) {
-      this.runError = String(e);
-    } finally {
-      this.streaming = false;
-      this.running = false;
-      this._unlisten?.();
-      this._unlisten = null;
-    }
   }
 
   // ── Event handler ──────────────────────────────────────────────────────
@@ -352,6 +547,15 @@ class InvestCommitteeStore {
     }
 
     this.perSymbolProgress = progress;
+
+    // Queue-level transitions after progress is committed.
+    if (event.type === 'symbol_complete') {
+      this._settleQueue(event.symbol, 'done');
+    } else if (event.type === 'error') {
+      this._settleQueue(event.symbol, 'failed', event.error);
+    } else if (event.type === 'symbol_aborted') {
+      this._settleQueue(event.symbol, 'aborted');
+    }
   }
 
   // ── Role Prompts ───────────────────────────────────────────────────────
