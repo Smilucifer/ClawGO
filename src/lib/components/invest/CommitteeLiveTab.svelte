@@ -53,8 +53,9 @@
 
   const completedCount = $derived.by(() => {
     let count = 0;
-    for (const [, p] of store.perSymbolProgress) {
-      if (p.done) count++;
+    const activeSet = new Set(store.activeSymbols);
+    for (const [sym, p] of store.perSymbolProgress) {
+      if (p.done && activeSet.has(sym)) count++;
     }
     return count;
   });
@@ -100,6 +101,16 @@
     await store.runCommittee(syms);
   }
 
+  /** Run All: skip already-completed symbols (incremental mode). */
+  function getRunnableSymbols(): string[] {
+    return allAssets
+      .filter((a) => {
+        const p = store.perSymbolProgress.get(a.symbol);
+        return !(p?.done && !p.error);
+      })
+      .map((a) => a.symbol);
+  }
+
   function toggleExpand(symbol: string) {
     expandedSymbol = expandedSymbol === symbol ? null : symbol;
   }
@@ -126,7 +137,7 @@
           <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-white"></span>
           {t('invest_committee_running_progress', {
             current: String(completedCount),
-            total: String(selectedSymbols.size),
+            total: String(store.activeSymbols.length),
           })}
         {:else}
           ▶ {t('invest_run_selected', { count: String(selectedSymbols.size) })}
@@ -136,13 +147,13 @@
       <button
         class="flex items-center gap-[var(--space-2)] rounded-[var(--radius-md)] bg-[rgba(138,154,118,0.15)] px-[var(--space-4)] py-[var(--space-2)] text-[12px] font-medium text-[#8a9a76] transition-colors hover:bg-[rgba(138,154,118,0.25)] disabled:cursor-not-allowed disabled:opacity-40"
         disabled={store.running || allAssets.length === 0}
-        onclick={() => runSymbols(allAssets.map((a) => a.symbol))}
+        onclick={() => runSymbols(getRunnableSymbols())}
       >
         {#if store.running && selectedSymbols.size === 0}
           <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-[#8a9a76]"></span>
           {t('invest_committee_running_progress', {
             current: String(completedCount),
-            total: String(allAssets.length),
+            total: String(store.activeSymbols.length),
           })}
         {:else}
           ▶ {t('invest_run_all_holdings')}
@@ -289,6 +300,18 @@
           >
             {result.finalVerdict}
           </span>
+        {/if}
+
+        <!-- Retry button at symbol tag level (P1: visible without expanding) -->
+        {#if (p?.error || (p?.failedSteps && p.failedSteps.size > 0) || result) && !store.streaming}
+          <button
+            class="shrink-0 rounded-[var(--radius-sm)] border border-border px-2 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+            onclick={(e) => { e.stopPropagation(); store.runCommittee([asset.symbol]); }}
+            disabled={store.streaming}
+            title={t('invest_retry')}
+          >
+            🔄
+          </button>
         {/if}
 
         <!-- Expand arrow -->

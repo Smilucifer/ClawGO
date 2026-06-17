@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v5.3.7, 2026-06-12). 委员会单元测试修复。See `docs/changelog.md`.
+**Current phase:** Phase 10+ (v5.4.1, 2026-06-17). 委员会置信度逻辑重构+CLI 静默+hard_truncate 移除。See `docs/changelog.md`.
 
 ## Standard workflow
 
@@ -400,6 +400,10 @@ Key phases and their status:
 | 10+ (v5.3.5) | 委员会指标预计算+工具清理: indicators.rs 共享模块(6 函数+12 测试)/Quant R1 预计算注入({{precomputed_indicators}})/get_company_info 移除(5→4 工具)/get_company_news Tushare→AkShare/价格分位双倍缩放修复/零收盘守卫(缩窄到最近 21 根)/mean_all 回退/RSI 平坦价格守卫/HV20 不足数据提示/Quant Prompt 更新/CommitteeToolsTab 更新/compute_ma period=0 守卫/价格分位窗口动态化/2 轮审查 14 项修复 | [done] |
 | 10+ (v5.3.6) | 委员会解析器增强+现金管理增强: extract_field 6 格式变体/matches_key_line 共享函数/detect_fallback_reason/hard_truncate 关键字段保留/failedSteps 填充+i18n/银证转入转出+微调修正(TradeAction TransferIn/TransferOut+HoldingKind Cash+DB CHECK 迁移)/TradeDialog 三子模式重设计+submitLabel+CASH_MODES/TradeLogTab SYSTEM_ACTIONS+徽章颜色+方向过滤/删除 updateCash 死方法/15 项审查修复(fine_tune→cash_adjust 映射/注释修复/死代码清理/三元折叠/pill-tab 提取/cash_adjust 过滤) | [done] |
 | 10+ (v5.3.7) | 委员会单元测试修复: test_max_chars 断言同步(500/550/550)/test_critical_field_keys_risk 断言同步(风险信号)/HtmlPreview changelog 描述修正(srcdoc 非 allow-same-origin) | [done] |
+| 10+ (v5.3.8) | 委员会直播状态保留+并发限制+字符限制提升: runCommittee 限定重置范围(Run All 增量/Run Selected 选择性)/symbol_complete 替换/completedCount 批次限定/事件处理器优化(非变更事件提前 return)/Semaphore(5) 并发限制/max_chars 700/strip_bold_markers/3 项 simplify 审查修复 | [done] |
+| 10+ (v5.3.9) | 委员会 CLI Executor Phase 2: 供应商统一+可配置并发+6 CLI prompt 构建器+5 数据格式化器+orchestrator CLI-first 重构(移除 client 参数+API fallback)+API dead code 标记+🔄 重试按钮+3 i18n keys | [done] |
+| 10+ (v5.4.0) | 委员会 CLI Executor 代码审查修复: 15 项全量修复 — 正确性(优雅降级×2/tokens_used 文档/settings 失败表面化/RoleComplete 配对), 性能(OnceLock→Mutex/prompt 去重×2/Dreaming 缓存/spawn 并发化), 质量(原子写入/temp 清理/dead_code 修正/risk_metrics 去重) | [done] |
+| 10+ (v5.4.1) | 委员会置信度逻辑重构+CLI 静默+hard_truncate 移除: 移除 hard_truncate/max_chars/critical_field_keys/strip_bold_markers(14 测试)/length_constraint_suffix 简化/hide_console CLI 静默/Gate 3 移除(子弹不再降级置信度)/compute_red_light_score 移除 dry_powder 参数/Quant R2+Risk R2+CIO prompt 子弹规则清理/Mutex 中毒恢复/代码审查修复(3 残留测试) | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

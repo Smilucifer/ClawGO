@@ -5,11 +5,8 @@ use super::analysis::{
 use super::archive::archive_decision_full;
 use super::events::{step_index_for_role, CommitteeEvent};
 use super::parser::{detect_fallback_reason, parse_role_output, ParsedFields};
-use super::roles::{
-    hard_truncate, length_constraint_suffix, load_prompt_for_round, CommitteeRole,
-};
-use super::tools::{execute_tool, role_tool_defs, tool_result_message};
-use crate::invest::llm::governor::global_governor;
+use super::roles::CommitteeRole;
+use super::tools::{execute_tool, tool_result_message};
 use crate::invest::llm::{
     collect_stream, CollectedResponse, InvestLlmClient, LlmConfig, Message, ProviderId, ToolDef,
 };
@@ -21,8 +18,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
-/// Maximum number of symbol pipelines running concurrently.
-const MAX_CONCURRENT_SYMBOLS: usize = 5;
+// Concurrent symbol limit is now configurable via CommitteeConfig.max_concurrent_symbols.
 
 /// 单个标的的上下文数据，注入到各角色 prompt 中
 #[derive(Debug, Clone, Default, Serialize)]
@@ -71,6 +67,17 @@ pub struct CommitteeConfig {
     /// User-configured model override (if set, overrides provider defaults).
     #[serde(default)]
     pub model_override: Option<String>,
+    /// Path to the `--settings` JSON for CLI-based third-party provider routing.
+    /// `None` means use Claude Code's native config (default Anthropic provider).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings_path: Option<std::path::PathBuf>,
+    /// Maximum number of concurrent symbol pipelines (configurable from frontend).
+    #[serde(default = "default_max_concurrent")]
+    pub max_concurrent_symbols: usize,
+}
+
+fn default_max_concurrent() -> usize {
+    5
 }
 
 impl Default for CommitteeConfig {
@@ -84,6 +91,8 @@ impl Default for CommitteeConfig {
             timeout_secs: 120,
             role_providers,
             model_override: None,
+            settings_path: None,
+            max_concurrent_symbols: 5,
         }
     }
 }
@@ -167,12 +176,12 @@ fn get_asset_name(symbol: &str) -> Option<String> {
 /// Loaded once in `run_committee` and passed by reference to avoid redundant DB reads.
 #[derive(Clone)]
 pub(crate) struct PortfolioData {
-    holdings: Vec<crate::storage::invest::portfolio::Holding>,
-    cash: f64,
-    total_notional: f64,
+    pub(crate) holdings: Vec<crate::storage::invest::portfolio::Holding>,
+    pub(crate) cash: f64,
+    pub(crate) total_notional: f64,
     /// `true` when at least one holding's notional was estimated from avg_cost
     /// rather than fetched from a live market price.
-    notional_is_estimated: bool,
+    pub(crate) notional_is_estimated: bool,
 }
 
 impl PortfolioData {
@@ -360,6 +369,7 @@ fn build_portfolio_summary(data: &PortfolioData) -> String {
 }
 
 /// Default temperature for a role.
+#[allow(dead_code)]
 fn default_role_temperature(role: CommitteeRole) -> f64 {
     match role {
         CommitteeRole::Cio => 0.1,
@@ -482,7 +492,7 @@ fn build_user_profile_context() -> String {
 
 /// 计算指定标的的集中度百分比。
 /// 分母 = 总资产（含现金），与前端 CommitteeLiveTab 对齐。
-fn concentration_for_symbol(symbol: &str, portfolio_data: &PortfolioData) -> f64 {
+pub(crate) fn concentration_for_symbol(symbol: &str, portfolio_data: &PortfolioData) -> f64 {
     let total_assets = portfolio_data.total_assets();
     if total_assets <= 0.0 {
         return 0.0;
@@ -502,7 +512,10 @@ fn concentration_for_symbol(symbol: &str, portfolio_data: &PortfolioData) -> f64
 
 /// 构建 Risk 角色的预计算风险指标上下文
 /// 包括集中度、可用子弹、盈亏比、最大回撤、标的风险摘要
-fn build_risk_metrics_context(
+///
+/// This is the canonical implementation shared by both API and CLI paths.
+/// `cli_executor::format_risk_metrics_for_prompt` delegates here.
+pub(crate) fn build_risk_metrics_context(
     portfolio_data: &PortfolioData,
     symbol: &str,
     asset_context: &AssetContext,
@@ -575,6 +588,7 @@ fn build_risk_metrics_context(
 // ---------------------------------------------------------------------------
 
 /// Build an LlmConfig for the given role and provider.
+#[allow(dead_code)]
 fn build_llm_config(
     provider: ProviderId,
     role: CommitteeRole,
@@ -605,6 +619,7 @@ fn resolve_provider(config: &CommitteeConfig, role: CommitteeRole) -> ProviderId
 /// LLM call with simple retry (mirrors `call_with_retry` logic but takes
 /// direct references instead of a closure, avoiding async-closure lifetime
 /// issues).
+#[allow(dead_code)]
 async fn llm_call_with_retry(
     client: &dyn InvestLlmClient,
     system: &str,
@@ -1024,6 +1039,7 @@ async fn refresh_asset_data(
 /// Build the messages array for a role, injecting all prior round outputs as
 /// context, plus macro signal, regime data, emergency buffer, and portfolio
 /// summary.
+#[allow(dead_code)]
 fn build_context_messages(
     round_outputs: &[RoundOutput],
     symbol: &str,
@@ -1087,6 +1103,7 @@ fn build_context_messages(
 /// Appends a format-reminder user message, re-calls the LLM, and uses the
 /// retry result only if it resolves the fallback. Returns the (possibly
 /// upgraded) parsed output and additional tokens consumed.
+#[allow(dead_code)]
 async fn retry_on_fallback(
     client: &dyn InvestLlmClient,
     role: CommitteeRole,
@@ -1108,8 +1125,7 @@ async fn retry_on_fallback(
     messages.push(Message::user(retry_prompt));
     if let Ok(retry_resp) = llm_call_with_retry(client, system_prompt, messages, None, llm_config).await {
         *total_tokens += retry_resp.usage.total_tokens;
-        let (retry_text, retry_truncated) = hard_truncate(&retry_resp.content, role, 0);
-        let mut retry_parsed = parse_role_output(role, &retry_text, retry_truncated);
+        let mut retry_parsed = parse_role_output(role, &retry_resp.content, false);
         retry_parsed.fallback_reason = detect_fallback_reason(role, &retry_parsed);
         if retry_parsed.fallback_reason.is_none() {
             *parsed = retry_parsed;
@@ -1135,6 +1151,7 @@ async fn retry_on_fallback(
 /// normalization is handled upstream in `collect_stream()`, so
 /// `response1.tool_calls` is already populated correctly regardless of the
 /// provider's wire format.
+#[allow(dead_code)]
 async fn run_with_tool_loop(
     client: &dyn InvestLlmClient,
     symbol: &str,
@@ -1264,8 +1281,7 @@ async fn run_with_tool_loop(
             };
         total_tokens += response2.usage.total_tokens;
 
-        let (text, truncated) = hard_truncate(&response2.content, role, 0);
-        let mut parsed = parse_role_output(role, &text, truncated);
+        let mut parsed = parse_role_output(role, &response2.content, false);
         parsed.fallback_reason = detect_fallback_reason(role, &parsed);
 
         retry_on_fallback(client, role, round, system_prompt, messages, llm_config, &mut parsed, &mut total_tokens).await;
@@ -1284,8 +1300,7 @@ async fn run_with_tool_loop(
         ))
     } else {
         // No tool calls — use first-pass content directly
-        let (text, truncated) = hard_truncate(&response1.content, role, 0);
-        let mut parsed = parse_role_output(role, &text, truncated);
+        let mut parsed = parse_role_output(role, &response1.content, false);
         parsed.fallback_reason = detect_fallback_reason(role, &parsed);
 
         retry_on_fallback(client, role, round, system_prompt, messages, llm_config, &mut parsed, &mut total_tokens).await;
@@ -1309,133 +1324,87 @@ async fn run_with_tool_loop(
 // Macro phase
 // ---------------------------------------------------------------------------
 
-async fn run_macro_phase(
-    client: &dyn InvestLlmClient,
-    symbol: &str,
-    config: &CommitteeConfig,
-    portfolio_summary: &str,
-    emitter: &Option<EventEmitter>,
-    asset_context: &AssetContext,
-) -> Result<(RoundOutput, u32), String> {
-    let role = CommitteeRole::Macro;
-    let start = std::time::Instant::now();
-
-    // --- Try CLI path first ---
-    if let Some(cli) = super::cli_executor::CliCommitteeExecutor::global() {
-        let asset_name = get_asset_name(symbol).unwrap_or_else(|| symbol.to_string());
-        let system_prompt = super::cli_executor::build_cli_macro_prompt(
-            &asset_name,
-            symbol,
-            asset_context,
-        );
-        let user_msg = if portfolio_summary.is_empty() {
-            format!(
-                "请分析 {} 的宏观环境和技术面，给出风险信号判断。",
-                symbol
-            )
-        } else {
-            format!(
-                "请分析 {} 的宏观环境和技术面，给出风险信号判断。\n\n{}",
-                symbol, portfolio_summary
-            )
-        };
-
-        log::info!("run_macro_phase: using CLI executor for {}", symbol);
-        let si = step_index_for_role(role, 1);
-        if let Some(ref emit) = emitter {
-            emit(CommitteeEvent::RoleStart {
-                symbol: symbol.to_string(),
-                role,
-                round: 1,
-                step_index: si,
-            });
-        }
-
-        match cli.run_role(&system_prompt, &user_msg, config.timeout_secs).await {
-            Ok(raw_text) => {
-                let (text, truncated) = hard_truncate(&raw_text, role, 0);
-                let mut parsed = parse_role_output(role, &text, truncated);
-                parsed.fallback_reason = detect_fallback_reason(role, &parsed);
-
-                if parsed.fallback_reason.is_some() {
-                    log::warn!(
-                        "run_macro_phase: CLI output has fallback reason for {}: {:?}",
-                        symbol, parsed.fallback_reason
-                    );
-                }
-
-                let latency_ms = start.elapsed().as_millis() as u64;
-                let round_output = RoundOutput {
-                    role,
-                    round: 1,
-                    parsed,
-                    latency_ms,
-                    tokens_used: 0, // CLI doesn't report tokens
-                };
-                if let Some(ref emit) = emitter {
-                    emit(CommitteeEvent::RoleComplete {
-                        symbol: symbol.to_string(),
-                        role,
-                        round: 1,
-                        summary: RoundOutputSummary::from(&round_output),
-                        step_index: si,
-                    });
-                }
-                return Ok((round_output, 0));
-            }
-            Err(e) => {
-                log::warn!(
-                    "run_macro_phase: CLI failed for {}: {}, falling back to API",
-                    symbol, e
-                );
-                // Fall through to API path below
-            }
-        }
-    }
-
-    // --- Fallback: existing API path (unchanged) ---
-    let provider = resolve_provider(config, role);
-    let llm_config = build_llm_config(provider, role, config.timeout_secs, config.model_override.as_deref());
-
-    let asset_name = get_asset_name(symbol).unwrap_or_else(|| symbol.to_string());
-    let system_prompt = format!(
-        "{}{}",
-        load_prompt_for_round(role, 1, &asset_name, symbol, asset_context),
-        length_constraint_suffix(role)
-    );
-    let tool_defs = role_tool_defs(role, 1);
-
-    let governor = global_governor();
-    let _permit = governor.acquire(provider).await;
-
-    let user_msg = if portfolio_summary.is_empty() {
-        format!(
-            "请分析 {} 的宏观环境和技术面，给出风险信号判断。",
-            symbol
-        )
+/// Build the user message for Macro role analysis (shared by CLI and API paths).
+fn build_macro_user_msg(symbol: &str, portfolio_summary: &str) -> String {
+    if portfolio_summary.is_empty() {
+        format!("请分析 {} 的宏观环境和技术面，给出风险信号判断。", symbol)
     } else {
         format!(
             "请分析 {} 的宏观环境和技术面，给出风险信号判断。\n\n{}",
             symbol, portfolio_summary
         )
+    }
+}
+
+/// Run the Macro analysis phase via CLI executor.
+///
+/// **Note:** `tokens_used` is always 0 in CLI mode because `claude --print`
+/// does not report token counts. This is a known limitation — latency_ms
+/// serves as the primary cost proxy instead.
+async fn run_macro_phase(
+    symbol: &str,
+    config: &CommitteeConfig,
+    portfolio_summary: &str,
+    _emitter: &Option<EventEmitter>,
+    asset_context: &AssetContext,
+) -> Result<(RoundOutput, u32), String> {
+    let role = CommitteeRole::Macro;
+    let cli = match super::cli_executor::CliCommitteeExecutor::global() {
+        Some(c) => c,
+        None => {
+            log::warn!("run_macro_phase: CLI executor not initialized, returning degraded output for {symbol}");
+            let mut p = super::parser::ParsedFields {
+                raw_text: "[WORKER_UNAVAILABLE] CLI executor not initialized; Macro analysis skipped.".to_string(),
+                ..Default::default()
+            };
+            p.fallback_reason = Some("cli_executor_none".to_string());
+            return Ok((
+                RoundOutput {
+                    role,
+                    round: 1,
+                    parsed: p,
+                    latency_ms: 0,
+                    tokens_used: 0,
+                },
+                0,
+            ));
+        }
     };
-    let mut messages: Vec<Message> = vec![Message::user(user_msg)];
 
-    let start = std::time::Instant::now();
-
-    run_with_tool_loop(
-        client,
+    let asset_name = get_asset_name(symbol).unwrap_or_else(|| symbol.to_string());
+    let system_prompt = super::cli_executor::build_cli_macro_prompt(
+        &asset_name,
         symbol,
+        asset_context,
+    );
+    let user_msg = build_macro_user_msg(symbol, portfolio_summary);
+
+    log::info!("run_macro_phase: using CLI executor for {}", symbol);
+    // Note: RoleStart/RoleComplete events are emitted by the CALLER
+    // (run_committee), not here. Emitting them here would cause duplicates.
+    let cli_start = std::time::Instant::now();
+
+    let raw_text = cli.run_role(&system_prompt, &user_msg, config.timeout_secs, config.settings_path.as_deref()).await?;
+    let mut parsed = parse_role_output(role, &raw_text, false);
+    parsed.fallback_reason = detect_fallback_reason(role, &parsed);
+
+    if parsed.fallback_reason.is_some() {
+        log::warn!(
+            "run_macro_phase: CLI output has fallback reason for {}: {:?}",
+            symbol, parsed.fallback_reason
+        );
+    }
+
+    let latency_ms = cli_start.elapsed().as_millis() as u64;
+
+    let round_output = RoundOutput {
         role,
-        1,
-        &system_prompt,
-        &mut messages,
-        tool_defs.as_deref(),
-        &llm_config,
-        start,
-        emitter,
-    )
-    .await
+        round: 1,
+        parsed,
+        latency_ms,
+        tokens_used: 0,
+    };
+    Ok((round_output, 0))
 }
 
 // ---------------------------------------------------------------------------
@@ -1447,7 +1416,6 @@ async fn run_macro_phase(
 /// L4 Officer 不参与辩论轮次，只在所有前序分析完成后执行一次行为健康度检查。
 /// Rust 端计算行为红灯评分，LLM 只负责卫语句判定、情绪评估和买点合理性。
 async fn run_l4_officer_phase(
-    client: &dyn InvestLlmClient,
     symbol: &str,
     config: &CommitteeConfig,
     round_outputs: &[RoundOutput],
@@ -1473,7 +1441,6 @@ async fn run_l4_officer_phase(
 
     // 使用通用 role_phase 执行 LLM 调用
     let output = match run_role_phase(
-        client,
         symbol,
         role,
         1,
@@ -1527,19 +1494,6 @@ async fn run_l4_officer_phase(
         })
         .unwrap_or_else(|| concentration_for_symbol(symbol, portfolio_data));
 
-    let dry_powder_cny = output
-        .parsed
-        .dry_powder_cny
-        .or_else(|| {
-            // 从 Risk R1/R2 输出中提取可用子弹
-            round_outputs
-                .iter()
-                .filter(|o| o.role == CommitteeRole::Risk)
-                .rev()
-                .find_map(|o| o.parsed.dry_powder_cny)
-        })
-        .unwrap_or(min_cash_reserve);
-
     // 获取近7天交易次数
     let recent_trade_count = crate::storage::invest::portfolio::count_recent_trades(Some(symbol), 7)
         .unwrap_or(0);
@@ -1548,7 +1502,6 @@ async fn run_l4_officer_phase(
     let (score, level) = super::parser::compute_red_light_score(
         emotional_state,
         concentration_pct,
-        dry_powder_cny,
         recent_trade_count,
     );
 
@@ -1583,120 +1536,138 @@ async fn run_l4_officer_phase(
 // Generic role phase (Quant, Risk, CIO)
 // ---------------------------------------------------------------------------
 
+/// Run a single role phase (Quant, Risk, L4, CIO) via CLI executor.
+///
+/// **Note:** `tokens_used` is always 0 in CLI mode — see `run_macro_phase` docs.
 async fn run_role_phase(
-    client: &dyn InvestLlmClient,
     symbol: &str,
     role: CommitteeRole,
     round: u8,
     config: &CommitteeConfig,
     round_outputs: &[RoundOutput],
-    macro_signal: &str,
-    min_cash_reserve: f64,
-    portfolio_summary: &str,
+    _macro_signal: &str,
+    _min_cash_reserve: f64,
+    _portfolio_summary: &str,
     regime_context: Option<&str>,
-    emitter: &Option<EventEmitter>,
+    _emitter: &Option<EventEmitter>,
     portfolio_data: &PortfolioData,
     asset_context: &AssetContext,
 ) -> Result<RoundOutput, String> {
-    let provider = resolve_provider(config, role);
-    let llm_config = build_llm_config(provider, role, config.timeout_secs, config.model_override.as_deref());
-    let tool_defs = role_tool_defs(role, round);
+    let cli = match super::cli_executor::CliCommitteeExecutor::global() {
+        Some(c) => c,
+        None => {
+            log::warn!("run_role_phase: CLI executor not initialized for {:?} R{} {}", role, round, symbol);
+            let mut p = super::parser::ParsedFields {
+                raw_text: format!("[WORKER_UNAVAILABLE] CLI executor not initialized; {:?} R{} analysis skipped.", role, round),
+                ..Default::default()
+            };
+            p.fallback_reason = Some("cli_executor_none".to_string());
+            return Ok(RoundOutput {
+                role,
+                round,
+                parsed: p,
+                latency_ms: 0,
+                tokens_used: 0,
+            });
+        }
+    };
 
     let asset_name = get_asset_name(symbol).unwrap_or_else(|| symbol.to_string());
-    let mut system_prompt = format!(
-        "{}{}",
-        load_prompt_for_round(role, round, &asset_name, symbol, asset_context),
-        length_constraint_suffix(role)
-    );
 
-    // For CIO and Risk roles, inject active strategy constraints into the system prompt
-    if role == CommitteeRole::Cio || role == CommitteeRole::Risk {
-        let strategy_ctx = build_strategy_context();
-        if !strategy_ctx.is_empty() {
-            system_prompt.push_str("\n\n");
-            system_prompt.push_str(&strategy_ctx);
+    // Build CLI system prompt based on role/round — all data embedded, no tool calls needed
+    let system_prompt = match (role, round) {
+        (CommitteeRole::Quant, 1) => {
+            super::cli_executor::build_cli_quant_r1_prompt(
+                &asset_name, symbol, asset_context, regime_context,
+            )
         }
-    }
+        (CommitteeRole::Quant, _) => {
+            super::cli_executor::build_cli_quant_r2_prompt(
+                &asset_name, symbol, asset_context, round_outputs,
+            )
+        }
+        (CommitteeRole::Risk, 1) => {
+            let strategy_ctx = build_strategy_context();
+            let profile_ctx = build_user_profile_context();
+            let company_news = super::cli_executor::fetch_company_news_for_prompt(symbol).await;
+            super::cli_executor::build_cli_risk_r1_prompt(
+                &asset_name, symbol, asset_context, portfolio_data,
+                &strategy_ctx, &profile_ctx, &company_news,
+            )
+        }
+        (CommitteeRole::Risk, _) => {
+            super::cli_executor::build_cli_risk_r2_prompt(
+                &asset_name, symbol, asset_context, round_outputs,
+            )
+        }
+        (CommitteeRole::L4Officer, _) => {
+            super::cli_executor::build_cli_l4_prompt(
+                &asset_name, symbol, asset_context, round_outputs,
+            )
+        }
+        (CommitteeRole::Cio, _) => {
+            let strategy_ctx = build_strategy_context();
+            let profile_ctx = build_user_profile_context();
+            super::cli_executor::build_cli_cio_prompt(
+                &asset_name, symbol, asset_context, round_outputs,
+                &strategy_ctx, &profile_ctx,
+            )
+        }
+        _ => {
+            return Err(format!("CLI prompt builder not implemented for {:?} R{}", role, round));
+        }
+    };
 
-    // Inject user profile for roles that need user context (CIO always, Risk R1 for liquidity assessment)
-    if role == CommitteeRole::Cio || (role == CommitteeRole::Risk && round == 1) {
-        let profile_ctx = build_user_profile_context();
-        if !profile_ctx.is_empty() {
-            system_prompt.push_str("\n\n");
-            system_prompt.push_str(&profile_ctx);
-        }
-    }
+    // Add rebuttal instruction for Round 2
+    let system_prompt = if round >= 2 && matches!(role, CommitteeRole::Quant | CommitteeRole::Risk) {
+        format!("{}\n\n这是反驳轮（Round 2），请基于之前的分析给出你的反驳或确认。", system_prompt)
+    } else {
+        system_prompt
+    };
 
-    // CIO: inject asset data summary + data quality into system prompt
-    if role == CommitteeRole::Cio {
-        let mut cio_data = Vec::new();
-        if let Some(ref industry) = asset_context.industry {
-            cio_data.push(format!("行业: {}", industry));
-        }
-        if let Some(ref mf) = asset_context.money_flow_daily_summary {
-            cio_data.push(format!("资金: {}", mf));
-        }
-        if let Some(pe) = asset_context.pe_ttm {
-            cio_data.push(format!("PE: {:.1}", pe));
-        }
-        if let Some(ref rating) = asset_context.rating_summary {
-            cio_data.push(format!("评级: {}", rating));
-        }
-        if !cio_data.is_empty() {
-            system_prompt.push_str(&format!(
-                "\n\n【标的数据摘要】\n{}",
-                cio_data.join("\n")
-            ));
-        }
-        if !asset_context.data_quality.is_empty() {
-            system_prompt.push_str(&format!(
-                "\n\n【数据质量警告】以下字段缺失，请在置信度评估中考虑：\n{}",
-                asset_context.data_quality.join("，")
-            ));
-        }
-    }
+    let user_msg = "请分析。";
 
-    let governor = global_governor();
-    let _permit = governor.acquire(provider).await;
-
-    let mut messages = build_context_messages(round_outputs, symbol, macro_signal, min_cash_reserve, portfolio_summary, regime_context, asset_context);
-
-    // Risk R1: 注入组合层面风险指标（集中度/浮盈/回撤）到 user message
-    if role == CommitteeRole::Risk && round == 1 {
-        if let Some(last) = messages.last_mut() {
-            let risk_ctx = build_risk_metrics_context(portfolio_data, symbol, asset_context);
-            if !risk_ctx.is_empty() {
-                last.content.push_str(&format!("\n\n{}", risk_ctx));
-            }
-        }
-    }
-
-    // For Round 2 rebuttal roles, append a rebuttal-specific instruction
-    if round >= 2 && matches!(role, CommitteeRole::Quant | CommitteeRole::Risk) {
-        if let Some(last) = messages.last_mut() {
-            last.content.push_str(
-                "\n\n这是反驳轮（Round 2），请基于之前的分析给出你的反驳或确认。",
-            );
-        }
-    }
-
+    log::info!("run_role_phase: using CLI executor for {:?} R{} {}", role, round, symbol);
     let start = std::time::Instant::now();
 
-    let (output, _tokens) = run_with_tool_loop(
-        client,
-        symbol,
-        role,
-        round,
-        &system_prompt,
-        &mut messages,
-        tool_defs.as_deref(),
-        &llm_config,
-        start,
-        emitter,
-    )
-    .await?;
+    match cli.run_role(&system_prompt, user_msg, config.timeout_secs, config.settings_path.as_deref()).await {
+        Ok(raw_text) => {
+            let mut parsed = parse_role_output(role, &raw_text, false);
+            parsed.fallback_reason = detect_fallback_reason(role, &parsed);
 
-    Ok(output)
+            if parsed.fallback_reason.is_some() {
+                log::warn!(
+                    "run_role_phase: CLI output has fallback reason for {:?} R{} {}: {:?}",
+                    role, round, symbol, parsed.fallback_reason
+                );
+            }
+
+            let latency_ms = start.elapsed().as_millis() as u64;
+
+            Ok(RoundOutput {
+                role,
+                round,
+                parsed,
+                latency_ms,
+                tokens_used: 0,
+            })
+        }
+        Err(e) => {
+            log::warn!("run_role_phase: CLI failed for {:?} R{} {}: {}", role, round, symbol, e);
+            let mut p = super::parser::ParsedFields {
+                raw_text: format!("[WORKER_UNAVAILABLE] CLI failed: {}", e),
+                ..Default::default()
+            };
+            p.fallback_reason = Some(format!("cli_error: {}", e));
+            Ok(RoundOutput {
+                role,
+                round,
+                parsed: p,
+                latency_ms: start.elapsed().as_millis() as u64,
+                tokens_used: 0,
+            })
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1706,7 +1677,6 @@ async fn run_role_phase(
 /// Run Quant + Risk debate rounds. Returns `true` if early convergence was
 /// detected after round 2+.
 async fn run_debate_rounds(
-    client: &dyn InvestLlmClient,
     symbol: &str,
     config: &CommitteeConfig,
     round_outputs: &mut Vec<RoundOutput>,
@@ -1738,7 +1708,6 @@ async fn run_debate_rounds(
             }
 
             let output = run_role_phase(
-                client,
                 symbol,
                 role,
                 round,
@@ -1804,7 +1773,6 @@ async fn run_debate_rounds(
 /// When `emitter` is `Some`, events are emitted at each pipeline step boundary
 /// for real-time frontend streaming via `"committee-event"` Tauri event channel.
 pub(crate) async fn run_committee(
-    client: &dyn InvestLlmClient,
     symbol: &str,
     config: &CommitteeConfig,
     emitter: Option<EventEmitter>,
@@ -1872,7 +1840,7 @@ pub(crate) async fn run_committee(
         }
 
         let (macro_output, macro_tokens) =
-            run_macro_phase(client, symbol, config, &portfolio_summary, &emitter, &asset_context).await?;
+            run_macro_phase(symbol, config, &portfolio_summary, &emitter, &asset_context).await?;
         total_tokens += macro_tokens;
 
         if let Some(ref emit) = emitter {
@@ -1947,7 +1915,6 @@ pub(crate) async fn run_committee(
 
     // ── Step 3: Debate rounds ──────────────────────────────────────────
     let converged = run_debate_rounds(
-        client,
         symbol,
         config,
         &mut round_outputs,
@@ -1965,7 +1932,6 @@ pub(crate) async fn run_committee(
     // ── Step 4: L4 Officer phase (behavioral health check) ────────────
     {
         let l4_output = run_l4_officer_phase(
-            client,
             symbol,
             config,
             &round_outputs,
@@ -1995,7 +1961,6 @@ pub(crate) async fn run_committee(
         }
 
         let cio_output = run_role_phase(
-            client,
             symbol,
             CommitteeRole::Cio,
             1,
@@ -2115,27 +2080,29 @@ pub(crate) async fn run_committee(
 /// per-provider concurrency limits via the governor.
 /// Non-streaming wrapper — no events emitted.
 pub async fn run_committee_batch(
-    client: Arc<dyn InvestLlmClient>,
     symbols: &[String],
     config: &CommitteeConfig,
     dry_run: bool,
 ) -> Vec<Result<CommitteeResult, String>> {
+    // Clear per-symbol caches from prior runs
+    super::cli_executor::clear_dreaming_cache();
+
     // Pre-load portfolio once and share across all tasks to avoid redundant
     // DB reads and price-fetch API calls.
     let portfolio_arc = std::sync::Arc::new(PortfolioData::load_with_timeout(dry_run).await);
-    let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_SYMBOLS));
+    let max_concurrent = config.max_concurrent_symbols.max(1);
+    let semaphore = Arc::new(Semaphore::new(max_concurrent));
 
     let mut handles = Vec::with_capacity(symbols.len());
 
     for symbol in symbols {
-        let client = client.clone();
         let config = config.clone();
         let symbol = symbol.clone();
         let portfolio = portfolio_arc.clone();
-        let permit = semaphore.clone().acquire_owned().await.unwrap();
+        let sem = semaphore.clone();
         handles.push(tokio::spawn(async move {
-            let _permit = permit; // hold until task completes
-            run_committee(&*client, &symbol, &config, None, dry_run, Some(portfolio)).await
+            let _permit = sem.acquire_owned().await.expect("semaphore closed unexpectedly");
+            run_committee(&symbol, &config, None, dry_run, Some(portfolio)).await
         }));
     }
 
@@ -2153,12 +2120,14 @@ pub async fn run_committee_batch(
 /// event emission. Each symbol's pipeline emits `CommitteeEvent`s via the
 /// provided emitter as roles start/complete.
 pub async fn run_committee_batch_stream(
-    client: Arc<dyn InvestLlmClient>,
     symbols: &[String],
     config: &CommitteeConfig,
     emitter: EventEmitter,
     dry_run: bool,
 ) -> Vec<Result<CommitteeResult, String>> {
+    // Clear per-symbol caches from prior runs
+    super::cli_executor::clear_dreaming_cache();
+
     // Emit batch-start event
     emitter(CommitteeEvent::CommitteeStart {
         symbols: symbols.to_vec(),
@@ -2167,20 +2136,20 @@ pub async fn run_committee_batch_stream(
 
     // Pre-load portfolio once and share across all tasks.
     let portfolio_arc = std::sync::Arc::new(PortfolioData::load_with_timeout(dry_run).await);
-    let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_SYMBOLS));
+    let max_concurrent = config.max_concurrent_symbols.max(1);
+    let semaphore = Arc::new(Semaphore::new(max_concurrent));
 
     let mut handles: Vec<(String, _)> = Vec::with_capacity(symbols.len());
 
     for symbol in symbols {
-        let client = client.clone();
         let config = config.clone();
         let symbol = symbol.clone();
         let emitter = emitter.clone();
         let portfolio = portfolio_arc.clone();
-        let permit = semaphore.clone().acquire_owned().await.unwrap();
+        let sem = semaphore.clone();
         handles.push((symbol.clone(), tokio::spawn(async move {
-            let _permit = permit; // hold until task completes
-            run_committee(&*client, &symbol, &config, Some(emitter), dry_run, Some(portfolio)).await
+            let _permit = sem.acquire_owned().await.expect("semaphore closed unexpectedly");
+            run_committee(&symbol, &config, Some(emitter), dry_run, Some(portfolio)).await
         })));
     }
 

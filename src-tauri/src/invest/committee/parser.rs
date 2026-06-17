@@ -558,14 +558,13 @@ fn parse_l4_officer(text: &str, _truncated: bool, parsed: &mut ParsedFields) {
 ///
 /// 评分规则：
 /// - c_score: emotional_state → stable=0, warning=5, danger=10, 其他=3
-/// - k_score: 集中度/子弹 → concentration>60%=10, >40%=6, dry_powder<1000=8, 其他=2
+/// - k_score: 集中度 → concentration>60%=10, >40%=6, 其他=2
 /// - l_score: 近7天交易次数 → >=5=10, >=3=5, <3=0
 /// - score = c_score + k_score + l_score (0-30)
 /// - green: 0-10, yellow: 11-20, red: 21-30
 pub fn compute_red_light_score(
     emotional_state: &str,
     concentration_pct: f64,
-    dry_powder_cny: f64,
     recent_trade_count_7d: i64,
 ) -> (f64, String) {
     let c_score = match emotional_state {
@@ -579,8 +578,6 @@ pub fn compute_red_light_score(
         10.0
     } else if concentration_pct > 40.0 {
         6.0
-    } else if dry_powder_cny < 1000.0 {
-        8.0
     } else {
         2.0
     };
@@ -716,23 +713,6 @@ mod tests {
     fn test_truncated_flag() {
         let parsed = parse_role_output(CommitteeRole::Macro, "SIGNAL: risk_on", true);
         assert!(parsed.truncated);
-    }
-
-    #[test]
-    fn test_hard_truncate_noop() {
-        let short = "short text";
-        let (result, was_truncated) = super::super::roles::hard_truncate(short, CommitteeRole::Macro, 1);
-        assert_eq!(result, short);
-        assert!(!was_truncated);
-    }
-
-    #[test]
-    fn test_hard_truncate_actual() {
-        let long = "这是一段超过250个汉字的测试文本".repeat(50);
-        let (result, was_truncated) =
-            super::super::roles::hard_truncate(&long, CommitteeRole::Quant, 1);
-        assert!(was_truncated);
-        assert!(result.chars().count() <= 250);
     }
 
     // ── Bilingual Chinese field name tests ──────────────────────────────
@@ -933,28 +913,28 @@ mod tests {
 
     #[test]
     fn test_compute_red_light_score_green() {
-        let (score, level) = super::compute_red_light_score("stable", 20.0, 50000.0, 1);
+        let (score, level) = super::compute_red_light_score("stable", 20.0, 1);
         assert_eq!(score, 2.0); // c=0 + k=2 + l=0
         assert_eq!(level, "green");
     }
 
     #[test]
     fn test_compute_red_light_score_yellow() {
-        let (score, level) = super::compute_red_light_score("warning", 50.0, 5000.0, 3);
+        let (score, level) = super::compute_red_light_score("warning", 50.0, 3);
         assert_eq!(score, 16.0); // c=5 + k=6 + l=5
         assert_eq!(level, "yellow");
     }
 
     #[test]
     fn test_compute_red_light_score_red() {
-        let (score, level) = super::compute_red_light_score("danger", 70.0, 500.0, 5);
+        let (score, level) = super::compute_red_light_score("danger", 70.0, 5);
         assert_eq!(score, 28.0); // c=10 + k=10 + l=10
         assert_eq!(level, "red");
     }
 
     #[test]
     fn test_compute_red_light_score_unknown_emotion() {
-        let (score, level) = super::compute_red_light_score("unknown", 30.0, 20000.0, 0);
+        let (score, level) = super::compute_red_light_score("unknown", 30.0, 0);
         assert_eq!(score, 5.0); // c=3 + k=2 + l=0
         assert_eq!(level, "green");
     }
@@ -962,16 +942,16 @@ mod tests {
     #[test]
     fn test_compute_red_light_score_high_concentration() {
         // concentration > 40% but <= 60%
-        let (score, level) = super::compute_red_light_score("stable", 45.0, 10000.0, 0);
+        let (score, level) = super::compute_red_light_score("stable", 45.0, 0);
         assert_eq!(score, 6.0); // c=0 + k=6 + l=0
         assert_eq!(level, "green");
     }
 
     #[test]
-    fn test_compute_red_light_score_low_dry_powder() {
-        // concentration <= 40% but dry_powder < 1000
-        let (score, level) = super::compute_red_light_score("stable", 30.0, 500.0, 0);
-        assert_eq!(score, 8.0); // c=0 + k=8 + l=0
+    fn test_compute_red_light_score_default_k_score() {
+        // concentration <= 40%, default k_score = 2
+        let (score, level) = super::compute_red_light_score("stable", 30.0, 0);
+        assert_eq!(score, 2.0); // c=0 + k=2 + l=0
         assert_eq!(level, "green");
     }
 

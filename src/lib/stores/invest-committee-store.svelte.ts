@@ -19,6 +19,7 @@ export interface InvestLlmConfig {
   selectedProvider: string;
   debateRounds: number;
   timeoutSecs: number;
+  maxConcurrentSymbols?: number;
 }
 
 export interface RoundOutputSummary {
@@ -178,13 +179,19 @@ class InvestCommitteeStore {
     this.streaming = true;
     this.running = true;
     this.runError = null;
-    this.results = [];
-    this.toolCallHistory = [];
     this.activeSymbols = symbols;
 
-    const progress = new Map<string, SymbolProgress>();
+    const runSet = new Set(symbols);
+
+    // Only remove results for symbols being re-run; preserve others
+    this.results = this.results.filter((r) => !runSet.has(r.symbol));
+
+    // Only remove tool call history for symbols being re-run; preserve others
+    this.toolCallHistory = this.toolCallHistory.filter((e) => !runSet.has(e.symbol));
+
+    // Only reset progress for symbols being re-run; preserve others
     for (const s of symbols) {
-      progress.set(s, {
+      this.perSymbolProgress.set(s, {
         activeStep: -1,
         completedSteps: 0,
         completedRounds: [],
@@ -195,7 +202,8 @@ class InvestCommitteeStore {
         failedSteps: new Set(),
       });
     }
-    this.perSymbolProgress = progress;
+    // Trigger reactivity without replacing the entire Map
+    this.perSymbolProgress = new Map(this.perSymbolProgress);
 
     try {
       // Subscribe to streaming events
@@ -206,12 +214,14 @@ class InvestCommitteeStore {
 
       // Invoke the streaming command — results arrive via events,
       // but the final return value is also captured.
-      const results = await invoke<CommitteeResult[]>('run_committee_stream', {
+      const batchResults = await invoke<CommitteeResult[]>('run_committee_stream', {
         symbols,
         debateRounds: debateRounds ?? null,
         dryRun: dryRun ?? false,
       });
-      this.results = results;
+      // Merge: replace results for this batch, preserve results from previous runs
+      const preserved = this.results.filter((r) => !runSet.has(r.symbol));
+      this.results = [...preserved, ...batchResults];
     } catch (e) {
       this.runError = String(e);
     } finally {
@@ -225,14 +235,33 @@ class InvestCommitteeStore {
   // ── Event handler ──────────────────────────────────────────────────────
 
   private _handleCommitteeEvent(event: CommitteeEventType) {
+    // Events that don't mutate perSymbolProgress — handle without copying the Map
+    switch (event.type) {
+      case 'committee_start':
+      case 'done':
+        return;
+      case 'tool_call':
+        this.toolCallHistory = [
+          ...this.toolCallHistory,
+          {
+            symbol: event.symbol,
+            role: event.role,
+            round: event.round,
+            toolName: event.toolName,
+            arguments: event.arguments,
+            result: event.result,
+            success: event.success,
+            latencyMs: event.latencyMs,
+            timestamp: Date.now(),
+          },
+        ];
+        return;
+    }
+
+    // Mutating events — copy the Map for reactivity
     const progress = new Map(this.perSymbolProgress);
 
     switch (event.type) {
-      case 'committee_start': {
-        // Already initialized in runCommittee
-        break;
-      }
-
       case 'role_start': {
         const p = progress.get(event.symbol);
         if (p) {
@@ -294,24 +323,6 @@ class InvestCommitteeStore {
         break;
       }
 
-      case 'tool_call': {
-        this.toolCallHistory = [
-          ...this.toolCallHistory,
-          {
-            symbol: event.symbol,
-            role: event.role,
-            round: event.round,
-            toolName: event.toolName,
-            arguments: event.arguments,
-            result: event.result,
-            success: event.success,
-            latencyMs: event.latencyMs,
-            timestamp: Date.now(),
-          },
-        ];
-        break;
-      }
-
       case 'symbol_complete': {
         const p = progress.get(event.symbol);
         if (p) {
@@ -322,8 +333,11 @@ class InvestCommitteeStore {
             result: event.result,
           });
         }
-        // Also append to results incrementally
-        if (!this.results.find((r) => r.symbol === event.symbol)) {
+        // Replace existing result for this symbol, or append if new
+        const existingIdx = this.results.findIndex((r) => r.symbol === event.symbol);
+        if (existingIdx >= 0) {
+          this.results = this.results.map((r, i) => (i === existingIdx ? event.result : r));
+        } else {
           this.results = [...this.results, event.result];
         }
         break;
@@ -337,10 +351,6 @@ class InvestCommitteeStore {
         break;
       }
 
-      case 'done': {
-        // Final event — streaming is effectively done
-        break;
-      }
     }
 
     this.perSymbolProgress = progress;

@@ -464,7 +464,7 @@ async fn exec_macro_snapshot() -> Result<String, String> {
     format_macro_entries(&entries)
 }
 
-fn format_macro_entries(entries: &[macro_cache::MacroCacheEntry]) -> Result<String, String> {
+pub fn format_macro_entries(entries: &[macro_cache::MacroCacheEntry]) -> Result<String, String> {
     if entries.is_empty() {
         return Ok("宏观指标缓存为空，请稍后重试".to_string());
     }

@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use super::parser::matches_key_line;
-
 // ---------------------------------------------------------------------------
 // Committee roles (4 variants — R1/R2 handled by Round enum)
 // ---------------------------------------------------------------------------
@@ -75,16 +73,6 @@ impl CommitteeRole {
         }
     }
 
-    /// Max Chinese characters for this role's output (RFC D9).
-    pub fn max_chars(&self) -> usize {
-        match self {
-            Self::Macro => 500,
-            Self::Quant | Self::Risk => 550,
-            Self::Cio => 600,
-            Self::L4Officer => 250,
-        }
-    }
-
     /// Default prompt text for this role (R1 variant).
     pub fn default_prompt(&self) -> &'static str {
         match self {
@@ -110,16 +98,6 @@ impl CommitteeRole {
         matches!(self, Self::L4Officer)
     }
 
-    /// Critical field keys for this role (used by hard_truncate preservation and fallback detection).
-    pub fn critical_field_keys(&self) -> &'static [&'static str] {
-        match self {
-            CommitteeRole::Macro => &["SIGNAL", "信号"],
-            CommitteeRole::Quant => &["SIGNAL", "信号", "REGIME", "市场状态"],
-            CommitteeRole::Risk => &["SIGNAL", "信号", "风险信号"],
-            CommitteeRole::Cio => &["VERDICT", "裁决"],
-            CommitteeRole::L4Officer => &["GUARD_CLAUSE", "卫语句"],
-        }
-    }
 }
 
 impl std::fmt::Display for CommitteeRole {
@@ -238,9 +216,8 @@ pub fn save_prompt(role: CommitteeRole, round: u8, content: &str) -> Result<(), 
         .map_err(|e| format!("write prompt: {e}"))
 }
 
-/// Append length constraint suffix to a prompt.
+/// Append length constraint suffix to a prompt (guidance only, no hard truncation).
 pub fn length_constraint_suffix(role: CommitteeRole) -> String {
-    let max = role.max_chars();
     let critical_hint = match role {
         CommitteeRole::Macro => "SIGNAL",
         CommitteeRole::Quant => "SIGNAL 和 REGIME",
@@ -249,95 +226,9 @@ pub fn length_constraint_suffix(role: CommitteeRole) -> String {
         CommitteeRole::L4Officer => "GUARD_CLAUSE",
     };
     format!(
-        "\n\n[输出限制：你的回复必须控制在{}个中文字符以内。先输出关键字段（{}），再输出详细分析。]",
-        max, critical_hint
+        "\n\n[输出要求：保持简洁，先输出关键字段（{}），再输出详细分析。]",
+        critical_hint
     )
-}
-
-/// Hard-truncate LLM output to role's max_chars, preserving critical fields.
-///
-/// Strategy:
-/// 1. If text fits within max_chars, return as-is.
-/// 2. Extract lines containing critical fields.
-/// 3. Truncate non-critical lines to fit within remaining budget.
-/// 4. Reconstruct with critical fields appended at the end.
-pub fn hard_truncate(text: &str, role: CommitteeRole, _attempt: u32) -> (String, bool) {
-    let max = role.max_chars();
-    if text.chars().count() <= max {
-        return (text.to_string(), false);
-    }
-
-    let critical_keys = role.critical_field_keys();
-
-    // Split lines into critical and non-critical
-    let mut critical_lines: Vec<String> = Vec::new();
-    let mut non_critical_lines: Vec<String> = Vec::new();
-
-    for line in text.lines() {
-        let trimmed = line.trim();
-        let is_critical = critical_keys
-            .iter()
-            .any(|key| matches_key_line(trimmed, key).is_some());
-        if is_critical {
-            critical_lines.push(line.to_string());
-        } else {
-            non_critical_lines.push(line.to_string());
-        }
-    }
-
-    // Calculate budget for non-critical content
-    let critical_chars: usize = critical_lines.iter().map(|l| l.chars().count()).sum();
-
-    // If critical content alone exceeds max, keep only the first critical line truncated
-    if critical_chars > max && !critical_lines.is_empty() {
-        let first = &critical_lines[0];
-        let take = max.saturating_sub(3); // reserve for "..."
-        let truncated_line: String = first.chars().take(take).collect();
-        return (format!("{}...", truncated_line), true);
-    }
-
-    let critical_newlines = critical_lines.len().saturating_sub(1); // between critical lines
-    let join_newline = if !critical_lines.is_empty() && !non_critical_lines.is_empty() { 1 } else { 0 };
-    let total_overhead = critical_newlines + join_newline;
-    let budget = max.saturating_sub(critical_chars).saturating_sub(total_overhead);
-
-    // Truncate non-critical lines to fit budget
-    let mut truncated_non_critical = String::new();
-    let mut current_chars = 0;
-    for line in &non_critical_lines {
-        let line_chars = line.chars().count();
-        if current_chars + line_chars + 1 <= budget {
-            if !truncated_non_critical.is_empty() {
-                truncated_non_critical.push('\n');
-                current_chars += 1;
-            }
-            truncated_non_critical.push_str(line);
-            current_chars += line_chars;
-        } else {
-            // Try to fit partial line
-            let remaining = budget.saturating_sub(current_chars).saturating_sub(1);
-            if remaining > 10 {
-                // Only add partial if meaningful (>10 chars)
-                if !truncated_non_critical.is_empty() {
-                    truncated_non_critical.push('\n');
-                }
-                let partial: String = line.chars().take(remaining).collect();
-                truncated_non_critical.push_str(&partial);
-            }
-            break;
-        }
-    }
-
-    // Reconstruct: non-critical first, then critical fields
-    let mut result = truncated_non_critical;
-    for critical_line in &critical_lines {
-        if !result.is_empty() {
-            result.push('\n');
-        }
-        result.push_str(critical_line);
-    }
-
-    (result, true)
 }
 
 // ---------------------------------------------------------------------------
@@ -497,8 +388,6 @@ const QUANT_R2_PROMPT: &str = r#"你是量化技术分析师，刚读完 Risk Of
   → 跟 Risk 同向放大没问题，可改 SIGNAL 到 bearish
 
 **改判 SIGNAL 的合法触发条件**（在 REGIME 允许的范围内）：
-- Risk 揭示子弹（dry_powder）≤ 单笔最小 cap 且 Round 1 是 bullish → 可改 neutral
-  （加仓 actionability=0，但仅在 REGIME 不是 range_bound 底部时适用）
 - 你 STRENGTH 想调整 ≥ 3 档 → 必须重新评估 SIGNAL 方向是否仍然成立
 
 **你的职责范围（只输出以下内容）**：
@@ -595,7 +484,6 @@ const RISK_R2_PROMPT: &str = r#"你是 Risk Officer，刚读完 Quant 对 {{asse
 1. **Quant 自己给 bearish 且 STRENGTH ≥ 7**：跟随 Quant 同向放大
 2. **用户上下文恶化**（与 Quant 无关，是你独有的视角）：
    - 用户 7 天内多次买入同资产 → 情绪化追涨，给 high_risk
-   - DRY_POWDER_CNY < 1000 → 流动性风险升级
 
 ## 禁止的升级 trigger
 
@@ -657,7 +545,7 @@ const CIO_PROMPT: &str = r#"你是首席投资官 (CIO)，刚听完所有前序�
 1. **三方一致**: confidence ≥ 0.85，按一致方向给 verdict
 2. **Quant vs Macro 分歧**: 看 Risk Officer 倒向哪边
 3. **Risk Officer 给 high_risk**: 即便 Quant + Macro 都看多，也必须降级
-4. **CONCENTRATION_PCT > 60%**: 任何加仓金额必须 ≤ 子弹的 10% 且做分批
+4. **CONCENTRATION_PCT > 60%**: 任何加仓金额必须 ≤ 可用现金的 10% 且做分批
 
 **现金仓位机会成本规则（强制，必读）**：
 - **CONCENTRATION_PCT < 20%**：**不允许给 HOLD**，默认至少给 ACCUMULATE
@@ -670,8 +558,8 @@ const CIO_PROMPT: &str = r#"你是首席投资官 (CIO)，刚听完所有前序�
   → 原因：安全约束 > 机会成本约束。宁可不行动，也不在危险时强制加仓。
 
 **Verdict 选项**：
-- `BUY` - 一次建满仓（≥ 子弹 50%）
-- `ACCUMULATE` - 分批建仓/加仓（**100% 现金时的 default**）
+- `BUY` - 一次建满仓（≥ 可用现金 50%）
+- `ACCUMULATE` - 分批建仓/加仓（**满仓时的 default**）
 - `HOLD` - 维持现状，**只在已有仓位 20%+ 时合法**（安全阀触发时低仓位也合法）
 - `TRIM` - 部分减仓
 - `SELL` - 全部清仓
@@ -811,41 +699,10 @@ mod tests {
     }
 
     #[test]
-    fn test_max_chars() {
-        assert_eq!(CommitteeRole::Macro.max_chars(), 500);
-        assert_eq!(CommitteeRole::Quant.max_chars(), 550);
-        assert_eq!(CommitteeRole::Risk.max_chars(), 550);
-        assert_eq!(CommitteeRole::Cio.max_chars(), 600);
-        assert_eq!(CommitteeRole::L4Officer.max_chars(), 250);
-    }
-
-    #[test]
     fn test_default_prompts_not_empty() {
         for role in CommitteeRole::all() {
             assert!(!role.default_prompt().is_empty(), "{:?} default prompt empty", role);
         }
-    }
-
-    #[test]
-    fn test_length_constraint_suffix() {
-        let suffix = length_constraint_suffix(CommitteeRole::Macro);
-        assert!(suffix.contains("400"));
-    }
-
-    #[test]
-    fn test_hard_truncate_noop() {
-        let short = "short text";
-        let (result, was_truncated) = hard_truncate(short, CommitteeRole::Macro, 1);
-        assert_eq!(result, short);
-        assert!(!was_truncated);
-    }
-
-    #[test]
-    fn test_hard_truncate_actual() {
-        let long = "这是一段超过250个汉字的测试文本".repeat(50);
-        let (result, was_truncated) = hard_truncate(&long, CommitteeRole::Quant, 1);
-        assert!(was_truncated);
-        assert!(result.chars().count() <= 250);
     }
 
     #[test]
@@ -941,38 +798,6 @@ mod tests {
         assert_eq!(filenames.len(), unique.len(), "duplicate filenames detected");
     }
 
-    // ── Task 7: Critical field keys tests ──────────────────────────────
-
-    #[test]
-    fn test_critical_field_keys_macro() {
-        let keys = CommitteeRole::Macro.critical_field_keys();
-        assert_eq!(keys, &["SIGNAL", "信号"]);
-    }
-
-    #[test]
-    fn test_critical_field_keys_quant() {
-        let keys = CommitteeRole::Quant.critical_field_keys();
-        assert_eq!(keys, &["SIGNAL", "信号", "REGIME", "市场状态"]);
-    }
-
-    #[test]
-    fn test_critical_field_keys_risk() {
-        let keys = CommitteeRole::Risk.critical_field_keys();
-        assert_eq!(keys, &["SIGNAL", "信号", "风险信号"]);
-    }
-
-    #[test]
-    fn test_critical_field_keys_cio() {
-        let keys = CommitteeRole::Cio.critical_field_keys();
-        assert_eq!(keys, &["VERDICT", "裁决"]);
-    }
-
-    #[test]
-    fn test_critical_field_keys_l4() {
-        let keys = CommitteeRole::L4Officer.critical_field_keys();
-        assert_eq!(keys, &["GUARD_CLAUSE", "卫语句"]);
-    }
-
     // ── Task 9: Prompt constraint ordering ─────────────────────────────
 
     #[test]
@@ -1006,32 +831,4 @@ mod tests {
         );
     }
 
-    // ── Task 8: Critical field preservation in truncation ──────────────
-
-    #[test]
-    fn test_hard_truncate_preserves_critical_fields() {
-        // Long text with SIGNAL at the end — should be preserved
-        let long_preamble = "这是一段很长的分析文本。".repeat(100);
-        let text = format!("{}SIGNAL: risk_on\nSTRENGTH: 7", long_preamble);
-        let (result, truncated) = hard_truncate(&text, CommitteeRole::Macro, 1);
-        assert!(truncated);
-        assert!(result.contains("SIGNAL: risk_on"), "Critical field SIGNAL must be preserved");
-    }
-
-    #[test]
-    fn test_hard_truncate_preserves_verdict_for_cio() {
-        let long_preamble = "详细分析过程...".repeat(100);
-        let text = format!("{}VERDICT: BUY\nCONFIDENCE: 0.8", long_preamble);
-        let (result, truncated) = hard_truncate(&text, CommitteeRole::Cio, 1);
-        assert!(truncated);
-        assert!(result.contains("VERDICT: BUY"), "Critical field VERDICT must be preserved");
-    }
-
-    #[test]
-    fn test_hard_truncate_noop_when_short() {
-        let text = "SIGNAL: risk_on\nSTRENGTH: 7";
-        let (result, was_truncated) = hard_truncate(text, CommitteeRole::Macro, 1);
-        assert!(!was_truncated);
-        assert_eq!(result, text);
-    }
 }

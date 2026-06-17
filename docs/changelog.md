@@ -1,5 +1,130 @@
 # Changelog / 更新日志
 
+## v5.4.1 (2026-06-17)
+
+### 委员会置信度逻辑重构+CLI 静默+hard_truncate 移除
+
+**移除 hard_truncate 字符截断 (3 项):**
+
+1. **完全移除 `hard_truncate`**: CLI 模式下 Claude 自身管理输出长度，prompt guidance 足够。硬截断是"缺少关键字段"解析失败的根因。
+2. **删除相关函数**: `max_chars()`、`critical_field_keys()`、`strip_bold_markers()`、`hard_truncate()` 及 14 个相关测试。
+3. **`length_constraint_suffix` 简化**: 移除具体字符数引用，改为 guidance-only：`"保持简洁，先输出关键字段，再输出详细分析"`。
+
+**CLI 进程静默 (1 项):**
+
+4. **`cli_executor.rs` 添加 `.hide_console()`**: 委员会 CLI spawn 设置 `CREATE_NO_WINDOW`，Windows 下不再弹出 cmd 窗口。
+
+**置信度逻辑重构 (6 项):**
+
+5. **移除 Gate 3（子弹降级）**: `cio_sanity_check` 不再因 `dry_powder < min_cash_reserve` 强制 `verdict=HOLD + confidence≤0.4`。子弹不足是仓位状态，不是决策质量问题。`gate3_pass` 字段保留（backward compat），始终为 `true`。
+6. **红灯评分移除 dry_powder 规则**: `compute_red_light_score` 删除 `dry_powder_cny` 参数，移除 `dry_powder<1000 → k_score=8` 分支。k_score 仅基于集中度：`>60%→10, >40%→6, else→2`。
+7. **Quant R2 prompt**: 删除"子弹 ≤ 单笔最小 cap → 可改 neutral"规则。信号评估应独立于资金状态。
+8. **Risk R2 prompt**: 删除"DRY_POWDER_CNY < 1000 → 流动性风险升级"规则。
+9. **CIO prompt**: `子弹的 10%` → `可用现金的 10%`，`子弹 50%` → `可用现金 50%`，`子弹不足时的 default` → `满仓时的 default`。
+10. **`orchestrator.rs`**: 移除 `dry_powder_cny` 提取逻辑（L4 Officer phase），`compute_red_light_score` 调用从 4 参数改为 3 参数。
+
+**代码审查修复 (1 项):**
+
+11. **Mutex 中毒恢复**: `CLI_EXECUTOR.lock().ok()?` → `.lock().unwrap_or_else(|e| e.into_inner())`，中毒后可自动恢复而不永久不可用。
+
+## v5.4.0 (2026-06-17)
+
+### 委员会 CLI Executor 代码审查修复 — 15 项全量修复
+
+**🔴 正确性 (5 项):**
+
+1. **`run_macro_phase` 优雅降级**: CLI executor 未初始化时返回 `[WORKER_UNAVAILABLE]` degraded output 而非传播 Err 中断整个 pipeline。
+2. **`run_role_phase` 优雅降级**: 同上，CLI 调用失败也返回 degraded output（含 `fallback_reason`），pipeline 继续执行后续角色。
+3. **`tokens_used` 文档**: `run_macro_phase` 和 `run_role_phase` 添加文档说明 CLI 模式下 token 计数始终为 0（`claude --print` 不报告 usage）。
+4. **Settings JSON 失败表面化**: `build_committee_config` 改为返回 `Result`，非默认供应商配置生成失败时返回明确中文错误，不再静默回退到错误供应商。
+5. **RoleStart/RoleComplete 配对**: 通过 Fix 2 间接解决 — `run_role_phase` 永不返回 Err，debate 循环中 RoleComplete 总能发出。
+
+**🟡 性能/资源 (5 项):**
+
+6. **OnceLock → Mutex**: `CliCommitteeExecutor` 全局单例改用 `Mutex<Option<...>>`，允许 claude 安装后自动重试初始化，无需重启应用。`CliCommitteeExecutor` 实现 `Clone`（`Semaphore` 包裹 `Arc`）。
+7. **Quant R1 prompt 去重**: 移除 `format_asset_context_for_prompt` 和 `precomputed_indicators` 的重复追加 — `load_prompt_for_round` 已通过 `{{placeholder}}` 替换注入。
+8. **CIO prompt 去重**: 同上，移除重复的 asset context 追加。
+9. **Dreaming 缓存**: 新增 `DREAMING_CACHE`（`once_cell::sync::Lazy<Mutex<HashMap>>`），Risk R1 和 L4 共享同一 symbol 的 DB 查询结果，batch 运行前 `clear_dreaming_cache()` 清空。
+10. **Spawn 并发化**: `acquire_owned().await` 从 for 循环体移入 `tokio::spawn` 块内，task 创建不再串行阻塞。
+
+**🟢 代码质量 (5 项):**
+
+11. **原子文件写入**: `patch_settings_model` 改用 tmp+rename 模式，避免 crash 时部分写入。
+12. **Temp 文件清理**: `write_committee_settings_json` 调用前自动清理旧 `session-committee-*.json` 文件。
+13. **`resolve_provider` 去除 dead_code**: 该函数在 archive 路径中确实被使用，移除错误的 `#[allow(dead_code)]`。
+14. **`format_risk_metrics_for_prompt` 去重**: 改为委托调用 orchestrator 的 `build_risk_metrics_context`，消除 ~50 行重复逻辑。`build_risk_metrics_context` 标记 `pub(crate)` 并去除 `#[allow(dead_code)]`。
+15. **原子写入附带**: `patch_settings_model` 使用 `path.with_extension("json.tmp")` + `fs::rename`。
+
+**涉及文件 (3):**
+- `src-tauri/src/invest/committee/orchestrator.rs` — Fix 1/2/3/5/6/10/13
+- `src-tauri/src/invest/committee/cli_executor.rs` — Fix 6/7/8/9/11/12/14
+- `src-tauri/src/commands/invest.rs` — Fix 4
+
+---
+
+## v5.3.9 (2026-06-17)
+
+### 委员会 CLI Executor Phase 2 — 全角色 CLI 模式 + 供应商统一 (7 tasks)
+
+**Phase 2 核心改动:**
+
+1. **Task 1 — 供应商统一 + CLI `--settings`**: `build_committee_config` 调用 `write_committee_settings_json` 生成临时 settings JSON，从 `UserSettings.platform_credentials` 读取供应商凭据。`CliCommitteeExecutor::run_role` 新增 `settings_path` 参数，注入 `--settings` 到 CLI 参数。
+2. **Task 2 — 可配置并发**: `CommitteeConfig.max_concurrent_symbols` 替代硬编码 `MAX_CONCURRENT_SYMBOLS = 5`，前端 `ProviderConfigPanel` 新增并发数选择器（1/2/3/5/8/10）。
+3. **Task 3 — CLI prompt 构建器**: 新增 `build_cli_quant_r1_prompt`、`build_cli_quant_r2_prompt`、`build_cli_risk_r1_prompt`、`build_cli_risk_r2_prompt`、`build_cli_l4_prompt`、`build_cli_cio_prompt` 6 个构建器，将预取数据嵌入 system prompt。新增 `format_asset_context_for_prompt`、`format_risk_metrics_for_prompt`、`format_round_outputs_for_prompt`、`format_dreaming_insights_for_prompt`、`fetch_company_news_for_prompt` 5 个数据格式化函数。
+4. **Task 4 — Orchestrator CLI-first 重构**: `run_committee`、`run_debate_rounds`、`run_role_phase`、`run_l4_officer_phase`、`run_macro_phase` 移除 `client` 参数。`run_role_phase` 改为根据角色/轮次调用 CLI prompt 构建器 + `cli.run_role()`。`run_macro_phase` 移除 API fallback，纯 CLI 模式。
+5. **Task 5 — API 代码清理**: `build_llm_config`、`resolve_provider`、`llm_call_with_retry`、`build_context_messages`、`retry_on_fallback`、`run_with_tool_loop`、`build_risk_metrics_context`、`default_role_temperature` 标记 `#[allow(dead_code)]`（API 调用链已断开，函数保留供未来参考）。
+6. **Task 6 — 重试 UI**: `CommitteeLiveTab` 符号标签新增 🔄 重试按钮，调用 `store.runCommittee([symbol])`。
+7. **Task 7 — 验证**: `cargo check` 零警告通过，`npm run check` + `npm run i18n:check` 通过。
+
+**CLI prompt 注入数据清单:**
+- **Quant R1**: AssetContext 全量 + 预计算技术指标 + REGIME 上下文 + 近期裁决
+- **Quant R2**: 前序轮次输出（Quant R1 + Risk R1）
+- **Risk R1**: 预计算风险指标 + AkShare 个股新闻 + 投资洞察 + 近期裁决 + 策略上下文 + 用户档案
+- **Risk R2**: 前序轮次输出（Quant R1/R2 + Risk R1）
+- **L4 Officer**: 前序轮次输出 + 投资洞察
+- **CIO**: 前序轮次输出 + AssetContext + 策略上下文 + 用户档案 + 数据质量警告
+
+**涉及文件 (8):**
+- `src-tauri/src/invest/committee/cli_executor.rs` — 6 个 prompt 构建器 + 5 个格式化函数 + `fetch_company_news_for_prompt`(async)
+- `src-tauri/src/invest/committee/orchestrator.rs` — CLI-first 重构 + API dead code 标记 + PortfolioData 字段 pub(crate)
+- `src-tauri/src/commands/invest.rs` — 移除 OpenAiCompatClient 创建 + run_committee/run_committee_stream 简化
+- `src/lib/components/invest/ProviderConfigPanel.svelte` — 供应商统一 + 并发数选择器
+- `src/lib/components/invest/CommitteeLiveTab.svelte` — 🔄 重试按钮
+- `src/lib/stores/invest-committee-store.svelte.ts` — maxConcurrentSymbols 类型
+- `messages/en.json` + `messages/zh-CN.json` — 3 个新 i18n key
+
+---
+
+## v5.3.8 (2026-06-17)
+
+### 委员会直播状态保留 + 并发限制 + 字符限制提升 (3 commits)
+
+**状态保留 (Part A, 4 项):**
+1. **`runCommittee` 限定重置范围**: `results`、`perSymbolProgress`、`toolCallHistory` 只清除本次运行的符号，保留其他符号已有状态。Run All 增量模式（跳过已完成），Run Selected 尊重用户选择（可重新运行已完成的）。
+2. **`symbol_complete` 替换而非追加**: 事件处理器用 `findIndex + map` 替换已有结果，避免重复条目。
+3. **`completedCount` 限定当前批次**: 只计算 `activeSymbols` 中已完成的符号，避免跨批次计数溢出。
+4. **事件处理器优化**: `tool_call`/`committee_start`/`done` 等非变更事件提前 return，避免无意义的 `perSymbolProgress` Map 全量拷贝。
+
+**并发限制 (Part B, 2 项):**
+5. **`MAX_CONCURRENT_SYMBOLS = 5`**: `run_committee_batch` 和 `run_committee_batch_stream` 使用 `tokio::sync::Semaphore` 限制同时运行的 pipeline 数量，for 循环内 `acquire_owned().await` 阻塞直到有空位。
+6. **Governor 互补**: 符号级限制控制 pipeline 并发，Governor（per-provider 8 并发）限制 LLM API 调用并发，两者不冲突。
+
+**字符限制提升 (Part C, 3 项):**
+7. **`max_chars()` 提升**: Quant/Risk 550→700，CIO 600→700，缓解 LLM 输出截断问题。
+8. **`strip_bold_markers` 预处理**: `hard_truncate` 入口去除 `**` 粗体标记，节约字符预算给实际内容。
+9. **测试断言同步**: `test_max_chars`、`test_length_constraint_suffix`、`test_hard_truncate_actual` 断言更新。
+
+**代码审查修复 (3 项):**
+10. **Fix 1: Run Selected 进度分母**: `selectedSymbols.size` → `store.activeSymbols.length`，避免运行中选择变化导致分母错误。
+11. **Fix 2: 冗余 `runSetLocal` 移除**: 复用已有的 `runSet`，消除重复 Set 创建。
+12. **Fix 3: 非变更事件 Map 拷贝优化**: `tool_call`/`committee_start`/`done` 事件不再触发 `perSymbolProgress` 全量拷贝和 Svelte 重渲染。
+
+**涉及文件 (4):**
+- `src/lib/stores/invest-committee-store.svelte.ts` — runCommittee 状态保留 + symbol_complete 替换 + 事件处理器优化
+- `src/lib/components/invest/CommitteeLiveTab.svelte` — Run All 过滤已完成 + completedCount 限定批次 + 进度分母修复
+- `src-tauri/src/invest/committee/orchestrator.rs` — Semaphore(5) 并发限制
+- `src-tauri/src/invest/committee/roles.rs` — max_chars 700 + strip_bold_markers + 测试更新
+
 ## v5.3.7 (2026-06-12)
 
 ### 委员会单元测试修复 (1 项)

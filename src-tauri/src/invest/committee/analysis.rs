@@ -118,7 +118,7 @@ pub struct SentinelOverride {
 pub struct SanityCheckResult {
     pub gate1_pass: bool, // signal consistency
     pub gate2_pass: bool, // concentration < 40%
-    pub gate3_pass: bool, // dry powder sufficient
+    pub gate3_pass: bool, // reserved (always true — dry powder no longer degrades confidence)
     pub gate4_pass: bool, // position-aware confidence adjustment
     pub final_verdict: String,
     pub final_confidence: f64,
@@ -130,8 +130,8 @@ pub fn cio_sanity_check(
     cio_parsed: &ParsedFields,
     round_outputs: &[RoundOutput],
     macro_signal: &str,
-    min_cash_reserve: f64,
-    actual_cash_cny: Option<f64>,
+    _min_cash_reserve: f64,
+    _actual_cash_cny: Option<f64>,
     actual_concentration: Option<f64>,
 ) -> SanityCheckResult {
     let mut result = SanityCheckResult {
@@ -180,29 +180,8 @@ pub fn cio_sanity_check(
         }
     }
 
-    // Gate 3 -- Dry powder check
-    // Only enforce when data is available; missing data does NOT force HOLD.
-    // Fallback chain: CIO parsed → any round output → actual portfolio cash.
-    let dry_powder = cio_parsed.dry_powder_cny.or_else(|| {
-        round_outputs
-            .iter()
-            .filter_map(|o| o.parsed.dry_powder_cny)
-            .last()
-    }).or(actual_cash_cny);
-    if let Some(dp) = dry_powder {
-        if dp < min_cash_reserve {
-            result.gate3_pass = false;
-            result.final_verdict = "HOLD".to_string();
-            result.final_confidence = result.final_confidence.min(0.4);
-            result.notes.push(format!(
-                "G3: 可用子弹 {:.2} < 最低现金储备 {:.2}，降级为HOLD",
-                dp, min_cash_reserve
-            ));
-        }
-    } else {
-        // Data unavailable — note it but don't suppress the verdict
-        result.notes.push("G3: 子弹数据不可用，跳过检查".to_string());
-    }
+    // Gate 3 removed — dry powder (cash availability) no longer degrades confidence
+    // or forces verdict changes. Cash state is a portfolio position, not a signal quality issue.
 
     // Gate 4 -- Position-aware confidence adjustment
     // Reuses `concentration` from Gate 2 (same fallback chain).
@@ -386,21 +365,6 @@ mod tests {
     }
 
     #[test]
-    fn test_sanity_gate3_low_dry_powder() {
-        let cio = ParsedFields {
-            verdict: Some("BUY".to_string()),
-            confidence: Some(0.7),
-            dry_powder_cny: Some(50000.0),
-            ..Default::default()
-        };
-        let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0, None, None);
-        assert!(!result.gate3_pass);
-        assert_eq!(result.final_verdict, "HOLD");
-        assert!(result.final_confidence <= 0.4);
-    }
-
-    #[test]
     fn test_sanity_worker_unavailable() {
         let cio = ParsedFields {
             verdict: Some("BUY".to_string()),
@@ -438,22 +402,6 @@ mod tests {
         assert!(result.gate3_pass);
         assert!(result.gate4_pass);
         assert_eq!(result.final_verdict, "ACCUMULATE");
-    }
-
-    #[test]
-    fn test_sanity_gate3_uses_cio_dry_powder_directly() {
-        // When CIO output contains DRY_POWDER_CNY, it should be used directly
-        // instead of falling back to round_outputs.
-        let cio = ParsedFields {
-            verdict: Some("BUY".to_string()),
-            confidence: Some(0.7),
-            dry_powder_cny: Some(50000.0), // below emergency buffer
-            ..Default::default()
-        };
-        let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0, None, None);
-        assert!(!result.gate3_pass);
-        assert_eq!(result.final_verdict, "HOLD");
     }
 
     #[test]
@@ -497,22 +445,6 @@ mod tests {
         let result = cio_sanity_check(&cio, &outputs, "risk_off", 100000.0, None, None);
         assert!(!result.gate4_pass);
         assert!(result.final_confidence <= 0.4);
-    }
-
-    #[test]
-    fn test_sanity_gate3_fallback_to_actual_cash() {
-        // When CIO and round outputs have no dry_powder_cny,
-        // actual_cash_cny should be used as fallback.
-        let cio = ParsedFields {
-            verdict: Some("BUY".to_string()),
-            confidence: Some(0.7),
-            ..Default::default()
-        };
-        let outputs = vec![];
-        // actual_cash = 200000 > emergency_buffer = 100000 → G3 should pass
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", 100000.0, Some(200000.0), None);
-        assert!(result.gate3_pass);
-        assert!(!result.notes.iter().any(|n| n.contains("子弹数据不可用")));
     }
 
     #[test]

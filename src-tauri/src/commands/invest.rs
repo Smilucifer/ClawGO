@@ -600,6 +600,13 @@ pub struct InvestLlmConfig {
     pub selected_provider: String,
     pub debate_rounds: u8,
     pub timeout_secs: u64,
+    /// Maximum number of concurrent symbol pipelines (default 5).
+    #[serde(default = "default_max_concurrent")]
+    pub max_concurrent_symbols: usize,
+}
+
+fn default_max_concurrent() -> usize {
+    5
 }
 
 fn llm_config_path() -> std::path::PathBuf {
@@ -632,6 +639,7 @@ fn default_llm_config() -> InvestLlmConfig {
         selected_provider: "deepseek".to_string(),
         debate_rounds: 4,
         timeout_secs: 120,
+        max_concurrent_symbols: 5,
     }
 }
 
@@ -647,7 +655,7 @@ pub fn get_llm_config() -> Result<InvestLlmConfig, String> {
         serde_json::from_str(&content).map_err(|e| format!("parse llm_config: {}", e))?;
 
     // Known non-provider keys in the config JSON
-    const META_KEYS: &[&str] = &["selected_provider", "debate_rounds", "timeout_secs"];
+    const META_KEYS: &[&str] = &["selected_provider", "debate_rounds", "timeout_secs", "max_concurrent_symbols"];
 
     let mut providers = Vec::new();
     if let Some(obj) = data.as_object() {
@@ -686,6 +694,7 @@ pub fn get_llm_config() -> Result<InvestLlmConfig, String> {
             .to_string(),
         debate_rounds: data["debate_rounds"].as_u64().unwrap_or(4) as u8,
         timeout_secs: data["timeout_secs"].as_u64().unwrap_or(120),
+        max_concurrent_symbols: data["max_concurrent_symbols"].as_u64().unwrap_or(5) as usize,
     })
 }
 
@@ -736,6 +745,10 @@ pub fn save_llm_config(config: InvestLlmConfig) -> Result<(), String> {
         "timeout_secs".into(),
         serde_json::Value::Number(config.timeout_secs.into()),
     );
+    data.insert(
+        "max_concurrent_symbols".into(),
+        serde_json::Value::Number(config.max_concurrent_symbols.into()),
+    );
 
     let json = serde_json::to_string_pretty(&serde_json::Value::Object(data))
         .map_err(|e| format!("serialize: {}", e))?;
@@ -762,22 +775,49 @@ fn try_parse_provider_id(id: &str) -> Result<crate::invest::llm::types::Provider
 
 /// Build a CommitteeConfig from the saved InvestLlmConfig, applying the
 /// selected provider to all roles.
-fn build_committee_config(config_data: &InvestLlmConfig, debate_rounds: Option<u8>) -> crate::invest::committee::orchestrator::CommitteeConfig {
+///
+/// Generates a `--settings` JSON for CLI-based third-party provider routing.
+/// The settings path is stored in `CommitteeConfig.settings_path` for the CLI executor.
+fn build_committee_config(config_data: &InvestLlmConfig, debate_rounds: Option<u8>) -> Result<crate::invest::committee::orchestrator::CommitteeConfig, String> {
     let provider = parse_provider_id(&config_data.selected_provider);
     let mut committee_config = crate::invest::committee::orchestrator::CommitteeConfig::default();
     committee_config.debate_rounds = debate_rounds.unwrap_or(config_data.debate_rounds);
     committee_config.timeout_secs = config_data.timeout_secs;
+    committee_config.max_concurrent_symbols = config_data.max_concurrent_symbols.max(1);
     // Pass user-configured model for the selected provider
-    if let Some(p) = config_data.providers.iter().find(|p| p.provider_id == config_data.selected_provider) {
-        if !p.default_model.is_empty() {
-            committee_config.model_override = Some(p.default_model.clone());
-        }
-    }
+    let model_override = config_data.providers.iter()
+        .find(|p| p.provider_id == config_data.selected_provider)
+        .filter(|p| !p.default_model.is_empty())
+        .map(|p| p.default_model.clone());
+    committee_config.model_override = model_override.clone();
     // Apply selected provider to all roles
     for role in crate::invest::committee::roles::CommitteeRole::all() {
         committee_config.role_providers.insert(*role, provider);
     }
-    committee_config
+    // Generate --settings JSON for CLI executor (third-party provider routing)
+    let platform_id = &config_data.selected_provider;
+    let settings_result = crate::invest::committee::cli_executor::write_committee_settings_json(
+        platform_id,
+        model_override.as_deref(),
+    );
+    match settings_result {
+        Ok(Some(path)) => {
+            committee_config.settings_path = Some(path);
+        }
+        Ok(None) => {
+            log::info!("build_committee_config: no --settings needed (default provider)");
+        }
+        Err(e) => {
+            // Non-default provider selected but settings generation failed —
+            // CLI would silently fall back to CC native config (wrong provider).
+            // Surface the error so the user knows their provider selection didn't take effect.
+            if platform_id != "default" && !platform_id.is_empty() {
+                return Err(format!("无法为供应商 '{}' 生成 CLI 配置: {}。请检查 API Key 是否已配置。", platform_id, e));
+            }
+            log::warn!("build_committee_config: settings generation note: {e}");
+        }
+    }
+    Ok(committee_config)
 }
 
 #[tauri::command]
@@ -787,15 +827,9 @@ pub async fn run_committee(
     dry_run: Option<bool>,
 ) -> Result<Vec<crate::invest::committee::orchestrator::CommitteeResult>, String> {
     let config_data = get_llm_config()?;
-    let client =
-        crate::invest::llm::client::OpenAiCompatClient::new().map_err(|e| format!("init LLM client: {}", e))?;
-    let client: std::sync::Arc<dyn crate::invest::llm::types::InvestLlmClient> =
-        std::sync::Arc::new(client);
-
-    let committee_config = build_committee_config(&config_data, debate_rounds);
+    let committee_config = build_committee_config(&config_data, debate_rounds)?;
 
     let results = crate::invest::committee::orchestrator::run_committee_batch(
-        client,
         &symbols,
         &committee_config,
         dry_run.unwrap_or(false),
@@ -834,12 +868,7 @@ pub async fn run_committee_stream(
     dry_run: Option<bool>,
 ) -> Result<Vec<crate::invest::committee::orchestrator::CommitteeResult>, String> {
     let config_data = get_llm_config()?;
-    let client =
-        crate::invest::llm::client::OpenAiCompatClient::new().map_err(|e| format!("init LLM client: {}", e))?;
-    let client: std::sync::Arc<dyn crate::invest::llm::types::InvestLlmClient> =
-        std::sync::Arc::new(client);
-
-    let committee_config = build_committee_config(&config_data, debate_rounds);
+    let committee_config = build_committee_config(&config_data, debate_rounds)?;
 
     // Build emitter closure that forwards events to the Tauri event channel
     let emitter: crate::invest::committee::orchestrator::EventEmitter = {
@@ -850,7 +879,6 @@ pub async fn run_committee_stream(
     };
 
     let results = crate::invest::committee::orchestrator::run_committee_batch_stream(
-        client,
         &symbols,
         &committee_config,
         emitter,

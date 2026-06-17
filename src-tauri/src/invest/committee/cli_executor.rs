@@ -3,10 +3,16 @@
 //! Spawns `claude --print` with pre-fetched cache data embedded in the
 //! system prompt. Returns the CLI's stdout as the role output text.
 //! Falls back gracefully if the CLI binary is not found.
+//!
+//! **Note:** The global singleton uses `Mutex` — if the claude binary is
+//! not found at first call, it retries on subsequent calls. This allows
+//! late installation without requiring an app restart.
 
-use std::sync::OnceLock;
+use std::sync::Mutex;
 use std::time::Duration;
 use tokio::process::Command;
+
+use crate::process_ext::HideConsole;
 
 /// Maximum concurrent CLI processes (limits memory usage: ~100MB each).
 const MAX_CLI_CONCURRENT: usize = 5;
@@ -15,14 +21,17 @@ const MAX_CLI_CONCURRENT: usize = 5;
 const CLI_ROLE_TIMEOUT_SECS: u64 = 180;
 
 /// Global CLI executor singleton.
-static CLI_EXECUTOR: OnceLock<Option<CliCommitteeExecutor>> = OnceLock::new();
+/// Uses `Mutex` instead of `OnceLock` to allow re-initialization if the
+/// claude binary was not found on first attempt (e.g., installed later).
+static CLI_EXECUTOR: Mutex<Option<CliCommitteeExecutor>> = Mutex::new(None);
 
 /// Manages spawning `claude --print` for committee role analysis.
+#[derive(Clone)]
 pub struct CliCommitteeExecutor {
     /// Resolved absolute path to the `claude` binary.
     claude_bin: String,
     /// Semaphore limiting concurrent CLI processes.
-    semaphore: tokio::sync::Semaphore,
+    semaphore: std::sync::Arc<tokio::sync::Semaphore>,
 }
 
 impl CliCommitteeExecutor {
@@ -36,13 +45,20 @@ impl CliCommitteeExecutor {
         log::info!("[cli_executor] using claude binary: {}", bin);
         Some(Self {
             claude_bin: bin,
-            semaphore: tokio::sync::Semaphore::new(MAX_CLI_CONCURRENT),
+            semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_CLI_CONCURRENT)),
         })
     }
 
     /// Get the global singleton, initializing if needed.
-    pub fn global() -> Option<&'static CliCommitteeExecutor> {
-        CLI_EXECUTOR.get_or_init(Self::try_new).as_ref()
+    ///
+    /// Unlike `OnceLock`, this retries initialization if the claude binary
+    /// was not found on a previous attempt — allowing late installation.
+    pub fn global() -> Option<CliCommitteeExecutor> {
+        let mut guard = CLI_EXECUTOR.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.is_none() {
+            *guard = Self::try_new();
+        }
+        guard.clone()
     }
 
     /// Execute a single committee role via `claude --print`.
@@ -50,6 +66,7 @@ impl CliCommitteeExecutor {
     /// - `system_prompt`: full prompt with role instructions + embedded cache data
     /// - `user_message`: the analysis request
     /// - `timeout_secs`: per-call timeout (0 = use default)
+    /// - `settings_path`: optional path to a `--settings` JSON for third-party provider routing
     ///
     /// Returns the CLI's stdout text, or `Err` on timeout/failure.
     pub async fn run_role(
@@ -57,6 +74,7 @@ impl CliCommitteeExecutor {
         system_prompt: &str,
         user_message: &str,
         timeout_secs: u64,
+        settings_path: Option<&std::path::Path>,
     ) -> Result<String, String> {
         let _permit = self
             .semaphore
@@ -80,12 +98,20 @@ impl CliCommitteeExecutor {
             "--max-turns",
             "1",
             "--no-session-persistence",
-            user_message,
-        ])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
+        ]);
+
+        // Inject --settings for third-party provider routing (P0 fix)
+        if let Some(sp) = settings_path {
+            cmd.args(["--settings", &sp.to_string_lossy()]);
+            log::debug!("[cli_executor] --settings {}", sp.display());
+        }
+
+        cmd.arg(user_message);
+        cmd.stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .hide_console();
 
         let child = cmd.spawn().map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
@@ -121,57 +147,23 @@ impl CliCommitteeExecutor {
 // ---------------------------------------------------------------------------
 
 /// Format macro_cache entries into a readable text block.
+/// Delegates to the shared `tools::format_macro_entries` for consistency.
 pub fn format_macro_cache_for_prompt() -> String {
     use crate::storage::invest::macro_cache;
+    use super::tools::format_macro_entries;
 
     let entries = macro_cache::load_all_macro_cache().unwrap_or_default();
-    if entries.is_empty() {
-        return "宏观指标缓存: 暂无数据".to_string();
-    }
-
-    let mut lines = vec!["【A股宏观指标快照】".to_string()];
-    for indicator in macro_cache::ALL_INDICATORS {
-        if let Some(entry) = entries.iter().find(|e| e.indicator == *indicator) {
-            let value_str = match entry.value {
-                Some(v) => format!("{:.3}", v),
-                None => "N/A".to_string(),
-            };
-            let label = match *indicator {
-                "csi300_close" => "沪深300",
-                "csi300_vol20" => "沪深300 20日波动率",
-                "northbound_net" => "北向资金净流入(亿)",
-                "margin_balance" => "融资余额(元)",
-                "shibor_on" => "SHIBOR隔夜(%)",
-                "cgb_10y" => "中国10Y国债收益率(%)",
-                "vix" => "VIX恐慌指数",
-                "tnx" => "美10Y国债收益率(%)",
-                "dxy" => "美元指数",
-                "gold" => "黄金(美元/盎司)",
-                "oil" => "原油(美元/桶)",
-                "usdcny" => "USD/CNY",
-                "limit_up_count" => "涨停家数",
-                "limit_down_count" => "跌停家数",
-                "two_market_volume" => "两市成交额(亿)",
-                _ => indicator,
-            };
-            lines.push(format!("  {}: {}", label, value_str));
-        }
-    }
-
-    if let Some(first) = entries.first() {
-        lines.push(format!("  数据时间: {}", first.fetched_at));
-    }
-
-    lines.join("\n")
+    format_macro_entries(&entries).unwrap_or_else(|_| "宏观指标缓存: 暂无数据".to_string())
 }
 
 /// Format recent events (last 7 days, max 10) into a readable text block.
+/// Uses date-only cutoff ("%Y-%m-%d") consistent with tools.rs.
 pub fn format_recent_events_for_prompt() -> String {
     use crate::storage::invest::events::list_events;
 
     let events = list_events(None, Some(20)).unwrap_or_default();
     let cutoff = (chrono::Local::now() - chrono::Duration::days(7))
-        .format("%Y-%m-%dT%H:%M:%S")
+        .format("%Y-%m-%d")
         .to_string();
 
     let filtered: Vec<_> = events
@@ -186,7 +178,8 @@ pub fn format_recent_events_for_prompt() -> String {
 
     let mut lines = vec!["【近期市场事件】(最近7天)".to_string()];
     for ev in &filtered {
-        let date = ev.created_at.split('T').next().unwrap_or(&ev.created_at);
+        // Use first 10 chars as date portion (works for both "T" and " " separators)
+        let date = &ev.created_at[..10.min(ev.created_at.len())];
         lines.push(format!(
             "  [{}] {} | {} | {}",
             date, ev.event_type, ev.severity, ev.title
@@ -196,12 +189,13 @@ pub fn format_recent_events_for_prompt() -> String {
 }
 
 /// Format recent verdicts for a symbol (last 7 days, max 10).
+/// Uses date-only cutoff ("%Y-%m-%d") consistent with tools.rs.
 pub fn format_recent_verdicts_for_prompt(symbol: &str) -> String {
     use crate::storage::invest::verdicts::list_verdicts;
 
     let verdicts = list_verdicts(Some(symbol), Some(35)).unwrap_or_default();
     let cutoff = (chrono::Local::now() - chrono::Duration::days(7))
-        .format("%Y-%m-%dT%H:%M:%S")
+        .format("%Y-%m-%d")
         .to_string();
 
     let filtered: Vec<_> = verdicts
@@ -216,7 +210,8 @@ pub fn format_recent_verdicts_for_prompt(symbol: &str) -> String {
 
     let mut lines = vec![format!("【近期委员会裁决】({})", symbol)];
     for v in &filtered {
-        let date = v.created_at.split('T').next().unwrap_or(&v.created_at);
+        // Use first 10 chars as date portion (works for both "T" and " " separators)
+        let date = &v.created_at[..10.min(v.created_at.len())];
         let conf = v
             .confidence
             .map(|c| format!("{:.1}", c))
@@ -237,97 +232,643 @@ pub fn format_recent_verdicts_for_prompt(symbol: &str) -> String {
 
 /// Build a complete system prompt for the Macro role with cached data embedded.
 ///
-/// Unlike the tool-based approach (where the LLM calls get_macro_snapshot etc.),
-/// this function pre-fetches all cache data and embeds it directly in the prompt.
-/// The LLM only needs to analyze, not fetch.
+/// This reuses the canonical MACRO_PROMPT from `roles.rs` (via `load_prompt_for_round`)
+/// to avoid prompt drift, then:
+/// 1. Strips the tool-call section (CLI doesn't use tools)
+/// 2. Replaces the `{{recent_events}}` placeholder with cached events data
+/// 3. Appends macro cache data, verdicts, and CLI-specific output rules
+///
+/// The LLM receives all data directly and only needs to analyze, not fetch.
 pub fn build_cli_macro_prompt(
     asset_name: &str,
     asset_symbol: &str,
     asset_context: &crate::invest::committee::orchestrator::AssetContext,
 ) -> String {
-    use crate::invest::committee::roles::length_constraint_suffix;
-    use crate::invest::committee::roles::CommitteeRole;
+    use crate::invest::committee::roles::{length_constraint_suffix, load_prompt_for_round, CommitteeRole};
 
     let role = CommitteeRole::Macro;
 
-    let role_instruction = format!(
-        r#"你是投资委员会的宏观分析师，给整个投资组合提供宏观环境判断。
+    // Start with the canonical prompt (includes {{placeholder}} substitution)
+    let base_prompt = load_prompt_for_round(role, 1, asset_name, asset_symbol, asset_context);
 
-**你的职责范围（只输出以下内容）**：
-1. 全局市场底色信号（risk_on/risk_off/neutral）——所有标的共用同一底色
-2. 信号强度（0-10）
-3. 市场环境阶段判断（主升/分歧/退潮/冰点/混沌）
-4. 标的敏感度分析——同一宏观环境对不同资产有不同影响（positive/negative/neutral）
-5. 情绪温度评估——市场整体情绪
-6. 宏观催化剂感知——只感知，不分类 Tier
+    // Strip the tool-call section: remove everything between "**你有工具可调用**" and the next "**" section
+    let stripped = strip_tool_section(&base_prompt);
 
-**市场阶段判定规则**：
-- 主升：沪深300站上MA60且MA20>MA60，北向持续流入，两市成交额>1.2万亿
-- 分歧：指数高位震荡，北向进出交替，涨跌比接近1:1
-- 退潮：指数跌破MA20，北向流出，两市成交额萎缩
-- 冰点：指数跌破MA60，跌停家数>涨停，成交额<8000亿
-- 混沌：以上特征均不明显，或信号矛盾
+    // Replace the {{recent_events}} placeholder with actual cached data
+    let events_data = format_recent_events_for_prompt();
+    let with_events = stripped.replace("{{recent_events}}", &events_data);
 
-**标的敏感度判定**：
-- positive：该资产/行业在当前宏观环境下受益（如降息利好成长股、地缘利好黄金）
-- negative：该资产/行业在当前宏观环境下受损（如加息利空高估值、美元走强利空商品）
-- neutral：无明显相关性
+    // Build the CLI-specific additions (cache data that tools would have fetched)
+    let macro_data = format_macro_cache_for_prompt();
+    let verdicts_data = format_recent_verdicts_for_prompt(asset_symbol);
 
-**标的信息**：
-- 标的名称: {asset_name} ({asset_symbol})
-- 标的类型: {asset_type}
-- 所属行业: {industry}
-- PE(TTM): {pe_ttm} | PB: {pb} | ROE: {roe}%
-- 最新价: {latest_close} | 前收: {pre_close}
-- 流通市值: {circ_mv_yi}亿 | 总市值: {total_mv_yi}亿
-- 资金流向(日): {money_flow_daily}
-- 机构评级: {rating}
-
-{macro_data}
-
-{events_data}
-
-{verdicts_data}
-
-**输出要求**：
-- 必须中文回复
-- 严格按下列格式，每项必须换行
-- 严禁输出个股技术面分析（MA/RSI/分位数/支撑阻力等）
-- 严禁给出具体操作建议（买入/卖出/加仓/减仓）
-- 严禁在输出里抱怨"工具不可用"或"未找到信息"
-- 市场阶段是全局信号，敏感度是标的级信号，两者必须分开
-
-信号: risk_on | risk_off | neutral
-强度: 0-10
-信号理由: <一句话说明信号判断依据>
-市场阶段: 主升 | 分歧 | 退潮 | 冰点 | 混沌
-市场阶段理由: <一句话说明阶段判断依据>
-敏感度: positive | negative | neutral
-敏感度理由: <一句话≤20字，说明该资产/行业为何对当前环境正面/负面>
-情绪温度: 乐观 | 中性 | 谨慎 | 恐慌
-宏观催化剂: <当前最重要的宏观事件，没有则写"无">"#,
-        asset_name = asset_name,
-        asset_symbol = asset_symbol,
-        asset_type = asset_context.asset_type,
-        industry = asset_context.industry.as_deref().unwrap_or("N/A"),
-        pe_ttm = fmt_opt(asset_context.pe_ttm, 1),
-        pb = fmt_opt(asset_context.pb, 2),
-        roe = fmt_opt(asset_context.roe, 1),
-        latest_close = fmt_opt(asset_context.latest_close, 2),
-        pre_close = fmt_opt(asset_context.pre_close, 2),
-        circ_mv_yi = fmt_opt(asset_context.circ_mv_yi, 2),
-        total_mv_yi = fmt_opt(asset_context.total_mv_yi, 2),
-        money_flow_daily = asset_context.money_flow_daily_summary.as_deref().unwrap_or("N/A"),
-        rating = asset_context.rating_summary.as_deref().unwrap_or("N/A"),
-        macro_data = format_macro_cache_for_prompt(),
-        events_data = format_recent_events_for_prompt(),
-        verdicts_data = format_recent_verdicts_for_prompt(asset_symbol),
+    // Append cache data and CLI-specific instructions
+    let cli_additions = format!(
+        "\n\n{macro_data}\n\n{verdicts_data}\n\n\
+         **CLI 模式说明**：以上宏观指标和裁决数据已由系统预取，无需调用工具。\n\
+         市场阶段判定中，MA60/MA20 等均线数据无法直接获取——请根据沪深300点位、\n\
+         成交额、北向资金等已有数据综合推断，不要编造具体均线数值。",
+        macro_data = macro_data,
+        verdicts_data = verdicts_data,
     );
 
-    format!("{}{}", role_instruction, length_constraint_suffix(role))
+    format!("{}{}{}", with_events, cli_additions, length_constraint_suffix(role))
 }
 
-fn fmt_opt(v: Option<f64>, decimals: usize) -> String {
+/// Strip the tool-call section from a prompt template.
+/// Removes everything from "**你有工具可调用**" to the next "**" section header.
+fn strip_tool_section(prompt: &str) -> String {
+    const MARKER: &str = "**你有工具可调用**";
+    if let Some(start) = prompt.find(MARKER) {
+        let marker_end = start + MARKER.len();
+        // Search for the next "\n**" AFTER the marker (avoids matching the marker itself)
+        if let Some(rest_offset) = prompt[marker_end..].find("\n**") {
+            let end = marker_end + rest_offset;
+            let mut result = String::with_capacity(prompt.len());
+            result.push_str(&prompt[..start]);
+            // Skip blank lines after tool section
+            let rest = prompt[end..].trim_start();
+            result.push_str(rest);
+            return result;
+        }
+        // No section after tools — just strip to end
+        return prompt[..start].to_string();
+    }
+    prompt.to_string()
+}
+
+/// Format an `Option<f64>` with given decimals, returning "N/A" for None.
+pub fn fmt_opt(v: Option<f64>, decimals: usize) -> String {
     v.map(|v| format!("{:.1$}", v, decimals))
         .unwrap_or_else(|| "N/A".to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Additional data formatters for CLI prompt injection
+// ---------------------------------------------------------------------------
+
+/// Fetch and format company news for a symbol (AkShare source).
+/// This is async because it fetches from AkShare RPC.
+pub async fn fetch_company_news_for_prompt(symbol: &str) -> String {
+    let code = symbol.split('.').next().unwrap_or(symbol);
+    let client = crate::invest::international::InternationalClient::from_settings();
+
+    match client.fetch_akshare_stock_news(code, 5).await {
+        Ok(items) if !items.is_empty() => {
+            let mut lines = vec![format!("【{} 近期风险新闻】", symbol)];
+            for item in items.iter().take(5) {
+                let date = chrono::DateTime::from_timestamp(item.provider_publish_time, 0)
+                    .map(|dt| dt.format("%Y-%m-%d").to_string())
+                    .unwrap_or_else(|| "N/A".to_string());
+                lines.push(format!("  [{}] {} — {}", date, item.title, item.publisher));
+            }
+            lines.join("\n")
+        }
+        _ => format!("{} 近期风险新闻: 暂无", symbol),
+    }
+}
+
+/// Cache for dreaming insights to avoid duplicate DB queries per symbol
+/// (Risk R1 and L4 both query the same symbol within a single pipeline run).
+static DREAMING_CACHE: once_cell::sync::Lazy<Mutex<std::collections::HashMap<String, String>>> =
+    once_cell::sync::Lazy::new(|| Mutex::new(std::collections::HashMap::new()));
+
+/// Format dreaming insights for CLI prompt injection (cached per symbol).
+pub fn format_dreaming_insights_for_prompt(symbol: &str) -> String {
+    // Check cache first
+    if let Ok(cache) = DREAMING_CACHE.lock() {
+        if let Some(cached) = cache.get(symbol) {
+            return cached.clone();
+        }
+    }
+    let result = format_dreaming_insights_inner(symbol);
+    // Store in cache
+    if let Ok(mut cache) = DREAMING_CACHE.lock() {
+        cache.insert(symbol.to_string(), result.clone());
+    }
+    result
+}
+
+/// Clear the dreaming insights cache (call between committee batch runs
+/// to avoid stale data if domain_insights change).
+pub fn clear_dreaming_cache() {
+    if let Ok(mut cache) = DREAMING_CACHE.lock() {
+        cache.clear();
+    }
+}
+
+fn format_dreaming_insights_inner(symbol: &str) -> String {
+    use crate::storage::invest::with_conn;
+
+    let results: Vec<String> = with_conn(|conn| {
+        let mut stmt = conn
+            .prepare(
+                "SELECT content, created_at FROM domain_insights WHERE symbol = ?1 \
+                 AND status = 'active' ORDER BY created_at DESC LIMIT ?2",
+            )
+            .map_err(|e| format!("prepare: {}", e))?;
+
+        let rows = stmt
+            .query_map(rusqlite::params![symbol, 3i64], |row| {
+                let content: String = row.get(0)?;
+                let created: String = row.get(1)?;
+                let date_part =
+                    if created.len() >= 10 { &created[..10] } else { &created };
+                Ok(format!("[{}] {}", date_part, content))
+            })
+            .map_err(|e| format!("query: {}", e))?;
+
+        let mut items = Vec::new();
+        for row in rows {
+            items.push(row.map_err(|e| format!("row: {}", e))?);
+        }
+        Ok(items)
+    })
+    .unwrap_or_default();
+
+    if results.is_empty() {
+        format!("投资洞察({}): 暂无", symbol)
+    } else {
+        format!("【投资洞察 - {}】\n{}", symbol, results.join("\n"))
+    }
+}
+
+/// Format risk metrics context for Risk role CLI prompt injection.
+/// Delegates to the canonical `build_risk_metrics_context` in orchestrator.
+pub(crate) fn format_risk_metrics_for_prompt(
+    portfolio_data: &crate::invest::committee::orchestrator::PortfolioData,
+    symbol: &str,
+    asset_context: &crate::invest::committee::orchestrator::AssetContext,
+) -> String {
+    crate::invest::committee::orchestrator::build_risk_metrics_context(portfolio_data, symbol, asset_context)
+}
+
+/// Format asset context as a text block for CLI prompt injection.
+pub fn format_asset_context_for_prompt(ctx: &crate::invest::committee::orchestrator::AssetContext) -> String {
+    let mut lines = vec!["【标的数据摘要】".to_string()];
+
+    if let Some(ref industry) = ctx.industry {
+        lines.push(format!("行业: {}", industry));
+    }
+    lines.push(format!("标的类型: {}", ctx.asset_type));
+
+    if let Some(pe) = ctx.pe_ttm {
+        lines.push(format!("PE_TTM: {:.1}", pe));
+    }
+    if let Some(pb) = ctx.pb {
+        lines.push(format!("PB: {:.2}", pb));
+    }
+    if let Some(roe) = ctx.roe {
+        lines.push(format!("ROE: {:.1}%", roe));
+    }
+    if let Some(roa) = ctx.roa {
+        lines.push(format!("ROA: {:.2}%", roa));
+    }
+    if let Some(or_yoy) = ctx.or_yoy {
+        lines.push(format!("营收增速: {:.1}%", or_yoy));
+    }
+    if let Some(np_yoy) = ctx.np_yoy {
+        lines.push(format!("净利增速: {:.1}%", np_yoy));
+    }
+    if let Some(debt) = ctx.debt_to_assets {
+        lines.push(format!("资产负债率: {:.1}%", debt));
+    }
+    if let Some(ref rating) = ctx.rating_summary {
+        lines.push(format!("机构评级: {}", rating));
+    }
+    if let Some(ref mf_daily) = ctx.money_flow_daily_summary {
+        lines.push(format!("资金流向(当日): {}", mf_daily));
+    }
+    if let Some(ref mf) = ctx.money_flow_summary {
+        lines.push(format!("资金流向(近5日): {}", mf));
+    }
+    if let Some(close) = ctx.latest_close {
+        lines.push(format!("最新价: {:.2}", close));
+    }
+    if let Some(pre) = ctx.pre_close {
+        lines.push(format!("昨收价: {:.2}", pre));
+    }
+
+    if !ctx.data_quality.is_empty() {
+        lines.push(format!("⚠️ 数据缺失: {}", ctx.data_quality.join("，")));
+    }
+
+    lines.join("\n")
+}
+
+/// Format prior round outputs as a text block for CLI prompt injection.
+pub fn format_round_outputs_for_prompt(
+    round_outputs: &[crate::invest::committee::analysis::RoundOutput],
+) -> String {
+    if round_outputs.is_empty() {
+        return String::new();
+    }
+
+    let mut out = String::from("【前序分析结果】\n");
+    for output in round_outputs {
+        let content = if output.parsed.fallback_reason.is_some() {
+            "[WORKER_UNAVAILABLE]"
+        } else {
+            &output.parsed.raw_text
+        };
+        out.push_str(&format!(
+            "\n=== {} Round {} ===\n{}\n",
+            output.role.label(),
+            output.round,
+            content,
+        ));
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// CLI prompt builders for all roles
+// ---------------------------------------------------------------------------
+
+/// Build a complete system prompt for the Quant role (R1) with data embedded.
+///
+/// `load_prompt_for_round` already substitutes `{{precomputed_indicators}}`, `{{pe_ttm}}`,
+/// `{{pb}}`, `{{money_flow_*}}`, and other asset context placeholders. We do NOT re-append
+/// `format_asset_context_for_prompt` or `precomputed_indicators` here to avoid duplication.
+pub fn build_cli_quant_r1_prompt(
+    asset_name: &str,
+    asset_symbol: &str,
+    asset_context: &crate::invest::committee::orchestrator::AssetContext,
+    regime_context: Option<&str>,
+) -> String {
+    use crate::invest::committee::roles::{length_constraint_suffix, load_prompt_for_round, CommitteeRole};
+
+    let role = CommitteeRole::Quant;
+    let base_prompt = load_prompt_for_round(role, 1, asset_name, asset_symbol, asset_context);
+    let stripped = strip_tool_section(&base_prompt);
+
+    let verdicts_data = format_recent_verdicts_for_prompt(asset_symbol);
+
+    let mut cli_additions = format!(
+        "\n\n{verdicts_data}\n\n\
+         **CLI 模式说明**：以上数据已由系统预取，无需调用工具。\
+         标的估值、资金流向和技术指标已在上方 prompt 中直接提供。",
+        verdicts_data = verdicts_data,
+    );
+
+    // Inject regime context if available
+    if let Some(regime) = regime_context {
+        cli_additions.push_str(&format!("\n\n{}", regime));
+    }
+
+    format!("{}{}{}", stripped, cli_additions, length_constraint_suffix(role))
+}
+
+/// Build a complete system prompt for the Quant R2 role with data embedded.
+pub fn build_cli_quant_r2_prompt(
+    asset_name: &str,
+    asset_symbol: &str,
+    asset_context: &crate::invest::committee::orchestrator::AssetContext,
+    round_outputs: &[crate::invest::committee::analysis::RoundOutput],
+) -> String {
+    use crate::invest::committee::roles::{length_constraint_suffix, load_prompt_for_round, CommitteeRole};
+
+    let role = CommitteeRole::Quant;
+    let base_prompt = load_prompt_for_round(role, 2, asset_name, asset_symbol, asset_context);
+    let stripped = strip_tool_section(&base_prompt);
+
+    let prior_outputs = format_round_outputs_for_prompt(round_outputs);
+
+    let cli_additions = format!(
+        "\n\n{}\n\n\
+         **CLI 模式说明**：以上前序分析结果已由系统预取，无需调用工具。",
+        prior_outputs,
+    );
+
+    format!("{}{}{}", stripped, cli_additions, length_constraint_suffix(role))
+}
+
+/// Build a complete system prompt for the Risk R1 role with data embedded.
+/// `company_news` should be pre-fetched via `fetch_company_news_for_prompt()`.
+pub(crate) fn build_cli_risk_r1_prompt(
+    asset_name: &str,
+    asset_symbol: &str,
+    asset_context: &crate::invest::committee::orchestrator::AssetContext,
+    portfolio_data: &crate::invest::committee::orchestrator::PortfolioData,
+    strategy_context: &str,
+    user_profile_context: &str,
+    company_news: &str,
+) -> String {
+    use crate::invest::committee::roles::{length_constraint_suffix, load_prompt_for_round, CommitteeRole};
+
+    let role = CommitteeRole::Risk;
+    let base_prompt = load_prompt_for_round(role, 1, asset_name, asset_symbol, asset_context);
+    let stripped = strip_tool_section(&base_prompt);
+
+    let risk_metrics = format_risk_metrics_for_prompt(portfolio_data, asset_symbol, asset_context);
+    let dreaming = format_dreaming_insights_for_prompt(asset_symbol);
+    let verdicts = format_recent_verdicts_for_prompt(asset_symbol);
+
+    let mut cli_additions = format!(
+        "\n\n{risk_metrics}\n\n{company_news}\n\n{dreaming}\n\n{verdicts}\n\n\
+         **CLI 模式说明**：以上数据已由系统预取，无需调用工具。",
+        risk_metrics = risk_metrics,
+        company_news = company_news,
+        dreaming = dreaming,
+        verdicts = verdicts,
+    );
+
+    if !strategy_context.is_empty() {
+        cli_additions.push_str("\n\n");
+        cli_additions.push_str(strategy_context);
+    }
+    if !user_profile_context.is_empty() {
+        cli_additions.push_str("\n\n");
+        cli_additions.push_str(user_profile_context);
+    }
+
+    format!("{}{}{}", stripped, cli_additions, length_constraint_suffix(role))
+}
+
+/// Build a complete system prompt for the Risk R2 role with data embedded.
+pub fn build_cli_risk_r2_prompt(
+    asset_name: &str,
+    asset_symbol: &str,
+    asset_context: &crate::invest::committee::orchestrator::AssetContext,
+    round_outputs: &[crate::invest::committee::analysis::RoundOutput],
+) -> String {
+    use crate::invest::committee::roles::{length_constraint_suffix, load_prompt_for_round, CommitteeRole};
+
+    let role = CommitteeRole::Risk;
+    let base_prompt = load_prompt_for_round(role, 2, asset_name, asset_symbol, asset_context);
+    let stripped = strip_tool_section(&base_prompt);
+
+    let prior_outputs = format_round_outputs_for_prompt(round_outputs);
+
+    let cli_additions = format!(
+        "\n\n{}\n\n\
+         **CLI 模式说明**：以上前序分析结果已由系统预取，无需调用工具。",
+        prior_outputs,
+    );
+
+    format!("{}{}{}", stripped, cli_additions, length_constraint_suffix(role))
+}
+
+/// Build a complete system prompt for the L4 Officer role with data embedded.
+pub fn build_cli_l4_prompt(
+    asset_name: &str,
+    asset_symbol: &str,
+    asset_context: &crate::invest::committee::orchestrator::AssetContext,
+    round_outputs: &[crate::invest::committee::analysis::RoundOutput],
+) -> String {
+    use crate::invest::committee::roles::{length_constraint_suffix, load_prompt_for_round, CommitteeRole};
+
+    let role = CommitteeRole::L4Officer;
+    let base_prompt = load_prompt_for_round(role, 1, asset_name, asset_symbol, asset_context);
+    let stripped = strip_tool_section(&base_prompt);
+
+    let prior_outputs = format_round_outputs_for_prompt(round_outputs);
+    let dreaming = format_dreaming_insights_for_prompt(asset_symbol);
+
+    let cli_additions = format!(
+        "\n\n{}\n\n{}\n\n\
+         **CLI 模式说明**：以上数据已由系统预取，无需调用工具。",
+        prior_outputs,
+        dreaming,
+    );
+
+    format!("{}{}{}", stripped, cli_additions, length_constraint_suffix(role))
+}
+
+/// Build a complete system prompt for the CIO role with data embedded.
+///
+/// `load_prompt_for_round` already substitutes asset context placeholders, so we do NOT
+/// re-append `format_asset_context_for_prompt` here to avoid duplication.
+pub fn build_cli_cio_prompt(
+    asset_name: &str,
+    asset_symbol: &str,
+    asset_context: &crate::invest::committee::orchestrator::AssetContext,
+    round_outputs: &[crate::invest::committee::analysis::RoundOutput],
+    strategy_context: &str,
+    user_profile_context: &str,
+) -> String {
+    use crate::invest::committee::roles::{length_constraint_suffix, load_prompt_for_round, CommitteeRole};
+
+    let role = CommitteeRole::Cio;
+    let base_prompt = load_prompt_for_round(role, 1, asset_name, asset_symbol, asset_context);
+    let stripped = strip_tool_section(&base_prompt);
+
+    let prior_outputs = format_round_outputs_for_prompt(round_outputs);
+
+    let mut cli_additions = format!(
+        "\n\n{}\n\n\
+         **CLI 模式说明**：以上数据已由系统预取，无需调用工具。\
+         标的估值和资金流向已在上方 prompt 中直接提供。\n\
+         ⚠️ **禁止 tool_call**：所有必要信息都在上方。不要尝试调用任何工具。",
+        prior_outputs,
+    );
+
+    if !strategy_context.is_empty() {
+        cli_additions.push_str("\n\n");
+        cli_additions.push_str(strategy_context);
+    }
+    if !user_profile_context.is_empty() {
+        cli_additions.push_str("\n\n");
+        cli_additions.push_str(user_profile_context);
+    }
+
+    // Inject data quality warnings
+    if !asset_context.data_quality.is_empty() {
+        cli_additions.push_str(&format!(
+            "\n\n【数据质量警告】以下字段缺失，请在置信度评估中考虑：\n{}",
+            asset_context.data_quality.join("，")
+        ));
+    }
+
+    format!("{}{}{}", stripped, cli_additions, length_constraint_suffix(role))
+}
+
+// ---------------------------------------------------------------------------
+// Provider settings JSON generation for CLI --settings
+// ---------------------------------------------------------------------------
+
+/// Generate a temp settings JSON for committee CLI execution.
+///
+/// Reads the selected provider's credential from `UserSettings.platform_credentials`,
+/// builds the provider-specific env vars, and writes a `--settings` compatible JSON file.
+/// Returns the path to the temp file, or `None` if no provider is configured (uses CC defaults).
+///
+/// The temp file is written to `{data_dir}/provider-claude-configs/committee-{uuid}.json`
+/// and is meant to be passed as `--settings <path>` to `claude --print`.
+pub fn write_committee_settings_json(
+    platform_id: &str,
+    model_override: Option<&str>,
+) -> Result<Option<std::path::PathBuf>, String> {
+    use crate::agent::provider_claude_config::{
+        platform_to_provider_id, write_provider_claude_config,
+    };
+    use crate::agent::provider_claude_config::ManagedConfig;
+    use crate::storage::settings::get_user_settings;
+
+    // "default" means use CC native config — no --settings needed
+    if platform_id == "default" || platform_id.is_empty() {
+        return Ok(None);
+    }
+
+    // Clean up old committee temp files to avoid accumulation
+    cleanup_old_committee_settings();
+
+    let user_settings = get_user_settings();
+    let cred = user_settings
+        .platform_credentials
+        .iter()
+        .find(|c| c.platform_id == platform_id)
+        .ok_or_else(|| {
+            format!(
+                "committee: platform credential '{}' not found in settings",
+                platform_id
+            )
+        })?;
+
+    let provider_id = platform_to_provider_id(platform_id)
+        .unwrap_or("custom")
+        .to_string();
+
+    // Use a unique run_id for each generation to avoid stale cache
+    let run_id = format!("committee-{}", uuid::Uuid::new_v4());
+
+    // Empty managed config — committee CLI doesn't need hooks/plugins/MCP
+    let managed = ManagedConfig {
+        mcp_servers: &std::collections::HashMap::new(),
+        hooks: &std::collections::HashMap::new(),
+        enabled_plugins: &std::collections::HashMap::new(),
+    };
+
+    let materialized = write_provider_claude_config(
+        &provider_id,
+        platform_id,
+        cred,
+        &run_id,
+        &managed,
+        true, // disable_hooks_and_plugins = true for committee
+    )?;
+
+    // If model_override is set, patch the JSON to use it
+    if let Some(model) = model_override.filter(|m| !m.is_empty()) {
+        patch_settings_model(&materialized.json_path, model)?;
+    }
+
+    log::info!(
+        "[cli_executor] wrote committee settings: {} (platform={}, provider={})",
+        materialized.json_path.display(),
+        platform_id,
+        provider_id,
+    );
+
+    Ok(Some(materialized.json_path))
+}
+
+/// Clean up old committee temp settings files from prior runs.
+/// Only removes files matching `session-committee-*.json` pattern.
+fn cleanup_old_committee_settings() {
+    let dir = crate::storage::data_dir().join("provider-claude-configs");
+    let Ok(entries) = std::fs::read_dir(&dir) else { return };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str.starts_with("session-committee-") && name_str.ends_with(".json") {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
+/// Patch the `model` field in an existing settings JSON file.
+/// Uses atomic write (write to tmp + rename) to avoid partial writes on crash.
+fn patch_settings_model(path: &std::path::Path, model: &str) -> Result<(), String> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| format!("read settings for patch: {e}"))?;
+    let mut json: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("parse settings for patch: {e}"))?;
+
+    // The env vars are nested under "env" in the settings JSON
+    if let Some(env) = json.get_mut("env").and_then(|v| v.as_object_mut()) {
+        env.insert(
+            "ANTHROPIC_MODEL".to_string(),
+            serde_json::Value::String(model.to_string()),
+        );
+    }
+
+    let patched = serde_json::to_string_pretty(&json)
+        .map_err(|e| format!("serialize patched settings: {e}"))?;
+
+    // Atomic write: write to temp file, then rename
+    let tmp_path = path.with_extension("json.tmp");
+    std::fs::write(&tmp_path, &patched)
+        .map_err(|e| format!("write tmp settings: {e}"))?;
+    std::fs::rename(&tmp_path, path)
+        .map_err(|e| format!("rename tmp settings: {e}"))
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fmt_opt_some() {
+        assert_eq!(fmt_opt(Some(3.14159), 2), "3.14");
+        assert_eq!(fmt_opt(Some(100.0), 0), "100");
+        assert_eq!(fmt_opt(Some(0.123), 3), "0.123");
+    }
+
+    #[test]
+    fn test_fmt_opt_none() {
+        assert_eq!(fmt_opt(None, 2), "N/A");
+        assert_eq!(fmt_opt(None, 0), "N/A");
+    }
+
+    #[test]
+    fn test_strip_tool_section_present() {
+        let prompt = r#"Role instruction here.
+
+**你有工具可调用**：
+- `tool1()` → desc1
+- `tool2()` → desc2
+
+**市场阶段判定规则**：
+- rule1
+- rule2"#;
+
+        let stripped = strip_tool_section(prompt);
+        assert!(stripped.contains("Role instruction here."));
+        assert!(stripped.contains("**市场阶段判定规则**"));
+        assert!(!stripped.contains("你有工具可调用"));
+        assert!(!stripped.contains("tool1"));
+    }
+
+    #[test]
+    fn test_strip_tool_section_absent() {
+        let prompt = "Simple prompt without tools.";
+        let stripped = strip_tool_section(prompt);
+        assert_eq!(stripped, "Simple prompt without tools.");
+    }
+
+    #[test]
+    fn test_format_recent_events_empty() {
+        // This test requires DB which may not be available in unit test context.
+        // Verify the function doesn't panic with empty results.
+        let result = format_recent_events_for_prompt();
+        // Should return either actual data or the fallback message
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_format_recent_verdicts_empty() {
+        let result = format_recent_verdicts_for_prompt("test");
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_format_macro_cache_empty() {
+        let result = format_macro_cache_for_prompt();
+        assert!(!result.is_empty());
+    }
 }
