@@ -1022,7 +1022,7 @@ mod tests {
             amount: Some(10000.0),
             notes: None,
             name: None,
-            trade_date: "2026-06-12".into(),
+            trade_date: Some("2026-06-12".to_string()),
             created_at: "2026-06-12T10:00:00Z".into(),
             asset_type: None,
         };
@@ -1043,7 +1043,7 @@ mod tests {
             amount: Some(5000.0),
             notes: None,
             name: None,
-            trade_date: "2026-06-12".into(),
+            trade_date: Some("2026-06-12".to_string()),
             created_at: "2026-06-12T10:00:00Z".into(),
             asset_type: None,
         };
@@ -1064,7 +1064,7 @@ mod tests {
             amount: Some(-200.0),
             notes: None,
             name: None,
-            trade_date: "2026-06-12".into(),
+            trade_date: Some("2026-06-12".to_string()),
             created_at: "2026-06-12T10:00:00Z".into(),
             asset_type: None,
         };
@@ -1086,7 +1086,7 @@ mod tests {
                 amount: Some(1000.0),
                 notes: None,
                 name: None,
-                trade_date: "2026-06-12".into(),
+                trade_date: Some("2026-06-12".to_string()),
                 created_at: "2026-06-12T10:00:00Z".into(),
                 asset_type: None,
             };

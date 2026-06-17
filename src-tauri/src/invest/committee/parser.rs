@@ -166,7 +166,10 @@ pub fn parse_role_output(role: CommitteeRole, text: &str, truncated: bool) -> Pa
 
 /// Detect fallback reason based on role-specific critical fields.
 /// Returns Some(reason) if the parsed output is missing essential data.
-pub fn detect_fallback_reason(role: CommitteeRole, parsed: &ParsedFields) -> Option<String> {
+///
+/// `round` distinguishes R1 vs R2 validation requirements — e.g., Quant R2 does
+/// not output REGIME, so checking `parsed.regime` for R2 would be a false positive.
+pub fn detect_fallback_reason(role: CommitteeRole, round: u8, parsed: &ParsedFields) -> Option<String> {
     // Check for WORKER_UNAVAILABLE marker in raw text
     if parsed.raw_text.contains("[WORKER_UNAVAILABLE]") {
         return Some("worker_unavailable".to_string());
@@ -180,7 +183,14 @@ pub fn detect_fallback_reason(role: CommitteeRole, parsed: &ParsedFields) -> Opt
     // Role-specific critical field checks
     let missing = match role {
         CommitteeRole::Macro => parsed.signal.is_none(),
-        CommitteeRole::Quant => parsed.signal.is_none() || parsed.regime.is_none(),
+        CommitteeRole::Quant => {
+            if round >= 2 {
+                // R2 only outputs adjusted signal + protection trigger; REGIME is not required
+                parsed.signal.is_none()
+            } else {
+                parsed.signal.is_none() || parsed.regime.is_none()
+            }
+        }
         CommitteeRole::Risk => parsed.signal.is_none(),
         CommitteeRole::Cio => parsed.verdict.is_none(),
         CommitteeRole::L4Officer => parsed.l4_guard_clause.is_none(),
@@ -1076,7 +1086,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            detect_fallback_reason(CommitteeRole::Macro, &parsed),
+            detect_fallback_reason(CommitteeRole::Macro, 1, &parsed),
             Some("worker_unavailable".to_string())
         );
     }
@@ -1089,13 +1099,13 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            detect_fallback_reason(CommitteeRole::Macro, &parsed),
+            detect_fallback_reason(CommitteeRole::Macro, 1, &parsed),
             Some("missing_critical_fields".to_string())
         );
     }
 
     #[test]
-    fn test_detect_fallback_quant_missing_signal_regime() {
+    fn test_detect_fallback_quant_r1_missing_signal_regime() {
         let parsed = ParsedFields {
             signal: None,
             regime: None,
@@ -1103,13 +1113,13 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            detect_fallback_reason(CommitteeRole::Quant, &parsed),
+            detect_fallback_reason(CommitteeRole::Quant, 1, &parsed),
             Some("missing_critical_fields".to_string())
         );
     }
 
     #[test]
-    fn test_detect_fallback_quant_missing_signal_only() {
+    fn test_detect_fallback_quant_r1_missing_signal_only() {
         let parsed = ParsedFields {
             signal: None,
             regime: Some("bull".to_string()),
@@ -1117,13 +1127,13 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            detect_fallback_reason(CommitteeRole::Quant, &parsed),
+            detect_fallback_reason(CommitteeRole::Quant, 1, &parsed),
             Some("missing_critical_fields".to_string())
         );
     }
 
     #[test]
-    fn test_detect_fallback_quant_missing_regime_only() {
+    fn test_detect_fallback_quant_r1_missing_regime_only() {
         let parsed = ParsedFields {
             signal: Some("risk_on".to_string()),
             regime: None,
@@ -1131,7 +1141,35 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            detect_fallback_reason(CommitteeRole::Quant, &parsed),
+            detect_fallback_reason(CommitteeRole::Quant, 1, &parsed),
+            Some("missing_critical_fields".to_string())
+        );
+    }
+
+    /// Quant R2 does not require REGIME — only signal is critical.
+    #[test]
+    fn test_detect_fallback_quant_r2_no_regime_ok() {
+        let parsed = ParsedFields {
+            signal: Some("bullish".to_string()),
+            regime: None,
+            raw_text: "调整信号: bullish\n保护触发: yes".to_string(),
+            ..Default::default()
+        };
+        // R2 with signal present but regime absent → no fallback
+        assert_eq!(detect_fallback_reason(CommitteeRole::Quant, 2, &parsed), None);
+    }
+
+    /// Quant R2 still requires signal.
+    #[test]
+    fn test_detect_fallback_quant_r2_missing_signal() {
+        let parsed = ParsedFields {
+            signal: None,
+            regime: None,
+            raw_text: "保护触发: yes".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            detect_fallback_reason(CommitteeRole::Quant, 2, &parsed),
             Some("missing_critical_fields".to_string())
         );
     }
@@ -1144,7 +1182,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            detect_fallback_reason(CommitteeRole::Risk, &parsed),
+            detect_fallback_reason(CommitteeRole::Risk, 1, &parsed),
             Some("missing_critical_fields".to_string())
         );
     }
@@ -1157,7 +1195,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            detect_fallback_reason(CommitteeRole::Cio, &parsed),
+            detect_fallback_reason(CommitteeRole::Cio, 1, &parsed),
             Some("missing_critical_fields".to_string())
         );
     }
@@ -1170,7 +1208,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            detect_fallback_reason(CommitteeRole::L4Officer, &parsed),
+            detect_fallback_reason(CommitteeRole::L4Officer, 1, &parsed),
             Some("missing_critical_fields".to_string())
         );
     }
@@ -1182,7 +1220,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            detect_fallback_reason(CommitteeRole::Macro, &parsed),
+            detect_fallback_reason(CommitteeRole::Macro, 1, &parsed),
             Some("empty_text".to_string())
         );
     }
@@ -1194,7 +1232,7 @@ mod tests {
             raw_text: "SIGNAL: risk_on\nSTRENGTH: 7".to_string(),
             ..Default::default()
         };
-        assert_eq!(detect_fallback_reason(CommitteeRole::Macro, &parsed), None);
+        assert_eq!(detect_fallback_reason(CommitteeRole::Macro, 1, &parsed), None);
     }
 
     // ── Markdown formatting strip tests ─────────────────────────────────

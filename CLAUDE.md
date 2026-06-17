@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v5.4.1, 2026-06-17). 委员会置信度逻辑重构+CLI 静默+hard_truncate 移除。See `docs/changelog.md`.
+**Current phase:** Phase 10+ (v5.4.2, 2026-06-17). 委员会 R2 Fallback 误报修复+CIO 总资产注入。See `docs/changelog.md`.
 
 ## Standard workflow
 
@@ -404,6 +404,7 @@ Key phases and their status:
 | 10+ (v5.3.9) | 委员会 CLI Executor Phase 2: 供应商统一+可配置并发+6 CLI prompt 构建器+5 数据格式化器+orchestrator CLI-first 重构(移除 client 参数+API fallback)+API dead code 标记+🔄 重试按钮+3 i18n keys | [done] |
 | 10+ (v5.4.0) | 委员会 CLI Executor 代码审查修复: 15 项全量修复 — 正确性(优雅降级×2/tokens_used 文档/settings 失败表面化/RoleComplete 配对), 性能(OnceLock→Mutex/prompt 去重×2/Dreaming 缓存/spawn 并发化), 质量(原子写入/temp 清理/dead_code 修正/risk_metrics 去重) | [done] |
 | 10+ (v5.4.1) | 委员会置信度逻辑重构+CLI 静默+hard_truncate 移除: 移除 hard_truncate/max_chars/critical_field_keys/strip_bold_markers(14 测试)/length_constraint_suffix 简化/hide_console CLI 静默/Gate 3 移除(子弹不再降级置信度)/compute_red_light_score 移除 dry_powder 参数/Quant R2+Risk R2+CIO prompt 子弹规则清理/Mutex 中毒恢复/代码审查修复(3 残留测试) | [done] |
+| 10+ (v5.4.2) | 委员会 R2 Fallback 误报修复+CIO 总资产注入: detect_fallback_reason 轮次感知(Quant R2 不再要求 regime)/CLI 路径重试(run_role_phase fallback 重调一次)/CIO prompt 注入 portfolio_summary(消除总资产幻觉)/build_portfolio_summary 新增总资产行/Quant R2 单元测试×2/portfolio.rs 测试编译修复 | [done] |
 
 Detailed plans and review responses are in `docs/`.
 

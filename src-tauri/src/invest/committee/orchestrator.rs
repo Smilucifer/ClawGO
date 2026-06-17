@@ -363,7 +363,8 @@ fn build_portfolio_summary(data: &PortfolioData) -> String {
         out.push_str(&format!("总市值: {:.2} CNY\n", data.total_notional));
     }
 
-    out.push_str(&format!("现金: {:.2} CNY", data.cash));
+    out.push_str(&format!("现金: {:.2} CNY\n", data.cash));
+    out.push_str(&format!("总资产: {:.2} CNY", total_assets));
 
     out
 }
@@ -1126,7 +1127,7 @@ async fn retry_on_fallback(
     if let Ok(retry_resp) = llm_call_with_retry(client, system_prompt, messages, None, llm_config).await {
         *total_tokens += retry_resp.usage.total_tokens;
         let mut retry_parsed = parse_role_output(role, &retry_resp.content, false);
-        retry_parsed.fallback_reason = detect_fallback_reason(role, &retry_parsed);
+        retry_parsed.fallback_reason = detect_fallback_reason(role, round, &retry_parsed);
         if retry_parsed.fallback_reason.is_none() {
             *parsed = retry_parsed;
             log::info!("Retry resolved fallback for {:?} R{}", role, round);
@@ -1189,7 +1190,7 @@ async fn run_with_tool_loop(
                             raw_text: "[WORKER_UNAVAILABLE]".to_string(),
                             ..Default::default()
                         };
-                        p.fallback_reason = detect_fallback_reason(role, &p);
+                        p.fallback_reason = detect_fallback_reason(role, round, &p);
                         p
                     },
                     latency_ms,
@@ -1265,7 +1266,7 @@ async fn run_with_tool_loop(
                             raw_text: "[WORKER_UNAVAILABLE]".to_string(),
                             ..Default::default()
                         };
-                        p.fallback_reason = detect_fallback_reason(role, &p);
+                        p.fallback_reason = detect_fallback_reason(role, round, &p);
                         (
                             RoundOutput {
                                 role,
@@ -1282,7 +1283,7 @@ async fn run_with_tool_loop(
         total_tokens += response2.usage.total_tokens;
 
         let mut parsed = parse_role_output(role, &response2.content, false);
-        parsed.fallback_reason = detect_fallback_reason(role, &parsed);
+        parsed.fallback_reason = detect_fallback_reason(role, round, &parsed);
 
         retry_on_fallback(client, role, round, system_prompt, messages, llm_config, &mut parsed, &mut total_tokens).await;
 
@@ -1301,7 +1302,7 @@ async fn run_with_tool_loop(
     } else {
         // No tool calls — use first-pass content directly
         let mut parsed = parse_role_output(role, &response1.content, false);
-        parsed.fallback_reason = detect_fallback_reason(role, &parsed);
+        parsed.fallback_reason = detect_fallback_reason(role, round, &parsed);
 
         retry_on_fallback(client, role, round, system_prompt, messages, llm_config, &mut parsed, &mut total_tokens).await;
 
@@ -1386,7 +1387,7 @@ async fn run_macro_phase(
 
     let raw_text = cli.run_role(&system_prompt, &user_msg, config.timeout_secs, config.settings_path.as_deref()).await?;
     let mut parsed = parse_role_output(role, &raw_text, false);
-    parsed.fallback_reason = detect_fallback_reason(role, &parsed);
+    parsed.fallback_reason = detect_fallback_reason(role, 1, &parsed);
 
     if parsed.fallback_reason.is_some() {
         log::warn!(
@@ -1463,7 +1464,7 @@ async fn run_l4_officer_phase(
                 raw_text: "[WORKER_UNAVAILABLE]".to_string(),
                 ..Default::default()
             };
-            p.fallback_reason = detect_fallback_reason(role, &p);
+            p.fallback_reason = detect_fallback_reason(role, 1, &p);
             RoundOutput {
                 role,
                 round: 1,
@@ -1608,9 +1609,10 @@ async fn run_role_phase(
         (CommitteeRole::Cio, _) => {
             let strategy_ctx = build_strategy_context();
             let profile_ctx = build_user_profile_context();
+            let portfolio_ctx = build_portfolio_summary(portfolio_data);
             super::cli_executor::build_cli_cio_prompt(
                 &asset_name, symbol, asset_context, round_outputs,
-                &strategy_ctx, &profile_ctx,
+                &strategy_ctx, &profile_ctx, &portfolio_ctx,
             )
         }
         _ => {
@@ -1633,13 +1635,29 @@ async fn run_role_phase(
     match cli.run_role(&system_prompt, user_msg, config.timeout_secs, config.settings_path.as_deref()).await {
         Ok(raw_text) => {
             let mut parsed = parse_role_output(role, &raw_text, false);
-            parsed.fallback_reason = detect_fallback_reason(role, &parsed);
+            parsed.fallback_reason = detect_fallback_reason(role, round, &parsed);
 
+            // Retry once on parse failure — append format reminder and re-call CLI
             if parsed.fallback_reason.is_some() {
                 log::warn!(
-                    "run_role_phase: CLI output has fallback reason for {:?} R{} {}: {:?}",
+                    "run_role_phase: CLI output has fallback for {:?} R{} {}: {:?}, retrying once",
                     role, round, symbol, parsed.fallback_reason
                 );
+                let retry_prompt = format!(
+                    "{}\n\n你的上一次输出缺少关键字段或格式不正确。请严格按照 KEY: value 格式重新输出，确保包含所有必需字段。",
+                    system_prompt
+                );
+                if let Ok(retry_text) = cli.run_role(&retry_prompt, user_msg, config.timeout_secs, config.settings_path.as_deref()).await {
+                    let retry_parsed = parse_role_output(role, &retry_text, false);
+                    let retry_fallback = detect_fallback_reason(role, round, &retry_parsed);
+                    if retry_fallback.is_none() {
+                        log::info!("run_role_phase: retry resolved fallback for {:?} R{} {}", role, round, symbol);
+                        parsed = retry_parsed;
+                    } else {
+                        log::warn!("run_role_phase: retry still has fallback for {:?} R{} {}: {:?}", role, round, symbol, retry_fallback);
+                        parsed.fallback_reason = retry_fallback;
+                    }
+                }
             }
 
             let latency_ms = start.elapsed().as_millis() as u64;

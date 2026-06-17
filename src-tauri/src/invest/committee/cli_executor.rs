@@ -646,6 +646,7 @@ pub fn build_cli_cio_prompt(
     round_outputs: &[crate::invest::committee::analysis::RoundOutput],
     strategy_context: &str,
     user_profile_context: &str,
+    portfolio_summary: &str,
 ) -> String {
     use crate::invest::committee::roles::{length_constraint_suffix, load_prompt_for_round, CommitteeRole};
 
@@ -662,6 +663,13 @@ pub fn build_cli_cio_prompt(
          ⚠️ **禁止 tool_call**：所有必要信息都在上方。不要尝试调用任何工具。",
         prior_outputs,
     );
+
+    // Inject portfolio summary (holdings, cash, total_assets) so the CIO can
+    // compute accurate ratios like 子弹占比 instead of hallucinating them.
+    if !portfolio_summary.is_empty() {
+        cli_additions.push_str("\n\n");
+        cli_additions.push_str(portfolio_summary);
+    }
 
     if !strategy_context.is_empty() {
         cli_additions.push_str("\n\n");

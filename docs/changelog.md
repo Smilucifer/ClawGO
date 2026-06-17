@@ -1,5 +1,24 @@
 # Changelog / 更新日志
 
+## v5.4.2 (2026-06-17)
+
+### 委员会 R2 Fallback 误报修复+CIO 总资产注入
+
+**R2 fallback 误报修复 (3 项):**
+
+1. **`detect_fallback_reason` 轮次感知**: 函数签名加入 `round: u8` 参数。Quant R2（round≥2）只检查 `signal`，不再要求 `regime`（R2 prompt 不输出 REGIME，之前 100% 触发 `missing_critical_fields`）。
+2. **CLI 路径增加重试**: `run_role_phase` 中解析触发 fallback 时，附加格式提醒重新调用 CLI 一次，仅在重试成功时替换结果。API 路径已有此机制，CLI 路径之前缺失。
+3. **Quant R2 新增 2 个单元测试**: 验证 `regime=None` 不再触发 fallback（`test_detect_fallback_quant_r2_no_regime_ok`）、`signal=None` 仍正确触发（`test_detect_fallback_quant_r2_missing_signal`）。原有 10 个测试全部适配 round 参数。
+
+**CIO 总资产数据注入 (2 项):**
+
+4. **`build_cli_cio_prompt` 注入 portfolio 数据**: 新增 `portfolio_summary: &str` 参数，CIO prompt 包含持仓表、总市值、现金、总资产。修复 CIO 无数据时幻觉"总资产约 1,562 CNY"的根因。
+5. **`build_portfolio_summary` 新增总资产行**: 输出末尾增加 `总资产: {:.2} CNY`，确保 CIO 和 Risk 角色使用一致的数据。
+
+**附带修复 (1 项):**
+
+6. **`portfolio.rs` 测试编译修复**: `trade_date` 字段 `.into()` → `Some(...)` 适配 `Option<String>` 类型。
+
 ## v5.4.1 (2026-06-17)
 
 ### 委员会置信度逻辑重构+CLI 静默+hard_truncate 移除

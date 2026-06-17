@@ -1,7 +1,8 @@
 # Committee Live Fallback 优化方案
 
-**状态**: [wip]
+**状态**: [done]
 **创建日期**: 2026-06-12
+**完成日期**: 2026-06-17 (v5.4.2)
 **问题描述**: 委员会直播偶发出现"输出缺少关键字段，可能需要重新分析"或"返回了空结果"错误
 
 ---
@@ -263,10 +264,16 @@ fn normalize_line(line: &str) -> String {
 
 ## 待完成的优化（后续任务）
 
-- Task 1: 解析失败重试机制
-- Task 2: 增强解析器容错性
-- Task 3: 失败输出降级注入下游
-- Task 4: 前端单步重试按钮
+- ~~Task 1: 解析失败重试机制~~ ✅ v5.4.0 API 路径 + v5.4.2 CLI 路径
+- ~~Task 2: 增强解析器容错性~~ ✅ v5.3.6+ (6 格式变体/multi-line/continuation)
+- ~~Task 3: 失败输出降级注入下游~~ ✅ v5.4.0 (`[WORKER_UNAVAILABLE]` 标记)
+- Task 4: 前端单步重试按钮（后续功能）
+
+### v5.4.2 额外修复
+
+- **`detect_fallback_reason` 轮次感知**: Quant R2 不再要求 `regime`（根因修复）
+- **CLI 路径重试**: `run_role_phase` fallback 时重调一次
+- **CIO 总资产注入**: `build_cli_cio_prompt` 接收 `portfolio_summary`，消除幻觉
 
 ---
 
