@@ -5,7 +5,7 @@
 
   let { round, blockState = 'done', isStreaming = false }: {
     round: RoundOutputSummary;
-    blockState?: 'pending' | 'active' | 'done' | 'error' | 'failed';
+    blockState?: 'pending' | 'active' | 'done' | 'error' | 'failed' | 'aborted';
     isStreaming?: boolean;
   } = $props();
 

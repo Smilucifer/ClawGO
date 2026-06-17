@@ -45,17 +45,22 @@ export function getStepState(
   symProgress: SymbolProgress | undefined,
   backendIdx: number,
   pipelineStarted?: boolean,
-): 'pending' | 'active' | 'done' | 'error' | 'failed' {
+): 'pending' | 'active' | 'done' | 'error' | 'failed' | 'aborted' {
   if (!symProgress) return 'pending';
   if (backendIdx === -1) return pipelineStarted ? 'done' : 'pending';
 
-  // Check failed steps first (explicit failure from orchestrator)
-  if (symProgress.failedSteps?.has(backendIdx)) return 'failed';
-
-  if (symProgress.activeStep === backendIdx) return 'active';
+  // Completed steps stay done regardless of later abort.
   for (const round of symProgress.completedRounds) {
     if (roleToBackendIdx(round.role, round.round) === backendIdx) return 'done';
   }
+
+  // Check failed steps (explicit failure from orchestrator).
+  if (symProgress.failedSteps?.has(backendIdx)) return 'failed';
+
+  // Aborted symbol: any not-yet-completed step is aborted.
+  if (symProgress.status === 'aborted') return 'aborted';
+
+  if (symProgress.activeStep === backendIdx) return 'active';
   if (symProgress.done && !symProgress.error) return 'done';
   if (symProgress.error && backendIdx >= symProgress.completedSteps) return 'error';
   return 'pending';
