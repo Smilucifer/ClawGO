@@ -6,6 +6,18 @@ use crate::storage::invest::{
     verdicts::{self, PnlSnapshot, Verdict},
 };
 use tauri::Emitter;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use tokio_util::sync::CancellationToken;
+
+/// Per-symbol cancellation tokens for in-flight committee pipelines.
+/// Key = symbol. Managed as Tauri state.
+pub type CommitteeCancelRegistry = Arc<Mutex<HashMap<String, CancellationToken>>>;
+
+/// Build an empty cancel registry for `App::manage`.
+pub fn new_committee_cancel_registry() -> CommitteeCancelRegistry {
+    Arc::new(Mutex::new(HashMap::new()))
+}
 
 /// Maximum number of detail entries returned by `get_verdict_review_detail`.
 const MAX_DETAIL_ENTRIES: i64 = 200;
@@ -866,11 +878,11 @@ pub async fn run_committee_stream(
     symbols: Vec<String>,
     debate_rounds: Option<u8>,
     dry_run: Option<bool>,
+    cancel_registry: tauri::State<'_, CommitteeCancelRegistry>,
 ) -> Result<Vec<crate::invest::committee::orchestrator::CommitteeResult>, String> {
     let config_data = get_llm_config()?;
     let committee_config = build_committee_config(&config_data, debate_rounds)?;
 
-    // Build emitter closure that forwards events to the Tauri event channel
     let emitter: crate::invest::committee::orchestrator::EventEmitter = {
         let app = app.clone();
         std::sync::Arc::new(move |event: crate::invest::committee::events::CommitteeEvent| {
@@ -878,15 +890,38 @@ pub async fn run_committee_stream(
         })
     };
 
+    // Register a fresh cancellation token per symbol.
+    let mut tokens: HashMap<String, CancellationToken> = HashMap::new();
+    {
+        let mut reg = cancel_registry
+            .lock()
+            .map_err(|e| format!("cancel registry poisoned: {e}"))?;
+        for s in &symbols {
+            let tok = CancellationToken::new();
+            reg.insert(s.clone(), tok.clone());
+            tokens.insert(s.clone(), tok);
+        }
+    }
+
     let results = crate::invest::committee::orchestrator::run_committee_batch_stream(
         &symbols,
         &committee_config,
         emitter,
         dry_run.unwrap_or(false),
+        tokens,
     )
     .await;
 
-    // Collect successes; report first error but still return partial results
+    // Clean up registry entries for this batch.
+    {
+        let mut reg = cancel_registry
+            .lock()
+            .map_err(|e| format!("cancel registry poisoned: {e}"))?;
+        for s in &symbols {
+            reg.remove(s);
+        }
+    }
+
     let mut out = Vec::with_capacity(results.len());
     let mut first_err: Option<String> = None;
     for r in results {
@@ -904,6 +939,52 @@ pub async fn run_committee_stream(
     } else {
         Ok(out)
     }
+}
+
+// ── Abort commands ───────────────────────────────────────────────────────────
+
+/// Cancel one in-flight committee symbol pipeline.
+#[tauri::command]
+pub fn abort_committee_symbol(
+    cancel_registry: tauri::State<'_, CommitteeCancelRegistry>,
+    symbol: String,
+) -> Result<(), String> {
+    let reg = cancel_registry
+        .lock()
+        .map_err(|e| format!("cancel registry poisoned: {e}"))?;
+    if let Some(token) = reg.get(&symbol) {
+        token.cancel();
+    }
+    Ok(())
+}
+
+/// Cancel all in-flight committee pipelines.
+#[tauri::command]
+pub fn abort_committee_all(
+    cancel_registry: tauri::State<'_, CommitteeCancelRegistry>,
+) -> Result<(), String> {
+    let reg = cancel_registry
+        .lock()
+        .map_err(|e| format!("cancel registry poisoned: {e}"))?;
+    for token in reg.values() {
+        token.cancel();
+    }
+    Ok(())
+}
+
+/// Load the persisted committee live-queue state.
+#[tauri::command]
+pub fn load_committee_queue() -> Result<crate::invest::committee::queue::CommitteeQueueState, String>
+{
+    Ok(crate::invest::committee::queue::load_queue())
+}
+
+/// Persist the committee live-queue state.
+#[tauri::command]
+pub fn save_committee_queue(
+    state: crate::invest::committee::queue::CommitteeQueueState,
+) -> Result<(), String> {
+    crate::invest::committee::queue::save_queue(&state)
 }
 
 // ── Role Prompts ────────────────────────────────────────────────────────────

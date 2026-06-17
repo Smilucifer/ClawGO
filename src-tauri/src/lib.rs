@@ -250,6 +250,7 @@ pub fn run() {
         .manage(ws_generation)
         .manage(ws_effective_bind)
         .manage(ws_warning)
+        .manage(commands::invest::new_committee_cancel_registry())
         // NOTE: Currently ~60 IPC commands. If approaching 80+, consider grouping
         // into Tauri command modules or using a single dispatch command with typed payloads.
         .invoke_handler(tauri::generate_handler![
@@ -476,6 +477,10 @@ pub fn run() {
             commands::invest::save_llm_config,
             commands::invest::run_committee,
             commands::invest::run_committee_stream,
+            commands::invest::abort_committee_symbol,
+            commands::invest::abort_committee_all,
+            commands::invest::load_committee_queue,
+            commands::invest::save_committee_queue,
             commands::invest::load_committee_archive,
             commands::invest::get_role_prompts,
             commands::invest::save_role_prompt,
