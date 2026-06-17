@@ -1,5 +1,38 @@
 # Changelog / 更新日志
 
+## v5.5.0 (2026-06-18)
+
+### 委员会直播 UI 重构 — Debate Flow Card + 动态执行队列 + Abort
+
+把委员会直播页从"批量一键运行 + 7 步纵向圆点列表"重构为"动态执行队列(可追加/可中止/可重试) + 菱形 debate flow 卡片布局"，后端通过 `CancellationToken` 真正取消进行中的 pipeline。
+
+**后端取消机制 (3 项):**
+
+1. **`queue.rs` 持久化模块**: 新建 `committee/queue.rs`，把直播队列 + portfolio 快照序列化到 `~/.claw-go/invest/committee-queue.json`（tmp+rename+PermissionDenied 重试，与 `storage::runs::save_meta` 同模式）。前端是状态真相源，本模块只做 load/save。3 单元测试。
+2. **`CancellationToken` 注入 orchestrator**: `run_committee` 新增 `cancel` 参数，在每个 phase 边界（macro/regime/debate/CIO 前）调用 `check_cancellation`；取消时先 emit `SymbolAborted` 事件再返回 `Err("aborted: {symbol}")`。`run_debate_rounds` 循环首行检查。`events.rs` 新增 `SymbolAborted` 变体。
+3. **Tauri 命令**: `CommitteeCancelRegistry`(`Arc<Mutex<HashMap<String, CancellationToken>>>`) 作为 Tauri state；`run_committee_stream` 改造为每个 symbol 注册 token；新增 `abort_committee_symbol`/`abort_committee_all`/`load_committee_queue`/`save_committee_queue` 4 命令。
+
+**前端队列调度器 (3 项):**
+
+4. **store 队列状态机**: `InvestCommitteeStore` 导出 class，从"单批 runCommittee"改造成并发队列调度器——维护 `queue: QueueItem[]`，每次对单个 symbol fire-and-forget 调用 `run_committee_stream([symbol])`，前端 `maxConcurrent` 控制并发；`addToQueue`/`abortSymbol`/`abortAll`/`retrySymbol`/`setMaxConcurrent`/`loadQueue` 方法 + 300ms debounce 持久化。7 Vitest 测试(真 TDD)。
+5. **`getStepState` aborted 状态**: pipeline-config 新增 `'aborted'` 返回值——已完成步骤保持 done，未完成步骤在 symbol 中止后显示为 aborted。3 Vitest 测试。
+6. **CommitteeLiveTab 重写**: 菱形 debate flow grid 布局（macro→regime 分叉→quant/risk R1→R2→CIO 汇聚），SVG 连接线；每个 symbol 卡片可展开/折叠，运行中显示 ⏹ abort、完成后显示 ↻ retry；页面内并发选择器；队列进度文字。
+
+**清理 (3 项):**
+
+7. **并发设置迁移**: ProviderConfigPanel 移除并发上限设置（迁移到直播页），删除 store 的 `runCommittee` 兼容 shim。
+8. **删孤儿组件**: `PipelineFlow.svelte`(0 引用) 被 debate flow card 取代后删除。
+9. **i18n**: 14 个新 key(en/zh)。
+
+**Simplify 代码审查修复 (4 路审查):**
+
+10. **abort 不再误判为 failed**: `batch_stream` 的 `Err(e)` 分支对 `aborted:` 前缀的 error 跳过 `Error` 事件 emit（取消已由 `SymbolAborted` 表达，避免前端状态从 aborted 被覆盖成 failed）。
+11. **regime phase 前补 check_cancellation**: macro→regime 之间存在未覆盖的 phase 边界（regime 含 Tushare HTTP 调用），补齐检查点。
+12. **queue.rs 紧凑 JSON**: 机器读取文件改用 `to_string`（非 pretty），省 ~30% 字节。
+13. **渲染热路径优化 + 死代码清理**: CommitteeLiveTab 用 `$derived` 的 `queueMap`/`toolMap` 消除 each 块内 O(assets×n) 重复扫描；`STEP_ICONS`/`STEP_ROUND` 合并进 `STEP_DEFS`(icon/round 字段)；`buildSnapshot` 双 map 合并为单次；删除 store 死字段 `activeSymbols` + LiveTab 冗余 `results.find` fallback。
+
+**取消粒度权衡**: 取消在 phase 边界生效，不中断进行中的单次 LLM 调用（避免 HTTP 请求中途强杀）。stream 路径下后端 Semaphore 退化为 1，真正并发由前端控制。
+
 ## v5.4.3 (2026-06-17)
 
 ### 宏观指标 Tencent/AkShare 集成+委员会 L4 移除+Sanity Check 简化+CIO 输出修复+Prompt 精简

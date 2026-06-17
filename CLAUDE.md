@@ -12,7 +12,7 @@ The core product model is:
 - `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
 - Providers shown in the UI are not always the same as execution agents under the hood.
 
-**Current phase:** Phase 10+ (v5.4.3, 2026-06-17). 宏观指标 Tencent/AkShare 集成+委员会 L4 移除+Sanity Check 简化+8 项 simplify 修复。See `docs/changelog.md`.
+**Current phase:** Phase 10+ (v5.5.0, 2026-06-18). 委员会直播 UI 重构 — Debate Flow Card 卡片布局+动态执行队列(可追加/中止/重试)+CancellationToken 真取消+13 项 simplify 修复。See `docs/changelog.md`.
 
 ## Standard workflow
 
@@ -406,6 +406,7 @@ Key phases and their status:
 | 10+ (v5.4.1) | 委员会置信度逻辑重构+CLI 静默+hard_truncate 移除: 移除 hard_truncate/max_chars/critical_field_keys/strip_bold_markers(14 测试)/length_constraint_suffix 简化/hide_console CLI 静默/Gate 3 移除(子弹不再降级置信度)/compute_red_light_score 移除 dry_powder 参数/Quant R2+Risk R2+CIO prompt 子弹规则清理/Mutex 中毒恢复/代码审查修复(3 残留测试) | [done] |
 | 10+ (v5.4.2) | 委员会 R2 Fallback 误报修复+CIO 总资产注入+CIO 回显误报修复+R2 解析增强+安全检查加固: detect_fallback_reason 轮次感知(Quant R2 不再要求 regime)/CLI 路径重试(run_role_phase fallback 重调一次)/CIO prompt 注入 portfolio_summary(消除总资产幻觉)/build_portfolio_summary 新增总资产行/Quant R2 单元测试×2/portfolio.rs 测试编译修复/format_round_outputs_for_prompt 使用原始 raw_text(防 LLM 回显)/CIO prompt 删除 WORKER_UNAVAILABLE 冗余规则/cio_sanity_check 增加 fallback_reason 检查/apply_r2_signal_override 增加 signal key 变体/parse_quant 补上调整买点提取/i18n 角色配置描述更新/7 新单元测试 | [done] |
 | 10+ (v5.4.3) | 宏观指标 Tencent/AkShare 集成+CIO 输出缺失修复+L4 Officer 移除+Sanity Check 简化+Risk 情绪分析删除+Prompt 精简+15 项 simplify: fetch_csi300 腾讯 K-line fallback/fetch_cgb_10y AkShare fallback/3 新指标(limit_up_count+limit_down_count+two_market_volume)/CIO prompt 字段列表前置(防截断丢失)/detect_fallback_reason 空 verdict 修复(is_blank)/Risk R1/R2 删除用户行为模式(query_dreaming_insights+情绪评估+情绪重校准)/L4 Officer 角色移除(orchestrator/parser/roles/cli_executor/前端 5 文件+events/ParsedFields 10 dead 字段清理)/5→4 角色/Pipeline 8→7 步/Sanity Check 4→2 Gates+三重恶化卫语句/dreaming cache 删除/DebateBlock ROLE_COLORS 复用/L4Officer step_index 碰撞修复 | [done] |
+| 10+ (v5.5.0) | 委员会直播 UI 重构 — Debate Flow Card+动态执行队列+CancellationToken 真取消: queue.rs 持久化(committee-queue.json/tmp+rename 重试/3 测试)/CancellationToken 注入 orchestrator(check_cancellation 在 macro/regime/debate/CIO 边界+SymbolAborted 事件)/CommitteeCancelRegistry+4 Tauri 命令(abort_symbol/abort_all/load_queue/save_queue)/store 导出 class 队列调度器(addToQueue/abortSymbol/abortAll/retrySymbol/setMaxConcurrent/loadQueue+300ms debounce+7 测试)/getStepState aborted 状态(3 测试)/CommitteeLiveTab 菱形 debate flow grid 重写(可展开卡片+abort/retry 按钮+页面内并发选择器)/并发设置迁移+删 runCommittee shim/删孤儿 PipelineFlow.svelte/14 i18n keys/13 项 simplify(abort 不误判 failed/regime phase 前补 check_cancellation/紧凑 JSON/queueMap+toolMap $derived 消除 O(n²) 扫描/STEP_ICONS+STEP_ROUND 并入 STEP_DEFS/buildSnapshot 单 map/删死字段 activeSymbols) | [done] |
 
 Detailed plans and review responses are in `docs/`.
 
