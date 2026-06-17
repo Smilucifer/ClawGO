@@ -3,11 +3,9 @@
   import { getUserSettings } from '$lib/api';
   import {
     investCommitteeStore,
-    type InvestLlmConfig,
   } from '$lib/stores/invest-committee-store.svelte';
 
   const DEBATE_ROUND_OPTIONS = [1, 2, 3, 4, 6, 8];
-  const CONCURRENCY_OPTIONS = [1, 2, 3, 5, 8, 10];
 
   let expanded = $state(false);
   let saving = $state(false);
@@ -44,13 +42,6 @@
     const target = e.target as HTMLSelectElement;
     if (!config) return;
     config.debateRounds = Number(target.value);
-    scheduleSave();
-  }
-
-  function handleConcurrencyChange(e: Event) {
-    const target = e.target as HTMLSelectElement;
-    if (!config) return;
-    config.maxConcurrentSymbols = Number(target.value);
     scheduleSave();
   }
 
@@ -146,20 +137,6 @@
               onchange={handleRoundsChange}
             >
               {#each DEBATE_ROUND_OPTIONS as opt}
-                <option value={opt}>{opt}</option>
-              {/each}
-            </select>
-          </div>
-          <div>
-            <label class="mr-1 text-[11px] text-[var(--text-tertiary)]">
-              {t('invest_committee_concurrency')}
-            </label>
-            <select
-              class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
-              value={config.maxConcurrentSymbols ?? 5}
-              onchange={handleConcurrencyChange}
-            >
-              {#each CONCURRENCY_OPTIONS as opt}
                 <option value={opt}>{opt}</option>
               {/each}
             </select>

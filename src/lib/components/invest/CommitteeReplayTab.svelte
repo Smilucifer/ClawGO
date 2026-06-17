@@ -89,7 +89,7 @@
     if (!symbol.trim()) return;
     simulateRunning = true;
     try {
-      await investCommitteeStore.runCommittee([symbol.trim()], simulateRounds);
+      await investCommitteeStore.addToQueue([symbol.trim()]);
     } catch (e) {
       console.error('Simulation failed:', e);
     } finally {

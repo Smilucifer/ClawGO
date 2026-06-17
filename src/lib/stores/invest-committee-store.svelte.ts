@@ -197,11 +197,6 @@ export class InvestCommitteeStore {
     return this.queue.filter((q) => q.status === 'done').length;
   }
 
-  /** @deprecated compat shim — use addToQueue. Removed after Task 6. */
-  runCommittee(symbols: string[], _debateRounds?: number) {
-    return this.addToQueue(symbols);
-  }
-
   /** Enqueue symbols and start draining. Optional snapshot is captured once. */
   async addToQueue(symbols: string[], snapshot?: PortfolioSnapshot) {
     if (symbols.length === 0) return;

@@ -51,13 +51,9 @@
     errorMsg = null;
     try {
       // Start committee run first — only mark triggered on success
-      await investCommitteeStore.runCommittee(symbolList, debateRounds);
+      await investCommitteeStore.addToQueue(symbolList);
 
-      // Check if runCommittee failed (catches internally, never re-throws)
-      if (investCommitteeStore.runError) {
-        errorMsg = investCommitteeStore.runError;
-        return;
-      }
+      // Note: addToQueue is fire-and-forget (queue-based), runError no longer relevant here
 
       // Mark event as triggered after committee starts successfully
       const marked = await investStore.triggerCommittee(event.id, null);
