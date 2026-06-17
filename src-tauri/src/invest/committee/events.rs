@@ -89,4 +89,8 @@ pub enum CommitteeEvent {
         symbol: String,
         error: String,
     },
+    /// A symbol's pipeline was cancelled by the user via abort.
+    SymbolAborted {
+        symbol: String,
+    },
 }

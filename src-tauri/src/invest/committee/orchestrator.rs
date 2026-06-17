@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
+use tokio_util::sync::CancellationToken;
 
 // Concurrent symbol limit is now configurable via CommitteeConfig.max_concurrent_symbols.
 
@@ -51,6 +52,25 @@ pub struct AssetContext {
 
 /// Callback for emitting committee streaming events.
 pub type EventEmitter = Arc<dyn Fn(CommitteeEvent) + Send + Sync>;
+
+/// Returns `Err` (and emits `SymbolAborted`) when the symbol has been
+/// cancelled. Called between pipeline phases so cancellation takes effect at
+/// the next phase boundary rather than mid-LLM-call.
+fn check_cancellation(
+    cancel: Option<&CancellationToken>,
+    emitter: &Option<EventEmitter>,
+    symbol: &str,
+) -> Result<(), String> {
+    if cancel.is_some_and(|c| c.is_cancelled()) {
+        if let Some(emit) = emitter {
+            emit(CommitteeEvent::SymbolAborted {
+                symbol: symbol.to_string(),
+            });
+        }
+        return Err(format!("aborted: {symbol}"));
+    }
+    Ok(())
+}
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -1611,11 +1631,13 @@ async fn run_debate_rounds(
     regime_context: Option<&str>,
     portfolio_data: &PortfolioData,
     asset_context: &AssetContext,
+    cancel: Option<&CancellationToken>,
 ) -> Result<bool, String> {
     let max_rounds = config.debate_rounds;
     let mut converged = false;
 
     for round in 1..=max_rounds {
+        check_cancellation(cancel, emitter, symbol)?;
         // Both Quant and Risk participate in each round
         let roles = vec![CommitteeRole::Quant, CommitteeRole::Risk];
 
@@ -1700,6 +1722,7 @@ pub(crate) async fn run_committee(
     emitter: Option<EventEmitter>,
     dry_run: bool,
     portfolio_override: Option<std::sync::Arc<PortfolioData>>,
+    cancel: Option<CancellationToken>,
 ) -> Result<CommitteeResult, String> {
     let start = std::time::Instant::now();
 
@@ -1761,6 +1784,7 @@ pub(crate) async fn run_committee(
             });
         }
 
+        check_cancellation(cancel.as_ref(), &emitter, symbol)?;
         let (macro_output, macro_tokens) =
             run_macro_phase(symbol, config, &portfolio_summary, &emitter, &asset_context).await?;
         total_tokens += macro_tokens;
@@ -1836,6 +1860,7 @@ pub(crate) async fn run_committee(
     };
 
     // ── Step 3: Debate rounds ──────────────────────────────────────────
+    check_cancellation(cancel.as_ref(), &emitter, symbol)?;
     let converged = run_debate_rounds(
         symbol,
         config,
@@ -1848,6 +1873,7 @@ pub(crate) async fn run_committee(
         regime_context.as_deref(),
         &portfolio_data,
         &asset_context,
+        cancel.as_ref(),
     )
     .await?;
 
@@ -1863,6 +1889,7 @@ pub(crate) async fn run_committee(
             });
         }
 
+        check_cancellation(cancel.as_ref(), &emitter, symbol)?;
         let cio_output = run_role_phase(
             symbol,
             CommitteeRole::Cio,
@@ -1999,7 +2026,7 @@ pub async fn run_committee_batch(
         let sem = semaphore.clone();
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire_owned().await.expect("semaphore closed unexpectedly");
-            run_committee(&symbol, &config, None, dry_run, Some(portfolio)).await
+            run_committee(&symbol, &config, None, dry_run, Some(portfolio), None).await
         }));
     }
 
@@ -2021,6 +2048,7 @@ pub async fn run_committee_batch_stream(
     config: &CommitteeConfig,
     emitter: EventEmitter,
     dry_run: bool,
+    tokens: HashMap<String, CancellationToken>,
 ) -> Vec<Result<CommitteeResult, String>> {
     // Emit batch-start event
     emitter(CommitteeEvent::CommitteeStart {
@@ -2041,10 +2069,17 @@ pub async fn run_committee_batch_stream(
         let emitter = emitter.clone();
         let portfolio = portfolio_arc.clone();
         let sem = semaphore.clone();
-        handles.push((symbol.clone(), tokio::spawn(async move {
-            let _permit = sem.acquire_owned().await.expect("semaphore closed unexpectedly");
-            run_committee(&symbol, &config, Some(emitter), dry_run, Some(portfolio)).await
-        })));
+        let token = tokens.get(&symbol).cloned();
+        handles.push((
+            symbol.clone(),
+            tokio::spawn(async move {
+                let _permit = sem
+                    .acquire_owned()
+                    .await
+                    .expect("semaphore closed unexpectedly");
+                run_committee(&symbol, &config, Some(emitter), dry_run, Some(portfolio), token).await
+            }),
+        ));
     }
 
     let mut results = Vec::with_capacity(handles.len());
