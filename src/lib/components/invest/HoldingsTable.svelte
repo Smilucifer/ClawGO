@@ -2,6 +2,7 @@
   import { investStore } from '$lib/stores/invest-store.svelte';
   import { t } from '$lib/i18n/index.svelte';
   import { getVerdictBadgeStyle } from '$lib/utils/invest-verdict';
+  import { getInvestDate } from '$lib/i18n/format';
   import type { Holding } from '$lib/types';
 
   let { onBuy, onSell, onAddWatch, onEdit, onConvertToWatch, onDeleteWatch, tushareToken }: {
@@ -81,6 +82,14 @@
 
   function todayTraded(sym: string): { buy: number; sell: number } {
     return investStore.todayTradedShares.get(sym) ?? { buy: 0, sell: 0 };
+  }
+
+  function isVerdictFresh(createdAt: string | undefined): boolean {
+    if (!createdAt) return false;
+    const today = getInvestDate(); // returns 'YYYY-MM-DD'
+    const todayMs = new Date(today + 'T00:00:00').getTime();
+    const createdMs = new Date(createdAt.slice(0, 10) + 'T00:00:00').getTime();
+    return (todayMs - createdMs) / (1000 * 60 * 60 * 24) <= 4;
   }
 </script>
 
@@ -180,8 +189,8 @@
             <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px] text-[var(--text-secondary)]">{traded.buy || '—'}</td>
             <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px] text-[var(--text-secondary)]">{traded.sell || '—'}</td>
             <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)]">
-              {#if verdict}
-                <span class="inline-block rounded-[var(--radius-sm)] px-2 py-0.5 text-[10px] font-semibold" style={getVerdictBadgeStyle(verdict.verdict)}>{verdict.verdict}</span>
+              {#if verdict && isVerdictFresh(verdict.createdAt)}
+                <span class="inline-block rounded-[var(--radius-sm)] px-2 py-0.5 text-[10px] font-semibold" style={getVerdictBadgeStyle(verdict.verdict)} title={'置信度 ' + Math.min(100, (verdict.confidence ?? 0) <= 1 ? (verdict.confidence ?? 0) * 100 : (verdict.confidence ?? 0)).toFixed(0) + '% · ' + verdict.createdAt.slice(0, 10)}>{verdict.verdict}</span>
               {:else}
                 <span class="text-[var(--text-tertiary)]">—</span>
               {/if}
