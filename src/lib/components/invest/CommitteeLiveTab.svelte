@@ -37,6 +37,12 @@
     return '';
   }
 
+  // Hard fallbacks = truly no content; soft (missing_critical_fields) still has rawText.
+  const HARD_FALLBACKS = new Set(['worker_unavailable', 'empty_text', 'cli_executor_none']);
+  function isHardFallback(reason: string): boolean {
+    return HARD_FALLBACKS.has(reason) || reason.startsWith('cli_error');
+  }
+
   const allAssets = $derived.by(() => {
     const assets: { symbol: string; name: string | null; kind: 'hold' | 'watch' }[] = [
       ...invest.holdHoldings.map((h) => ({ symbol: h.symbol, name: h.name, kind: h.kind })),
@@ -170,7 +176,7 @@
         <div class="waiting"><div class="spinner"></div><span>{t('invest_committee_analyzing')}</span></div>
       {:else if state === 'aborted'}
         <span class="muted">{t('invest_committee_aborted')}</span>
-      {:else if round?.parsed?.fallbackReason}
+      {:else if round?.parsed?.fallbackReason && isHardFallback(round.parsed.fallbackReason)}
         <div class="fallback-message">
           <span class="fallback-icon">⚠</span><span>{round.parsed.fallbackReason}</span>
         </div>
@@ -188,8 +194,22 @@
           <div class="regime-hint">{rd.strategyHint}</div>
         </div>
       {:else if round?.parsed?.rawText}
+        {@const pf = round.parsed}
+        <div class="chip-row">
+          {#if pf.signal}<span class="chip sig-{pf.signal.toLowerCase()}">{pf.signal}</span>{/if}
+          {#if pf.strength != null}<span class="chip neutral">{t('invest_committee_chip_strength')} {pf.strength}</span>{/if}
+          {#if pf.verdict}<span class="chip sig-{pf.verdict.toLowerCase()}">{pf.verdict}</span>{/if}
+          {#if pf.confidence != null}<span class="chip neutral">{(pf.confidence * 100).toFixed(0)}%</span>{/if}
+          {#if pf.marketPhase}<span class="chip neutral">{pf.marketPhase}</span>{/if}
+          {#if pf.emotionTemperature}<span class="chip neutral">{pf.emotionTemperature}</span>{/if}
+          {#if pf.buyPointAssessment}<span class="chip neutral">{pf.buyPointAssessment}</span>{/if}
+          {#if pf.valuationAssessment}<span class="chip neutral">{pf.valuationAssessment}</span>{/if}
+          {#if pf.concentrationPct != null}<span class="chip neutral">{t('invest_committee_chip_concentration')} {pf.concentrationPct}%</span>{/if}
+          {#if pf.catalystTier}<span class="chip neutral">{pf.catalystTier}</span>{/if}
+          {#if pf.fallbackReason}<span class="chip warn" title={pf.fallbackReason}>⚠ {t('invest_committee_chip_fields_partial')}</span>{/if}
+        </div>
         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-        {@html renderMarkdown(round.parsed.rawText)}
+        {@html renderMarkdown(pf.rawText)}
       {:else}
         <span class="muted">{t('invest_committee_waiting')}</span>
       {/if}
@@ -614,6 +634,17 @@
   .regime-tag { align-self: flex-start; padding: 2px 10px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--sc) 18%, transparent); color: var(--sc); font-weight: 600; font-size: 12px; }
   .regime-metrics { display: flex; flex-wrap: wrap; gap: 10px; font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
   .regime-hint { font-size: 12px; }
+
+  /* Key-field chips */
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px dashed var(--border); }
+  .chip { font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: var(--radius-sm); text-transform: uppercase; }
+  .chip.neutral { background: var(--bg-input); color: var(--text-secondary); font-weight: 600; text-transform: none; }
+  .chip.warn { background: rgba(255,193,7,0.12); color: var(--color-warning); font-weight: 600; text-transform: none; }
+  .chip.sig-risk_on, .chip.sig-buy, .chip.sig-bullish { background: rgba(138,154,118,0.15); color: var(--color-success); }
+  .chip.sig-accumulate { background: rgba(59,130,246,0.15); color: var(--color-quant, #3b82f6); }
+  .chip.sig-hold, .chip.sig-neutral { background: rgba(196,169,110,0.15); color: var(--accent); }
+  .chip.sig-trim { background: rgba(255,193,7,0.15); color: var(--color-warning); }
+  .chip.sig-risk_off, .chip.sig-sell, .chip.sig-bearish, .chip.sig-high_risk { background: rgba(168,122,122,0.2); color: var(--color-error); }
 
   /* Verdict block */
   .verdict-block {

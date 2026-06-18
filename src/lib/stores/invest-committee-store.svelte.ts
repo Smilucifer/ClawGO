@@ -36,6 +36,26 @@ export interface RoundOutputSummary {
     reasoning?: string;
     truncated?: boolean;
     fallbackReason?: string;
+    // Macro
+    marketPhase?: string;
+    emotionTemperature?: string;
+    // Quant
+    buyPointAssessment?: string;
+    valuationAssessment?: string;
+    moneyFlow?: string;
+    // Risk
+    concentrationPct?: number;
+    dryPowderCny?: number;
+    pnlPct?: number;
+    stockRiskSummary?: string;
+    // CIO
+    catalystTier?: string;
+    catalystSummary?: string;
+    // Task 4 additions
+    executionMode?: string;
+    firstTrancheCny?: number;
+    signalReason?: string;
+    marketPhaseReason?: string;
   };
   latencyMs: number;
   tokensUsed: number;
