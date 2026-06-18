@@ -18,12 +18,14 @@
 ## Global Constraints
 
 - 字段枚举值(verdict 等)保持英文原样显示。
+- **所有金额一律显示三位小数**(用户新增全局要求,2026-06-18)。任何渲染人民币/金额的地方(KPI 卡总资产/持仓市值/现金/总收益/当日收益、持仓表市值/盈亏/当日盈亏、可用余额等)统一 `.toFixed(3)`(或等价格式化),不使用 `toLocaleString()` 的默认小数位。股数/数量不受此约束(整数股)。
 - 前端用 Svelte 5 runes。
 - 新增 UI 文案必须同步 `messages/en.json` 与 `messages/zh-CN.json`。
-- Rust 验证用 `cargo check --manifest-path src-tauri/Cargo.toml`(本机单测因 VCRUNTIME 无法运行二进制,纯逻辑测试代码仍须写,本机以 `cargo check` 验证编译)。
-- 前端验证:`npm run check` + `npm run build` + `npm run i18n:check`。
+- Rust 验证用 `cargo check --manifest-path src-tauri/Cargo.toml`(本机单测因 VCRUNTIME 无法运行二进制;**带 `#[cfg(test)]` 测试的改动用 `cargo check --tests` 验证编译**——plain `cargo check` 不编译测试模块,会漏掉测试里的编译错误)。
+- 前端验证:`npm run check` + `npm run build` + `npm run i18n:check`。注意 `npm run check` 有 3 个预先存在、与本计划无关的 CodeEditor.svelte 错误,只要改动文件无新增错误即可。
 - A 股交易日 5AM 截止规则用现有前端日期工具(对齐 `getInvestDate`)。
 - Conventional Commit 风格。每个 task 完成后:simplify 审查 → 修复 → commit → 验证。
+- 每个 task 的 commit 只包含该 task 自己的文件;工作区存在预先存在的无关改动(`international.rs`、`Cargo.lock`、若干 docs),绝不 `git add -A`。
 
 ---
 
