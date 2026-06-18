@@ -1,424 +1,150 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file guides Claude Code (claude.ai/code) when working in this repository.
 
 ## Overview
 
-This repository is a Windows-first Tauri desktop app with a SvelteKit frontend and a Rust backend. The project is a remaster built on Claw GO's local-first desktop architecture, adding Claude Session Hub concepts such as Rooms, Memo, Roundtable, Driver/Copilot, and Research workflows without disrupting the existing `/chat` path.
+Windows-first Tauri desktop app: SvelteKit (Svelte 5 runes) frontend + Rust backend. Built on Claw GO's local-first architecture, adding Claude Session Hub concepts (Group Chats, Memo, Roundtable, Driver/Copilot, Research) and the openInvest quant subsystem, without disrupting the core `/chat` path.
 
-The core product model is:
-- `Run` is the smallest execution unit.
-- `GroupChat` (formerly Room) is an orchestration layer built on top of one or more runs.
-- `AiCharacter` is a reusable persona template with role_type, role_instruction, and default provider/model, stored in UserSettings.
-- Providers shown in the UI are not always the same as execution agents under the hood.
+Core product model:
+- `Run` — the smallest execution unit (one persisted agent session).
+- `GroupChat` (formerly Room) — an orchestration layer over one or more runs.
+- `AiCharacter` — a reusable persona template (role_type, role_instruction, default provider/model), stored in UserSettings.
+- The provider shown in the UI is not always the execution agent under the hood (see architecture §5).
 
-**Current phase:** Phase 10+ (v5.5.2, 2026-06-18). 委员会直播 settings 文件并发竞态修复(`cleanup_old_committee_settings` 无差别删除→基于 mtime 的 2h 年龄回收+5min 冷却门,根治并发跑多标的时 "Settings file not found")+ 国际指标反序列化修复(`BondYield10y`/`MarketStats` 移除 camelCase rename 对齐 AkShare snake_case)。See `docs/changelog.md`.
+**Current version:** v5.5.2 (Phase 10+). Full per-version history lives in `docs/changelog.md` — consult it instead of duplicating release notes here.
 
 ## Standard workflow
 
-Every development cycle follows this pattern:
-
 1. **Implement** the feature or fix.
-2. **Update** the relevant docs in `docs/` with status and completion notes.
-3. **Code review** via `simplify` skill — three parallel agents check reuse, quality, and efficiency.
+2. **Update** the relevant docs in `docs/`.
+3. **Code review** via the `simplify` skill (parallel agents: reuse, quality, efficiency).
 4. **Fix** all review findings.
 5. **Commit** with Conventional Commit style (`feat:`, `fix:`, `chore:`).
 6. **Verify** with `npm run build`, `npm run i18n:check`, and relevant tests.
 
 ## Common commands
 
-### Frontend / app development
-
 ```bash
-npm install
-npx svelte-kit sync
-npm run dev
-npm run tauri dev
-```
+# Dev
+npm install && npx svelte-kit sync
+npm run dev          # Vite dev server on port 1420
+npm run tauri dev    # desktop app
 
-- `npm run dev` starts the Vite dev server on port `1420`.
-- `npm run tauri dev` runs the desktop app locally.
-
-### Frontend quality checks
-
-```bash
-npm run lint
-npm run lint:fix
+# Frontend quality
+npm run lint         # + npm run lint:fix
 npm run check
 npm run test
 npm run build
-```
 
-### Rust quality checks
-
-```bash
-cargo check --manifest-path src-tauri/Cargo.toml
-cargo test --manifest-path src-tauri/Cargo.toml
-cargo fmt --manifest-path src-tauri/Cargo.toml --check
+# Rust quality
+cargo check  --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+cargo fmt    --manifest-path src-tauri/Cargo.toml --check
 npm run rust:check
-```
 
-### Project-wide verification
-
-```bash
+# Project-wide
 npm run i18n:check
-npm run verify
-```
-
-`npm run verify` runs the main frontend and Rust validation path: lint, format check, i18n check, tests, build, and Rust checks.
-
-### Packaging
-
-```bash
-npm run tauri build
-```
-
-Produces:
-- `src-tauri/target/release/ClawGO.exe` (main binary)
-- `src-tauri/target/release/bundle/nsis/ClawGO_<version>_x64-setup.exe`
-- `src-tauri/target/release/bundle/msi/ClawGO_<version>_x64_en-US.msi`
-
-For version bumping across all config files:
-
-```bash
+npm run verify       # lint + fmt + i18n + tests + build + Rust checks
 npm run release <version|patch|minor|major>
+npm run tauri build  # → src-tauri/target/release/ClawGO.exe + nsis/msi bundles
 ```
 
-### Running a single test
-
-Frontend Vitest only includes `src/**/*.test.ts`.
-
+Single test:
 ```bash
-npm test -- src/lib/stores/memo-store.test.ts
 npm test -- src/lib/stores/group-chat-store.test.ts
-npm test -- src/lib/utils/agent-capabilities.test.ts
-```
-
-Rust single-module examples:
-
-```bash
 cargo test --manifest-path src-tauri/Cargo.toml storage::memos::tests:: -- --nocapture
-cargo test --manifest-path src-tauri/Cargo.toml commands::memos::tests:: -- --nocapture
 ```
+See §11 for a known Rust-test runtime issue on this machine — prefer `cargo check`.
 
-If narrowing Rust tests further, use the module path pattern accepted by `cargo test`.
+## Repo structure
 
-## Key repo structure
+**Frontend (`src/`)** — store-centric Svelte 5:
+- `lib/stores/` — stateful stores; the real behavior lives here, not in route components. Key: `session-store`, `group-chat-store`, `memo-store`, `invest-store`, `invest-committee-store`, `user-memory-store`, `character-memory-store`, `preview-store`, `doctor-store`.
+- `lib/components/` — shared UI (GlobalMemoPanel, ChatMessage, GroupChatLayout, GroupChatStepper, PlanPanel, modals, settings/provider panels, invest components).
+- `lib/utils/` — provider-catalog, platform-presets, format, agent-capabilities, invest-verdict, invest-status, i18n helpers.
+- `lib/transport/` — desktop Tauri IPC vs browser/WebSocket abstraction (§2).
+- `routes/` — chat, history, explorer, plugins, usage, memory, memory-mgmt, invest, config, settings, release-notes. (`/memo` redirects to `/chat`; memo is a pop-out panel.)
 
-- `src/`: SvelteKit frontend (Svelte 5 runes).
-- `src/lib/stores/`: stateful frontend stores; the main app behavior is coordinated here.
-- `src/lib/components/`: shared UI components — GlobalMemoPanel, ChatMessage, CommandPalette, GroupChatStepper, GroupChatLayout, PlanPanel, modals, and provider/settings panels.
-- `src/lib/utils/`: frontend utilities — provider-catalog, format, agent-capabilities, sidebar-groups, and i18n helpers.
-- `src/lib/transport/`: transport abstraction between desktop Tauri IPC and browser/WebSocket mode.
-- `src/routes/`: route-level UI pages — chat, memory, explorer, plugins, usage, history, settings, settings/characters. (`/memo` redirects to `/chat`; memo is a global pop-out panel. Group chats are accessed from `/chat` with sidebar navigation.)
-- `src-tauri/src/commands/`: Tauri IPC command surface consumed by the frontend.
-- `src-tauri/src/agent/`: agent launch, session, stream, PTY (including native PTY for Codex), native transcript parsing, and Windows toolchain handling.
-- `src-tauri/src/group_chat/`: group chat orchestration, memory system (injection, extraction, graph, context), and execution adapters.
-- `src-tauri/src/storage/`: local-first persistence for runs, rooms, memos, settings, artifacts, events, and indexes.
-- `messages/`: i18n resources. When adding UI text, update both `messages/en.json` and `messages/zh-CN.json`.
-- `scripts/`: repo validation, release, and i18n check scripts.
-- `docs/`: implementation plans and review responses. Active docs use `[wip]` prefix; completed ones use `[done]`.
+**Backend (`src-tauri/src/`)** — Rust:
+- `commands/` — the Tauri IPC boundary (§3). ~35 modules incl. chat, session, group_chat, characters, runs, history, memos, settings, invest, teams, agents, mcp, git, files, diagnostics, balance. (There is no `plans.rs` — PlanArtifact CRUD lives in `group_chat.rs`.)
+- `agent/` — launch/session/stream, executor dispatch (claude/codex), control protocol, Windows MSVC env.
+- `group_chat/` — turn orchestration + user/character memory (injection, extraction, dream, context) + execution adapters.
+- `invest/` — the openInvest quant subsystem (§12).
+- `storage/` — local-first persistence (runs, group_chats, memos, settings, events, indexes, `invest/`).
+- `tushare/`, `tencent_quotes.rs` — market-data clients. `python/` — Python RPC bridge (AkShare). `web_server/` — browser/WS mode. `hooks/` — CC hook setup + team watcher.
+- `messages/` — i18n; update both `en.json` and `zh-CN.json` for any UI text.
+- `scripts/` — validation, release, i18n check.
+- `docs/` — plans and reviews (`[wip]`/`[done]` prefixes) plus `changelog.md`.
 
 ## High-level architecture
 
 ### 1. Frontend state is store-centric
+Behavior lives in stores, not thin pages — check stores before editing route components. `session-store.svelte.ts` is the single source of truth for chat session state (phase machine, timeline, tool events, usage, permissions, elicitation, notifications).
 
-The frontend is not organized around thin pages with all logic inline. The important behavior lives in stores and API wrappers.
-
-Key stores:
-- `src/lib/stores/session-store.svelte.ts`: the single source of truth for chat session state. It owns the session phase/state machine, timeline, tool events, usage, permissions, elicitation prompts, task notifications, and session metadata.
-- `src/lib/stores/group-chat-store.svelte.ts`: manages group chat list/detail state, group chat creation, participant creation, run attachment, roundtable messaging, one-click Debate/Summary actions, stepper snapshot state, and onboarding flow.
-- `src/lib/stores/memo-store.svelte.ts`: handles global-only memos in the pop-out panel (project-scoped memo was removed from the visible UI in Phase 7; the backend still supports it for backward compatibility).
-
-When debugging UI behavior, check stores before editing route components.
-
-### 2. The frontend talks to a transport abstraction, not directly to one runtime
-
-`src/lib/transport/index.ts` selects either:
-- `TauriTransport` in the desktop app, or
-- `WsTransport` in browser/web mode.
-
-That means command invocation and event subscription behavior may depend on whether code runs inside Tauri or over WebSocket. Do not assume a browser-only or desktop-only path without checking transport usage.
+### 2. Transport abstraction, not one runtime
+`lib/transport/index.ts` selects `TauriTransport` (desktop) or `WsTransport` (browser/web). Command invocation and event subscription can differ by transport — don't assume a desktop-only or browser-only path without checking transport usage.
 
 ### 3. Tauri commands are the backend API boundary
+The frontend talks to Rust through `commands/`. Notable: `chat.rs` (pipe_exec send + attachments), `session.rs` (actor session lifecycle, auth/env, resume/stop, provider launch config, MSVC injection), `group_chat.rs` (group chat CRUD, participants, run attachment, `list_group_chat_run_index`, turn snapshots, **and PlanArtifact CRUD**), `characters.rs`, `invest.rs`, `balance.rs`. If a call seems to "just update UI", verify it maps to a persisted command first.
 
-The frontend mainly talks to Rust through Tauri commands in `src-tauri/src/commands/`.
+### 4. Agent execution paths
+`agent/executor/mod.rs` defines the `Executor` trait + `for_agent()` dispatch (claude → `ClaudeExecutor`, codex → `CodexExecutor`). Two runtimes: the `SessionActor`/stream-session path (Claude + Claude-compatible providers) and the pipe/exec path (`codex exec --json` JSONL adapter in `executor/codex.rs` — short-lived child per turn, `thread_id` stored in `RunMeta.conversation_ref`). The invest committee has its own CLI executor (§12). Confirm which path is in play when fixing chat/resume/provider bugs.
 
-Important command groups:
-- `commands/chat.rs`: chat send path for `pipe_exec` runs, attachment staging, and spawn flow.
-- `commands/session.rs`: actor-backed session lifecycle, auth/env resolution, resume/stop flow, provider-native launch config generation, and Windows MSVC env injection.
-- `commands/group_chat.rs`: group chat CRUD, participant creation, run attachment, `list_group_chat_run_index` (sidebar grouping), and `get_group_chat_turn_snapshot` (stepper replay).
-- `commands/characters.rs`: AiCharacter CRUD (list/create/update/delete_character).
-- `commands/plans.rs`: PlanArtifact CRUD (get/create/update/approve/complete_plan).
-- `commands/balance.rs`: DeepSeek and MiMo balance/usage queries (Phase 7 balance helper with cookie-based auth for MiMo).
-- `commands/runs.rs`, `commands/history.rs`, `commands/memos.rs`, `commands/settings.rs`: persistence-backed app features.
+### 5. Provider identity ≠ execution identity
+The UI's provider is not always the executing agent.
+- **Official CLI** (subscription): Claude, Codex — native CLI, bypass/yolo permissions.
+- **Claude-compatible API**: DeepSeek, GLM, QWEN, KIMI, MiMo Pro — shown as first-class providers but execute through Claude Code sessions with `platform_id`-based config injection.
+- **Custom** (`custom-*`): user endpoints (Settings → Connection); require base_url + model, validated by `validate_provider_credential`.
 
-If a frontend API call seems to "just update UI", verify whether it actually maps to a persisted Tauri command first.
+Launch config: each session gets a fresh temp JSON (`session-{run_id}.json`) merged from native `~/.claude/settings.json` (preserving hooks/plugins/MCP), with sensitive keys stripped and provider fields overlaid, passed via `claude --settings`. Managed MCP servers and a whitelisted `extra_env` (`ALLOWED_EXTRA_ENV_KEYS` in `agent/provider_claude_config.rs`) are merged in. Templates live in `commands/session.rs`; the catalog in `lib/utils/provider-catalog.ts` + `platform-presets.ts`. Model dropdown shows tier-labeled models (Opus/Sonnet/Haiku); hot-switch via `set_model`. Don't collapse provider selection, model display, and CLI spawn into one assumption.
 
-### 4. There are three execution paths for agent runs
+### 6. Run and GroupChat are persisted local-first
+State lives in local files, not just memory. `storage/runs.rs` (RunMeta + connection/platform snapshots) and `storage/group_chats.rs` (`group_chat.json`, public timeline JSONL, private turns, plan, participant meta; per-ID mutex). A Run is the execution record; a GroupChat references runs (deleting one does not delete its runs); each GroupChat can hold an active PlanArtifact.
 
-A run can execute through:
-- `SessionActor` / stream-session path (Claude Code sessions and Claude-compatible providers).
-- `PipeExec` path (used for print/pipe workflows; also drives the Codex JSONL adapter).
+### 7. Group Chat orchestration
+`group_chat/orchestrator.rs` actively drives turns: fanout, `@debate`, `@summary @name`, `@DisplayName` (SingleTarget — public turn to one participant), `/dm @Name` (private, hidden from public timeline), auto-chain (scan reply for @mentions, up to 3 hops), and role system-prompt injection via `--append-system-prompt`. Frontend is a multi-pane workspace. To change behavior, inspect `group-chat-store.svelte.ts`, `GroupChatLayout.svelte`, and `orchestrator.rs` together.
 
-Relevant code lives in `src-tauri/src/agent/`:
-- `executor/mod.rs`: `Executor` trait + `for_agent()` dispatch (claude → `ClaudeExecutor`, codex → `CodexExecutor`).
-- `executor/codex.rs`: `codex exec --json` JSONL adapter — spawns a short-lived child per turn, parses the stream, persists `thread_id` to `RunMeta.conversation_ref`.
-- `executor/codex_state.rs`: protocol state machine mapping Codex JSONL events to `BusEvent`s.
+### 8. Memo is a global pop-out panel
+`/memo` redirects to `/chat`. A top-bar clipboard button toggles `GlobalMemoPanel` (global scope, flat list). Command Palette dispatches `ocv:toggle-memo`. Files: `GlobalMemoPanel.svelte`, `memo-store.svelte.ts`.
 
-When fixing bugs around chat, resume, room participation, or provider support, always confirm which execution path is in play.
+### 9. History reads CC native sessions
+`/history` reads `~/.claude/projects/` via `discover_cli_sessions` (not `~/.claw-go/runs/`). Subagent sessions are filtered out; already-imported sessions reuse `existingRunId`. `import_cli_session` imports a session as a RunMeta, then resumes. Files: `routes/history/+page.svelte`, `commands/cli_sync.rs`, `storage/cli_sessions.rs`.
 
-### 5. Provider identity is separate from execution identity
+### 10. Windows-first
+No WSL/macOS/Linux assumptions. The backend auto-injects the MSVC dev env for native-toolchain projects (`agent/windows_msvc_env.rs`) and handles npm `.cmd` shims so Codex launches as `node.exe + CLI js`. `MsvcPolicy`: chat uses `AllowByMode`, group chats `Disabled`. `msvc_injected` flows to the frontend via `BusEvent::SessionInit` (MSVC badge). Preserve Windows compatibility when changing spawn/PATH/launch logic.
 
-This codebase intentionally separates what the UI presents as a provider from which execution agent actually runs the work.
-
-Current providers (Phase 9.z):
-- **Official CLI providers** (subscription): Claude, Codex — use their native CLI with bypass/yolo permissions.
-- **Claude-compatible API providers**: DeepSeek, GLM, QWEN, KIMI, MiMo Pro — displayed as first-class providers but execute through Claude Code sessions with `platform_id`-based configuration injection.
-- **Custom providers**: User-created `custom-{timestamp}` endpoints configured via Settings → Connection. Use the same `build_parameterized_env` path as parameterized providers. Require explicit base_url and model.
-
-Key files:
-- `src/lib/utils/provider-catalog.ts`: PHASE7_PROVIDERS array, provider metadata, and label resolution.
-- `src/lib/utils/platform-presets.ts`: platform-specific base URLs and configuration defaults.
-
-Provider-native launch config generation (Phase 9.z):
-- DeepSeek and MiMo Pro use a fixed-URL template (API key only; default model and base_url from preset).
-- GLM, QWEN, KIMI use a shared parameterized template (API key + base URL + model).
-- Custom providers (`custom-*`) use the same parameterized template as GLM/QWEN/KIMI, with user-provided base_url and model. Validated via `validate_provider_credential` which requires api_key, base_url, and model.
-- All providers use per-session temp JSON (`session-{run_id}.json`) generated fresh from the latest credential in settings, passed via `claude --settings <temp-json>` to override global `~/.claude/settings.json`.
-- The temp JSON now merges native `~/.claude/settings.json` as the base (preserving hooks, plugins, env vars, MCP servers), then strips sensitive keys (`apiKey`, `primaryApiKey`), and overlays provider-specific fields. This ensures user config (hooks, enabledPlugins, enabledMcpjsonServers) survives the `--settings` override.
-- Managed MCP servers (`UserSettings.mcp_servers`) are additively merged into the temp JSON alongside native MCP servers.
-- User-configurable env vars are stored in `PlatformCredential.extra_env` and merged via a whitelist (`ALLOWED_EXTRA_ENV_KEYS` in `provider_claude_config.rs`). Only model tier overrides and effort level are allowed; stability vars cannot be overwritten.
-- Chat page model dropdown shows tier-labeled models (Opus/Sonnet/Haiku) via `expandModelsToTiers`, with extra_env overrides applied. Model hot-switching via `set_model` control protocol works for both Anthropic and third-party providers.
-
-Do not collapse provider selection, model display, and actual CLI spawn logic into a single assumption.
-
-### 6. Run and GroupChat are both persisted local-first objects
-
-The app persists state to local storage files rather than treating sessions as purely in-memory.
-
-Key storage modules:
-- `src-tauri/src/storage/runs.rs`: creates and updates `RunMeta`, resolves connection profile/platform snapshots, and stores per-run metadata.
-- `src-tauri/src/storage/group_chats.rs`: stores `group_chat.json`, public timeline JSONL, private turns, plan artifacts, and participant meta files. Uses per-ID mutex locking for concurrent access safety.
-- `src-tauri/src/storage/events.rs`, `artifacts.rs`, `memos.rs`, `settings.rs`: supporting persistence.
-
-Useful mental model:
-- A `Run` is the persisted execution record.
-- A `GroupChat` is a persisted orchestration container that references runs.
-- Deleting a group chat should not imply deleting the linked runs.
-- Each group chat can have an active `PlanArtifact` with tasks, status tracking, and user notes.
-
-### 7. Group Chat orchestration is more than simple grouping
-
-Group chats are not just folders for runs. The backend actively orchestrates turns.
-
-`src-tauri/src/group_chat/orchestrator.rs` handles:
-- fanout turns
-- `@debate`
-- `@summary @name`
-- `@DisplayName message` (SingleTarget — public turn to only the named participant)
-- `/dm @Name message` (Private — private turn, content hidden from public timeline)
-- auto-chain routing: after SingleTarget, scans response for `@mentions` and chains up to 3 hops
-- role-based system prompt injection via `--append-system-prompt` from linked AiCharacter
-
-The frontend group chat page uses a multi-pane workspace layout:
-- Participant panels with toggleable visibility, showing label, provider/model, status badge, and elapsed time.
-- `GroupChatStepper` component showing turn-by-turn status with clickable snapshot replay.
-- `PlanPanel` component for task checklist management (status cycling, approve/complete, user notes).
-- The action toolbar (Debate/Summary/summarizer selector) and composer with `@mention` autocomplete.
-- Group chat participant runs appear in a virtual "Group Chats" folder in the sidebar.
-
-If changing group chat behavior, inspect both:
-- `src/lib/stores/group-chat-store.svelte.ts`
-- `src/lib/components/GroupChatLayout.svelte`
-- `src-tauri/src/group_chat/orchestrator.rs`
-
-### 8. Memo is a global pop-out panel, not a full page
-
-As of Phase 7 Task 8:
-- `/memo` is a redirect page that navigates to `/chat`.
-- The sidebar icon rail no longer includes a Memo link.
-- A clipboard-icon toggle button in the top bar opens `GlobalMemoPanel` (a right-side slide-out panel).
-- The panel uses global scope only, with a single input + add button, and flat list items (text, timestamp, copy, delete).
-- Command Palette dispatches `ocv:toggle-memo` event.
-- The Room page no longer has a memo textarea or `memo_preview` display.
-
-Key files:
-- `src/lib/components/GlobalMemoPanel.svelte`
-- `src/lib/stores/memo-store.svelte.ts`
-
-### 9. History reads CC native sessions, not Claw GO runs
-
-As of Phase 9, the `/history` page reads directly from `~/.claude/projects/` via the `discover_cli_sessions` Tauri command. It no longer uses `~/.claw-go/runs/`.
-
-Key behaviors:
-- Subagent sessions (`hasSubagents: true`) are filtered out — only user-initiated conversations are shown.
-- Sessions are cross-referenced with imported runs; already-imported sessions skip re-import and use `existingRunId`.
-- The `import_cli_session` command imports a CC session as a `RunMeta`, then `startSession(mode="resume")` resumes it.
-- The page supports text search (prompt + cwd + model) and project pill filtering.
-- When `DiscoverResult.truncated` is true, a warning banner is shown.
-
-Key files:
-- `src/routes/history/+page.svelte` — History page (direct call to `discover_cli_sessions`)
-- `src-tauri/src/commands/cli_sync.rs` — Tauri commands: `discover_cli_sessions`, `import_cli_session`
-- `src-tauri/src/storage/cli_sessions.rs` — session discovery, parallel processing via rayon
-- `src/lib/types.ts` — `CliSessionSummary`, `DiscoverResult` types
-
-### 10. Windows-native behavior matters here
-
-This repository is explicitly Windows-first. Do not assume WSL/macOS/Linux workflows.
-
-Important backend support already exists for Windows-native CLI execution:
-- automatic MSVC developer environment injection for native-toolchain projects.
-- special handling for npm `.cmd` shims so Codex can launch as `node.exe + CLI js`.
-- code in `src-tauri/src/agent/windows_msvc_env.rs` and related session/chat spawn paths.
-
-**MSVC injection enhancements (Phase 8):**
-- Auto-detection extended: `CMakeLists.txt`, `vcpkg.json`, `*.sln`, `*.vcxproj`, `*.pro`, `*.pri` (root-only).
-- Chat/GroupChat policy split: `MsvcPolicy` enum — chat uses `AllowByMode`, group chats use `Disabled` (backend-enforced).
-- `msvc_injected: Option<bool>` propagated via `BusEvent::SessionInit` to frontend; MSVC badge in `SessionStatusBar`.
-- `MsvcEnvSkipReason::RoomPolicy` (distinct from `DisabledByUser`) for diagnostics.
-
-When changing spawn behavior, PATH handling, or provider launch commands, preserve Windows desktop compatibility.
-
-### 11. MSVC linker resolution (cargo config fix)
-
-On this machine, `C:\Program Files\Git\usr\bin\link.exe` (Git's Unix `link` tool) shadows the MSVC linker. Cargo must be told to use the real linker explicitly:
-
-**File:** `C:\Users\InBlu\.cargo\config.toml`
+### 11. MSVC linker + Rust-test runtime issue (this machine)
+Git's `C:\Program Files\Git\usr\bin\link.exe` shadows the MSVC linker. `C:\Users\InBlu\.cargo\config.toml` pins the real one:
 ```toml
 [target.x86_64-pc-windows-msvc]
 linker = "C:/Program Files (x86)/Microsoft Visual Studio/18/BuildTools/VC/Tools/MSVC/14.50.35717/bin/Hostx64/x64/link.exe"
 ```
+Without it, `cargo build`/`test` and `npm run tauri build` fail at the link step. Update the path (forward slashes) if the Build Tools version changes.
 
-Without this config, `cargo build`, `cargo test`, and `npm run tauri build` will fail at the build-script linking stage. If the MSVC Build Tools version changes, update the path. Use forward slashes (Windows accepts them and they avoid TOML escaping issues).
+**Known issue:** Rust unit tests fail at runtime with `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)` — the BuildTools MSVC links a newer `VCRUNTIME140.dll` than the one in System32, and the loader picks the old one. Workaround: use `cargo check` to validate Rust code (catches compile errors without running the binary). Full test runs need a matching VC++ redist or a clean VM/CI.
 
-**Known issue: Rust unit tests fail with STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139).** Root cause: VS 18 BuildTools MSVC 14.50.35730 links against a newer VCRUNTIME140.dll than the one installed in System32 (14.50.35719). The Windows loader finds the old System32 DLL first and rejects the binary because a required CRT entry point is missing. Workaround: use `cargo check` for Rust code validation; it catches compile errors without running the binary. Full test runs need either a matching VC++ redistributable update or a clean VM/CI environment.
+### 12. openInvest subsystem (`invest/`)
+A self-contained quant/portfolio assistant under `src-tauri/src/invest/`, surfaced at `/invest`. Largely independent of the chat/group-chat core; persists to `storage/invest/` (`invest.db`, SQLite). Frontend state: `invest-store.svelte.ts`, `invest-committee-store.svelte.ts`. The committee role count and pipeline shape have changed across versions — read the source rather than trusting a number here.
+- **Committee** (`invest/committee/`) — a multi-role LLM debate that emits a per-symbol verdict. Active roles in `roles.rs` (Macro, Quant, Risk, CIO) across two rounds (R1/R2). `orchestrator.rs` drives the pipeline; `cli_executor.rs` runs each role through the Claude CLI; `parser.rs` + `analysis.rs` extract structured fields; `tools.rs` exposes role-scoped data tools; `queue.rs` persists the run queue with CancellationToken-based abort; `archive.rs` writes verdict reports.
+- **Data** — `tushare/` (HTTP client, custom proxy), `tencent_quotes.rs` (realtime), Python AkShare via the `python/` bridge, `international.rs` (global indices). `indicators.rs` is shared TA (RSI/MA/percentiles); `regime.rs` computes market regime; `macro_refresh.rs` caches macro indicators.
+- **Scheduler** (`invest/scheduler/`) — cron jobs: PnL snapshots, event scan, daily report (`daily_report.rs`), dreaming.
+- **Events** — `jin10_collector.rs` (high-frequency Jin10 feed), `event_analyzer.rs` (LLM normalization), `event_scanner.rs`.
+- **Dreaming** (`invest/dreaming/`) — periodic reflection producing domain insights.
+- **Verdict review** — `verdict_review.rs` (accuracy tracking).
 
-### 12. Target directory cleanup
-
-The `src-tauri/target/` directory can accumulate 30+ GB of incremental compilation artifacts (primarily in `debug/incremental/` and `debug/deps/`). Periodically clean:
-
-```bash
-# Aggressive: removes everything except release artifacts
-rm -rf src-tauri/target/debug
-rm -rf src-tauri/target/release/{deps,build,.fingerprint,incremental}
-
-# Keep only latest installers
-find src-tauri/target/release/bundle -name '*.msi' ! -name '*<version>*' -delete
-find src-tauri/target/release/bundle -name '*.exe' ! -name '*<version>*' -delete
-
-# Cargo-native clean (use sparingly — removes all build caches)
-cargo clean --manifest-path src-tauri/Cargo.toml
-```
-
-## Existing repo-specific guidance
-
-These are already established patterns in the repo and should be preserved:
-
-- Use Svelte 5 runes patterns in frontend code (`$state`, `$derived`, `$effect`, `$props`).
-- Keep provider identity separate from execution identity.
-- Tests are colocated where practical; frontend tests use `*.test.ts`, Rust tests stay near the module under test.
-- Conventional Commit style is used in git history (`feat:`, `fix:`, `chore:`).
-- Do not commit API keys, local settings, or generated runtime state.
-- `.arena` files are local runtime context mirrors (legacy from Room era) and may contain run context, memo text, and recent public previews; they are not shareable artifacts.
-
-## Implementation history
-
-Key phases and their status:
-
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 1 | Memo implementation | [done] |
-| 3 | Roundtable implementation | [done] |
-| 4 | Driver/Copilot | [done] |
-| 4.5 | Research follow-up | [done] |
-| 5 | Capability matrix | [done] |
-| 5.5 | Native CLI chat parity | [done] |
-| 6 | Driver MCP | [done] |
-| 7 | Native CLI auth, provider settings, roundtable layout | [done] |
-| 7.x | Provider config dynamization, per-session JSON, MiMo Pro | [done] |
-| 7.y | Room optimizations: delete cleanup, incremental turns, status labels, context menu | [done] |
-| 8 | Gemini removal, Stepper mini-map, @Name SingleTarget, Room sidebar grouping, prompt constraint | [done] |
-| 8.x | UX optimizations: sidebar preview fix, update URL, provider model auto-switch, room command hints | [done] |
-| 9 | History page rewrite: CC native sessions, subagent filtering, simplified UI | [done] |
-| 9.x | Room adapter timeout fix: activity-aware timeout, cancel turn, frontend UX | [done] |
-| 9.y | Provider presets cleanup, extra_env whitelist, tier model labels, collapsible config panel, old ID removal, label disambiguation | [done] |
-| 9.z | Custom Provider support, native config merge, managed MCP injection, SENSITIVE_KEYS centralization | [done] |
-| 10 | Group Chat refactor: Room→GroupChat rename, Character Library, Plan mechanism, Context Management MVP, Role System Prompt, Auto-chain | [done] |
-| 10+ | Character Memory System: LanceDB, petgraph, LLM auto-extraction, hybrid search, sigma.js viz, review queue, injection config UI | [done] |
-| 10+ (v2.2.0) | 群聊体验优化: Markdown 渲染, 长文折叠, Executor 过滤, 上下文共享, P0 bug 修复, 3 轮多路审查 | [done] |
-| 10+ (v2.3.0) | Memory extraction chat_api_key 分离: EmbeddingConfig 独立 chat 凭据, 设置 UI, 4 路审查, 安全修复 | [done] |
-| 10+ (v2.3.0) | 记忆提取准确性: 说话人标注, LLM 置信度, 群聊侧边栏私聊修复, 时间线自动滚底 | [done] |
-| 10+ (v2.4.0) | 1M 上下文窗口: per-provider AUTO_COMPACT_WINDOW, 前端进度条静态映射 + fallback, advisory 软策略, CONTEXT_TURN_WINDOW 3→1, 3 路审查修复 | [done] |
-| 10+ (v2.5.0) | Doctor 诊断面板, FilesPanel 树视图重写, 7 项审查修复 | [done] |
-| 10+ (v2.6.0) | Preview panel code review: keyboard scope, $effect reactivity, DOMPurify styles, regex URL FP, dirty guard, base64 guard | [done] |
-| 10+ (v3.0.0) | 记忆系统重构: SQLite FTS5 用户中心架构, 移除 LanceDB + petgraph + Embedding API, 15 项审查修复, shared injection, 前端去重 | [done] |
-| 10+ (v3.1.0) | openInvest Phase 1: invest.db 数据层, scope-aware 记忆, /invest + /memory-mgmt 路由, MoreMenu, 18 commits, 8 项审查修复 | [done] |
-| 10+ (v3.2.0) | openInvest Phase 2: Dashboard KPI, 持仓管理(HOLD/WATCH), 交易对话框, 交易记录+CSV导出, 策略配置CRUD, Chart.js PnL 图表, Tushare HTTP client(自定义代理), PnL 定时快照, 交易日历同步, Legacy 迁移, 55+ i18n keys, 13 项审查修复 | [done] |
-| 10+ (v3.3.0) | openInvest Phase 3a+3b+3c+4a: LLM 委员会编排, SSE streaming, 角色配置, Insights Feed, Pipeline Notifications, Event Watch(Tushare 新闻+LLM 归一化), Scheduler 6 jobs, Verdict Review, Dreaming 3 阶段管道, FTS5 domain_insights, Archived 视图 | [done] |
-| 10+ (v3.4.0) | openInvest Phase 4b: 系统二级页 7 Tab(Regime/Datasource/PnL/Dreams+3 复用), 用户档案(/settings/profile), 每日报告定时任务, 9 项审查修复 | [done] |
-| 10+ (v4.0.0+) | openInvest Fix Tasks: 4 P0 bug, 3 demo HTML, 6 P1 大改(加入观望/Profile 迁移/侧边栏顺序/运行全部/Replay 增强/角色配置重写), 5 P2/P3(多资产总览/Dashboard 卡片/i18n/MEMORY.md 默认/FilePathLinks), 15 项代码审查修复 | [done] |
-| 10+ (v5.0.0) | openInvest Phase 5: 委员会 LLM 工具+Prompt 全面升级 — 角色精简(7→4 enum, Round R1/R2), Regime 模块(RSI-14/价格分位数), Tushare 宏观接口(4 方法), Yahoo Finance 客户端(6 国际指标), macro_cache 存储层(12 指标), 调度+cron+工具重写(双数据源/MA120), 工具分角色开放(role_tool_defs), 6 个新 Prompt, Parser+Analysis 更新(10 新字段/Gate 4), 15 项代码审查修复 | [done] |
-| 10+ (v5.0.1) | 代码审查修复: 9 路审查 15 项修复 — 数据完整性(asset_type 迁移/notional 保护/事务包装/dry_run 透传/索引对齐), UI 正确性($derived 修复/R1 Prompt 路径/deleteTrade 刷新/regime 成功检查/TradeDialog 验证), 死代码清理(archive_decision 移除/events.jsonl 覆盖/多日期回放/手动审查/verdict ID 查询) | [done] |
-| 10+ (v5.0.2) | Yahoo Finance 429 限流修复: fetch_chart_raw/fetch_yahoo_news 重试 3 次+指数退避, fetch_all_quotes/fetch_china_finance_news 串行化+300ms 间隔 | [done] |
-| 10+ (v5.0.2) | 代码审查修复: 15 项修复 — 数据完整性(initial_balance 写入/family_support 迁移集中/provider config 对称), UI 正确性(bars 排序/account purpose 迁移/loading 状态/model_override 透传), 死代码清理(parse_provider_id 去重/row_to_verdict 提取/ETF 过滤/DB 错误日志/saveTimer 清理) | [done] |
-| 10+ (v5.0.3) | 委员会中文化+REGIME 展示+Parser 双语+Profile 双注入: Gate notes/归档报告中文化, RegimeStep 事件扩展+前端 REGIME 卡片, Parser 双语支持(any 系列函数), 6 个 Prompt 模板字段名中文化, Profile Risk R1+CIO 双注入, 风险指标预计算(CONCENTRATION_PCT/PNL_PCT/DRY_POWDER_CNY), PortfolioData 消除重复 DB 查询, 6 项审查修复 | [done] |
-| 10+ (v5.0.4) | Yahoo Finance 429 二次修复+扫描增强+add_watch+fund_basic: macro_refresh 并发改串行, 请求间隔统一 500ms 常量, ScanResult errors 字段+前端日志, Yahoo 兜底阈值常量化, log+push 去重, ScanResult TS 接口, add_watch action 迁移, fund_basic 客户端过滤 | [done] |
-| 10+ (v5.0.5) | 代码审查修复: Yahoo 认证加固+Tushare 代理验证+并发安全 — TushareClient URL scheme 验证/reqwest::Proxy 静默失败修复/Mutex 中毒恢复/重试末尾退避消除/ensure_session 惊群修复/Mutex→RwLock/with_token_and_proxy 新方法/resolve_local_proxy_url 共享辅助函数/代理 URL 格式验证/端口范围检查/代理函数语义改进 | [done] |
-| 10+ (v5.1.0) | UI 设计系统统一: 暖色暗黑固定主题+自定义标题栏+Inter 字体+移除主题/色彩方案切换+Settings 底部分隔 — CSS 变量重写/tauri.conf.json decorations:false/46 项功能入口回归通过 | [done] |
-| 10+ (v5.1.1) | Bug 修复+Chat UI 升级+代码审查优化: 标题栏权限/Python Overlay 竞态/Index 首页/消息+输入框+状态栏+右侧面板 UI/Flat token 别名/format 工具复用/recompute_notional 方法/并发价格获取/6 项 simplify 审查修复 | [done] |
-| 10+ (v5.1.2) | ETF 价格修复+事件扫描增强+simplify 审查修复: daily_api() ETF 路由/Severity::as_str()/循环合并/英文关键词/零分配截断/record_trade 自动 recalculate/notional 兜底/CIO 100 股规则 | [done] |
-| 10+ (v5.2.0) | 委员会 L1-L4 策略框架升级: 5 角色+L4 Officer/8 步 Pipeline/7 Prompt 重写/AssetContext 数据注入层/4 新工具/30+ Parser 字段/行为红灯评分/catalyst Tier 框架/Simplify 8 项审查修复 | [done] |
-| 10+ (v5.2.1) | Memory Extraction 设置迁移+全局记忆文件扩展+委员会 7 项改进(成本基准收益率/交易过滤/ConfirmDialog/Dream 修复/事件中文化/策略注入 Risk/L4 Officer 工具面板)+6 i18n keys | [done] |
-| 10+ (v5.2.2) | /invest 全模块 UI 设计系统统一: 28 文件(27 组件+1 页面)暖色暗黑迁移/5 Tab+14 子 Tab+6 通用组件/CSS 变量映射/Badge 重设计/tab 导航重写/svelte-check+ESLint+Build 全通过 | [done] |
-| 10+ (v5.2.3) | /invest UI 修复+委员会 3 子页布局重构: [data-invest-scope] CSS token 作用域覆盖(--accent 金色/--color-error 暖红/--bg-input 输入层次)/CommitteeReplayTab 250px 双栏重写/CommitteeArchiveTab 双栏+verdict regex/CommitteeToolsTab 9×5 访问矩阵真表格/抽 invest-verdict.ts+pipeline-config ROLE_COLORS+getStepState/5 项 simplify 审查修复(verdictMap 预计算/loadGen race fix/死代码清理) | [done] |
-| 10+ (v5.2.4) | 批量实时行情 API+交易流程简化+返回率计算修复: get_realtime_quotes 批量 IPC(rt_k+fund_daily 降级)/refreshPrices N→1 次调用/buyStock+sellStock 移除手动 holding CRUD(依赖 record_trade recalculate)/totalReturnPct holdingsMarketValue/maxHolding 修复/--text-secondary+--text-tertiary/3 项 simplify(partition+join_all 并发+死赋值清理) | [done] |
-| 10+ (v5.2.5) | 委员会数据缓存+8段注入优化+前端名称显示: stock_data_cache 永久缓存(三元主键/batch_upsert 事务)/build_asset_context cache-first+typed deserialization(DailyBasic/FinaIndicator/ReportRc)/load_prompt_for_round 统一 17 占位符/Risk prompt 资产上下文(PE/PB/ROA/负债率/评级)/CIO 数据质量警告/exec_company_info+exec_moneyflow cache-first(nameMap/isMarketOpen 盘中检测/cron sanitize/6 项 simplify | [done] |
-| 10+ (v5.2.6) | 持仓名称持久化+收盘价格修复+代码搜索+数据初始化+持仓编辑+手动交易: trades.name/trade_date 字段+DB migration 回填/recalculate_holdings_inner 从 trade 恢复名称/investStore.nameMap 合并 3 源(持仓+行情+交易)/refreshPrices 智能守卫(收盘后已有缓存则跳过)/stock_basic ts_code 精确匹配+fund_basic 代码匹配/init_invest_data 命令/TradeDialog add_trade+edit_holding 模式/HoldingsTable 编辑按钮/recordTrade+updateHoldingMeta store 方法/TRADE_COLUMNS 常量+trade_from_row/6 项 simplify | [done] |
-| 10+ (v5.2.8) | invest DB 迁移修复+Watch 价格刷新+委员会 Bug 修复(Quant 资金流向/Risk 集中度)+代码审查优化: trades_new 10→12 列/FALLBACK 删库重试/invest_db_path+ensure_conn+has_column 提取/冗余迁移块删除/refreshPrices 守卫修复(全持仓缓存检查)/addToWatch 价格预填/EventWatchTab String() 类型修复/ETF rt_k adj_nav fallback/PnL 快照手动触发刷新修复(refreshPnlSnapshots+按 job 定向刷新+并行化)/CSS border 统一/Quant R1 资金流向缓存检查升级(按类型逐一检查+定向 refresh_moneyflow_cache)/Risk R1 集中度分母含现金对齐前端/total_assets()+has_type 闭包+entries.push 内存追加/15 项 simplify | [done] |
-| 10+ (v5.2.9) | 腾讯行情 API 集成+ETF 价格修复+asset_type 全链路修复+DB 迁移安全修复+代码审查优化: tencent_quotes 模块(fetch_quotes/~分隔解析/共享 reqwest::Client)/realtime_quotes 四层降级(腾讯→部分成功→rt_k→daily)/resolve_close_idx 统一价格列定位/get_latest_price adj_nav fallback/Trade.asset_type 字段+DB migration 回填/update_trade SQL 补 asset_type/resolve_asset_type 推导/is_etf_symbol 共享函数/前端 6 处 IPC 补 assetType/TradeDialog add_trade 传入/init_with_fallback 备份策略(迁移失败先备份再删除)/backup_db_files 时间戳备份/migrate_trades_table 宽容迁移(动态列检测+NULL 填充)/7 项 simplify(移除重复 RealtimeQuote+复用 client+共享 is_etf_symbol+长度守卫 38+部分成功降级+注释更新+conn.transaction() RAII 回滚+get_table_columns Result 防静默擦除+DB_SIDECAR_EXTS 常量+HashSet O(1) 查找+TRADES_COLUMNS 静态常量+删除 20 行死代码) | [done] |
-| 10+ (v5.2.10) | 委员会直播页面崩溃修复 — watch/hold 持仓去重+Simplify 审查修复: watchHoldings store 层 holdSymbolSet 去重(根因: buyStock 不清理 watch 条目→重复 key→Svelte 运行时崩溃)/CommitteeLiveTab+CommitteeReplayTab 组件级冗余去重移除/3 项 simplify(altitude: 去重提升到 store 层/reuse: 消除跨组件重复 seen Set/simplification: 双循环合并为 map) | [done] |
-| 10+ (v5.2.11) | 记忆管理重构+DSML 工具调用格式兼容+委员会 UI 修复: list_memory_files 定向扫描/remove_memory+archive_memory+restore_memory 命令/EmbeddingConfig+memory_dream_enabled 持久化/记忆管理页重写(saveSettingsPatch)/parse_dsml_tool_calls 解析器(collect_stream 层规范化)/orchestrator 简化(解构去 clone+args 缓存)/CommitteeAccuracyTab onMount 修复/emergencyBufferCny+formatCash 精度 | [done] |
-| 10+ (v5.2.12) | Tushare moneyflow_dc Schema 迁移+XML 工具调用解析+Changelog 查看器+委员会批量运行: MoneyflowDc 结构体*_vol→*_amount(7 字段)/万手→亿元/moneyflow_dc() 解析器+aggregate_moneyflow+format_moneyflow_summary+工具描述更新/parse_xml_tool_calls(<tool_call> 格式)/finish_tool_parse 共享函数/collect_stream 二级降级/7 单元测试/AboutModal changelog.md 解析+折叠展开+搜索+懒解析/CommitteeLiveTab 复选框多选+运行选中+全选/ReplayTab verdict 徽章+MarkdownContent/buildVerdictMap+encodeCwdSlug 提取/memory 项目范围过滤/10 i18n keys/4 路 simplify 审查通过 | [done] |
-| 10+ (v5.2.13) | 工具调用解析器增强+encode_cwd 冒号兼容+13 单元测试: parse_function_calls()/parse_fn_tag_body()/infer_json_value()/TOOL_CALL_TAG_PAIRS/strip_residual_tool_call_tags 安全网/parse_dsml_tool_calls 单竖线/collect_stream 四级降级/encode_cwd 冒号替换/encodeCwdSlug 同步/13 单元测试 | [done] |
-| 10+ (v5.2.14) | PnL 快照每日收益计算+卖出现金同步+收盘价格修复+代码审查优化: get_previous_day_snapshot()/recalculate_cash_inner()/is_a_share_market_open(交易日历)/get_latest_price 收盘后跳过 rt_k/row_to_pnl_snapshot 复用/scheduler 模块提取/10 项审查修复 | [done] |
-| 10+ (v5.2.15) | 卖出自动转 Watch+G3 子弹数据兜底修复: sell 全部卖出→hold 自动转 watch(保留名称/成本价)/cio_sanity_check actual_cash_cny 兜底(PortfolioData.cash→G3 永久可用)/concentration 去重/MemHolding::copy_core_fields_from 辅助方法/2 项 simplify | [done] |
-| 10+ (v5.2.16) | invest 统计日期 5AM 截止+委员会批量优化+收盘价格修复+现金负数修复+备用金重构+Watch 复活修复+Watch转Hold shares 修复: date_utils 集中模块(3 函数+5 测试)/8 处调用替换/PortfolioData Arc 批量共享+30s timeout+load_with_timeout 提取/dry_run 模式/notional_is_estimated 警告/cio_sanity_check Gate 3 actual_cash fallback+Gate 4 去重/recalculate_cash_inner 自动同步/get_latest_price+realtime_quotes 收盘后跳过 rt_k/sell auto-convert watch+watch_deleted 防复活/getInvestDate 前端本地时区修复+常量提取/Dashboard 日期规则提示/set_cash_inner NULL initial_balance 修复/emergency_buffer_cny 全链路删除( UserProfile+InvestLlmConfig+CommitteeConfig)/effective_buffer 动态计算(max min_cash_pct×total_assets)/风险偏好从 account_purpose 推导注入 prompt/前端+4 i18n key 清理/参数重命名 min_cash_reserve/convert_watch_to_hold replay shares 从交易记录读取+recompute_notional/10 项 simplify | [done] |
-| 10+ (v5.2.17) | Dashboard 按钮统一+做T成本均摊: HoldingsTable hold/watch 统一编辑/买入/卖出按钮/onBuy prop/移除 confirmDeleteWatch 死代码/dialogMode 类型清理/PnlTracker 结构跟踪实现盈亏+清仓日期/is_pnl_expired 日期边界(≥2天过期)/buy 分支统一消除冗余条件/_amount 死变量移除/get_or_insert_with 优化/3 项 simplify | [done] |
-| 10+ (v5.2.18) | 事件源重构: Jin10 全量快讯+AkShare 个股新闻替代 Yahoo/Tushare 新闻/Tushare 新闻移除/东财搜索 API/国际事件覆盖/AkShare Python provider/rpc_call 泛型提取/probe_news helper/fallback_time 常量/5 项 simplify | [done] |
-| 10+ (v5.2.19) | Python RPC 崩溃修复: lazy import 模式+server.py ImportError 处理+bridge.rs exit_status 移除+stderr 简化/providers/utils.py 共享工具提取(3 函数消除 8 处重复)+LazySession+clean_dataframe+BaseException 保护+_safe_print/PnL 快照 get_previous_day_snapshot/资金流向当日注入(MoneyflowCachePayload+to_cache_json+Quant R1 双注入)/Jin10 错误日志/17 个临时文件清理+.gitignore 更新/340MB worktrees 清理/6 项 simplify 修复 | [done] |
-| 10+ (v5.3.0) | convert_watch_to_hold 移除(delete_watch+buy 替代)+现金管理重构(增量 UPDATE 替代全量重算+cash_delta_for_trade 单一真相源+get_trade_by_id 提取+recalculate_inner 合并+get_cash_inner 错误传播)+时间格式统一(Millis 精度+DB 归一化)+CHECK 迁移数据保护+前端 IPC 精简(4→2)+SchedulerTab 卡片重设计+next_run 计算+状态映射合并+7 项 simplify | [done] |
-| 10+ (v5.3.0) | 定时任务调度面板重设计: Card 布局+状态圆点+倒计时+7 预设+可视化 cron builder+运行时间线/后端 compute_next_run_for_job+load_jobs 自动填充+runner should_fire 简化(45→5 行)+单次 load+save/invest-status.ts 共享模块+STATUS_MAP 查找表/18 i18n keys/4 项 simplify(load_jobs_base 提取+persist_next_run 删除+should_fire 消除+查找表合并) | [done] |
-| 10+ (v5.3.1) | Python RPC UnicodeEncodeError 修复: bridge.rs PYTHONIOENCODING=utf-8 环境变量+server.py _safe_print UnicodeEncodeError 捕获+4 路 simplify 审查通过 | [done] |
-| 10+ (v5.3.1) | 定时任务 cron 格式修复: PRESETS/fieldsToCron 5→6 字段+stripSeconds 提取+normalize_cron_6field 后端归一化+DreamConfig 默认修复+4 路 simplify 审查通过 | [done] |
-| 10+ (v5.3.1) | NewsItem 反序列化修复+重命名: YahooNewsItem→NewsItem+移除 rename_all="camelCase"(Python snake_case 根因修复)+绝对时间 tooltip+4 路 simplify(Altitude: related_tickers 隐患→移除 rename_all) | [done] |
-| 10+ (v5.3.2) | 金十快讯高频采集+事件分析器: jin10_collector.rs(15s 轮询/内存去重/analyzed=false)+event_analyzer.rs(10min LLM 归一化)+events 表 3 字段扩展+Scheduler 2 jobs+Python Jin10 增强(_clean_html/_should_skip/channel)+13 项 simplify(泛型化 parse_normalized_response/shared helpers/row_to_event/load_jobs N+1 修复/migrate_trades_table 提前返回)+事件去重+排序修复+专用定时器+7 项 simplify(dedicated 字段/dispatch_job 复用/persist_job_status 共享/LOW 分支合并/sleep 漂移修复/load_jobs_base/去重迁移守卫)+事件时间戳时区修复(format_provider_timestamp UTC→Local) | [done] |
-| 10+ (v5.3.3) | Invest 交易逻辑全面重构(PR1+PR2): sql_string_enum! 宏+TradeAction/HoldingKind 类型安全枚举+FromStr trait+convert_watch_to_hold 原子化命令+add_holding/update_holding deprecated+前端 4 方法统一单次 IPC+HoldingsTable hold/watch 分行按钮+TradeAction 联合类型+DB CHECK 约束迁移(edit_holding)+process_* key 预传递+5 项 simplify 审查修复 | [done] |
-| 10+ (v5.3.4) | Code Review 10 项修复: PnL notional 兜底+process_edit_holding name/asset_type 传播+迁移 convert_hold_to_watch→unknown+嵌套事务 manage_tx+CHECK unknown+event_scanner kind 过滤+created_at 保留+TradeDialog \|\|→\?\?+update_trade 注释+asset_type_map 确认 | [done] |
-| 10+ (v5.3.5) | 委员会指标预计算+工具清理: indicators.rs 共享模块(6 函数+12 测试)/Quant R1 预计算注入({{precomputed_indicators}})/get_company_info 移除(5→4 工具)/get_company_news Tushare→AkShare/价格分位双倍缩放修复/零收盘守卫(缩窄到最近 21 根)/mean_all 回退/RSI 平坦价格守卫/HV20 不足数据提示/Quant Prompt 更新/CommitteeToolsTab 更新/compute_ma period=0 守卫/价格分位窗口动态化/2 轮审查 14 项修复 | [done] |
-| 10+ (v5.3.6) | 委员会解析器增强+现金管理增强: extract_field 6 格式变体/matches_key_line 共享函数/detect_fallback_reason/hard_truncate 关键字段保留/failedSteps 填充+i18n/银证转入转出+微调修正(TradeAction TransferIn/TransferOut+HoldingKind Cash+DB CHECK 迁移)/TradeDialog 三子模式重设计+submitLabel+CASH_MODES/TradeLogTab SYSTEM_ACTIONS+徽章颜色+方向过滤/删除 updateCash 死方法/15 项审查修复(fine_tune→cash_adjust 映射/注释修复/死代码清理/三元折叠/pill-tab 提取/cash_adjust 过滤) | [done] |
-| 10+ (v5.3.7) | 委员会单元测试修复: test_max_chars 断言同步(500/550/550)/test_critical_field_keys_risk 断言同步(风险信号)/HtmlPreview changelog 描述修正(srcdoc 非 allow-same-origin) | [done] |
-| 10+ (v5.3.8) | 委员会直播状态保留+并发限制+字符限制提升: runCommittee 限定重置范围(Run All 增量/Run Selected 选择性)/symbol_complete 替换/completedCount 批次限定/事件处理器优化(非变更事件提前 return)/Semaphore(5) 并发限制/max_chars 700/strip_bold_markers/3 项 simplify 审查修复 | [done] |
-| 10+ (v5.3.9) | 委员会 CLI Executor Phase 2: 供应商统一+可配置并发+6 CLI prompt 构建器+5 数据格式化器+orchestrator CLI-first 重构(移除 client 参数+API fallback)+API dead code 标记+🔄 重试按钮+3 i18n keys | [done] |
-| 10+ (v5.4.0) | 委员会 CLI Executor 代码审查修复: 15 项全量修复 — 正确性(优雅降级×2/tokens_used 文档/settings 失败表面化/RoleComplete 配对), 性能(OnceLock→Mutex/prompt 去重×2/Dreaming 缓存/spawn 并发化), 质量(原子写入/temp 清理/dead_code 修正/risk_metrics 去重) | [done] |
-| 10+ (v5.4.1) | 委员会置信度逻辑重构+CLI 静默+hard_truncate 移除: 移除 hard_truncate/max_chars/critical_field_keys/strip_bold_markers(14 测试)/length_constraint_suffix 简化/hide_console CLI 静默/Gate 3 移除(子弹不再降级置信度)/compute_red_light_score 移除 dry_powder 参数/Quant R2+Risk R2+CIO prompt 子弹规则清理/Mutex 中毒恢复/代码审查修复(3 残留测试) | [done] |
-| 10+ (v5.4.2) | 委员会 R2 Fallback 误报修复+CIO 总资产注入+CIO 回显误报修复+R2 解析增强+安全检查加固: detect_fallback_reason 轮次感知(Quant R2 不再要求 regime)/CLI 路径重试(run_role_phase fallback 重调一次)/CIO prompt 注入 portfolio_summary(消除总资产幻觉)/build_portfolio_summary 新增总资产行/Quant R2 单元测试×2/portfolio.rs 测试编译修复/format_round_outputs_for_prompt 使用原始 raw_text(防 LLM 回显)/CIO prompt 删除 WORKER_UNAVAILABLE 冗余规则/cio_sanity_check 增加 fallback_reason 检查/apply_r2_signal_override 增加 signal key 变体/parse_quant 补上调整买点提取/i18n 角色配置描述更新/7 新单元测试 | [done] |
-| 10+ (v5.4.3) | 宏观指标 Tencent/AkShare 集成+CIO 输出缺失修复+L4 Officer 移除+Sanity Check 简化+Risk 情绪分析删除+Prompt 精简+15 项 simplify: fetch_csi300 腾讯 K-line fallback/fetch_cgb_10y AkShare fallback/3 新指标(limit_up_count+limit_down_count+two_market_volume)/CIO prompt 字段列表前置(防截断丢失)/detect_fallback_reason 空 verdict 修复(is_blank)/Risk R1/R2 删除用户行为模式(query_dreaming_insights+情绪评估+情绪重校准)/L4 Officer 角色移除(orchestrator/parser/roles/cli_executor/前端 5 文件+events/ParsedFields 10 dead 字段清理)/5→4 角色/Pipeline 8→7 步/Sanity Check 4→2 Gates+三重恶化卫语句/dreaming cache 删除/DebateBlock ROLE_COLORS 复用/L4Officer step_index 碰撞修复 | [done] |
-| 10+ (v5.5.0) | 委员会直播 UI 重构 — Debate Flow Card+动态执行队列+CancellationToken 真取消: queue.rs 持久化(committee-queue.json/tmp+rename 重试/3 测试)/CancellationToken 注入 orchestrator(check_cancellation 在 macro/regime/debate/CIO 边界+SymbolAborted 事件)/CommitteeCancelRegistry+4 Tauri 命令(abort_symbol/abort_all/load_queue/save_queue)/store 导出 class 队列调度器(addToQueue/abortSymbol/abortAll/retrySymbol/setMaxConcurrent/loadQueue+300ms debounce+7 测试)/getStepState aborted 状态(3 测试)/CommitteeLiveTab 菱形 debate flow grid 重写(可展开卡片+abort/retry 按钮+页面内并发选择器)/并发设置迁移+删 runCommittee shim/删孤儿 PipelineFlow.svelte/14 i18n keys/13 项 simplify(abort 不误判 failed/regime phase 前补 check_cancellation/紧凑 JSON/queueMap+toolMap $derived 消除 O(n²) 扫描/STEP_ICONS+STEP_ROUND 并入 STEP_DEFS/buildSnapshot 单 map/删死字段 activeSymbols) | [done] |
-| 10+ (v5.5.1) | 委员会直播修复 + invest Dashboard 优化 + 全模块金额精度统一: **Part A 委员会直播** — 跨重启恢复完整进度(QueueItem.progress 透传/PersistedProgress schema/loadQueue 每进程恢复一次/中断项→aborted 不自动续跑)/卡片独立运行-中止按钮(移除多选)/解析误报弱化(missing_critical_fields 不再盖原文+isHardFallback)+parser 补 execution_mode/first_tranche_cny/signal_reason/market_phase_reason+修陈旧 L4 测试/prompt 6 角色精简约束/step-body pre-wrap 排版/关键 chip+demo 视觉对齐. **Part B Dashboard** — A 股 T+1 冻结(list_holdings 读取时从今日 buy trades 算 frozen_shares 不存储)/store 派生 dailyPnl+todayTradedShares+latestVerdictMap/持仓明细表 16 列+评级列/KPI 卡重构(总收益+当日收益,删宏观快照+最新裁决两卡)/评级新鲜度过滤(4 天窗口)/归档文件名带股票名({symbol}_{name}.md+sanitize+load_archive 兼容). **全分支审查抓到 2 真实 bug** — 同日买卖少算可用(frozen=min(今日买入,持仓))/UTC 本地日期错配凌晨丢单(date(created_at,'localtime')). **全模块金额 3 位** — 抽 formatYuan()+normalizeConfidencePct() 覆盖 7 组件,CSV 保留裸 toFixed(3),技术指标保持原精度 | [done] |
-| 10+ (v5.5.2) | 委员会直播 settings 文件并发竞态修复 + 国际指标反序列化修复: **并发竞态 (P0)** — `_drainQueue` 并发跑多标的,每标的 `run_committee_stream`→`build_committee_config`→`write_committee_settings_json`→`cleanup_old_committee_settings()` 无差别删全部 `session-committee-*.json`,后启动标的删掉前一个正在用的 `--settings` 文件→`claude CLI exited 1: Settings file not found`;改为基于 mtime 的年龄回收(`COMMITTEE_SETTINGS_MAX_AGE` 2h,只删陈旧文件,读不到 mtime 保守保留)+ `COMMITTEE_CLEANUP_COOLDOWN` 5min 冷却门(`AtomicU64` 记录上次扫描,收敛并发启动时的 `read_dir`+`stat` 风暴为单次). **反序列化** — `BondYield10y`/`MarketStats` 移除 `#[serde(rename_all = "camelCase")]` 对齐 AkShare snake_case(同 v5.3.1 NewsItem 根因). **取舍** — 年龄回收而非"完成即删"(常规 session 路径本就不清理临时文件,且 settings 整批共享需 Arc+Drop 引用计数才能生命周期清理). simplify 4 路审查:3 路确认 clean,采纳 efficiency 1 项(冷却门) | [done] |
-
-Detailed plans and review responses are in `docs/`.
+## Repo-specific conventions
+- Svelte 5 runes (`$state`, `$derived`, `$effect`, `$props`).
+- Keep provider identity separate from execution identity (§5).
+- Tests colocated: frontend `*.test.ts` (Vitest, node env, `src/**` only), Rust tests beside their module.
+- Conventional Commits (`feat:`/`fix:`/`chore:`).
+- Never commit API keys, local settings, or generated runtime state.
+- `.arena` files are legacy local runtime mirrors (run context, memo text, previews); not shareable artifacts.
 
 ## Notes for future edits
-
-- Vite dev server is configured for port `1420`, with HMR on `1421` when `TAURI_DEV_HOST` is set.
-- Vite watch ignores backend/build/runtime directories such as `src-tauri`, `.claude`, `.claw-go`, `memory`, and other non-frontend paths to avoid reload churn during active agent sessions.
-- SvelteKit uses `adapter-static` with `fallback: "index.html"`.
-- Frontend test environment is `node`, configured in `vitest.config.ts`.
-- Provider-native launch config templates are in `src-tauri/src/commands/session.rs` (builder boundary).
-- Codex uses the `codex exec --json` JSONL adapter under `agent/executor/codex.rs`. Each turn is a short-lived process; multi-turn continuity is provided by Codex's native `thread_id` (stored in `RunMeta.conversation_ref` as `CodexThread`). Stop is implemented by killing the child via `commands/runs.rs::stop_run`; the JSONL stream truncates cleanly at the last completed event. The Windows `.cmd` shim resolution (`resolve_windows_npm_shim` in `stream.rs`) continues to apply — `CodexExecutor` reuses it via the dispatcher. Do not reintroduce PTY-based execution or `--last`-based resume.
-- Group chat participant meta (delivery cursor, session turn count, session seq) is stored at `group-chats/{id}/participants/{participant_id}.meta.json`.
-- Plan artifacts are stored at `group-chats/{id}/plan.json` with atomic writes (tmp+rename).
+- Vite: dev port `1420`, HMR `1421` when `TAURI_DEV_HOST` is set. Watch ignores `src-tauri`, `.claude`, `.claw-go`, `memory`, etc. to avoid reload churn during agent sessions.
+- SvelteKit uses `adapter-static` (`fallback: index.html`).
+- Provider launch config templates: `commands/session.rs` (the builder boundary).
+- Codex: `codex exec --json` JSONL adapter (`agent/executor/codex.rs`), short-lived child per turn, native `thread_id` continuity (`RunMeta.conversation_ref::CodexThread`), stop = kill the child. Windows `.cmd` shim via `resolve_windows_npm_shim` in `stream.rs`. Do not reintroduce PTY execution or `--last`-based resume.
+- Group chat participant meta: `group-chats/{id}/participants/{participant_id}.meta.json`. Plan artifacts: `group-chats/{id}/plan.json` (atomic tmp+rename).
+- Python RPC: set `PYTHONIOENCODING=utf-8` (handled in `python/bridge.rs`); providers use lazy imports.
