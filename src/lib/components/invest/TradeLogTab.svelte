@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from '$lib/i18n/index.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
+  import { formatYuan } from '$lib/utils/format';
   import TradeDialog from './TradeDialog.svelte';
   import type { Trade } from '$lib/types';
 
@@ -61,7 +62,7 @@
         tr.action,
         tr.shares ?? '',
         tr.price?.toFixed(priceDecimals(tr.symbol)) ?? '',
-        tr.amount?.toFixed(2) ?? '',
+        tr.amount?.toFixed(3) ?? '',
         (tr.notes ?? '').replace(/,/g, ';'),
       ].join(',')
     );
@@ -147,7 +148,7 @@
               </td>
               <td class="px-[var(--space-3)] py-[var(--space-2)] font-[var(--font-mono)] text-[var(--text-primary)]">{tr.shares ?? '-'}</td>
               <td class="px-[var(--space-3)] py-[var(--space-2)] font-[var(--font-mono)] text-[var(--text-primary)]">{tr.price?.toFixed(priceDecimals(tr.symbol)) ?? '-'}</td>
-              <td class="px-[var(--space-3)] py-[var(--space-2)] font-[var(--font-mono)] text-[var(--text-primary)]">{tr.amount?.toLocaleString(undefined, { minimumFractionDigits: 2 }) ?? '-'}</td>
+              <td class="px-[var(--space-3)] py-[var(--space-2)] font-[var(--font-mono)] text-[var(--text-primary)]">{tr.amount != null ? formatYuan(tr.amount) : '-'}</td>
               <td class="px-[var(--space-3)] py-[var(--space-2)] text-[12px] text-[var(--text-tertiary)]">{tr.notes ?? ''}</td>
               <td class="px-[var(--space-3)] py-[var(--space-2)]">
                 <div class="flex gap-[var(--space-1)]">

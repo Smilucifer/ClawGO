@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte';
   import { t } from '$lib/i18n/index.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
+  import { formatYuan } from '$lib/utils/format';
   import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler } from 'chart.js';
 
   Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler);
@@ -91,8 +92,8 @@
             callbacks: {
               label: (ctx) => {
                 const val = ctx.parsed.y ?? 0;
-                if (ctx.datasetIndex === 0) return `${t('invest_pnl_total_assets')}: ¥${val.toLocaleString()}`;
-                return `${t('invest_pnl_daily_pnl')}: ¥${val.toLocaleString()}`;
+                if (ctx.datasetIndex === 0) return `${t('invest_pnl_total_assets')}: ${formatYuan(val)}`;
+                return `${t('invest_pnl_daily_pnl')}: ${formatYuan(val)}`;
               },
             },
           },

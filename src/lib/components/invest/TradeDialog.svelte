@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from '$lib/i18n/index.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
+  import { formatYuan } from '$lib/utils/format';
   import { getInvestDate } from '$lib/i18n/format';
   import type { Holding, Trade } from '$lib/types';
   import type { MessageKey } from '$lib/i18n/types';
@@ -324,7 +325,7 @@
       </div>
       {#if mode !== 'add_watch'}
         <p class="mb-3 text-sm text-[var(--text-secondary)]">
-          {t('invest_amount')}: <span class="font-[var(--font-mono)]">¥{(quantity * price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+          {t('invest_amount')}: <span class="font-[var(--font-mono)]">{formatYuan(quantity * price)}</span>
         </p>
       {/if}
       <!-- Trade date input -->
@@ -341,7 +342,7 @@
       {/if}
     {:else if mode === 'cash'}
       <!-- Current balance display -->
-      <p class="mb-3 text-sm text-[var(--text-secondary)]">{t('invest_cash')}: <span class="font-[var(--font-mono)] text-[var(--text-primary)]">¥{investStore.cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></p>
+      <p class="mb-3 text-sm text-[var(--text-secondary)]">{t('invest_cash')}: <span class="font-[var(--font-mono)] text-[var(--text-primary)]">{formatYuan(investStore.cash)}</span></p>
       <!-- Sub-mode selector -->
       <div class="mb-3 flex gap-2">
         {#each CASH_MODES as m}

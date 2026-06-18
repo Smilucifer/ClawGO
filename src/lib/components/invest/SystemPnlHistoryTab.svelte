@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from '$lib/i18n/index.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
+  import { formatYuan } from '$lib/utils/format';
 
   let error = $state('');
 
@@ -13,14 +14,13 @@
 
   function fmtPnl(v: number | null): string {
     if (v == null || !Number.isFinite(v)) return '-';
-    const prefix = v >= 0 ? '+' : '';
-    return `${prefix}¥${v.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+    return formatYuan(v, { signed: true });
   }
 
   function fmtPct(v: number | null): string {
     if (v == null || !Number.isFinite(v)) return '-';
     const prefix = v >= 0 ? '+' : '';
-    return `${prefix}${v.toFixed(2)}%`;
+    return `${prefix}${v.toFixed(3)}%`;
   }
 
   async function handleDelete(id: number) {
@@ -61,9 +61,9 @@
           {#each snapshots as snap}
             <tr class="border-b border-border">
               <td class="py-[var(--space-2)] pr-[var(--space-3)] text-[var(--text-primary)] font-[var(--font-mono)]">{formatDate(snap.snapshotDate)}</td>
-              <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right text-[var(--text-primary)] font-[var(--font-mono)]">¥{snap.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-              <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right text-[var(--text-primary)] font-[var(--font-mono)]">¥{snap.cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-              <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right text-[var(--text-primary)] font-[var(--font-mono)]">¥{snap.holdingsValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+              <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right text-[var(--text-primary)] font-[var(--font-mono)]">{formatYuan(snap.totalValue)}</td>
+              <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right text-[var(--text-primary)] font-[var(--font-mono)]">{formatYuan(snap.cash)}</td>
+              <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right text-[var(--text-primary)] font-[var(--font-mono)]">{formatYuan(snap.holdingsValue)}</td>
               <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right font-[var(--font-mono)]" class:text-[var(--color-success)]={(snap.dailyPnl ?? 0) > 0} class:text-[var(--color-error)]={(snap.dailyPnl ?? 0) < 0}>
                 {fmtPnl(snap.dailyPnl)}
               </td>
