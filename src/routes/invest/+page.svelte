@@ -10,8 +10,6 @@
   import StrategyTab from '$lib/components/invest/StrategyTab.svelte';
   import PnlChart from '$lib/components/invest/PnlChart.svelte';
   import UserProfileSection from '$lib/components/invest/UserProfileSection.svelte';
-  import MacroSnapshotCard from '$lib/components/invest/MacroSnapshotCard.svelte';
-  import LatestVerdictCard from '$lib/components/invest/LatestVerdictCard.svelte';
   import CommitteeLiveTab from '$lib/components/invest/CommitteeLiveTab.svelte';
   import CommitteeReplayTab from '$lib/components/invest/CommitteeReplayTab.svelte';
   import CommitteeArchiveTab from '$lib/components/invest/CommitteeArchiveTab.svelte';
@@ -167,18 +165,23 @@
         </div>
       {/if}
 
-      <div class="mb-[var(--space-6)] grid grid-cols-2 gap-[var(--space-3)] sm:grid-cols-5">
-        <KpiCard label={t('invest_total_assets')} value={'¥' + investStore.totalAssets.toLocaleString(undefined, { minimumFractionDigits: 2 })} />
-        <KpiCard label={t('invest_holdings_value')} value={'¥' + investStore.holdingsMarketValue.toLocaleString(undefined, { minimumFractionDigits: 2 })} />
-        <KpiCard label={t('invest_cash')} value={'¥' + investStore.cash.toLocaleString(undefined, { minimumFractionDigits: 2 })} sub="✎" />
-        <KpiCard label={t('invest_total_return')} value={investStore.totalReturnPct.toFixed(2) + '%'} trend={investStore.totalReturnPct >= 0 ? 'up' : 'down'} />
+      <div class="mb-[var(--space-6)] grid grid-cols-2 gap-[var(--space-3)] sm:grid-cols-3 lg:grid-cols-6">
+        <KpiCard label={t('invest_total_assets')} value={'¥' + investStore.totalAssets.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} />
+        <KpiCard label={t('invest_holdings_value')} value={'¥' + investStore.holdingsMarketValue.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} />
+        <KpiCard label={t('invest_cash')} value={'¥' + investStore.cash.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} sub="✎" />
+        <KpiCard
+          label={t('invest_total_return')}
+          value={(investStore.holdingsMarketValue - investStore.totalCostBasis >= 0 ? '+' : '') + '¥' + (investStore.holdingsMarketValue - investStore.totalCostBasis).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+          sub={(investStore.totalReturnPct >= 0 ? '+' : '') + investStore.totalReturnPct.toFixed(2) + '%'}
+          trend={investStore.totalReturnPct >= 0 ? 'up' : 'down'}
+        />
+        <KpiCard
+          label={t('invest_daily_return')}
+          value={(investStore.dailyPnl >= 0 ? '+' : '') + '¥' + investStore.dailyPnl.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+          sub={(investStore.dailyPnlPct >= 0 ? '+' : '') + investStore.dailyPnlPct.toFixed(2) + '%'}
+          trend={investStore.dailyPnl >= 0 ? 'up' : 'down'}
+        />
         <KpiCard label={t('invest_position_count')} value={t('invest_hold') + ' ' + investStore.holdCount + ' + ' + t('invest_watch') + ' ' + investStore.watchCount} />
-      </div>
-
-      <!-- Macro snapshot + Latest verdict -->
-      <div class="mb-[var(--space-4)] grid gap-[var(--space-3)] sm:grid-cols-2">
-        <MacroSnapshotCard />
-        <LatestVerdictCard />
       </div>
 
       <div class="mb-[var(--space-4)] flex gap-[var(--space-2)]">

@@ -528,6 +528,7 @@
   "invest_holdings_value": "Holdings Value",
   "invest_cash": "Available Cash",
   "invest_total_return": "Total Return",
+  "invest_daily_return": "Today's Return",
   "invest_position_count": "Positions",
   "invest_hold": "HOLD",
   "invest_watch": "WATCH",
