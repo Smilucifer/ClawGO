@@ -136,6 +136,10 @@ pub struct Holding {
     pub notional: f64,
     pub avg_cost: Option<f64>,
     pub shares: Option<f64>,
+    /// 今日(交易日)买入累计股数 — A 股 T+1 当日冻结不可卖。
+    /// 由 list_holdings 从今日 buy trades 实时计算,不持久化。
+    #[serde(default)]
+    pub frozen_shares: Option<f64>,
     pub entry_date: Option<String>,
     pub linked_verdict_id: Option<String>,
     pub notes: Option<String>,
@@ -210,6 +214,7 @@ pub fn list_holdings() -> Result<Vec<Holding>, String> {
                     notional: row.get(4)?,
                     avg_cost: row.get(5)?,
                     shares: row.get(6)?,
+                    frozen_shares: None,
                     entry_date: row.get(7)?,
                     linked_verdict_id: row.get(8)?,
                     notes: row.get(9)?,
@@ -223,8 +228,42 @@ pub fn list_holdings() -> Result<Vec<Holding>, String> {
         for row in rows {
             items.push(row.map_err(|e| format!("row: {}", e))?);
         }
+        let frozen = today_frozen_shares(conn)?;
+        for h in items.iter_mut() {
+            if h.kind == HoldingKind::Hold {
+                if let Some(&f) = frozen.get(&h.symbol) {
+                    if f > 0.0 {
+                        h.frozen_shares = Some(f);
+                    }
+                }
+            }
+        }
         Ok(items)
     })
+}
+
+/// 计算每个 symbol 今日(交易日)买入累计股数(T+1 冻结量)。
+/// 返回 symbol → frozen_shares 映射。今日交易日由 date_utils 决定(5AM 截止)。
+fn today_frozen_shares(conn: &Connection) -> Result<std::collections::HashMap<String, f64>, String> {
+    let today = crate::invest::date_utils::get_invest_date();
+    let mut stmt = conn
+        .prepare(
+            "SELECT symbol, COALESCE(SUM(shares), 0.0) FROM trades \
+             WHERE action = 'buy' AND COALESCE(trade_date, substr(created_at, 1, 10)) = ?1 \
+             GROUP BY symbol",
+        )
+        .map_err(|e| format!("prepare frozen query: {}", e))?;
+    let rows = stmt
+        .query_map(params![today], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
+        })
+        .map_err(|e| format!("frozen query: {}", e))?;
+    let mut map = std::collections::HashMap::new();
+    for row in rows {
+        let (sym, shares) = row.map_err(|e| format!("frozen row: {}", e))?;
+        map.insert(sym, shares);
+    }
+    Ok(map)
 }
 
 pub fn upsert_holding(h: &Holding) -> Result<(), String> {
@@ -1092,5 +1131,33 @@ mod tests {
             };
             assert_eq!(cash_delta_for_trade(&t, false), 0.0, "expected zero for {:?}", t.action);
         }
+    }
+}
+
+#[cfg(test)]
+mod frozen_tests {
+    use super::*;
+
+    #[test]
+    fn frozen_shares_field_defaults_none() {
+        let h = Holding {
+            symbol: "600519".into(),
+            currency: "CNY".into(),
+            kind: HoldingKind::Hold,
+            name: None,
+            notional: 0.0,
+            avg_cost: None,
+            shares: Some(100.0),
+            frozen_shares: None,
+            entry_date: None,
+            linked_verdict_id: None,
+            notes: None,
+            asset_type: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+        };
+        // Serialize → camelCase frozenShares present, null when None.
+        let json = serde_json::to_string(&h).unwrap();
+        assert!(json.contains("\"frozenShares\""));
     }
 }
