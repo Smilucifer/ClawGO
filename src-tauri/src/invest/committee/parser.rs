@@ -46,6 +46,10 @@ pub struct ParsedFields {
     pub sensitivity_reason: Option<String>,
     /// 情绪温度: "乐观" | "中性" | "谨慎" | "恐慌"
     pub emotion_temperature: Option<String>,
+    /// Macro: 信号理由(一句话)
+    pub signal_reason: Option<String>,
+    /// Macro: 市场阶段理由(一句话)
+    pub market_phase_reason: Option<String>,
 
     // -- Quant-specific (new fields) --
     /// 资金流向原始文本
@@ -80,6 +84,10 @@ pub struct ParsedFields {
     pub personal_note: Option<String>,
     /// CIO: execution plan
     pub execution_plan: Option<String>,
+    /// CIO: 执行模式 lump-sum | pyramid | grid | none
+    pub execution_mode: Option<String>,
+    /// CIO: 首笔金额
+    pub first_tranche_cny: Option<f64>,
     /// CIO: risk plan
     pub risk_plan: Option<String>,
     /// 催化剂层级: "Tier1" | "Tier2" | "Tier3" | "无"
@@ -414,6 +422,8 @@ fn parse_macro(text: &str, parsed: &mut ParsedFields) {
     // 情绪温度: "乐观" | "中性" | "谨慎" | "恐慌"
     parsed.emotion_temperature =
         extract_field_any(text, &["EMOTION_TEMPERATURE", "情绪温度"]);
+    parsed.signal_reason = extract_field_any(text, &["SIGNAL_REASON", "信号理由"]);
+    parsed.market_phase_reason = extract_field_any(text, &["MARKET_PHASE_REASON", "市场阶段理由"]);
 }
 
 fn parse_quant(text: &str, parsed: &mut ParsedFields) {
@@ -493,6 +503,8 @@ fn parse_cio(text: &str, parsed: &mut ParsedFields) {
     parsed.reasoning = extract_field_any(text, &["REASONING", "推理"]);
     parsed.personal_note = extract_field_any(text, &["PERSONAL_NOTE", "个人备注"]);
     parsed.execution_plan = extract_field_any(text, &["EXECUTION_PLAN", "执行计划"]);
+    parsed.execution_mode = extract_field_any(text, &["EXECUTION_MODE", "执行模式"]);
+    parsed.first_tranche_cny = extract_f64_any(text, &["FIRST_TRANCHE_CNY", "首笔金额"]);
     parsed.risk_plan = extract_field_any(text, &["RISK_PLAN", "风控计划"]);
     // 催化剂层级: "Tier1" | "Tier2" | "Tier3" | "无"
     parsed.catalyst_tier = extract_field_any(text, &["CATALYST_TIER", "催化剂层级"]);
@@ -1038,15 +1050,14 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_fallback_l4_missing_guard() {
+    fn test_detect_fallback_l4_removed() {
         let parsed = ParsedFields {
-            l4_guard_clause: None,
             raw_text: "l4 analysis".to_string(),
             ..Default::default()
         };
         assert_eq!(
             detect_fallback_reason(CommitteeRole::L4Officer, 1, &parsed),
-            Some("missing_critical_fields".to_string())
+            Some("l4_removed".to_string())
         );
     }
 
@@ -1207,5 +1218,21 @@ mod tests {
         let text = "买点评估: 突破\n调整买点: 低吸";
         let parsed = parse_role_output(CommitteeRole::Quant, text, false);
         assert_eq!(parsed.buy_point_assessment.as_deref(), Some("突破"));
+    }
+
+    #[test]
+    fn test_parse_cio_execution_mode_and_first_tranche() {
+        let text = "VERDICT: ACCUMULATE\nCONFIDENCE: 0.7\n执行模式: pyramid\n首笔金额: 30000";
+        let parsed = parse_role_output(CommitteeRole::Cio, text, false);
+        assert_eq!(parsed.execution_mode.as_deref(), Some("pyramid"));
+        assert_eq!(parsed.first_tranche_cny, Some(30000.0));
+    }
+
+    #[test]
+    fn test_parse_macro_signal_reason() {
+        let text = "SIGNAL: risk_on\n信号理由: 北向资金持续流入\n市场阶段: 主升\n市场阶段理由: 站上MA60";
+        let parsed = parse_role_output(CommitteeRole::Macro, text, false);
+        assert_eq!(parsed.signal_reason.as_deref(), Some("北向资金持续流入"));
+        assert_eq!(parsed.market_phase_reason.as_deref(), Some("站上MA60"));
     }
 }
