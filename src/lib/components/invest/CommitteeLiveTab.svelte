@@ -595,6 +595,7 @@
   .step-body {
     padding: 14px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.85;
     max-height: 320px; overflow-y: auto; word-break: break-word;
+    white-space: pre-wrap;
   }
   .muted { color: var(--text-tertiary); }
   .waiting { display: flex; align-items: center; gap: 8px; color: var(--text-tertiary); }
