@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Committee Live — Card Flow Demo</title>
+<style>
+  :root {
+    --bg-base: #1a1a1f;
+    --bg-card: #222228;
+    --bg-hover: #2a2a30;
+    --bg-input: #2c2c32;
+    --text-primary: #e8e6e3;
+    --text-secondary: #9a9a9a;
+    --text-tertiary: #6a6a6a;
+    --border: #333338;
+    --accent: #c8a96e;
+    --accent-muted: #8a7a5a;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --color-success: #8a9a76;
+    --color-error: #a87a7a;
+    --color-warning: #ffc107;
+    --font-mono: 'JetBrains Mono', 'Cascadia Code', monospace;
+    --color-macro: #8b5cf6;
+    --color-regime: #a78bfa;
+    --color-quant: #3b82f6;
+    --color-risk: #f97316;
+    --color-cio: #eab308;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg-base); color: var(--text-primary);
+    line-height: 1.6; padding: 24px; min-height: 100vh;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+  h2 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .subtitle { font-size: 12px; color: var(--text-tertiary); margin-bottom: 20px; }
+
+  /* Action bar */
+  .action-bar {
+    display:flex; align-items:center; gap:10px;
+    padding:12px 16px; background:var(--bg-card);
+    border:1px solid var(--border); border-radius:var(--radius-md);
+    margin-bottom:16px; flex-wrap:wrap;
+  }
+  .btn {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:7px 14px; border:1px solid var(--border);
+    border-radius:var(--radius-sm); background:var(--bg-input);
+    color:var(--text-primary); font-size:12px; font-weight:500;
+    cursor:pointer; transition:all 0.15s; white-space:nowrap;
+  }
+  .btn:hover { background:var(--bg-hover); border-color:var(--accent-muted); }
+  .btn:disabled { opacity:0.4; cursor:not-allowed; }
+  .btn.primary { background:var(--accent); color:#111; border-color:var(--accent); }
+  .action-sep { width:1px; height:24px; background:var(--border); }
+  .progress-text { font-size:12px; color:var(--text-secondary); display:flex; align-items:center; gap:6px; }
+  .progress-text .dot { width:6px; height:6px; border-radius:50%; background:var(--accent); animation:pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .checkbox-row { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); cursor:pointer; }
+  .checkbox-row input { accent-color:var(--accent); cursor:pointer; }
+  .spacer { flex:1; }
+  .count-badge { font-size:11px; color:var(--text-tertiary); font-family:var(--font-mono); }
+
+  /* Portfolio summary */
+  .portfolio-summary {
+    display:grid; grid-template-columns:repeat(5,1fr); gap:12px;
+    padding:14px 16px; background:var(--bg-card);
+    border:1px solid var(--border); border-radius:var(--radius-md);
+    margin-bottom:16px; text-align:center;
+  }
+  .kpi-item { display:flex; flex-direction:column; gap:2px; }
+  .kpi-label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-tertiary); }
+  .kpi-value { font-size:17px; font-weight:700; font-family:var(--font-mono); }
+  .kpi-value.positive { color:var(--color-success); }
+  .kpi-value.warning { color:#b89a6a; }
+
+  /* Symbol card wrapper */
+  .symbol-card {
+    background:var(--bg-card); border:1px solid var(--border);
+    border-radius:var(--radius-md); margin-bottom:8px;
+    overflow:hidden; transition:border-color 0.2s;
+  }
+  .symbol-card:hover { border-color:var(--accent-muted); }
+  .symbol-card.streaming { border-color:var(--accent); }
+
+  .card-header {
+    display:flex; align-items:center; gap:10px;
+    padding:10px 14px; cursor:pointer; user-select:none;
+    transition:background 0.15s;
+  }
+  .card-header:hover { background:var(--bg-hover); }
+  .card-checkbox { accent-color:var(--accent); cursor:pointer; flex-shrink:0; }
+  .card-name { font-size:14px; font-weight:600; min-width:80px; }
+  .card-ticker { font-size:11px; color:var(--text-tertiary); font-family:var(--font-mono); }
+  .badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:var(--radius-sm); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.3px; }
+  .badge.hold { background:rgba(138,154,118,0.15); color:var(--color-success); }
+  .badge.watch { background:rgba(196,169,110,0.12); color:var(--accent-muted); }
+
+  /* Progress bar in header */
+  .pipeline-bar {
+    display:flex; flex:1; height:22px; border-radius:var(--radius-sm);
+    overflow:hidden; background:var(--bg-input); gap:2px; margin:0 4px; min-width:200px;
+  }
+  .seg {
+    flex:1; display:flex; align-items:center; justify-content:center;
+    font-size:9px; font-weight:700; border-radius:3px;
+    transition:all 0.4s; color:transparent;
+  }
+  .seg.pending { background:var(--bg-input); }
+  .seg.active { background:color-mix(in srgb,var(--seg-color) 25%,transparent); color:var(--seg-color); animation:seg-pulse 1.5s ease-in-out infinite; }
+  .seg.done { background:color-mix(in srgb,var(--seg-color) 35%,transparent); color:var(--seg-color); }
+  .seg.failed { background:color-mix(in srgb,var(--color-warning) 25%,transparent); color:var(--color-warning); }
+  .seg.error { background:color-mix(in srgb,var(--color-error) 25%,transparent); color:var(--color-error); }
+  @keyframes seg-pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+  .verdict-badge-sm { padding:3px 10px; border-radius:var(--radius-sm); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; flex-shrink:0; }
+  .v-buy { background:rgba(138,154,118,0.2); color:var(--color-success); }
+  .v-accumulate { background:rgba(59,130,246,0.15); color:var(--color-quant); }
+  .v-hold { background:rgba(196,169,110,0.15); color:var(--accent); }
+  .v-trim { background:rgba(255,193,7,0.15); color:var(--color-warning); }
+  .v-sell { background:rgba(168,122,122,0.2); color:var(--color-error); }
+
+  .retry-btn {
+    padding:4px 10px; border-radius:var(--radius-sm); border:1px solid var(--border);
+    background:var(--bg-input); color:var(--color-warning); font-size:10px; cursor:pointer;
+  }
+  .retry-btn:hover { background:rgba(255,193,7,0.1); border-color:var(--color-warning); }
+  .expand-arrow {
+    width:20px; height:20px; display:flex; align-items:center; justify-content:center;
+    color:var(--text-tertiary); transition:transform 0.2s; flex-shrink:0; font-size:12px;
+  }
+  .expand-arrow.open { transform:rotate(90deg); }
+
+  /* Expanded body */
+  .card-body { border-top:1px solid var(--border); padding:20px; display:none; }
+  .card-body.open { display:block; }
+
+  /* ==============================
+     DEBATE FLOW — CSS Grid diamond
+     ==============================
+     Row 1: [  Macro  ]          (col-span-2, centered)
+     Row 2: [Quant 1] [Risk 1]  (two columns)
+     Row 3: [Quant 2] [Risk 2]  (two columns)
+     Row 4: [   CIO   ]         (col-span-2, centered)
+  */
+  .flow-grid {
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:14px;
+    max-width:1000px;
+    margin:0 auto;
+    align-items:start;
+  }
+
+  /* Full-width centered rows */
+  .flow-grid .fw { grid-column:1 / -1; justify-self:center; width:65%; max-width:560px; min-width:320px; }
+
+  /* Connector lines between rows — pure CSS */
+  .flow-grid .connector {
+    grid-column:1 / -1;
+    display:flex; justify-content:center;
+    height:28px; position:relative;
+  }
+  .flow-grid .connector svg { width:100%; height:100%; }
+
+  /* Step card */
+  .step-card {
+    width:100%;
+    background:var(--bg-base);
+    border:1px solid var(--border);
+    border-radius:var(--radius-md);
+    overflow:hidden;
+    transition:border-color 0.3s, box-shadow 0.3s, opacity 0.4s;
+  }
+  .step-card.pending { opacity:0.4; }
+  .step-card.active {
+    border-color:var(--sc);
+    box-shadow:0 0 20px color-mix(in srgb, var(--sc) 12%, transparent);
+  }
+  .step-card.done { border-color:color-mix(in srgb, var(--sc) 40%, transparent); }
+  .step-card.failed { border-color:var(--color-warning); }
+  .step-card.error { border-color:var(--color-error); }
+
+  .step-head {
+    display:flex; align-items:center; gap:8px;
+    padding:10px 14px;
+    background:color-mix(in srgb, var(--sc) 6%, var(--bg-card));
+    border-bottom:1px solid var(--border);
+  }
+  .step-dot {
+    width:10px; height:10px; border-radius:50%; flex-shrink:0;
+    transition:all 0.3s;
+  }
+  .step-dot.pending { background:var(--bg-input); border:1.5px solid var(--border); }
+  .step-dot.active { background:var(--sc); animation:dot-pulse 1.2s ease-in-out infinite; }
+  .step-dot.done { background:var(--sc); }
+  .step-dot.failed { background:var(--color-warning); }
+  .step-dot.error { background:var(--color-error); }
+  @keyframes dot-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.7)} }
+
+  .step-title { font-size:13px; font-weight:600; }
+  .step-round { font-size:10px; color:var(--text-tertiary); padding:1px 5px; border-radius:3px; background:var(--bg-input); }
+  .step-meta { margin-left:auto; display:flex; gap:10px; font-size:10px; color:var(--text-tertiary); font-family:var(--font-mono); }
+
+  .step-body {
+    padding:14px;
+    font-size:12.5px;
+    color:var(--text-secondary);
+    line-height:1.85;
+    max-height:320px;
+    overflow-y:auto;
+    white-space:pre-wrap;
+    word-break:break-word;
+  }
+  .step-body::-webkit-scrollbar { width:4px; }
+  .step-body::-webkit-scrollbar-track { background:transparent; }
+  .step-body::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+  /* Active spinner */
+  .waiting { display:flex; align-items:center; gap:10px; color:var(--text-tertiary); padding:8px 0; }
+  .spinner { width:16px; height:16px; border:2px solid var(--border); border-top-color:var(--sc); border-radius:50%; animation:spin 0.8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  /* Signal row */
+  .signal-row {
+    display:flex; align-items:center; gap:8px;
+    margin-bottom:10px; padding-bottom:8px;
+    border-bottom:1px dashed var(--border);
+  }
+  .signal-chip {
+    font-size:11px; font-weight:700; padding:2px 10px;
+    border-radius:var(--radius-sm); text-transform:uppercase;
+  }
+  .sig-buy { background:rgba(138,154,118,0.15); color:var(--color-success); }
+  .sig-accumulate { background:rgba(59,130,246,0.12); color:var(--color-quant); }
+  .sig-hold { background:rgba(196,169,110,0.12); color:var(--accent); }
+  .sig-trim { background:rgba(255,193,7,0.12); color:var(--color-warning); }
+  .sig-sell { background:rgba(168,122,122,0.12); color:var(--color-error); }
+  .signal-strength { font-size:11px; color:var(--text-tertiary); font-family:var(--font-mono); }
+
+  /* Regime metrics grid */
+  .regime-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:10px; }
+  .regime-metric { text-align:center; padding:8px; background:var(--bg-card); border-radius:var(--radius-sm); }
+  .regime-metric .label { font-size:10px; color:var(--text-tertiary); text-transform:uppercase; }
+  .regime-metric .val { font-size:14px; font-weight:700; font-family:var(--font-mono); }
+  .regime-tag {
+    display:inline-block; font-size:12px; font-weight:600;
+    padding:3px 12px; border-radius:var(--radius-sm);
+    background:color-mix(in srgb, var(--color-regime) 15%, transparent);
+    color:var(--color-regime); margin-bottom:8px;
+  }
+
+  /* Tool strip */
+  .tool-strip {
+    display:flex; align-items:center; gap:6px; padding:8px 12px;
+    margin-top:14px; background:var(--bg-input);
+    border-radius:var(--radius-sm); font-size:10px; color:var(--text-tertiary);
+    flex-wrap:wrap;
+  }
+  .tool-chip {
+    display:inline-flex; align-items:center; gap:3px;
+    padding:2px 8px; border-radius:3px;
+    background:rgba(139,92,246,0.1); color:var(--color-macro);
+    font-family:var(--font-mono); font-size:10px;
+  }
+
+  /* Verdict block */
+  .verdict-block {
+    grid-column:1/-1; max-width:560px; width:65%; min-width:320px;
+    justify-self:center;
+    padding:16px; background:color-mix(in srgb, var(--color-cio) 4%, var(--bg-base));
+    border:1px solid color-mix(in srgb, var(--color-cio) 20%, var(--border));
+    border-radius:var(--radius-md);
+  }
+  .verdict-row { display:flex; align-items:center; gap:12px; margin-bottom:10px; flex-wrap:wrap; }
+  .verdict-action { font-size:16px; font-weight:700; padding:4px 14px; border-radius:var(--radius-sm); }
+  .verdict-confidence { font-size:12px; color:var(--text-secondary); font-family:var(--font-mono); }
+  .gate-badge { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:600; padding:2px 8px; border-radius:var(--radius-sm); }
+  .gate-badge.pass { background:rgba(138,154,118,0.12); color:var(--color-success); }
+  .gate-badge.fail { background:rgba(168,122,122,0.12); color:var(--color-error); }
+  .verdict-reasoning { font-size:12px; color:var(--text-secondary); line-height:1.7; margin-bottom:10px; }
+  .verdict-meta { display:flex; gap:16px; flex-wrap:wrap; }
+  .meta-item { font-size:10px; color:var(--text-tertiary); font-family:var(--font-mono); }
+
+  @media (max-width:700px) {
+    .flow-grid { grid-template-columns:1fr; }
+    .flow-grid .fw { width:100%; max-width:none; }
+    .portfolio-summary { grid-template-columns:repeat(3,1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <h2>📊 委员会直播</h2>
+  <p class="subtitle">Investment Committee Live — Debate Flow Card Layout</p>
+
+  <div class="action-bar">
+    <button class="btn primary" id="btnSel" onclick="demoRun('selected')">▶ Run Selected</button>
+    <button class="btn" id="btnAll" onclick="demoRun('all')">⏵ Run All</button>
+    <div class="action-sep"></div>
+    <label class="checkbox-row"><input type="checkbox" checked> Include Watch</label>
+    <label class="checkbox-row"><input type="checkbox" onchange="toggleAll(this)"> Select All</label>
+    <div class="spacer"></div>
+    <span class="progress-text" id="progArea" style="display:none"><span class="dot"></span><span id="progText">0 / 5</span></span>
+    <span class="count-badge">5 Holdings · 2 Watch</span>
+  </div>
+
+  <div class="portfolio-summary">
+    <div class="kpi-item"><span class="kpi-label">持仓数</span><span class="kpi-value">5</span></div>
+    <div class="kpi-item"><span class="kpi-label">持仓市值</span><span class="kpi-value" style="font-size:15px">¥482,350</span></div>
+    <div class="kpi-item"><span class="kpi-label">可用现金</span><span class="kpi-value" style="font-size:15px">¥117,650</span></div>
+    <div class="kpi-item"><span class="kpi-label">集中度</span><span class="kpi-value warning">38.2%</span></div>
+    <div class="kpi-item"><span class="kpi-label">总收益率</span><span class="kpi-value positive">+12.8%</span></div>
+  </div>
+
+  <div id="list"></div>
+</div>
+
+<script>
+const STEPS = [
+  { key:'macro',    label:'Macro',    color:'var(--color-macro)',  icon:'🌐', gridCls:'fw' },
+  { key:'regime',   label:'Regime',   color:'var(--color-regime)', icon:'📈', gridCls:'fw' },
+  { key:'quant_r1', label:'Quant R1', color:'var(--color-quant)',  icon:'📊', gridCls:'' },
+  { key:'risk_r1',  label:'Risk R1',  color:'var(--color-risk)',   icon:'🛡', gridCls:'' },
+  { key:'quant_r2', label:'Quant R2', color:'var(--color-quant)',  icon:'📊', gridCls:'' },
+  { key:'risk_r2',  label:'Risk R2',  color:'var(--color-risk)',   icon:'🛡', gridCls:'' },
+  { key:'cio',      label:'CIO',      color:'var(--color-cio)',    icon:'👔', gridCls:'fw' },
+];
+
+const SYMS = [
+  { symbol:'600519', name:'贵州茅台', kind:'hold' },
+  { symbol:'300750', name:'宁德时代', kind:'hold' },
+  { symbol:'601318', name:'中国平安', kind:'hold' },
+  { symbol:'000858', name:'五粮液',   kind:'watch' },
+  { symbol:'002594', name:'比亚迪',   kind:'hold' },
+];
+
+const TXT = {
+  macro: `当前宏观经济环境整体偏暖，PMI 连续三个月位于扩张区间，最新读数51.2，较上月小幅回升0.3个百分点。社融增速企稳回升，M2同比增速维持在8.7%附近，流动性环境合理充裕。
+
+从外部环境看，美联储议息会议纪要偏鸽，市场对年内降息预期升温，人民币汇率压力有所缓和。中美利差倒挂幅度收窄至-80bp左右，北向资金近两周净流入超120亿元。
+
+值得关注的风险点：房地产市场仍在磨底，部分房企债务重组进展缓慢；地缘政治不确定性上升，需关注中东局势对油价的传导效应；四季度财政发力节奏可能不及预期。
+
+综合判断，宏观环境对权益市场中性偏多，建议维持当前仓位水平，关注政策催化和流动性边际变化。`,
+
+  regime: `市场处于震荡上行通道，趋势信号偏多。RSI14 当前读数58.3，处于中性偏强区间，表明市场动量向好但尚未进入超买区域。MACD日线级别维持金叉状态，DIF与DEA差值持续扩大。
+
+均线系统：MA20（3285点）> MA60（3210点），短期均线位于长期均线上方，确认上升趋势。价格运行在MA5与MA20之间，属于健康回调后的蓄势形态。
+
+波动率方面，20日历史波动率HV20为14.2%，处于近一年30%分位水平，属于低波环境。隐含波动率IV偏度回归正常，市场恐慌情绪较低。
+
+价格位于近2年65%分位处，属于中高位区间。上方阻力位在70%分位（3400点附近），下方支撑位在50%分位（3200点）。
+
+综合Regime判断为"震荡偏强"，策略提示：维持多头思维，但注意控制仓位集中度，在高位分位处适度减仓。`,
+
+  quant_r1: `技术面量化分析结果如下：
+
+动量因子方面，20日收益率+3.2%，排名同类标的前25%分位。120日动量因子+8.7%，中期趋势确认向上。MACD柱状图连续3日放大，短线做多动能增强。
+
+成交量分析：近5日日均成交额较20日均值放大22%，换手率1.8%，处于温和放量状态。量价配合良好，上涨有量能支撑。OBV指标持续创新高，确认资金持续流入。
+
+资金流向数据显示，近3日主力净流入累计+2.3亿元，北向持仓占比提升0.15个百分点至4.2%。大单买入比例上升至38%，机构资金态度积极。
+
+价格突破前期平台整理区间上沿，形成有效突破。布林带开口扩大，价格沿上轨运行，属于强势形态。
+
+量化信号综合评分：7.2/10，信号方向：偏多。建议关注突破确认后的加仓机会，下方支撑位在前平台高点附近。`,
+
+  risk_r1: `风险评估报告（R1轮次）：
+
+市场风险：Beta系数0.92，系统性风险敞口适中。VaR(95%)单日-2.1%，CVaR -3.4%，尾部风险可控。与沪深300的相关系数0.78，分散化效果一般。
+
+流动性风险：日均成交额15.6亿元，冲击成本估算0.3%，流动性良好。买卖价差中位数0.05%，交易摩擦低。当前持仓占日均成交量比例<1%，不存在退出障碍。
+
+集中度风险：单一标的占组合权重8.2%，接近8%的警戒线。行业层面，白酒行业持仓合计占比18.5%，高于行业配置上限15%。建议关注行业集中度风险。
+
+估值风险：当前PE(TTM) 28.5x，位于近5年40%分位，估值合理偏低。PB 8.2x，股息率2.1%。与行业均值PE 32x相比，具有相对估值优势。
+
+综合风险评级：中性偏低。主要风险点在于行业集中度偏高，建议通过分散配置降低单一行业敞口。`,
+
+  quant_r2: `二轮量化分析（结合R1信号与Risk反馈）：
+
+基于R1的多头信号和Risk的集中度警示，本轮重点评估微观结构和择时因子。
+
+订单簿深度分析：买一至买五挂单金额合计1.2亿，卖一至买五合计0.9亿，买卖力量比1.33，多头占优。大单拆分检测显示近期有3笔超千万大单通过拆分方式入场。
+
+择时因子方面，短期反转因子(-1.8%)发出轻微超买信号，但中期动量因子(+5.2%)仍然强势。综合择时模型给出"持有偏多"建议，推荐在回调至5日均线附近时加仓。
+
+量化调整：基于Risk反馈的行业集中度问题，建议降低本次建仓目标权重至6%（原计划8%）。调整后买入触发价下调2%。
+
+二轮综合评分：6.8/10（较R1下调0.4分，主要受集中度约束影响）。信号方向维持偏多，但建议更审慎地控制仓位。`,
+
+  risk_r2: `二轮风险评估（确认与补充）：
+
+针对Quant R2调整后的方案进行复核。
+
+仓位调整验证：将目标权重从8%降至6%后，单一标的VaR(95%)降至-1.7%，在可接受范围内。组合层面行业集中度降至16.2%，仍略高于15%上限但差距收窄。
+
+压力测试情景：
+- 悲观情景（指数-10%）：标的预计下跌9.2%，组合回撤控制在-3.5%以内 ✓
+- 极端情景（指数-20%）：标的预计下跌18.4%，组合回撤-7.1%，在风控阈值-8%以内 ✓
+- 行业黑天鹅（白酒政策利空）：预计下跌15%，需触发止损机制
+
+止损建议：动态止损位设置在买入价×0.93（-7%），追踪止损位在最高价×0.95。
+
+最终风险确认：Quant R2的调整方案可执行。风险等级维持"中性偏低"，建议按调整后方案执行。`,
+
+  cio: `CIO综合研判与最终裁决：
+
+经过Macro、Regime、Quant（两轮）和Risk（两轮）的全面分析，该标的基本面稳健，技术面偏多，风险可控。
+
+核心判断依据：
+1. 宏观环境偏暖，流动性充裕，为权益市场提供支撑
+2. 技术面处于上升趋势，动量因子和资金流向均偏积极
+3. 估值处于合理区间（PE 40%分位），具备安全边际
+4. 风险指标良好，VaR和压力测试均在可控范围
+
+需关注的制约因素：
+- 行业集中度略超上限，需控制建仓节奏
+- 短期反转因子提示超买，避免追高
+- 临近三季报披露窗口，业绩不确定性上升
+
+最终裁决：ACCUMULATE（逢低加仓）
+置信度：72%
+操作建议：在回调至5日均线附近分批建仓，目标仓位6%，止损-7%。
+下次评估触发条件：三季报发布或价格突破前高。`,
+};
+
+let P = {};         // progress map
+let expanded = new Set();
+let selected = new Set(SYMS.map(s => s.symbol));
+let running = false;
+
+// ===== Render =====
+function render() {
+  document.getElementById('list').innerHTML = SYMS.map(renderCard).join('');
+}
+
+function renderCard(sym) {
+  const p = P[sym.symbol];
+  const isExp = expanded.has(sym.symbol);
+  const isSel = selected.has(sym.symbol);
+  const isRun = running && p && !p._done;
+  const hasFail = p && Object.values(p.steps).some(v => v === 'failed' || v === 'error');
+  const verdict = p && p.verdict;
+
+  return `<div class="symbol-card ${isRun?'streaming':''}">
+    <div class="card-header" onclick="toggleExp('${sym.symbol}')">
+      <input type="checkbox" class="card-checkbox" ${isSel?'checked':''} onclick="event.stopPropagation();toggleSel('${sym.symbol}')">
+      <div><span class="card-name">${sym.name}</span> <span class="card-ticker">${sym.symbol}</span></div>
+      <span class="badge ${sym.kind}">${sym.kind.toUpperCase()}</span>
+      <div class="pipeline-bar">
+        ${STEPS.map(st => {
+          const s = p?(p.steps[st.key]||'pending'):'pending';
+          const ic = s==='done'?'✓':s==='active'?'◉':s==='failed'?'!':s==='error'?'✕':'';
+          return `<div class="seg ${s}" style="--seg-color:${st.color}" title="${st.label}">${ic}</div>`;
+        }).join('')}
+      </div>
+      ${verdict?`<span class="verdict-badge-sm v-${verdict.toLowerCase()}">${verdict}</span>`:''}
+      ${hasFail&&!isRun?`<button class="retry-btn" onclick="event.stopPropagation()">↻</button>`:''}
+      <span class="expand-arrow ${isExp?'open':''}">▶</span>
+    </div>
+    <div class="card-body ${isExp?'open':''}">
+      ${p?renderFlow(sym.symbol, p):`<div style="text-align:center;color:var(--text-tertiary);padding:24px;font-size:12px">点击 Run 开始分析</div>`}
+    </div>
+  </div>`;
+}
+
+function renderFlow(sym, p) {
+  let h = '<div class="flow-grid">';
+
+  STEPS.forEach((step, i) => {
+    const st = p.steps[step.key] || 'pending';
+    const m = p.meta[step.key] || {};
+
+    // Connector line before rows 2,3,4 (i = 2,4,6)
+    if (i === 2) h += connector('200,8 130,28', '200,8 270,28');   // macro → Q1/R1
+    if (i === 4) h += connector('130,0 130,28', '270,0 270,28');   // Q1→Q2, R1→R2
+    if (i === 6) h += connector('130,0 200,28', '270,0 200,28');   // Q2/R2 → CIO
+
+    h += `<div class="${step.gridCls}">
+      <div class="step-card ${st}" style="--sc:${step.color}">
+        <div class="step-head">
+          <div class="step-dot ${st}"></div>
+          <span class="step-title">${step.icon} ${step.label}`;
+    if (step.key.includes('_r')) h += ` <span class="step-round">${step.key.endsWith('1')?'R1':'R2'}</span>`;
+    h += `</span><div class="step-meta">`;
+    if (m.latency) h += `<span>${(m.latency/1000).toFixed(1)}s</span>`;
+    if (m.tokens) h += `<span>${m.tokens} tok</span>`;
+    h += `</div></div><div class="step-body">`;
+
+    if (st === 'active') {
+      h += `<div class="waiting"><div class="spinner"></div><span>LLM 正在分析…</span></div>`;
+    } else if (st === 'pending') {
+      h += `<span style="color:var(--text-tertiary)">等待开始</span>`;
+    } else if (st === 'failed') {
+      h += `<div style="color:var(--color-warning);font-weight:600;margin-bottom:6px">⚠ Fallback</div>${m.rawText||'检测到降级响应，建议重试。'}`;
+    } else if (st === 'error') {
+      h += `<div style="color:var(--color-error);font-weight:600">✕ 执行错误</div>`;
+    } else if (st === 'done') {
+      if (step.key === 'regime' && m.regime) {
+        h += `<span class="regime-tag">${m.regime}</span>`;
+        if (m.metrics) {
+          h += `<div class="regime-grid">
+            <div class="regime-metric"><div class="label">RSI 14</div><div class="val">${m.metrics.rsi14}</div></div>
+            <div class="regime-metric"><div class="label">HV 20</div><div class="val">${m.metrics.vol}%</div></div>
+            <div class="regime-metric"><div class="label">价格分位</div><div class="val">${m.metrics.quant}%</div></div>
+          </div>`;
+        }
+      }
+      if (m.signal) {
+        h += `<div class="signal-row">
+          <span class="signal-chip sig-${m.signal.toLowerCase()}">${m.signal}</span>
+          ${m.strength?`<span class="signal-strength">强度 ${m.strength}</span>`:''}
+        </div>`;
+      }
+      h += m.rawText || '分析完成。';
+    }
+
+    h += `</div></div></div>`;
+  });
+
+  // Verdict
+  if (p._done && p.verdict) {
+    h += `<div class="verdict-block">
+      <div class="verdict-row">
+        <span class="verdict-action v-${p.verdict.toLowerCase()}">${p.verdict}</span>
+        <span class="verdict-confidence">置信度 ${p.confidence}%</span>
+        <span class="gate-badge pass">✓ Gate 1</span>
+        <span class="gate-badge ${p.gate2==='fail'?'fail':'pass'}">${p.gate2==='fail'?'✕':'✓'} Gate 2</span>
+      </div>
+      <div class="verdict-reasoning">${p.reasoning}</div>
+      <div class="verdict-meta">
+        <span class="meta-item">⏱ ${(p.totalLatency/1000).toFixed(1)}s</span>
+        <span class="meta-item">🔤 ${p.totalTokens} tok</span>
+        <span class="meta-item">${p.converged?'✅ 收敛':'⚠ 未收敛'}</span>
+        ${p.sentinel?'<span class="meta-item">🚨 Sentinel</span>':''}
+      </div>
+    </div>`;
+  }
+
+  // Tool strip
+  if (p.toolCalls && p.toolCalls.length) {
+    h += `<div class="tool-strip" style="grid-column:1/-1">🔧 工具：${p.toolCalls.map(t =>
+      `<span class="tool-chip">${t.name} <span style="opacity:.5">${t.ms}ms</span></span>`).join('')}</div>`;
+  }
+
+  h += '</div>';
+  return h;
+}
+
+function connector(l1, l2) {
+  return `<div class="connector"><svg viewBox="0 0 400 32" preserveAspectRatio="xMidYMid meet">
+    <line x1="${l1.split(' ')[0]}" y1="${l1.split(' ')[1]}" x2="${l1.split(' ')[2]}" y2="${l1.split(' ')[3]}" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <line x1="${l2.split(' ')[0]}" y1="${l2.split(' ')[1]}" x2="${l2.split(' ')[2]}" y2="${l2.split(' ')[3]}" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,3"/>
+  </svg></div>`;
+}
+
+// ===== Interactions =====
+function toggleExp(s) { expanded.has(s)?expanded.delete(s):expanded.add(s); render(); }
+function toggleSel(s) { selected.has(s)?selected.delete(s):selected.add(s); }
+function toggleAll(cb) { cb.checked?SYMS.forEach(s=>selected.add(s.symbol)):selected.clear(); render(); }
+
+// ===== Simulation =====
+function demoRun(mode) {
+  if (running) return;
+  running = true;
+  const syms = mode==='all'?SYMS.map(s=>s.symbol):Array.from(selected);
+  if (!syms.length) { running=false; return; }
+
+  document.getElementById('progArea').style.display = 'flex';
+  document.getElementById('btnSel').disabled = true;
+  document.getElementById('btnAll').disabled = true;
+  document.getElementById('progText').textContent = `0 / ${syms.length}`;
+
+  syms.forEach(s => {
+    P[s] = { activeStep:-1, steps:{}, meta:{}, toolCalls:[], verdict:null,
+      confidence:0, reasoning:'', totalLatency:0, totalTokens:0, converged:false, sentinel:false, _done:false };
+  });
+  expanded.clear();
+  expanded.add(syms[0]);
+  render();
+
+  const verdicts = ['BUY','HOLD','ACCUMULATE','TRIM'];
+  const signals = ['BUY','ACCUMULATE','HOLD','TRIM'];
+
+  syms.forEach((sym, si) => {
+    const base = si * 400;
+
+    STEPS.forEach((step, idx) => {
+      const t1 = base + idx * 1400 + Math.random()*400;
+      const t2 = t1 + 700 + Math.random()*600;
+
+      // role_start
+      setTimeout(() => {
+        const p = P[sym];
+        p.steps[step.key] = 'active';
+        p.activeStep = idx;
+        if (step.key === 'macro' && si === 0) {
+          setTimeout(() => {
+            p.toolCalls = [{name:'get_market_index',ms:245},{name:'get_news_sentiment',ms:380},{name:'get_macro_indicators',ms:156}];
+            render();
+          }, 300);
+        }
+        render();
+      }, t1);
+
+      // role_complete
+      setTimeout(() => {
+        const p = P[sym];
+        if (step.key === 'quant_r2' && si === 2) {
+          p.steps[step.key] = 'failed';
+          p.meta[step.key] = { rawText:'CLI 执行超时，已切换至 fallback 模式。建议手动重试获取更精确的量化信号。' };
+        } else {
+          p.steps[step.key] = 'done';
+          const lat = 2500+Math.random()*5000;
+          const tok = 1400+Math.floor(Math.random()*1800);
+          const m = { latency:lat, tokens:tok, rawText:TXT[step.key]||'分析完成。' };
+          if (step.key !== 'regime') {
+            m.signal = signals[Math.floor(Math.random()*3)];
+            m.strength = (5+Math.floor(Math.random()*4))+'/10';
+          }
+          if (step.key === 'regime') {
+            m.regime = '震荡偏强';
+            m.metrics = { rsi14:(50+Math.random()*15).toFixed(1), vol:(12+Math.random()*8).toFixed(1), quant:55+Math.floor(Math.random()*20) };
+          }
+          p.meta[step.key] = m;
+          p.totalLatency += lat;
+          p.totalTokens += tok;
+        }
+        render();
+      }, t2);
+    });
+
+    // symbol_complete
+    setTimeout(() => {
+      const p = P[sym];
+      p._done = true;
+      p.verdict = verdicts[Math.floor(Math.random()*verdicts.length)];
+      p.confidence = 55+Math.floor(Math.random()*35);
+      p.converged = Math.random()>0.3;
+      p.sentinel = Math.random()>0.85;
+      p.gate2 = Math.random()>0.8?'fail':'pass';
+      p.reasoning = '经过多维度综合分析，当前标的处于合理估值区间，技术面偏多但需关注短期超买风险。建议维持现有仓位并设置动态止损。';
+
+      const done = syms.filter(s=>P[s]._done).length;
+      document.getElementById('progText').textContent = `${done} / ${syms.length}`;
+      expanded.add(sym);
+      render();
+
+      if (done >= syms.length) {
+        setTimeout(() => {
+          running = false;
+          document.getElementById('btnSel').disabled = false;
+          document.getElementById('btnAll').disabled = false;
+          document.getElementById('progText').textContent = `✅ 全部 ${syms.length} 完成`;
+        }, 400);
+      }
+    }, base + STEPS.length*1400 + 1400);
+  });
+
+  // live counter
+  const iv = setInterval(() => {
+    if (!running) { clearInterval(iv); return; }
+    const d = syms.filter(s=>P[s]._done).length;
+    const a = syms.filter(s=>!P[s]._done&&Object.values(P[s].steps).some(v=>v==='active')).length;
+    document.getElementById('progText').textContent = `${d} / ${syms.length}` + (a?` · ${a} 进行中`:'');
+  }, 700);
+}
+
+render();
+</script>
+</body>
+</html>

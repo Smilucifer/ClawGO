@@ -1,5 +1,20 @@
 # Changelog / 更新日志
 
+## v5.5.2 (2026-06-18)
+
+### 委员会直播 settings 文件并发竞态修复 + 国际指标反序列化修复
+
+**委员会 CLI settings 并发竞态 (P0):**
+
+1. **`session-committee-*.json` 被并发删除导致 "Settings file not found"**: 直播页 `_drainQueue` 并发启动多个标的(`maxConcurrent`),每个标的调用 `run_committee_stream` → `build_committee_config` → `write_committee_settings_json`,后者每次都调 `cleanup_old_committee_settings()`。旧实现**无差别删除所有** `session-committee-*.json`;单个标的完整跑(4 角色 × 2 轮 + CIO,含重试/超时)要几分钟、全程复用同一份 `--settings` 文件,后启动的标的会把前一个**正在用**的配置文件删掉 → 该标的下一次角色 CLI 调用报 `claude CLI exited 1: Settings file not found`。修复:cleanup 改为**基于文件修改时间**,只回收超过 `COMMITTEE_SETTINGS_MAX_AGE`(2 小时)的陈旧文件;当前批次刚生成的文件 mtime 仅几秒,远在窗口内不会被误删,跨会话历史残留仍正常回收;读不到 mtime 时保守保留。
+2. **并发扫描风暴 (simplify/efficiency)**: cleanup 每标的调一次,N 个标的几乎同时启动会触发 N 次同目录 `read_dir` + 逐文件 `stat`,而清理一批只需做一次。新增 `COMMITTEE_CLEANUP_COOLDOWN`(5 分钟)冷却门 + `AtomicU64` 记录上次扫描时间,把并发启动时的扫描收敛成单次。
+
+**国际指标反序列化修复:**
+
+3. **`BondYield10y` / `MarketStats` 去掉 `#[serde(rename_all = "camelCase")]`**: 两个结构体来自 AkShare(Python)返回的 snake_case 字段,camelCase 重命名与实际负载不匹配。沿用 v5.3.1 NewsItem 同类修复的根因处理(移除 rename_all,对齐 Python snake_case)。
+
+**取舍记录**: 委员会 settings 文件采用基于年龄的回收,而非"完成即删"的生命周期清理——常规 session 路径(`session-{run_id}.json`)本就从不清理这些临时文件,无既定生命周期约定可对齐;且该文件整批共享、跨多个并发标的复用,真要"完成即删"需引入 Arc + Drop 引用计数这套代码库里不存在的新机制,只换来更及时清理、不换来正确性。2 小时阈值相对单标的最长约 20 分钟有 6× 安全余量。
+
 ## v5.5.1 (2026-06-18)
 
 ### 委员会直播修复 + invest Dashboard 优化 + 全模块金额精度统一

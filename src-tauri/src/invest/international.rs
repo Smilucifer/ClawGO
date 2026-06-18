@@ -52,7 +52,6 @@ pub struct NewsItem {
 
 /// China 10Y government bond yield from AkShare.
 #[derive(Debug, Clone, serde::Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct BondYield10y {
     pub yield_10y: f64,
     pub date: String,
@@ -60,7 +59,6 @@ pub struct BondYield10y {
 
 /// A-share market statistics from AkShare.
 #[derive(Debug, Clone, serde::Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct MarketStats {
     pub limit_up_count: u32,
     pub limit_down_count: u32,

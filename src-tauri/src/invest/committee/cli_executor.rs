@@ -679,15 +679,73 @@ pub fn write_committee_settings_json(
     Ok(Some(materialized.json_path))
 }
 
-/// Clean up old committee temp settings files from prior runs.
-/// Only removes files matching `session-committee-*.json` pattern.
+/// Minimum age before a committee settings file is eligible for cleanup.
+///
+/// A single symbol's full committee run (4 roles × 2 rounds + CIO, with
+/// retries and timeouts) can take several minutes, and multiple symbols run
+/// concurrently — each reusing the same `--settings` file for the whole run.
+/// Deleting files indiscriminately would yank a config out from under an
+/// in-flight symbol ("Settings file not found"). We only reap files that are
+/// older than this window, which safely covers any active run while still
+/// preventing unbounded accumulation across sessions.
+const COMMITTEE_SETTINGS_MAX_AGE: Duration = Duration::from_secs(2 * 60 * 60);
+
+/// Minimum gap between directory scans by [`cleanup_old_committee_settings`].
+///
+/// Cleanup runs once per `run_committee_stream` call, but the live page starts
+/// up to `max_concurrent_symbols` of them at nearly the same instant — without
+/// a gate that would fire N simultaneous `read_dir` + per-file `stat` scans of
+/// the same directory for work that only needs doing once per batch. We record
+/// the last scan time and skip if it was recent.
+const COMMITTEE_CLEANUP_COOLDOWN: Duration = Duration::from_secs(5 * 60);
+
+/// Unix-millis timestamp of the last completed cleanup scan (0 = never).
+static LAST_COMMITTEE_CLEANUP: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Clean up stale committee temp settings files from prior runs.
+///
+/// Only removes files matching `session-committee-*.json` that are older than
+/// [`COMMITTEE_SETTINGS_MAX_AGE`]. Age-based reaping avoids the concurrency
+/// race where one symbol's cleanup would delete the settings file another
+/// concurrently-running symbol is still using.
 fn cleanup_old_committee_settings() {
+    use std::sync::atomic::Ordering;
+
+    let now = std::time::SystemTime::now();
+    let now_millis = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    // Skip if another symbol's call already scanned within the cooldown window.
+    // This collapses the concurrent start-up storm into a single scan per batch.
+    let last = LAST_COMMITTEE_CLEANUP.load(Ordering::Relaxed);
+    if now_millis != 0
+        && last != 0
+        && now_millis.saturating_sub(last) < COMMITTEE_CLEANUP_COOLDOWN.as_millis() as u64
+    {
+        return;
+    }
+    LAST_COMMITTEE_CLEANUP.store(now_millis, Ordering::Relaxed);
+
     let dir = crate::storage::data_dir().join("provider-claude-configs");
     let Ok(entries) = std::fs::read_dir(&dir) else { return };
     for entry in entries.flatten() {
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
-        if name_str.starts_with("session-committee-") && name_str.ends_with(".json") {
+        if !(name_str.starts_with("session-committee-") && name_str.ends_with(".json")) {
+            continue;
+        }
+        // Only remove files clearly older than any active run. If we can't read
+        // the mtime, leave the file alone rather than risk deleting a live one.
+        let stale = entry
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|mtime| now.duration_since(mtime).ok())
+            .is_some_and(|age| age > COMMITTEE_SETTINGS_MAX_AGE);
+        if stale {
             let _ = std::fs::remove_file(entry.path());
         }
     }
