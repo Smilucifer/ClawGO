@@ -4,6 +4,7 @@
   import { investStore } from '$lib/stores/invest-store.svelte';
   import { getTransport } from '$lib/transport';
   import KpiCard from '$lib/components/invest/KpiCard.svelte';
+  import { formatYuan } from '$lib/utils/format';
   import HoldingsTable from '$lib/components/invest/HoldingsTable.svelte';
   import TradeDialog from '$lib/components/invest/TradeDialog.svelte';
   import TradeLogTab from '$lib/components/invest/TradeLogTab.svelte';
@@ -166,19 +167,19 @@
       {/if}
 
       <div class="mb-[var(--space-6)] grid grid-cols-2 gap-[var(--space-3)] sm:grid-cols-3 lg:grid-cols-6">
-        <KpiCard label={t('invest_total_assets')} value={'¥' + investStore.totalAssets.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} />
-        <KpiCard label={t('invest_holdings_value')} value={'¥' + investStore.holdingsMarketValue.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} />
-        <KpiCard label={t('invest_cash')} value={'¥' + investStore.cash.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} sub="✎" />
+        <KpiCard label={t('invest_total_assets')} value={formatYuan(investStore.totalAssets)} />
+        <KpiCard label={t('invest_holdings_value')} value={formatYuan(investStore.holdingsMarketValue)} />
+        <KpiCard label={t('invest_cash')} value={formatYuan(investStore.cash)} sub="✎" />
         <KpiCard
           label={t('invest_total_return')}
-          value={(investStore.holdingsMarketValue - investStore.totalCostBasis >= 0 ? '+' : '') + '¥' + (investStore.holdingsMarketValue - investStore.totalCostBasis).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
-          sub={(investStore.totalReturnPct >= 0 ? '+' : '') + investStore.totalReturnPct.toFixed(2) + '%'}
+          value={formatYuan(investStore.holdingsMarketValue - investStore.totalCostBasis, { signed: true })}
+          sub={(investStore.totalReturnPct >= 0 ? '+' : '') + investStore.totalReturnPct.toFixed(3) + '%'}
           trend={investStore.totalReturnPct >= 0 ? 'up' : 'down'}
         />
         <KpiCard
           label={t('invest_daily_return')}
-          value={(investStore.dailyPnl >= 0 ? '+' : '') + '¥' + investStore.dailyPnl.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
-          sub={(investStore.dailyPnlPct >= 0 ? '+' : '') + investStore.dailyPnlPct.toFixed(2) + '%'}
+          value={formatYuan(investStore.dailyPnl, { signed: true })}
+          sub={(investStore.dailyPnlPct >= 0 ? '+' : '') + investStore.dailyPnlPct.toFixed(3) + '%'}
           trend={investStore.dailyPnl >= 0 ? 'up' : 'down'}
         />
         <KpiCard label={t('invest_position_count')} value={t('invest_hold') + ' ' + investStore.holdCount + ' + ' + t('invest_watch') + ' ' + investStore.watchCount} />

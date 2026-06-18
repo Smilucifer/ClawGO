@@ -43,11 +43,17 @@ fn archive_date_dir() -> PathBuf {
 }
 
 /// 去除文件名中的文件系统非法字符,保留中文。空名返回空串。
+/// Windows-first: 同时过滤控制字符,并去除尾部的点/空格(Windows 会静默
+/// 删除尾部点/空格,导致写入的文件名与 load_archive 的匹配前缀不一致)。
+/// 注意:无需防 CON/PRN 等保留设备名 —— 归档名始终是 `{symbol}_{name}`,
+/// 带 symbol 前缀,永不等于裸保留名。
 fn sanitize_name_for_filename(name: &str) -> String {
     name.chars()
         .filter(|c| !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+        .filter(|c| !c.is_control())
         .collect::<String>()
         .trim()
+        .trim_end_matches(['.', ' '])
         .to_string()
 }
 

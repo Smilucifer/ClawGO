@@ -1,8 +1,9 @@
 <script lang="ts">
   import { investStore } from '$lib/stores/invest-store.svelte';
   import { t } from '$lib/i18n/index.svelte';
-  import { getVerdictBadgeStyle } from '$lib/utils/invest-verdict';
+  import { getVerdictBadgeStyle, normalizeConfidencePct } from '$lib/utils/invest-verdict';
   import { getInvestDate } from '$lib/i18n/format';
+  import { formatYuan } from '$lib/utils/format';
   import type { Holding } from '$lib/types';
 
   let { onBuy, onSell, onAddWatch, onEdit, onConvertToWatch, onDeleteWatch, tushareToken }: {
@@ -37,14 +38,6 @@
     const price = getPrice(h.symbol);
     if (price == null || h.avgCost == null || h.avgCost === 0) return null;
     return ((price - h.avgCost) / h.avgCost) * 100;
-  }
-
-  function priceDecimals(assetType: string | null): number {
-    return assetType === 'etf' ? 3 : 2;
-  }
-
-  function assetLabel(assetType: string | null): string {
-    return assetType === 'etf' ? t('invest_asset_type_etf') : t('invest_asset_type_stock');
   }
 
   function marketValue(h: Holding): number | null {
@@ -150,7 +143,6 @@
           {@const avail = isHold ? availableShares(h) : null}
           {@const traded = todayTraded(h.symbol)}
           {@const verdict = investStore.latestVerdictMap.get(h.symbol)}
-          {@const dec = priceDecimals(h.assetType)}
           <tr class="border-b border-border transition-colors last:border-b-0 hover:bg-[var(--bg-hover)]">
             <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)]">
               <span class="text-[13px] font-semibold text-[var(--text-primary)]" title={h.symbol}>{h.name || h.symbol}</span>
@@ -172,25 +164,25 @@
             </td>
             <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px] text-[var(--text-secondary)]">{h.shares ?? '—'}</td>
             <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px] text-[var(--text-secondary)]">{avail ?? '—'}</td>
-            <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px] {h.frozenShares ? 'text-[#b89a6a]' : 'text-[var(--text-tertiary)]'}">{h.frozenShares ?? '—'}</td>
-            <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px] text-[var(--text-secondary)]">{h.avgCost?.toFixed(dec) ?? '—'}</td>
-            <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px] text-[var(--text-secondary)]">{price?.toFixed(dec) ?? '—'}</td>
-            <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px] text-[var(--text-secondary)]">{mv != null ? '¥' + mv.toFixed(3) : '—'}</td>
+            <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px] {h.frozenShares ? 'text-[#b89a6a]' : 'text-[var(--text-tertiary)]'}">{isHold ? (h.frozenShares ?? '—') : '—'}</td>
+            <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px] text-[var(--text-secondary)]">{h.avgCost?.toFixed(3) ?? '—'}</td>
+            <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px] text-[var(--text-secondary)]">{price?.toFixed(3) ?? '—'}</td>
+            <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px] text-[var(--text-secondary)]">{isHold && mv != null ? formatYuan(mv) : '—'}</td>
             <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px]">
-              {#if pnl !== null}<span class={pnl >= 0 ? 'text-[#8a9a76]' : 'text-[#a87a7a]'}>{pnl >= 0 ? '+' : ''}{pnl.toFixed(3)}</span>{:else}<span class="text-[var(--text-tertiary)]">—</span>{/if}
+              {#if pnl !== null}<span class={pnl >= 0 ? 'text-[#8a9a76]' : 'text-[#a87a7a]'}>{formatYuan(pnl, { signed: true })}</span>{:else}<span class="text-[var(--text-tertiary)]">—</span>{/if}
             </td>
             <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px]">
-              {#if pnlPct !== null}<span class={pnlPct >= 0 ? 'text-[#8a9a76]' : 'text-[#a87a7a]'}>{pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%</span>{:else}<span class="text-[var(--text-tertiary)]">—</span>{/if}
+              {#if pnlPct !== null}<span class={pnlPct >= 0 ? 'text-[#8a9a76]' : 'text-[#a87a7a]'}>{pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(3)}%</span>{:else}<span class="text-[var(--text-tertiary)]">—</span>{/if}
             </td>
             <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px]">
-              {#if dPnl !== null}<span class={dPnl >= 0 ? 'text-[#8a9a76]' : 'text-[#a87a7a]'}>{dPnl >= 0 ? '+' : ''}{dPnl.toFixed(3)}{#if dPct !== null}<span class="ml-1 text-[10px] opacity-70">{dPct >= 0 ? '+' : ''}{dPct.toFixed(2)}%</span>{/if}</span>{:else}<span class="text-[var(--text-tertiary)]">—</span>{/if}
+              {#if dPnl !== null}<span class={dPnl >= 0 ? 'text-[#8a9a76]' : 'text-[#a87a7a]'}>{formatYuan(dPnl, { signed: true })}{#if dPct !== null}<span class="ml-1 text-[10px] opacity-70">{dPct >= 0 ? '+' : ''}{dPct.toFixed(3)}%</span>{/if}</span>{:else}<span class="text-[var(--text-tertiary)]">—</span>{/if}
             </td>
-            <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px] text-[var(--text-secondary)]">{posPct != null ? posPct.toFixed(1) + '%' : '—'}</td>
+            <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px] text-[var(--text-secondary)]">{posPct != null ? posPct.toFixed(3) + '%' : '—'}</td>
             <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px] text-[var(--text-secondary)]">{traded.buy || '—'}</td>
             <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)] font-[var(--font-mono)] text-[13px] text-[var(--text-secondary)]">{traded.sell || '—'}</td>
             <td class="whitespace-nowrap px-[var(--space-3)] py-[var(--space-3)]">
               {#if verdict && isVerdictFresh(verdict.createdAt)}
-                <span class="inline-block rounded-[var(--radius-sm)] px-2 py-0.5 text-[10px] font-semibold" style={getVerdictBadgeStyle(verdict.verdict)} title={'置信度 ' + Math.min(100, (verdict.confidence ?? 0) <= 1 ? (verdict.confidence ?? 0) * 100 : (verdict.confidence ?? 0)).toFixed(0) + '% · ' + verdict.createdAt.slice(0, 10)}>{verdict.verdict}</span>
+                <span class="inline-block rounded-[var(--radius-sm)] px-2 py-0.5 text-[10px] font-semibold" style={getVerdictBadgeStyle(verdict.verdict)} title={'置信度 ' + normalizeConfidencePct(verdict.confidence).toFixed(3) + '% · ' + verdict.createdAt.slice(0, 10)}>{verdict.verdict}</span>
               {:else}
                 <span class="text-[var(--text-tertiary)]">—</span>
               {/if}

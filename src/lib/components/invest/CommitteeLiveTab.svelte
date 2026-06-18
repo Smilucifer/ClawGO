@@ -8,7 +8,7 @@
   } from '$lib/stores/invest-committee-store.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
   import { STEP_DEFS, getStepState, getRoundForStep } from './pipeline-config';
-  import { getVerdictBadgeStyle } from '$lib/utils/invest-verdict';
+  import { getVerdictBadgeStyle, normalizeConfidencePct } from '$lib/utils/invest-verdict';
   import { onMount } from 'svelte';
 
   const store = investCommitteeStore;
@@ -198,7 +198,7 @@
           {#if pf.signal}<span class="chip sig-{pf.signal.toLowerCase()}">{pf.signal}</span>{/if}
           {#if pf.strength != null}<span class="chip neutral">{t('invest_committee_chip_strength')} {pf.strength}</span>{/if}
           {#if pf.verdict}<span class="chip" style={getVerdictBadgeStyle(pf.verdict)}>{pf.verdict}</span>{/if}
-          {#if pf.confidence != null}<span class="chip neutral">{Math.min(100, pf.confidence <= 1 ? pf.confidence * 100 : pf.confidence).toFixed(0)}%</span>{/if}
+          {#if pf.confidence != null}<span class="chip neutral">{normalizeConfidencePct(pf.confidence).toFixed(0)}%</span>{/if}
           {#if pf.marketPhase}<span class="chip neutral">{pf.marketPhase}</span>{/if}
           {#if pf.emotionTemperature}<span class="chip neutral">{pf.emotionTemperature}</span>{/if}
           {#if pf.buyPointAssessment}<span class="chip neutral">{pf.buyPointAssessment}</span>{/if}

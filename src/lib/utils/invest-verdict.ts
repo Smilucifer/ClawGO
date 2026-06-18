@@ -20,6 +20,17 @@ export function getVerdictBadgeStyle(verdict: string | null | undefined): string
 }
 
 /**
+ * Normalize a committee confidence value to a 0–100 percentage.
+ * CIO confidence is normally a 0–1 fraction, but a model may emit an integer
+ * percent (e.g. 70); accept both and clamp at 100. Caller chooses display
+ * precision via `.toFixed(...)`.
+ */
+export function normalizeConfidencePct(confidence: number | null | undefined): number {
+  const v = confidence ?? 0;
+  return Math.min(100, v <= 1 ? v * 100 : v);
+}
+
+/**
  * 解析归档 markdown 内容里的 verdict（最佳努力）。
  * 匹配 "CIO 判决: BUY"、"verdict: BUY"、"裁决: BUY" 等常见模式。
  */

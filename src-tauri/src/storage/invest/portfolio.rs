@@ -232,8 +232,15 @@ pub fn list_holdings() -> Result<Vec<Holding>, String> {
         for h in items.iter_mut() {
             if h.kind == HoldingKind::Hold {
                 if let Some(&f) = frozen.get(&h.symbol) {
-                    if f > 0.0 {
-                        h.frozen_shares = Some(f);
+                    // Cap frozen at actually-held shares: in an illegal same-day
+                    // oversell (today's buys partially sold against a settled pool),
+                    // raw today-buys can exceed current shares. min() keeps
+                    // available = shares - frozen >= 0 and frozen sane. We do NOT
+                    // net out sells: A-share T+1 freezes today's buys, while sells
+                    // draw from the settled pool, so frozen stays = today's buys.
+                    let capped = f.min(h.shares.unwrap_or(0.0));
+                    if capped > 0.0 {
+                        h.frozen_shares = Some(capped);
                     }
                 }
             }
@@ -244,12 +251,18 @@ pub fn list_holdings() -> Result<Vec<Holding>, String> {
 
 /// 计算每个 symbol 今日(交易日)买入累计股数(T+1 冻结量)。
 /// 返回 symbol → frozen_shares 映射。今日交易日由 date_utils 决定(5AM 截止)。
+///
+/// 注意:`created_at` 存的是 UTC RFC3339(`...Z`),而 `get_invest_date()` 返回
+/// **本地**日期。直接 `substr(created_at,1,10)` 取的是 UTC 日期,在本地凌晨时段
+/// (UTC+8 的 00:00–08:00)会比本地日期早一天,导致今日买入匹配不到。
+/// 用 `date(created_at, 'localtime')` 让 SQLite 先转本地再取日期。
+/// `trade_date` 是用户输入的本地 `YYYY-MM-DD`,无需转换,经 COALESCE 优先取它。
 fn today_frozen_shares(conn: &Connection) -> Result<std::collections::HashMap<String, f64>, String> {
     let today = crate::invest::date_utils::get_invest_date();
     let mut stmt = conn
         .prepare(
             "SELECT symbol, COALESCE(SUM(shares), 0.0) FROM trades \
-             WHERE action = 'buy' AND COALESCE(trade_date, substr(created_at, 1, 10)) = ?1 \
+             WHERE action = 'buy' AND COALESCE(trade_date, date(created_at, 'localtime')) = ?1 \
              GROUP BY symbol",
         )
         .map_err(|e| format!("prepare frozen query: {}", e))?;

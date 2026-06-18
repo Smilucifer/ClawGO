@@ -4,6 +4,21 @@ export function formatCost(cost: number): string {
   return `$${cost.toFixed(6)}`;
 }
 
+/**
+ * Format a CNY amount with thousands separators and a fixed number of decimals.
+ * invest module displays all amounts at 3 decimal places (project-wide rule).
+ * `signed` prepends '+' for non-negative values (for P&L-style figures).
+ */
+export function formatYuan(v: number, opts?: { signed?: boolean; decimals?: number }): string {
+  const decimals = opts?.decimals ?? 3;
+  const sign = opts?.signed && v >= 0 ? '+' : '';
+  return (
+    sign +
+    '¥' +
+    v.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+  );
+}
+
 export function formatTokenCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
