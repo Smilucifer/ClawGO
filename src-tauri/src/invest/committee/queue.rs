@@ -26,6 +26,10 @@ pub struct QueueItem {
     pub status: QueueItemStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Opaque per-symbol progress snapshot owned by the frontend store.
+    /// Backend persists it verbatim and never parses its shape.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -138,11 +142,13 @@ mod tests {
                     symbol: "600519".into(),
                     status: QueueItemStatus::Done,
                     error: None,
+                    progress: Some(serde_json::json!({ "completedSteps": 7, "done": true })),
                 },
                 QueueItem {
                     symbol: "000001".into(),
                     status: QueueItemStatus::Failed,
                     error: Some("boom".into()),
+                    progress: None,
                 },
             ],
             snapshot: Some(PortfolioSnapshot {
@@ -168,6 +174,11 @@ mod tests {
         assert_eq!(back.items[1].error.as_deref(), Some("boom"));
         assert_eq!(back.max_concurrent, 5);
         assert_eq!(back.snapshot.unwrap().holdings[0].kind, "hold");
+        assert_eq!(
+            back.items[0].progress.as_ref().unwrap()["completedSteps"],
+            serde_json::json!(7)
+        );
+        assert!(back.items[1].progress.is_none());
     }
 
     #[test]
