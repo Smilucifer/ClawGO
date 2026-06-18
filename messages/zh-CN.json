@@ -447,7 +447,7 @@
   "invest_committee_in_progress": "{current} / {total} 完成 · {running} 进行中",
   "invest_committee_provider_hint": "在 设置 → 连接 中配置供应商",
   "invest_committee_symbols": "股票代码 (逗号分隔, 如 600519.SH, 000001.SZ)",
-  "invest_committee_run": "运行委员会",
+  "invest_committee_run": "运行",
   "invest_committee_running": "运行中...",
   "invest_committee_converged": "已收敛",
   "invest_committee_sentinel": "SENTINEL",

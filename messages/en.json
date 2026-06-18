@@ -447,7 +447,7 @@
   "invest_committee_in_progress": "{current} / {total} done · {running} running",
   "invest_committee_provider_hint": "Configure providers in Settings → Connection",
   "invest_committee_symbols": "Symbols (comma-separated, e.g. 600519.SH, 000001.SZ)",
-  "invest_committee_run": "Run Committee",
+  "invest_committee_run": "Run",
   "invest_committee_running": "Running...",
   "invest_committee_converged": "Converged",
   "invest_committee_sentinel": "SENTINEL",

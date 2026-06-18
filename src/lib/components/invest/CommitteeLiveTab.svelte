@@ -16,7 +16,6 @@
   const invest = investStore;
 
   let includeWatch = $state(true);
-  let selectedSymbols = $state<Set<string>>(new Set());
   let expandedSymbols = $state<Set<string>>(new Set());
 
   const CONCURRENCY_OPTIONS = [1, 2, 3, 5, 8, 10];
@@ -108,29 +107,16 @@
     };
   }
 
-  function runSelected() {
-    const syms = Array.from(selectedSymbols);
-    if (syms.length === 0) return;
-    for (const s of syms) expandedSymbols.add(s);
-    expandedSymbols = new Set(expandedSymbols);
-    store.addToQueue(syms, buildSnapshot());
-  }
-
   function runAll() {
     const syms = allAssets.map((a) => a.symbol);
     if (syms.length === 0) return;
     store.addToQueue(syms, buildSnapshot());
   }
 
-  function toggleSel(sym: string) {
-    const next = new Set(selectedSymbols);
-    if (next.has(sym)) next.delete(sym);
-    else next.add(sym);
-    selectedSymbols = next;
-  }
-
-  function toggleAll(checked: boolean) {
-    selectedSymbols = checked ? new Set(allAssets.map((a) => a.symbol)) : new Set();
+  function runSymbol(sym: string) {
+    expandedSymbols.add(sym);
+    expandedSymbols = new Set(expandedSymbols);
+    store.addToQueue([sym], buildSnapshot());
   }
 
   function toggleExpand(sym: string) {
@@ -214,10 +200,7 @@
 <div class="space-y-3" data-invest-scope>
   <!-- Action Bar -->
   <div class="action-bar">
-    <button class="btn primary" disabled={selectedSymbols.size === 0} onclick={runSelected}>
-      ▶ {t('invest_committee_run_selected')}
-    </button>
-    <button class="btn" disabled={allAssets.length === 0} onclick={runAll}>
+    <button class="btn primary" disabled={allAssets.length === 0} onclick={runAll}>
       ⏵ {t('invest_committee_add_all')}
     </button>
     {#if store.runningCount > 0}
@@ -229,14 +212,6 @@
     <label class="checkbox-row">
       <input type="checkbox" bind:checked={includeWatch} />
       {t('invest_committee_include_watch')}
-    </label>
-    <label class="checkbox-row">
-      <input
-        type="checkbox"
-        checked={selectedSymbols.size === allAssets.length && allAssets.length > 0}
-        onchange={(e) => toggleAll(e.currentTarget.checked)}
-      />
-      {t('invest_committee_select_all')}
     </label>
     <div class="spacer"></div>
     <label class="conc-row">
@@ -302,15 +277,6 @@
     {@const isExpanded = expandedSymbols.has(asset.symbol)}
     <div class="symbol-card" class:streaming={queueItem?.status === 'running'}>
       <div class="card-header" onclick={() => toggleExpand(asset.symbol)}>
-        <input
-          type="checkbox"
-          class="card-checkbox"
-          checked={selectedSymbols.has(asset.symbol)}
-          onclick={(e) => {
-            e.stopPropagation();
-            toggleSel(asset.symbol);
-          }}
-        />
         <div class="card-id">
           <span class="card-name">{asset.name ?? asset.symbol}</span>
           <span class="card-ticker">{asset.symbol}</span>
@@ -325,24 +291,18 @@
         {#if queueItem?.status === 'running'}
           <button
             class="abort-btn"
-            onclick={(e) => {
-              e.stopPropagation();
-              store.abortSymbol(asset.symbol);
-            }}
+            onclick={(e) => { e.stopPropagation(); store.abortSymbol(asset.symbol); }}
             title={t('invest_committee_abort')}
           >
             ⏹
           </button>
-        {:else if queueItem && queueItem.status !== 'queued'}
+        {:else}
           <button
-            class="retry-btn"
-            onclick={(e) => {
-              e.stopPropagation();
-              store.retrySymbol(asset.symbol);
-            }}
-            title={t('invest_retry')}
+            class="run-btn"
+            onclick={(e) => { e.stopPropagation(); runSymbol(asset.symbol); }}
+            title={queueItem && queueItem.status !== 'queued' ? t('invest_retry') : t('invest_committee_run')}
           >
-            ↻
+            ▶
           </button>
         {/if}
         <span class="expand-arrow" class:open={isExpanded}>▶</span>
@@ -517,7 +477,6 @@
     transition: background 0.15s;
   }
   .card-header:hover { background: var(--bg-hover); }
-  .card-checkbox { accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
   .card-id { display: flex; flex-direction: column; min-width: 84px; }
   .card-name { font-size: 14px; font-weight: 600; }
   .card-ticker { font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
@@ -542,8 +501,7 @@
     text-transform: uppercase;
     flex-shrink: 0;
   }
-  .abort-btn,
-  .retry-btn {
+  .abort-btn {
     padding: 4px 10px;
     border-radius: var(--radius-sm);
     border: 1px solid var(--border);
@@ -551,11 +509,21 @@
     font-size: 11px;
     cursor: pointer;
     flex-shrink: 0;
+    color: var(--color-error);
+    border-color: var(--color-error);
   }
-  .abort-btn { color: var(--color-error); border-color: var(--color-error); }
   .abort-btn:hover { background: rgba(168, 122, 122, 0.12); }
-  .retry-btn { color: var(--color-warning); }
-  .retry-btn:hover { background: rgba(255, 193, 7, 0.1); border-color: var(--color-warning); }
+  .run-btn {
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--accent-muted);
+    background: var(--bg-input);
+    color: var(--accent);
+    font-size: 11px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .run-btn:hover { background: var(--accent-muted); }
   .expand-arrow {
     width: 20px; height: 20px;
     display: flex; align-items: center; justify-content: center;
