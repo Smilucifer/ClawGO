@@ -135,6 +135,18 @@ export interface QueueItem {
   symbol: string;
   status: QueueItemStatus;
   error?: string;
+  progress?: PersistedProgress | null;
+}
+
+/** Serializable subset of SymbolProgress persisted to disk for cross-restart recovery. */
+export interface PersistedProgress {
+  completedSteps: number;
+  completedRounds: RoundOutputSummary[];
+  done: boolean;
+  error: string | null;
+  result: CommitteeResult | null;
+  regimeData: RegimeStepData | null;
+  failedSteps: number[]; // Set serialized as array
 }
 
 export interface SnapshotHolding {
@@ -279,10 +291,19 @@ export class InvestCommitteeStore {
         error: it.error,
       }));
       const progress = new Map<string, SymbolProgress>();
-      for (const item of this.queue) {
-        progress.set(item.symbol, this._freshProgress(item.status));
+      const restoredResults: CommitteeResult[] = [];
+      for (const item of state.items ?? []) {
+        const status: QueueItemStatus = item.status === 'running' ? 'queued' : item.status;
+        if (item.progress) {
+          const sp = this._fromPersisted(item.progress, status);
+          progress.set(item.symbol, sp);
+          if (sp.result) restoredResults.push(sp.result);
+        } else {
+          progress.set(item.symbol, this._freshProgress(status));
+        }
       }
       this.perSymbolProgress = progress;
+      this.results = restoredResults;
       this._recomputeRunning();
     } catch (e) {
       console.error('load_committee_queue failed:', e);
@@ -296,7 +317,15 @@ export class InvestCommitteeStore {
 
   private async _flushQueue() {
     const state: CommitteeQueueState = {
-      items: this.queue.map((q) => ({ symbol: q.symbol, status: q.status, error: q.error })),
+      items: this.queue.map((q) => {
+        const p = this.perSymbolProgress.get(q.symbol);
+        return {
+          symbol: q.symbol,
+          status: q.status,
+          error: q.error,
+          progress: p ? this._toPersisted(p) : null,
+        };
+      }),
       snapshot: this.portfolioSnapshot,
       maxConcurrent: this.maxConcurrent,
       updatedAt: new Date().toISOString(),
@@ -319,6 +348,34 @@ export class InvestCommitteeStore {
       result: null,
       regimeData: null,
       failedSteps: new Set(),
+      status,
+    };
+  }
+
+  /** Convert in-memory SymbolProgress → serializable PersistedProgress. */
+  private _toPersisted(p: SymbolProgress): PersistedProgress {
+    return {
+      completedSteps: p.completedSteps,
+      completedRounds: p.completedRounds,
+      done: p.done,
+      error: p.error,
+      result: p.result,
+      regimeData: p.regimeData,
+      failedSteps: p.failedSteps ? Array.from(p.failedSteps) : [],
+    };
+  }
+
+  /** Rebuild SymbolProgress from persisted snapshot, restoring transient fields. */
+  private _fromPersisted(pp: PersistedProgress, status: QueueItemStatus): SymbolProgress {
+    return {
+      activeStep: -1,
+      completedSteps: pp.completedSteps,
+      completedRounds: pp.completedRounds ?? [],
+      done: pp.done,
+      error: pp.error,
+      result: pp.result,
+      regimeData: pp.regimeData,
+      failedSteps: new Set(pp.failedSteps ?? []),
       status,
     };
   }
