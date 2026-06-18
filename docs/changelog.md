@@ -1,5 +1,40 @@
 # Changelog / 更新日志
 
+## v5.5.1 (2026-06-18)
+
+### 委员会直播修复 + invest Dashboard 优化 + 全模块金额精度统一
+
+两个独立的 invest 模块迭代（委员会直播 6 项修复 + Dashboard 6 项优化），各自经子代理逐任务实现 + 独立审查 + 全分支审查；全分支审查额外抓到两个逐任务审查漏掉的真实功能 bug。完整设计见 `docs/superpowers/specs/2026-06-18-committee-live-and-dashboard-design.md`。
+
+**委员会直播 (Part A, 6 项):**
+
+1. **跨重启恢复完整进度**: `queue.rs` 的 `QueueItem` 新增不透明 `progress` 透传字段（后端只存不解析）；前端 store 拥有 `PersistedProgress` schema，把每标的跑完的完整进度（completedRounds/result/regimeData/failedSteps）序列化进队列文件。`loadQueue` 每进程只恢复一次（单例 store，切 tab 不再覆盖实时状态），被重启中断的 running/queued → aborted（不自动续跑，避免启动即调付费 LLM）。
+2. **卡片独立运行/中止按钮**: 移除多选框 + 运行所选 + 全选；每张标的卡片改为单个"运行/中止"切换按钮（queued 时禁用），顶部保留全部运行/中止全部/并发选择器/Include Watch。
+3. **解析误报弱化 + parser 字段对账**: `missing_critical_fields`（有原文、仅缺字段）不再用大黄条盖住内容，正常渲染原文 + 附小 chip；只有真空 fallback（worker_unavailable/empty_text/cli_error）才显示警告条。parser 补齐 CIO `execution_mode`/`first_tranche_cny` 与 Macro `signal_reason`/`market_phase_reason` 提取，顺带修复一个自 L4 移除起就无法编译的陈旧测试（`cargo check --tests` 才暴露）。
+4. **prompt 精简输出**: 6 个角色 prompt 统一加"每字段值一句话结束、理由类 ≤ 一句话、结构化列表保持既定条数"约束，省 token。
+5. **卡片排版修复**: `.step-body` 改纯文本 `white-space: pre-wrap`（对齐 demo），消除单换行折叠与 markdown 块级双空行。
+6. **关键 chip + demo 视觉对齐**: 前端 `RoundOutputSummary.parsed` 接口扩展声明后端已序列化的全字段；每个 step 卡片顶部按角色渲染 signal/strength/verdict/买点/估值/资金流/集中度/催化剂等 chip（枚举值英文原样，标签走 i18n），配色对齐 demo。
+
+**invest Dashboard (Part B, 6 项):**
+
+7. **A 股 T+1 冻结股数**: `list_holdings` 读取时从"今日 buy trades"实时聚合算出 `frozen_shares`（不加 DB 列、不存储——`record_trade` 本就从 trades 全量回放，故跨交易日天然解冻、多笔买入天然累加、零迁移），随 `Holding` 返回前端。
+8. **store 派生值**: 新增 `dailyPnl`/`dailyPnlPct`（组合当日收益，实时聚合非快照）、`todayTradedShares`（今日买卖股数）、`latestVerdictMap`（每标的最新委员会评级）。
+9. **持仓明细表扩展**: HoldingsTable 从 7 列扩成 ~16 列（名称/代码/类型/持仓/可用/冻结/成本/现价/市值/盈亏/盈亏%/当日盈亏/当日%/仓位/今买/今卖/评级），watch 行非持仓列显示 `—`，容器横向滚动。
+10. **KPI 卡重构**: 总收益率 → 总收益（大字金额 + 小字百分比），新增当日收益卡，删除宏观快照卡 + 最新裁决卡（含删除两个组件文件）。
+11. **评级新鲜度过滤**: 持仓表评级列只在委员会 verdict 为最近一个交易日内（4 自然日窗口容忍周末）才显示 chip，过期显示 `—`，复用已加载的 `verdicts`（无新命令）。
+12. **归档文件名带股票名称**: 委员会归档 `{symbol}.md` → `{symbol}_{name}.md`（sanitize 文件系统非法字符 + 控制字符 + 尾部点/空格，保留中文），markdown 标题带名称，`load_archive` 兼容新旧两种文件名。
+
+**全分支审查抓到的真实 bug (2 项):**
+
+13. **同日买卖少算可用股数**: T+1 冻结量按"今日买入"算未扣同日卖出，做 T 后可用股数被错误显示为 0。修正为 `frozen = min(今日买入, 持仓)`（不采纳审查建议的"买−卖净额"——对 T+1 语义是错的，会把已交收股标记为可卖）。
+14. **UTC/本地日期错配凌晨丢单**: trades 的 `created_at` 存 UTC，但 invest 统计日期是本地（5AM 截止），SQL 用 `substr(created_at,1,10)` 取 UTC 日期 → A 股早盘 00:00–08:00 下的单匹配不上，冻结量/今日买卖列静默读成空。修正为 `date(created_at, 'localtime')` 先转本地再取日期，前端今日买卖聚合同源对齐。
+
+**全模块金额精度统一:**
+
+15. **所有 ¥ 金额统一 3 位小数**: 抽共享 `formatYuan()`（千分位 + 固定小数 + 可选正负号）与 `normalizeConfidencePct()`，覆盖 KPI 卡/持仓表/CommitteeLiveTab/TradeDialog/SystemPnlHistoryTab/TradeLogTab/PnlChart；消除同一现金在不同页面显示 2 位 vs 3 位的不一致。CSV 导出保留裸 `toFixed(3)`（避免 ¥/千分位逗号破坏列），技术指标（RSI/MA/波动率/延迟/strength）保持原有精度。
+
+**取舍记录**: T+1 冻结采用"读取时算"而非存储列；评级列复用已加载 verdicts 而非新增批量命令；`isVerdictFresh` 保留 4 天窗口（刻意的周末/节假日容差）；`trades(action, trade_date)` 索引留待 trades 表增大后再加。
+
 ## v5.5.0 (2026-06-18)
 
 ### 委员会直播 UI 重构 — Debate Flow Card + 动态执行队列 + Abort
