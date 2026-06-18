@@ -1,5 +1,6 @@
 import { getTransport } from "$lib/transport";
 import { currentLocale } from "$lib/i18n/index.svelte";
+import { getInvestDate } from "$lib/i18n/format";
 import type {
   Holding,
   Trade,
@@ -139,6 +140,49 @@ class InvestStore {
       ? ((this.holdingsMarketValue - this.totalCostBasis) / this.totalCostBasis) * 100
       : 0,
   );
+
+  /** 组合当日收益金额 = Σ(当日价格变动 × 持仓股数),仅 hold。 */
+  dailyPnl = $derived(
+    this.holdHoldings.reduce((sum, h) => {
+      const q = this.priceMap[h.symbol];
+      if (q && h.shares) return sum + q.change * h.shares;
+      return sum;
+    }, 0),
+  );
+
+  /** 组合当日收益率 = 当日收益 / 昨收总市值。昨收 = close - change。 */
+  dailyPnlPct = $derived.by(() => {
+    let prevValue = 0;
+    for (const h of this.holdHoldings) {
+      const q = this.priceMap[h.symbol];
+      if (q && h.shares) prevValue += (q.close - q.change) * h.shares;
+    }
+    return prevValue > 0 ? (this.dailyPnl / prevValue) * 100 : 0;
+  });
+
+  /** 每 symbol 今日买入/卖出股数聚合(从 trades)。 */
+  todayTradedShares = $derived.by(() => {
+    const today = getInvestDate(); // YYYY-MM-DD, 5AM cutoff
+    const map = new Map<string, { buy: number; sell: number }>();
+    for (const tr of this.trades) {
+      const d = tr.tradeDate ?? tr.createdAt?.slice(0, 10);
+      if (d !== today) continue;
+      if (tr.action !== 'buy' && tr.action !== 'sell') continue;
+      const cur = map.get(tr.symbol) ?? { buy: 0, sell: 0 };
+      cur[tr.action] += tr.shares ?? 0;
+      map.set(tr.symbol, cur);
+    }
+    return map;
+  });
+
+  /** 每 symbol 最新一条委员会 verdict(verdicts 已按 created_at desc 排序)。 */
+  latestVerdictMap = $derived.by(() => {
+    const map = new Map<string, Verdict>();
+    for (const v of this.verdicts) {
+      if (!map.has(v.symbol)) map.set(v.symbol, v); // first = newest due to DESC order
+    }
+    return map;
+  });
 
   // ── Event Watch Derived ─────────────────────────────────────────────
 

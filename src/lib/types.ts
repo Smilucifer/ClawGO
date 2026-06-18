@@ -1743,6 +1743,7 @@ export interface Holding {
   notional: number;
   avgCost: number | null;
   shares: number | null;
+  frozenShares?: number | null;
   entryDate: string | null;
   linkedVerdictId: string | null;
   notes: string | null;
