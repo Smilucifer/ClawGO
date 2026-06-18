@@ -9,7 +9,6 @@
   import { investStore } from '$lib/stores/invest-store.svelte';
   import { STEP_DEFS, getStepState, getRoundForStep } from './pipeline-config';
   import { getVerdictBadgeStyle } from '$lib/utils/invest-verdict';
-  import { renderMarkdown } from '$lib/utils/markdown';
   import { onMount } from 'svelte';
 
   const store = investCommitteeStore;
@@ -78,9 +77,9 @@
 
   function formatCash(v: number): string {
     if (v >= 10000) {
-      return '¥' + (v / 1000).toFixed(1) + 'K';
+      return '¥' + (v / 1000).toFixed(3) + 'K';
     }
-    return '¥' + v.toLocaleString();
+    return '¥' + v.toFixed(3);
   }
 
   // O(1) per-row lookups for the symbol card list (avoids O(assets×n) scans).
@@ -198,8 +197,8 @@
         <div class="chip-row">
           {#if pf.signal}<span class="chip sig-{pf.signal.toLowerCase()}">{pf.signal}</span>{/if}
           {#if pf.strength != null}<span class="chip neutral">{t('invest_committee_chip_strength')} {pf.strength}</span>{/if}
-          {#if pf.verdict}<span class="chip sig-{pf.verdict.toLowerCase()}">{pf.verdict}</span>{/if}
-          {#if pf.confidence != null}<span class="chip neutral">{(pf.confidence * 100).toFixed(0)}%</span>{/if}
+          {#if pf.verdict}<span class="chip" style={getVerdictBadgeStyle(pf.verdict)}>{pf.verdict}</span>{/if}
+          {#if pf.confidence != null}<span class="chip neutral">{Math.min(100, pf.confidence <= 1 ? pf.confidence * 100 : pf.confidence).toFixed(0)}%</span>{/if}
           {#if pf.marketPhase}<span class="chip neutral">{pf.marketPhase}</span>{/if}
           {#if pf.emotionTemperature}<span class="chip neutral">{pf.emotionTemperature}</span>{/if}
           {#if pf.buyPointAssessment}<span class="chip neutral">{pf.buyPointAssessment}</span>{/if}
@@ -208,8 +207,7 @@
           {#if pf.catalystTier}<span class="chip neutral">{pf.catalystTier}</span>{/if}
           {#if pf.fallbackReason}<span class="chip warn" title={pf.fallbackReason}>⚠ {t('invest_committee_chip_fields_partial')}</span>{/if}
         </div>
-        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-        {@html renderMarkdown(pf.rawText)}
+        <div class="raw-text">{pf.rawText}</div>
       {:else}
         <span class="muted">{t('invest_committee_waiting')}</span>
       {/if}
@@ -319,8 +317,13 @@
         {:else}
           <button
             class="run-btn"
+            disabled={queueItem?.status === 'queued'}
             onclick={(e) => { e.stopPropagation(); runSymbol(asset.symbol); }}
-            title={queueItem && queueItem.status !== 'queued' ? t('invest_retry') : t('invest_committee_run')}
+            title={queueItem?.status === 'queued'
+              ? t('invest_committee_queued')
+              : queueItem
+                ? t('invest_retry')
+                : t('invest_committee_run')}
           >
             ▶
           </button>
@@ -543,7 +546,9 @@
     cursor: pointer;
     flex-shrink: 0;
   }
-  .run-btn:hover { background: var(--accent-muted); }
+  .run-btn:hover:not(:disabled) { background: var(--accent-muted); }
+  .run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .raw-text { white-space: pre-wrap; word-break: break-word; }
   .expand-arrow {
     width: 20px; height: 20px;
     display: flex; align-items: center; justify-content: center;

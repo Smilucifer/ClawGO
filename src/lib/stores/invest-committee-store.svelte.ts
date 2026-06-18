@@ -216,6 +216,9 @@ export class InvestCommitteeStore {
   showConfigPanel = $state(false);
 
   private _unlisten: (() => void) | null = null;
+  /** loadQueue restores from disk only once per process — the singleton store
+   *  keeps live state across tab re-mounts, so re-restoring would clobber it. */
+  private _restored = false;
 
   // ── Derived counts ──────────────────────────────────────────────
   get queuedCount() {
@@ -300,20 +303,29 @@ export class InvestCommitteeStore {
 
   // ── Persistence ─────────────────────────────────────────────────
   async loadQueue() {
+    // Restore from disk only once per process. The store is a singleton, so
+    // every tab re-mount calls this; re-restoring would clobber live in-memory
+    // state (running progress, results) with the stale on-disk snapshot.
+    if (this._restored) return;
+    this._restored = true;
     try {
       const state = await invoke<CommitteeQueueState>('load_committee_queue');
       this.maxConcurrent = state.maxConcurrent && state.maxConcurrent > 0 ? state.maxConcurrent : 5;
       this.portfolioSnapshot = state.snapshot ?? null;
-      // Restore queue for display; running items (interrupted by restart) → queued.
+      // Items left 'running'/'queued' when the process exited were interrupted —
+      // mark them 'aborted' (content preserved, user can re-run). We do NOT
+      // auto-resume: silently spawning paid LLM runs on app start is unsafe.
+      const settle = (s: QueueItemStatus): QueueItemStatus =>
+        s === 'running' || s === 'queued' ? 'aborted' : s;
       this.queue = (state.items ?? []).map((it) => ({
         symbol: it.symbol,
-        status: it.status === 'running' ? ('queued' as QueueItemStatus) : it.status,
+        status: settle(it.status),
         error: it.error,
       }));
       const progress = new Map<string, SymbolProgress>();
       const restoredResults: CommitteeResult[] = [];
       for (const item of state.items ?? []) {
-        const status: QueueItemStatus = item.status === 'running' ? 'queued' : item.status;
+        const status = settle(item.status);
         if (item.progress) {
           const sp = this._fromPersisted(item.progress, status);
           progress.set(item.symbol, sp);
@@ -520,6 +532,11 @@ export class InvestCommitteeStore {
           },
         ];
         return;
+      case 'symbol_aborted':
+        // Queue-level only — no perSymbolProgress mutation needed, so avoid the
+        // Map copy below. _settleQueue handles progress.status + activeStep reset.
+        this._settleQueue(event.symbol, 'aborted');
+        return;
     }
 
     // Mutating events — copy the Map for reactivity
@@ -624,8 +641,6 @@ export class InvestCommitteeStore {
       this._settleQueue(event.symbol, 'done');
     } else if (event.type === 'error') {
       this._settleQueue(event.symbol, 'failed', event.error);
-    } else if (event.type === 'symbol_aborted') {
-      this._settleQueue(event.symbol, 'aborted');
     }
   }
 
