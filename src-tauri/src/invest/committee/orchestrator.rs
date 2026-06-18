@@ -1953,9 +1953,9 @@ pub(crate) async fn run_committee(
     // Skip archiving in dry_run mode — results are returned but not persisted.
     // Uses daily-overwrite strategy: each symbol keeps only the latest
     // verdict per calendar day.
+    let asset_name = if !dry_run { get_asset_name(symbol) } else { None };
     if !dry_run {
         let cio_provider = resolve_provider(config, CommitteeRole::Cio);
-        let asset_name = get_asset_name(symbol);
 
         if let Err(e) = crate::storage::invest::committees::archive_verdict(
             symbol,
@@ -1992,7 +1992,7 @@ pub(crate) async fn run_committee(
     // Archive full report (markdown + events.jsonl) — fire-and-forget
     // Skip in dry_run mode.
     if !dry_run {
-        if let Err(e) = archive_decision_full(symbol, &result) {
+        if let Err(e) = archive_decision_full(symbol, asset_name.as_deref(), &result) {
             log::warn!("archive_decision_full failed for {}: {}", symbol, e);
         }
     }

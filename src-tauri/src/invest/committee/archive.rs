@@ -42,6 +42,23 @@ fn archive_date_dir() -> PathBuf {
     archive_root().join(today)
 }
 
+/// 去除文件名中的文件系统非法字符,保留中文。空名返回空串。
+fn sanitize_name_for_filename(name: &str) -> String {
+    name.chars()
+        .filter(|c| !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+/// 构造归档 md 文件名:有名称用 `{symbol}_{name}.md`,否则 `{symbol}.md`。
+fn archive_md_filename(symbol: &str, name: Option<&str>) -> String {
+    match name.map(sanitize_name_for_filename).filter(|s| !s.is_empty()) {
+        Some(safe) => format!("{symbol}_{safe}.md"),
+        None => format!("{symbol}.md"),
+    }
+}
+
 /// Validate that a symbol contains only safe filesystem characters.
 fn validate_symbol(symbol: &str) -> Result<(), String> {
     if symbol.is_empty() {
@@ -64,6 +81,7 @@ fn validate_symbol(symbol: &str) -> Result<(), String> {
 /// orchestrator after verdict persistence via `committees::archive_verdict()`.
 pub fn archive_decision_full(
     symbol: &str,
+    name: Option<&str>,
     result: &CommitteeResult,
 ) -> Result<(), String> {
     validate_symbol(symbol)?;
@@ -72,8 +90,8 @@ pub fn archive_decision_full(
         .map_err(|e| format!("create archive dir: {e}"))?;
 
     // ── Markdown report ──────────────────────────────────────────────────
-    let md = format_decision_markdown(symbol, result);
-    let md_path = dir.join(format!("{symbol}.md"));
+    let md = format_decision_markdown(symbol, name, result);
+    let md_path = dir.join(archive_md_filename(symbol, name));
     let mut md_file = fs::File::create(&md_path)
         .map_err(|e| format!("create md file: {e}"))?;
     md_file.write_all(md.as_bytes())
@@ -147,13 +165,18 @@ pub fn archive_decision_full(
 /// Format a [`CommitteeResult`] as a human-readable markdown decision report.
 pub fn format_decision_markdown(
     symbol: &str,
+    name: Option<&str>,
     result: &CommitteeResult,
 ) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M:%S");
     let mut md = String::new();
 
     // ── Title ────────────────────────────────────────────────────────────
-    md.push_str(&format!("# {} 委员会决策报告\n\n", symbol));
+    let title_sym = match name.map(sanitize_name_for_filename).filter(|s| !s.is_empty()) {
+        Some(n) => format!("{symbol} {n}"),
+        None => symbol.to_string(),
+    };
+    md.push_str(&format!("# {} 委员会决策报告\n\n", title_sym));
     md.push_str(&format!("**日期:** {}\n\n", now));
 
     // ── Final Verdict & Confidence ───────────────────────────────────────
@@ -262,16 +285,29 @@ pub fn load_archive(
             .format("%Y-%m-%d")
             .to_string();
         let dir = root.join(&date);
-        let md_path = dir.join(format!("{symbol}.md"));
-
-        if md_path.exists() {
-            let content = fs::read_to_string(&md_path)
-                .map_err(|e| format!("read {}: {e}", md_path.display()))?;
-            results.push(ArchivedDecision {
-                date,
-                symbol: symbol.to_string(),
-                content,
-            });
+        if !dir.exists() {
+            continue;
+        }
+        // Match `{symbol}.md` (legacy) or `{symbol}_{name}.md` (new).
+        let prefix = format!("{symbol}_");
+        let legacy = format!("{symbol}.md");
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let fname = entry.file_name().to_string_lossy().to_string();
+                if !fname.ends_with(".md") {
+                    continue;
+                }
+                if fname == legacy || fname.starts_with(&prefix) {
+                    let content = fs::read_to_string(entry.path())
+                        .map_err(|e| format!("read {}: {e}", entry.path().display()))?;
+                    results.push(ArchivedDecision {
+                        date: date.clone(),
+                        symbol: symbol.to_string(),
+                        content,
+                    });
+                    break; // one archive per symbol per day
+                }
+            }
         }
     }
 
@@ -334,7 +370,7 @@ mod tests {
     #[test]
     fn test_format_markdown() {
         let result = make_test_result();
-        let md = format_decision_markdown("TEST", &result);
+        let md = format_decision_markdown("TEST", None, &result);
 
         assert!(md.contains("# TEST 委员会决策报告"));
         assert!(md.contains("HOLD"));
@@ -359,7 +395,7 @@ mod tests {
             forced_verdict: "SELL".to_string(),
             forced_confidence: 0.95,
         });
-        let md = format_decision_markdown("TEST", &result);
+        let md = format_decision_markdown("TEST", None, &result);
         assert!(md.contains("Sentinel Override"));
         assert!(md.contains("SELL"));
         assert!(md.contains("95.0%"));
@@ -370,7 +406,7 @@ mod tests {
     fn test_format_markdown_not_converged() {
         let mut result = make_test_result();
         result.converged = false;
-        let md = format_decision_markdown("TEST", &result);
+        let md = format_decision_markdown("TEST", None, &result);
         assert!(md.contains("did not converge"));
     }
 
@@ -392,5 +428,20 @@ mod tests {
         let result = load_archive("NONEXISTENT", 1);
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_sanitize_name_for_filename() {
+        assert_eq!(sanitize_name_for_filename("贵州茅台"), "贵州茅台");
+        assert_eq!(sanitize_name_for_filename("A/B:C*D"), "ABCD");
+        assert_eq!(sanitize_name_for_filename(""), "");
+        assert_eq!(sanitize_name_for_filename("Foo<Bar>"), "FooBar");
+    }
+
+    #[test]
+    fn test_archive_filename_with_name() {
+        assert_eq!(archive_md_filename("600519.SH", Some("贵州茅台")), "600519.SH_贵州茅台.md");
+        assert_eq!(archive_md_filename("600519.SH", None), "600519.SH.md");
+        assert_eq!(archive_md_filename("600519.SH", Some("")), "600519.SH.md");
     }
 }
