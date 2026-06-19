@@ -333,8 +333,8 @@ mod tests {
     fn normalize_6field_unchanged() {
         assert_eq!(normalize_cron_6field("0 0 3 * * *"), "0 0 3 * * *");
         assert_eq!(
-            normalize_cron_6field("0 30 9,11 * * 1-5"),
-            "0 30 9,11 * * 1-5"
+            normalize_cron_6field("0 30 9,11,13,15 * * 1-5"),
+            "0 30 9,11,13,15 * * 1-5"
         );
     }
 
@@ -362,7 +362,7 @@ mod tests {
 
     #[test]
     fn compute_next_run_some_for_6field_cron() {
-        let job = make_job("0 30 9,11 * * 1-5");
+        let job = make_job("0 30 9,11,13,15 * * 1-5");
         assert!(compute_next_run_for_job(&job).is_some());
     }
 
