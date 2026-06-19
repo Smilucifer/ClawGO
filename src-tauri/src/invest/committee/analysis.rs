@@ -303,7 +303,7 @@ pub fn apply_hard_rules(
     let first_tranche_cny = match (first_tranche_cny, alloc_cny) {
         (Some(ft), Some(a)) => {
             let cap = a.abs();
-            // first_tranche 取与 alloc 同号、绝对值不超过 cap
+            // first_tranche 绝对值不超过 clamp 后 alloc 的绝对值(cap);符号保持原值
             Some(ft.clamp(-cap, cap))
         }
         (ft, _) => ft,

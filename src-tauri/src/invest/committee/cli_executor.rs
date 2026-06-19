@@ -330,6 +330,7 @@ pub async fn fetch_company_news_for_prompt(symbol: &str) -> String {
 
 /// Format risk metrics context for Risk role CLI prompt injection.
 /// Delegates to the canonical `build_risk_metrics_context` in orchestrator.
+/// `mode` 决定成本来源:Holding 用持仓买入均价,Research 用 watch 关注价。
 pub(crate) fn format_risk_metrics_for_prompt(
     portfolio_data: &crate::invest::committee::orchestrator::PortfolioData,
     symbol: &str,
