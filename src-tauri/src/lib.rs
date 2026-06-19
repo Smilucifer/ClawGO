@@ -138,42 +138,6 @@ pub async fn run_pnl_snapshot() -> Result<String, String> {
     Ok(format!("saved snapshot #{}: total={:.2}", id, total_value))
 }
 
-/// Spawn the event scanner background cron job.
-/// Runs every 30 minutes, fetching Tushare news/announcements, filtering by
-/// keyword severity, normalizing via LLM, and saving new events to the DB.
-fn spawn_event_scanner_cron() {
-    tauri::async_runtime::spawn(async {
-        // Initial delay before first scan (let app finish startup)
-        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-
-        loop {
-            log::info!("[invest-scanner] cron: starting scan");
-            match run_event_scan_once().await {
-                Ok(result) => {
-                    log::info!(
-                        "[invest-scanner] cron: scan complete — fetched={}, filtered={}, saved={}",
-                        result.fetched, result.filtered, result.saved
-                    );
-                }
-                Err(e) => {
-                    // Config errors (missing token/provider) are expected when not set up
-                    log::debug!("[invest-scanner] cron: scan skipped/failed: {}", e);
-                }
-            }
-
-            // Sleep 30 minutes between scans
-            tokio::time::sleep(std::time::Duration::from_secs(30 * 60)).await;
-        }
-    });
-}
-
-/// Run a single event scan: create clients and call the scanner.
-async fn run_event_scan_once() -> Result<crate::invest::event_scanner::ScanResult, String> {
-    let (tushare, client, llm_config) = crate::commands::invest::build_scan_clients()?;
-
-    crate::invest::event_scanner::scan_events(&tushare, &client, &llm_config, None, crate::invest::event_scanner::DEFAULT_LANGUAGE).await
-}
-
 #[allow(deprecated)] // deprecated invest IPC commands kept for backward compatibility
 pub fn run() {
     // Initialize logging — our crate at debug level by default
@@ -680,11 +644,6 @@ pub fn run() {
             }
         });
     }
-
-    // Start event scanner cron job.
-    // Runs every 30 minutes, scanning Tushare news and announcements for
-    // HOLD/WATCH portfolio items, normalizing via LLM, saving new events.
-    spawn_event_scanner_cron();
 
     // Run memory migration from per-character JSONL to SQLite (idempotent).
     match crate::group_chat::memory_migration::migrate_jsonl_to_sqlite(&data_dir) {
