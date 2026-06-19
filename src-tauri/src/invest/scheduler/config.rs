@@ -458,14 +458,52 @@ mod tests {
     use std::sync::Mutex as StdMutex;
     static TEST_ENV_LOCK: StdMutex<()> = StdMutex::new(());
 
+    /// RAII guard that restores USERPROFILE/HOME on drop, even on panic.
+    /// Required because `dirs::home_dir()` on Windows resolves via
+    /// SHGetKnownFolderPath(FOLDERID_Profile) and ignores env vars — so the
+    /// pre-`save_jobs` assertion below may panic when isolation fails, and we
+    /// must restore env regardless to avoid leaking test state into the
+    /// process for subsequent tests.
+    struct EnvGuard {
+        userprofile: Option<std::ffi::OsString>,
+        home: Option<std::ffi::OsString>,
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.userprofile {
+                Some(v) => std::env::set_var("USERPROFILE", v),
+                None => std::env::remove_var("USERPROFILE"),
+            }
+            match &self.home {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
+
     #[test]
     fn save_then_load_base_roundtrips_cron_override() {
         let _t = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().expect("tempdir");
-        let prev_userprofile = std::env::var_os("USERPROFILE");
-        let prev_home = std::env::var_os("HOME");
+        let _env = EnvGuard {
+            userprofile: std::env::var_os("USERPROFILE"),
+            home: std::env::var_os("HOME"),
+        };
         std::env::set_var("USERPROFILE", tmp.path());
         std::env::set_var("HOME", tmp.path());
+
+        // Defensive isolation check: dirs 6.0 on Windows resolves home via
+        // SHGetKnownFolderPath, not env vars, so USERPROFILE/HOME overrides
+        // are no-ops there. If config_path() is not under tmp, abort BEFORE
+        // any disk write so we never clobber the developer's real
+        // ~/.claw-go/invest/scheduler.json.
+        assert!(
+            config_path().starts_with(tmp.path()),
+            "test isolation failed: config_path()={:?} is not under tmp dir {:?}; aborting before write to avoid polluting real ~/.claw-go config",
+            config_path(),
+            tmp.path()
+        );
 
         let mut jobs = super::super::default_jobs();
         let pnl = jobs.iter_mut().find(|j| j.id == "pnl_snapshot").expect("pnl present");
@@ -477,15 +515,5 @@ mod tests {
         let rp = reloaded.iter().find(|j| j.id == "pnl_snapshot").expect("pnl after reload");
         assert_eq!(rp.cron_expr, "0 0 10,14 * * 1-5");
         assert!(!rp.enabled);
-
-        // restore env
-        match prev_userprofile {
-            Some(v) => std::env::set_var("USERPROFILE", v),
-            None => std::env::remove_var("USERPROFILE"),
-        }
-        match prev_home {
-            Some(v) => std::env::set_var("HOME", v),
-            None => std::env::remove_var("HOME"),
-        }
     }
 }
