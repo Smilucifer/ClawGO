@@ -514,12 +514,14 @@ pub fn run() {
 
             // Start team file watcher for ~/.claude/teams/ and ~/.claude/tasks/
             let cancel = app.state::<CancellationToken>().inner().clone();
+            let cancel_for_scheduler = cancel.clone();
             hooks::team_watcher::start_team_watcher(app.handle().clone(), cancel);
 
             // Start invest scheduler runner (background cron loop)
-            invest::scheduler::runner::start(|job_id| async move {
-                invest::scheduler::runner::dispatch_job(&job_id).await
-            });
+            invest::scheduler::runner::start(
+                |job_id| async move { invest::scheduler::runner::dispatch_job(&job_id).await },
+                cancel_for_scheduler,
+            );
 
             // System tray — hide-to-tray on close, left-click to show
             // Non-fatal: if tray library is unavailable (e.g. some Linux desktops),
