@@ -418,6 +418,89 @@ pub fn format_round_outputs_for_prompt(
 }
 
 // ---------------------------------------------------------------------------
+// Hit-rate soft prompt injection (verdict review feedback loop)
+// ---------------------------------------------------------------------------
+
+/// 把命中率聚合渲染成软提示文本块。空聚合返回 ""。
+/// current_regime 用于高亮"当前市场状态"下的同类命中率。
+fn render_hit_rates(
+    agg: &crate::storage::invest::verdict_reviews::HitRateAgg,
+    current_regime: &str,
+) -> String {
+    use crate::storage::invest::verdict_reviews::HitRateRow;
+    if agg.global.is_empty() && agg.by_regime.is_empty() {
+        return String::new();
+    }
+
+    // 把同一 verdict_type 的多个 window 合并成一行展示,未到期窗口跳过。
+    fn fmt_rows(rows: &[HitRateRow]) -> Vec<String> {
+        use std::collections::BTreeMap;
+        let mut by_type: BTreeMap<&str, Vec<&HitRateRow>> = BTreeMap::new();
+        for r in rows {
+            by_type.entry(r.verdict_type.as_str()).or_default().push(r);
+        }
+        let mut lines = Vec::new();
+        for (vt, mut rs) in by_type {
+            rs.sort_by_key(|r| r.window_days);
+            let parts: Vec<String> = rs
+                .iter()
+                .filter(|r| r.matured)
+                .map(|r| {
+                    let pct = if r.total > 0 {
+                        (r.hits as f64 / r.total as f64 * 100.0).round() as i64
+                    } else {
+                        0
+                    };
+                    format!("{}天 {}%(n={})", r.window_days, pct, r.total)
+                })
+                .collect();
+            if !parts.is_empty() {
+                lines.push(format!("  {}: {}", vt, parts.join(" / ")));
+            }
+        }
+        lines
+    }
+
+    let mut out = vec![
+        "[历史命中率参考 — 你过往同类判断的真实表现]".to_string(),
+        "全局:".to_string(),
+    ];
+    out.extend(fmt_rows(&agg.global));
+
+    // 当前 regime 段
+    if let Some((_, rows)) = agg.by_regime.iter().find(|(r, _)| r == current_regime) {
+        let regime_lines = fmt_rows(rows);
+        if !regime_lines.is_empty() {
+            out.push(format!("当前市场状态({}):", current_regime));
+            out.extend(regime_lines);
+        }
+    }
+
+    out.push(
+        "说明:这是你过往同类判断的真实表现,供你校准信心,但不要机械套用——市场环境会变。"
+            .to_string(),
+    );
+    // 若存在 30d 未到期组,补一句说明
+    let has_unmatured_30d = agg.global.iter().any(|r| r.window_days >= 30 && !r.matured);
+    if has_unmatured_30d {
+        out.push("30天窗口样本尚未到期,暂不列出。".to_string());
+    }
+
+    out.join("\n")
+}
+
+/// 读库 + 渲染。供 build_cli_*_prompt 调用。失败或空时返回 ""。
+fn format_hit_rates_for_prompt(current_regime: &str) -> String {
+    match crate::storage::invest::verdict_reviews::aggregate_hit_rates(5) {
+        Ok(agg) => render_hit_rates(&agg, current_regime),
+        Err(e) => {
+            log::warn!("aggregate_hit_rates failed: {}", e);
+            String::new()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // CLI prompt builders for all roles
 // ---------------------------------------------------------------------------
 
@@ -475,6 +558,19 @@ pub fn build_cli_quant_r2_prompt(
          **CLI 模式说明**：以上前序分析结果已由系统预取，无需调用工具。",
         prior_outputs,
     );
+
+    // 历史命中率注入(软提示)。regime 取 Macro 信号,对齐 archive 口径。
+    let regime = round_outputs
+        .iter()
+        .find(|o| o.role == CommitteeRole::Macro)
+        .and_then(|o| o.parsed.signal.clone())
+        .unwrap_or_else(|| "neutral".to_string());
+    let hit_rates = format_hit_rates_for_prompt(&regime);
+    let cli_additions = if hit_rates.is_empty() {
+        cli_additions
+    } else {
+        format!("{}\n\n{}", cli_additions, hit_rates)
+    };
 
     format!("{}{}{}", stripped, cli_additions, length_constraint_suffix(role))
 }
@@ -594,6 +690,18 @@ pub fn build_cli_cio_prompt(
             "\n\n【数据质量警告】以下字段缺失，请在置信度评估中考虑：\n{}",
             asset_context.data_quality.join("，")
         ));
+    }
+
+    // 历史命中率注入(软提示)。regime 取 Macro 信号。
+    let regime = round_outputs
+        .iter()
+        .find(|o| o.role == CommitteeRole::Macro)
+        .and_then(|o| o.parsed.signal.clone())
+        .unwrap_or_else(|| "neutral".to_string());
+    let hit_rates = format_hit_rates_for_prompt(&regime);
+    if !hit_rates.is_empty() {
+        cli_additions.push_str("\n\n");
+        cli_additions.push_str(&hit_rates);
     }
 
     format!("{}{}{}", stripped, cli_additions, length_constraint_suffix(role))
@@ -844,6 +952,34 @@ mod tests {
     fn test_format_macro_cache_empty() {
         let result = format_macro_cache_for_prompt();
         assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn hit_rates_empty_returns_blank() {
+        let agg = crate::storage::invest::verdict_reviews::HitRateAgg {
+            global: vec![],
+            by_regime: vec![],
+        };
+        assert!(render_hit_rates(&agg, "neutral").is_empty());
+    }
+
+    #[test]
+    fn hit_rates_renders_global_rows() {
+        use crate::storage::invest::verdict_reviews::{HitRateAgg, HitRateRow};
+        let agg = HitRateAgg {
+            global: vec![HitRateRow {
+                verdict_type: "ACCUMULATE".into(),
+                window_days: 1,
+                hits: 10,
+                total: 21,
+                matured: true,
+            }],
+            by_regime: vec![],
+        };
+        let out = render_hit_rates(&agg, "risk_off");
+        assert!(out.contains("历史命中率参考"));
+        assert!(out.contains("ACCUMULATE"));
+        assert!(out.contains("n=21"));
     }
 
     #[test]
