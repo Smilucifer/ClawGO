@@ -195,19 +195,6 @@
         <div class="fallback-message">
           <span class="fallback-icon">⚠</span><span>{round.parsed.fallbackReason}</span>
         </div>
-      {:else if stepKey === 'regime' && p?.regimeData}
-        {@const rd = p.regimeData}
-        <div class="regime-box">
-          <span class="regime-tag">{rd.regime}</span>
-          <div class="regime-metrics">
-            <span>RSI-14 {rd.metrics.rsi14.toFixed(1)}</span>
-            <span>MA20 {rd.metrics.ma20.toFixed(2)}</span>
-            <span>MA60 {rd.metrics.ma60.toFixed(2)}</span>
-            <span>Vol {(rd.metrics.volatilityAnn * 100).toFixed(1)}%</span>
-            <span>{(rd.metrics.priceQuantile2y * 100).toFixed(0)}%</span>
-          </div>
-          <div class="regime-hint">{rd.strategyHint}</div>
-        </div>
       {:else if round?.parsed?.rawText}
         {@const pf = round.parsed}
         <div class="chip-row">
@@ -354,7 +341,6 @@
         <div class="card-body">
           <div class="flow-grid">
             <div class="fw">{@render stepCard('macro', p)}</div>
-            <div class="fw">{@render stepCard('regime', p)}</div>
 
             <div class="connector">
               <svg viewBox="0 0 400 32" preserveAspectRatio="xMidYMid meet">
@@ -619,12 +605,11 @@
     display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
     max-width: 1000px; margin: 0 auto; align-items: start;
   }
-  .flow-grid .fw { grid-column: 1 / -1; justify-self: center; width: 65%; max-width: 560px; min-width: 320px; }
+  .flow-grid .fw { grid-column: 1 / -1; width: 100%; }
   .connector { grid-column: 1 / -1; display: flex; justify-content: center; height: 28px; }
   .connector svg { width: 100%; height: 100%; }
   @media (max-width: 700px) {
     .flow-grid { grid-template-columns: 1fr; }
-    .flow-grid .fw { width: 100%; max-width: none; }
   }
 
   /* Step card */
@@ -690,7 +675,7 @@
 
   /* Verdict block */
   .verdict-block {
-    grid-column: 1 / -1; justify-self: center; width: 65%; max-width: 560px; min-width: 320px;
+    grid-column: 1 / -1; width: 100%;
     background: var(--bg-base); border: 1px solid var(--accent-muted); border-radius: var(--radius-md);
     padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
   }
