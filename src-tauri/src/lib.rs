@@ -614,6 +614,14 @@ pub fn run() {
         log::error!("Failed to init invest DB at startup (will retry on first access): {}", e);
     }
 
+    // One-shot startup cleanup: bound dream_snapshots growth.
+    // Each dream_type retains its 20 most recent snapshots; older rows deleted.
+    match crate::storage::invest::dream_snapshots::prune_keep_recent(20) {
+        Ok(0) => log::debug!("[invest] dream_snapshots within retention bound, nothing to prune"),
+        Ok(n) => log::info!("[invest] pruned {} stale dream_snapshots (kept latest 20 per type)", n),
+        Err(e) => log::warn!("[invest] dream_snapshots prune failed: {}", e),
+    }
+
     // Sync trade calendar on startup (non-blocking).
     {
         tauri::async_runtime::spawn(async move {
