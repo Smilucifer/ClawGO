@@ -24,6 +24,7 @@ pub struct ApiTestResult {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MemoryFileCandidate {
     pub path: String,
     pub label: String,
