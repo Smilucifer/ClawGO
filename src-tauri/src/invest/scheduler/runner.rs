@@ -159,32 +159,36 @@ where
         loop {
             let mut jobs = config::load_jobs();
             let today = crate::invest::date_utils::get_invest_date();
+            let now_naive = chrono::Local::now().naive_local();
 
-            // Collect IDs of enabled, non-dedicated jobs that should fire
-            let to_fire: Vec<String> = jobs
-                .iter()
-                .filter(|j| j.enabled)
-                .filter(|j| !j.dedicated)
-                .filter(|j| {
-                    match &j.next_run {
-                        Some(next) => chrono::NaiveDateTime::parse_from_str(next, "%Y-%m-%dT%H:%M:%S")
-                            .map(|dt| chrono::Local::now().naive_local() >= dt)
-                            .unwrap_or(true),
-                        None => true,
+            // First pass: pure due-check + non-trading-day skip handling.
+            // Skip side-effects (log + advance next_run) live here, NOT inside
+            // a .filter() closure, so we can persist once at the end and so
+            // the predicate stays a pure function (`config::should_fire`).
+            let mut to_fire: Vec<String> = Vec::new();
+            let mut dirty = false;
+            for job in jobs.iter_mut() {
+                if !config::should_fire(job, now_naive) {
+                    continue;
+                }
+                if job.requires_trading_day && !is_trading_day(&today).unwrap_or(false) {
+                    if let Ok(log_id) = log_task_start(&job.id) {
+                        let _ = log_task_end(log_id, "skipped", Some("non-trading day"));
                     }
-                })
-                .filter(|j| {
-                    if j.requires_trading_day && !is_trading_day(&today).unwrap_or(false) {
-                        if let Ok(id) = log_task_start(&j.id) {
-                            let _ = log_task_end(id, "skipped", Some("non-trading day"));
-                        }
-                        false
-                    } else {
-                        true
-                    }
-                })
-                .map(|j| j.id.clone())
-                .collect();
+                    // BUG #14 fix: advance next_run so we don't re-skip every
+                    // tick for the rest of the non-trading day.
+                    job.next_run = config::compute_next_run_for_job(job);
+                    dirty = true;
+                    continue;
+                }
+                to_fire.push(job.id.clone());
+            }
+
+            if dirty {
+                if let Err(e) = config::save_jobs(&jobs) {
+                    log::error!("Failed to persist skipped-job next_run: {e}");
+                }
+            }
 
             for job_id in to_fire {
                 let result = (dispatch)(job_id.clone()).await;

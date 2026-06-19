@@ -118,6 +118,27 @@ pub fn compute_next_run_for_job(job: &CronJob) -> Option<String> {
     Some(next.format("%Y-%m-%dT%H:%M:%S").to_string())
 }
 
+/// Pure predicate: should the main scheduler loop fire `job` at `now`?
+///
+/// Semantics:
+/// - `enabled == false` or `dedicated == true` → never fire from the main loop.
+/// - `next_run == None` (never scheduled) → fire once; the caller MUST write
+///   back `next_run` after firing or skipping so subsequent ticks fall into
+///   the parsed branch.
+/// - `next_run == Some(parseable)` → fire when `now >= parsed`.
+/// - `next_run == Some(garbage)` → fire (self-heals on next write-back).
+pub(crate) fn should_fire(job: &CronJob, now: chrono::NaiveDateTime) -> bool {
+    if !job.enabled || job.dedicated {
+        return false;
+    }
+    match &job.next_run {
+        Some(next) => chrono::NaiveDateTime::parse_from_str(next, "%Y-%m-%dT%H:%M:%S")
+            .map(|dt| now >= dt)
+            .unwrap_or(true),
+        None => true,
+    }
+}
+
 /// Save user overrides (only changed fields) to scheduler.json.
 pub fn save_jobs(jobs: &[CronJob]) -> Result<(), String> {
     let defaults = super::default_jobs();
@@ -343,5 +364,52 @@ mod tests {
     fn compute_next_run_some_for_6field_cron() {
         let job = make_job("0 30 9,11 * * 1-5");
         assert!(compute_next_run_for_job(&job).is_some());
+    }
+
+    fn at(s: &str) -> chrono::NaiveDateTime {
+        chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").unwrap()
+    }
+
+    #[test]
+    fn should_fire_disabled_returns_false() {
+        let mut job = make_job("0 0 3 * * *");
+        job.enabled = false;
+        job.next_run = None;
+        assert!(!should_fire(&job, at("2026-06-19T12:00:00")));
+    }
+
+    #[test]
+    fn should_fire_dedicated_returns_false() {
+        let mut job = make_job("0 0 3 * * *");
+        job.dedicated = true;
+        job.next_run = None;
+        assert!(!should_fire(&job, at("2026-06-19T12:00:00")));
+    }
+
+    #[test]
+    fn should_fire_none_next_run_returns_true() {
+        let job = make_job("0 0 3 * * *");
+        assert!(should_fire(&job, at("2026-06-19T12:00:00")));
+    }
+
+    #[test]
+    fn should_fire_past_next_run_returns_true() {
+        let mut job = make_job("0 0 3 * * *");
+        job.next_run = Some("2000-01-01T00:00:00".into());
+        assert!(should_fire(&job, at("2026-06-19T12:00:00")));
+    }
+
+    #[test]
+    fn should_fire_future_next_run_returns_false() {
+        let mut job = make_job("0 0 3 * * *");
+        job.next_run = Some("2099-01-01T00:00:00".into());
+        assert!(!should_fire(&job, at("2026-06-19T12:00:00")));
+    }
+
+    #[test]
+    fn should_fire_unparseable_next_run_returns_true() {
+        let mut job = make_job("0 0 3 * * *");
+        job.next_run = Some("not-a-timestamp".into());
+        assert!(should_fire(&job, at("2026-06-19T12:00:00")));
     }
 }
