@@ -155,6 +155,9 @@ pub fn cio_sanity_check(
     if (macro_is_bullish && cio_is_bearish) || (macro_is_risk_off && cio_is_bullish) {
         result.gate1_pass = false;
         result.final_verdict = "HOLD".to_string();
+        // 被否决的 HOLD 是低信念观望，压低 confidence 与 Fallback 口径一致，
+        // 避免“HOLD 配 0.7”污染 verdict_reviews 命中率统计。
+        result.final_confidence = result.final_confidence.min(0.4);
         result
             .notes
             .push("G1: 宏观信号与CIO裁决不一致，降级为HOLD".to_string());
@@ -339,6 +342,33 @@ mod tests {
         let result = cio_sanity_check(&cio, &outputs, "risk_off", None);
         assert!(!result.gate1_pass);
         assert_eq!(result.final_verdict, "HOLD");
+    }
+
+    #[test]
+    fn test_sanity_gate1_lowers_confidence() {
+        // CIO 高信念看多(0.8)，但 macro=risk_off → Gate1 降级 HOLD 并压低 confidence
+        let cio = ParsedFields {
+            verdict: Some("BUY".to_string()),
+            confidence: Some(0.8),
+            ..Default::default()
+        };
+        let outputs = vec![];
+        let result = cio_sanity_check(&cio, &outputs, "risk_off", None);
+        assert!(!result.gate1_pass);
+        assert_eq!(result.final_verdict, "HOLD");
+        assert_eq!(result.final_confidence, 0.4); // min(0.8, 0.4)
+    }
+
+    #[test]
+    fn test_sanity_gate1_keeps_lower_confidence() {
+        // 原 confidence 已低于 0.4 时,保持原值(min 语义)
+        let cio = ParsedFields {
+            verdict: Some("BUY".to_string()),
+            confidence: Some(0.3),
+            ..Default::default()
+        };
+        let result = cio_sanity_check(&cio, &[], "risk_off", None);
+        assert_eq!(result.final_confidence, 0.3); // min(0.3, 0.4)
     }
 
     #[test]
