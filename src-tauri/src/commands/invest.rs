@@ -1228,7 +1228,13 @@ pub fn get_cron_job_logs(
 
 #[tauri::command]
 pub async fn trigger_cron_job(id: String) -> Result<String, String> {
+    use crate::invest::scheduler::runner::{try_acquire_job, JobGuard};
     use crate::storage::invest::scheduler::{log_task_end, log_task_start};
+
+    if !try_acquire_job(&id) {
+        return Err(format!("job {id} already running"));
+    }
+    let _guard = JobGuard(id.clone());
 
     let log_id = log_task_start(&id)?;
     let result = crate::invest::scheduler::runner::dispatch_job(&id).await;

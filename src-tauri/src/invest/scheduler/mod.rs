@@ -33,7 +33,7 @@ pub fn default_jobs() -> Vec<CronJob> {
         CronJob {
             id: "pnl_snapshot".into(),
             name: "PnL 快照".into(),
-            cron_expr: "0 30 9,11 * * 1-5".into(),
+            cron_expr: "0 30 9,11,13,15 * * 1-5".into(),
             interval_min: None,
             enabled: true,
             requires_trading_day: true,
@@ -135,4 +135,22 @@ pub fn default_jobs() -> Vec<CronJob> {
             dedicated: false,
         },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pnl_snapshot_default_cron_covers_four_intraday_slots() {
+        let jobs = default_jobs();
+        let pnl = jobs
+            .iter()
+            .find(|j| j.id == "pnl_snapshot")
+            .expect("pnl_snapshot job present");
+        assert_eq!(pnl.cron_expr, "0 30 9,11,13,15 * * 1-5");
+        assert!(pnl.enabled);
+        assert!(pnl.requires_trading_day);
+        assert!(!pnl.dedicated);
+    }
 }

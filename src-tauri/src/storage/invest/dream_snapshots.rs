@@ -149,3 +149,35 @@ pub fn mark_rolled_back(id: i64) -> Result<(), String> {
         Ok(())
     })
 }
+
+/// Retention pruning: for each distinct `dream_type`, keep the `keep_per_type`
+/// most recent snapshots (ordered by created_at DESC, id DESC) and delete the
+/// rest. Returns the number of rows deleted.
+///
+/// Tradeoff: snapshots with rollback_ready = 1 are NOT specially protected.
+/// insert_complete always writes rollback_ready = 1, so AND rollback_ready = 0
+/// would erase the whole table. The retention window is the protection.
+pub fn prune_keep_recent(keep_per_type: i64) -> Result<usize, String> {
+    if keep_per_type < 0 {
+        return Err(format!("keep_per_type must be >= 0, got {keep_per_type}"));
+    }
+    with_conn_mut(|conn| {
+        let deleted = conn
+            .execute(
+                "DELETE FROM dream_snapshots
+                 WHERE id NOT IN (
+                     SELECT id FROM (
+                         SELECT id,
+                                ROW_NUMBER() OVER (
+                                    PARTITION BY dream_type
+                                    ORDER BY created_at DESC, id DESC
+                                ) AS rn
+                         FROM dream_snapshots
+                     ) WHERE rn <= ?1
+                 )",
+                rusqlite::params![keep_per_type],
+            )
+            .map_err(|e| format!("prune dream_snapshots: {e}"))?;
+        Ok(deleted)
+    })
+}

@@ -138,42 +138,6 @@ pub async fn run_pnl_snapshot() -> Result<String, String> {
     Ok(format!("saved snapshot #{}: total={:.2}", id, total_value))
 }
 
-/// Spawn the event scanner background cron job.
-/// Runs every 30 minutes, fetching Tushare news/announcements, filtering by
-/// keyword severity, normalizing via LLM, and saving new events to the DB.
-fn spawn_event_scanner_cron() {
-    tauri::async_runtime::spawn(async {
-        // Initial delay before first scan (let app finish startup)
-        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-
-        loop {
-            log::info!("[invest-scanner] cron: starting scan");
-            match run_event_scan_once().await {
-                Ok(result) => {
-                    log::info!(
-                        "[invest-scanner] cron: scan complete — fetched={}, filtered={}, saved={}",
-                        result.fetched, result.filtered, result.saved
-                    );
-                }
-                Err(e) => {
-                    // Config errors (missing token/provider) are expected when not set up
-                    log::debug!("[invest-scanner] cron: scan skipped/failed: {}", e);
-                }
-            }
-
-            // Sleep 30 minutes between scans
-            tokio::time::sleep(std::time::Duration::from_secs(30 * 60)).await;
-        }
-    });
-}
-
-/// Run a single event scan: create clients and call the scanner.
-async fn run_event_scan_once() -> Result<crate::invest::event_scanner::ScanResult, String> {
-    let (tushare, client, llm_config) = crate::commands::invest::build_scan_clients()?;
-
-    crate::invest::event_scanner::scan_events(&tushare, &client, &llm_config, None, crate::invest::event_scanner::DEFAULT_LANGUAGE).await
-}
-
 #[allow(deprecated)] // deprecated invest IPC commands kept for backward compatibility
 pub fn run() {
     // Initialize logging — our crate at debug level by default
@@ -550,12 +514,14 @@ pub fn run() {
 
             // Start team file watcher for ~/.claude/teams/ and ~/.claude/tasks/
             let cancel = app.state::<CancellationToken>().inner().clone();
+            let cancel_for_scheduler = cancel.clone();
             hooks::team_watcher::start_team_watcher(app.handle().clone(), cancel);
 
             // Start invest scheduler runner (background cron loop)
-            invest::scheduler::runner::start(|job_id| async move {
-                invest::scheduler::runner::dispatch_job(&job_id).await
-            });
+            invest::scheduler::runner::start(
+                |job_id| async move { invest::scheduler::runner::dispatch_job(&job_id).await },
+                cancel_for_scheduler,
+            );
 
             // System tray — hide-to-tray on close, left-click to show
             // Non-fatal: if tray library is unavailable (e.g. some Linux desktops),
@@ -648,6 +614,22 @@ pub fn run() {
         log::error!("Failed to init invest DB at startup (will retry on first access): {}", e);
     }
 
+    // One-shot startup cleanup: bound dream_snapshots growth.
+    // Each dream_type retains its 20 most recent snapshots; older rows deleted.
+    match crate::storage::invest::dream_snapshots::prune_keep_recent(20) {
+        Ok(0) => log::debug!("[invest] dream_snapshots within retention bound, nothing to prune"),
+        Ok(n) => log::info!("[invest] pruned {} stale dream_snapshots (kept latest 20 per type)", n),
+        Err(e) => log::warn!("[invest] dream_snapshots prune failed: {}", e),
+    }
+
+    // One-shot startup cleanup: drop scheduler_logs older than 30 days.
+    // jin10_collector writes ~5760 rows/day, so 30 days caps at ~170k rows.
+    match crate::storage::invest::scheduler::prune_scheduler_logs(30) {
+        Ok(0) => log::debug!("[invest] scheduler_logs within retention window, nothing to prune"),
+        Ok(n) => log::info!("[invest] pruned {} scheduler_logs older than 30 days", n),
+        Err(e) => log::warn!("[invest] scheduler_logs prune failed: {}", e),
+    }
+
     // Sync trade calendar on startup (non-blocking).
     {
         tauri::async_runtime::spawn(async move {
@@ -680,79 +662,6 @@ pub fn run() {
             }
         });
     }
-
-    // Start PnL snapshot cron job.
-    // Runs at 9:30, 11:00, 13:00, 15:00 Beijing time on weekdays.
-    {
-        tauri::async_runtime::spawn(async {
-            use chrono::TimeZone;
-
-            // Target times: 9:30, 11:00, 13:00, 15:00
-            let target_times: [(u32, u32); 4] = [(9, 30), (11, 0), (13, 0), (15, 0)];
-
-            loop {
-                let now = chrono::Local::now();
-                let mut next_run = None;
-
-                for &(hour, minute) in &target_times {
-                    let candidate = now
-                        .date_naive()
-                        .and_hms_opt(hour, minute, 0)
-                        .unwrap();
-                    let candidate = chrono::Local.from_local_datetime(&candidate).unwrap();
-                    if candidate > now {
-                        next_run = Some(candidate);
-                        break;
-                    }
-                }
-
-                let next = next_run.unwrap_or_else(|| {
-                    let tomorrow = now.date_naive() + chrono::Duration::days(1);
-                    let t = tomorrow.and_hms_opt(9, 30, 0).unwrap();
-                    chrono::Local.from_local_datetime(&t).unwrap()
-                });
-
-                let sleep_duration = (next - now).to_std().unwrap_or(std::time::Duration::from_secs(3600));
-                log::info!("[invest-pnl] next snapshot at {:?}", next);
-                tokio::time::sleep(sleep_duration).await;
-
-                // Guard: only run on trading days
-                let date_str = chrono::Local::now().format("%Y-%m-%d").to_string();
-                match crate::storage::invest::scheduler::is_trading_day(&date_str) {
-                    Ok(true) => {}
-                    _ => {
-                        log::debug!("[invest-pnl] skipping non-trading day {}", date_str);
-                        continue;
-                    }
-                }
-
-                let task_id = match crate::storage::invest::scheduler::log_task_start("pnl_snapshot") {
-                    Ok(id) => id,
-                    Err(e) => {
-                        log::warn!("[invest-pnl] failed to log start: {}", e);
-                        continue;
-                    }
-                };
-
-                let result = run_pnl_snapshot().await;
-                match &result {
-                    Ok(msg) => {
-                        let _ = crate::storage::invest::scheduler::log_task_end(task_id, "success", Some(msg));
-                        log::info!("[invest-pnl] snapshot: {}", msg);
-                    }
-                    Err(e) => {
-                        let _ = crate::storage::invest::scheduler::log_task_end(task_id, "error", Some(e));
-                        log::warn!("[invest-pnl] failed: {}", e);
-                    }
-                }
-            }
-        });
-    }
-
-    // Start event scanner cron job.
-    // Runs every 30 minutes, scanning Tushare news and announcements for
-    // HOLD/WATCH portfolio items, normalizing via LLM, saving new events.
-    spawn_event_scanner_cron();
 
     // Run memory migration from per-character JSONL to SQLite (idempotent).
     match crate::group_chat::memory_migration::migrate_jsonl_to_sqlite(&data_dir) {

@@ -1,8 +1,12 @@
 use super::CronJob;
 use chrono::{Local, TimeZone};
 use cron::Schedule;
+use once_cell::sync::Lazy;
+use std::fs;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Mutex;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -28,6 +32,13 @@ struct JobOverride {
     last_status: Option<String>,
 }
 
+/// Serialize concurrent reads/writes to scheduler.json so callers never see
+/// half-written content. `load_jobs_base` and `save_jobs` each take this
+/// lock independently; toggle_job / update_cron / save_dream_config call
+/// load → save sequentially with the lock released in between, so no
+/// re-entrance occurs on the same thread.
+static SCHEDULER_FILE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
 fn config_path() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     home.join(".claw-go").join("invest").join("scheduler.json")
@@ -44,6 +55,7 @@ pub fn load_jobs() -> Vec<CronJob> {
 
 /// Shared base: defaults + disk overlay. No derived-field computation.
 pub(crate) fn load_jobs_base() -> Vec<CronJob> {
+    let _guard = SCHEDULER_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut jobs = super::default_jobs();
     let path = config_path();
     if !path.exists() {
@@ -58,7 +70,7 @@ pub(crate) fn load_jobs_base() -> Vec<CronJob> {
     for ov in config.jobs {
         if let Some(job) = jobs.iter_mut().find(|j| j.id == ov.id) {
             if let Some(c) = ov.cron_expr {
-                job.cron_expr = c;
+                job.cron_expr = normalize_cron_6field(&c);
             }
             if let Some(i) = ov.interval_min {
                 job.interval_min = Some(i);
@@ -103,13 +115,49 @@ pub fn compute_next_run_for_job(job: &CronJob) -> Option<String> {
         return Some(next.format("%Y-%m-%dT%H:%M:%S").to_string());
     }
     // Cron-based
-    let schedule = Schedule::from_str(&job.cron_expr).ok()?;
+    let schedule = match Schedule::from_str(&job.cron_expr) {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!(
+                "compute_next_run_for_job: failed to parse cron '{}' for job '{}': {e}",
+                job.cron_expr,
+                job.id
+            );
+            return None;
+        }
+    };
     let next = schedule.after(&now).next()?;
     Some(next.format("%Y-%m-%dT%H:%M:%S").to_string())
 }
 
+/// Pure predicate: should the main scheduler loop fire `job` at `now`?
+///
+/// Semantics:
+/// - `enabled == false` or `dedicated == true` → never fire from the main loop.
+/// - `next_run == None` (never scheduled) → fire once; the caller MUST write
+///   back `next_run` after firing or skipping so subsequent ticks fall into
+///   the parsed branch.
+/// - `next_run == Some(parseable)` → fire when `now >= parsed`.
+/// - `next_run == Some(garbage)` → fire (self-heals on next write-back).
+pub(crate) fn should_fire(job: &CronJob, now: chrono::NaiveDateTime) -> bool {
+    if !job.enabled || job.dedicated {
+        return false;
+    }
+    match &job.next_run {
+        Some(next) => chrono::NaiveDateTime::parse_from_str(next, "%Y-%m-%dT%H:%M:%S")
+            .map(|dt| now >= dt)
+            .unwrap_or(true),
+        None => true,
+    }
+}
+
 /// Save user overrides (only changed fields) to scheduler.json.
+///
+/// Atomic write (tmp + rename), retrying up to 3 times on PermissionDenied.
+/// Mirrors `crate::invest::committee::queue::save_queue`.
 pub fn save_jobs(jobs: &[CronJob]) -> Result<(), String> {
+    let _guard = SCHEDULER_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
     let defaults = super::default_jobs();
     let overrides: Vec<JobOverride> = jobs
         .iter()
@@ -138,13 +186,38 @@ pub fn save_jobs(jobs: &[CronJob]) -> Result<(), String> {
             }
         })
         .collect();
+
     let config = SchedulerConfig { jobs: overrides };
     let json = serde_json::to_string_pretty(&config).map_err(|e| format!("{e}"))?;
+
     let path = config_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("{e}"))?;
+    let dir = path
+        .parent()
+        .ok_or_else(|| "scheduler.json path has no parent".to_string())?;
+    fs::create_dir_all(dir).map_err(|e| format!("create_dir_all: {e}"))?;
+
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let tmp = dir.join(format!("scheduler.json.{}.{}.tmp", std::process::id(), nanos));
+
+    fs::write(&tmp, &json).map_err(|e| format!("write tmp: {e}"))?;
+
+    for attempt in 0..3u8 {
+        match fs::rename(&tmp, &path) {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && attempt < 2 => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(format!("rename: {e}"));
+            }
+        }
     }
-    std::fs::write(&path, json).map_err(|e| format!("{e}"))
+    let _ = fs::remove_file(&tmp);
+    Err("rename: PermissionDenied after 3 retries".to_string())
 }
 
 /// Toggle a single job's enabled state and persist.
@@ -270,4 +343,177 @@ struct DreamConfigOverride {
     min_score: Option<f64>,
     #[serde(default)]
     min_count: Option<i64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_job(cron_expr: impl Into<String>) -> CronJob {
+        CronJob {
+            id: "test_job".into(),
+            name: "Test Job".into(),
+            cron_expr: cron_expr.into(),
+            interval_min: None,
+            enabled: true,
+            requires_trading_day: false,
+            last_run: None,
+            next_run: None,
+            last_status: None,
+            description: String::new(),
+            dedicated: false,
+        }
+    }
+
+    #[test]
+    fn normalize_5field_prepends_seconds() {
+        assert_eq!(normalize_cron_6field("0 3 * * *"), "0 0 3 * * *");
+        assert_eq!(normalize_cron_6field("*/15 * * * *"), "0 */15 * * * *");
+    }
+
+    #[test]
+    fn normalize_6field_unchanged() {
+        assert_eq!(normalize_cron_6field("0 0 3 * * *"), "0 0 3 * * *");
+        assert_eq!(
+            normalize_cron_6field("0 30 9,11,13,15 * * 1-5"),
+            "0 30 9,11,13,15 * * 1-5"
+        );
+    }
+
+    #[test]
+    fn compute_next_run_returns_none_for_unnormalized_5field_cron() {
+        // Documents the bug: a raw 5-field cron is unparseable by the
+        // `cron` crate, so without normalization on load we silently get None.
+        let job = make_job("0 3 * * *");
+        assert!(compute_next_run_for_job(&job).is_none());
+    }
+
+    #[test]
+    fn compute_next_run_returns_some_for_5field_cron_after_normalize() {
+        // Simulates what load_jobs_base now writes when a user override
+        // contains a 5-field cron string.
+        let mut job = make_job("");
+        job.cron_expr = normalize_cron_6field("0 3 * * *");
+        assert_eq!(job.cron_expr, "0 0 3 * * *");
+        assert!(
+            compute_next_run_for_job(&job).is_some(),
+            "expected Some next_run for normalized cron '{}'",
+            job.cron_expr
+        );
+    }
+
+    #[test]
+    fn compute_next_run_some_for_6field_cron() {
+        let job = make_job("0 30 9,11,13,15 * * 1-5");
+        assert!(compute_next_run_for_job(&job).is_some());
+    }
+
+    fn at(s: &str) -> chrono::NaiveDateTime {
+        chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").unwrap()
+    }
+
+    #[test]
+    fn should_fire_disabled_returns_false() {
+        let mut job = make_job("0 0 3 * * *");
+        job.enabled = false;
+        job.next_run = None;
+        assert!(!should_fire(&job, at("2026-06-19T12:00:00")));
+    }
+
+    #[test]
+    fn should_fire_dedicated_returns_false() {
+        let mut job = make_job("0 0 3 * * *");
+        job.dedicated = true;
+        job.next_run = None;
+        assert!(!should_fire(&job, at("2026-06-19T12:00:00")));
+    }
+
+    #[test]
+    fn should_fire_none_next_run_returns_true() {
+        let job = make_job("0 0 3 * * *");
+        assert!(should_fire(&job, at("2026-06-19T12:00:00")));
+    }
+
+    #[test]
+    fn should_fire_past_next_run_returns_true() {
+        let mut job = make_job("0 0 3 * * *");
+        job.next_run = Some("2000-01-01T00:00:00".into());
+        assert!(should_fire(&job, at("2026-06-19T12:00:00")));
+    }
+
+    #[test]
+    fn should_fire_future_next_run_returns_false() {
+        let mut job = make_job("0 0 3 * * *");
+        job.next_run = Some("2099-01-01T00:00:00".into());
+        assert!(!should_fire(&job, at("2026-06-19T12:00:00")));
+    }
+
+    #[test]
+    fn should_fire_unparseable_next_run_returns_true() {
+        let mut job = make_job("0 0 3 * * *");
+        job.next_run = Some("not-a-timestamp".into());
+        assert!(should_fire(&job, at("2026-06-19T12:00:00")));
+    }
+
+    use std::sync::Mutex as StdMutex;
+    static TEST_ENV_LOCK: StdMutex<()> = StdMutex::new(());
+
+    /// RAII guard that restores USERPROFILE/HOME on drop, even on panic.
+    /// Required because `dirs::home_dir()` on Windows resolves via
+    /// SHGetKnownFolderPath(FOLDERID_Profile) and ignores env vars — so the
+    /// pre-`save_jobs` assertion below may panic when isolation fails, and we
+    /// must restore env regardless to avoid leaking test state into the
+    /// process for subsequent tests.
+    struct EnvGuard {
+        userprofile: Option<std::ffi::OsString>,
+        home: Option<std::ffi::OsString>,
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.userprofile {
+                Some(v) => std::env::set_var("USERPROFILE", v),
+                None => std::env::remove_var("USERPROFILE"),
+            }
+            match &self.home {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
+
+    #[test]
+    fn save_then_load_base_roundtrips_cron_override() {
+        let _t = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let _env = EnvGuard {
+            userprofile: std::env::var_os("USERPROFILE"),
+            home: std::env::var_os("HOME"),
+        };
+        std::env::set_var("USERPROFILE", tmp.path());
+        std::env::set_var("HOME", tmp.path());
+
+        // Defensive isolation check: dirs 6.0 on Windows resolves home via
+        // SHGetKnownFolderPath, not env vars, so USERPROFILE/HOME overrides
+        // are no-ops there. If config_path() is not under tmp, abort BEFORE
+        // any disk write so we never clobber the developer's real
+        // ~/.claw-go/invest/scheduler.json.
+        assert!(
+            config_path().starts_with(tmp.path()),
+            "test isolation failed: config_path()={:?} is not under tmp dir {:?}; aborting before write to avoid polluting real ~/.claw-go config",
+            config_path(),
+            tmp.path()
+        );
+
+        let mut jobs = super::super::default_jobs();
+        let pnl = jobs.iter_mut().find(|j| j.id == "pnl_snapshot").expect("pnl present");
+        pnl.cron_expr = "0 0 10,14 * * 1-5".to_string();
+        pnl.enabled = false;
+        save_jobs(&jobs).expect("save_jobs ok");
+
+        let reloaded = load_jobs_base();
+        let rp = reloaded.iter().find(|j| j.id == "pnl_snapshot").expect("pnl after reload");
+        assert_eq!(rp.cron_expr, "0 0 10,14 * * 1-5");
+        assert!(!rp.enabled);
+    }
 }

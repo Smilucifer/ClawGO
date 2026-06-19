@@ -87,7 +87,17 @@ pub fn is_trading_day(date: &str) -> Result<bool, String> {
         );
         match result {
             Ok(v) => Ok(v != 0),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(is_weekday(date)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                // No calendar row: either not synced yet or no Tushare token.
+                // Fall back to weekday heuristic so the scheduler keeps firing
+                // — skipping every requires_trading_day job on miss would
+                // silently stop dream/verdict/pnl for token-less users, which
+                // is worse than the occasional holiday misfire. The warn makes
+                // the fallback observable so operators can backfill.
+                // Future option (NOT implemented): strict-mode skip on miss.
+                log::warn!("[trade_calendar] miss for {date}, falling back to weekday heuristic");
+                Ok(is_weekday(date))
+            }
             Err(e) => Err(format!("check trading day: {}", e)),
         }
     })
@@ -103,6 +113,17 @@ fn is_weekday(date: &str) -> bool {
     } else {
         false
     }
+}
+
+/// 返回北京时间当天的日历日期（`%Y-%m-%d`）。
+///
+/// 这是日历日，与 `crate::invest::date_utils::get_invest_date` 不同：
+/// - get_invest_date 含 05:00 cutoff（业务日），用于 PnL 按交易日聚合；
+/// - beijing_today 不含 cutoff，用于"今天是不是 A 股交易日"，并锁死东八区，
+///   使行为不依赖宿主机本地时区（与 is_a_share_market_open 同口径）。
+pub fn beijing_today() -> String {
+    let cst = chrono::Utc::now() + chrono::Duration::hours(8);
+    cst.format("%Y-%m-%d").to_string()
 }
 
 /// 判断 A 股市场当前是否在盘中交易时段。
@@ -134,4 +155,50 @@ pub fn upsert_trade_calendar(date: &str, is_open: bool, pretrade_date: Option<&s
         .map_err(|e| format!("upsert calendar: {}", e))?;
         Ok(())
     })
+}
+
+/// Retention pruning: delete scheduler_logs rows whose started_at is older
+/// than keep_days days. Returns the number of rows deleted.
+///
+/// started_at is a UTC rfc3339 string with millisecond precision and a
+/// trailing Z (written by log_task_start). UTC rfc3339 strings of identical
+/// shape sort lexicographically the same as chronologically, so the string
+/// filter is sound as long as the cutoff uses the same to_rfc3339_opts call.
+pub fn prune_scheduler_logs(keep_days: i64) -> Result<usize, String> {
+    if keep_days < 0 {
+        return Err(format!("keep_days must be >= 0, got {keep_days}"));
+    }
+    with_conn_mut(|conn| {
+        let cutoff = (chrono::Utc::now() - chrono::Duration::days(keep_days))
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let deleted = conn
+            .execute(
+                "DELETE FROM scheduler_logs WHERE started_at < ?1",
+                params![cutoff],
+            )
+            .map_err(|e| format!("prune scheduler_logs: {}", e))?;
+        Ok(deleted)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+
+    #[test]
+    fn beijing_today_returns_parseable_yyyy_mm_dd() {
+        let s = beijing_today();
+        assert_eq!(s.len(), 10, "expected YYYY-MM-DD length, got {s:?}");
+        assert!(NaiveDate::parse_from_str(&s, "%Y-%m-%d").is_ok());
+    }
+
+    #[test]
+    fn beijing_today_is_within_one_day_of_utc() {
+        let utc = chrono::Utc::now();
+        let utc_date = utc.format("%Y-%m-%d").to_string();
+        let utc_plus1 = (utc + chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+        let s = beijing_today();
+        assert!(s == utc_date || s == utc_plus1, "beijing_today {s} vs {utc_date}/{utc_plus1}");
+    }
 }
