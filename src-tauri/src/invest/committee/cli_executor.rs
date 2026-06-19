@@ -334,8 +334,9 @@ pub(crate) fn format_risk_metrics_for_prompt(
     portfolio_data: &crate::invest::committee::orchestrator::PortfolioData,
     symbol: &str,
     asset_context: &crate::invest::committee::orchestrator::AssetContext,
+    mode: crate::invest::committee::orchestrator::Mode,
 ) -> String {
-    crate::invest::committee::orchestrator::build_risk_metrics_context(portfolio_data, symbol, asset_context)
+    crate::invest::committee::orchestrator::build_risk_metrics_context(portfolio_data, symbol, asset_context, mode)
 }
 
 /// Format asset context as a text block for CLI prompt injection.
@@ -585,6 +586,7 @@ pub(crate) fn build_cli_risk_r1_prompt(
     strategy_context: &str,
     user_profile_context: &str,
     company_news: &str,
+    mode: crate::invest::committee::orchestrator::Mode,
 ) -> String {
     use crate::invest::committee::roles::{length_constraint_suffix, load_prompt_for_round, CommitteeRole};
 
@@ -592,7 +594,7 @@ pub(crate) fn build_cli_risk_r1_prompt(
     let base_prompt = load_prompt_for_round(role, 1, asset_name, asset_symbol, asset_context);
     let stripped = strip_tool_section(&base_prompt);
 
-    let risk_metrics = format_risk_metrics_for_prompt(portfolio_data, asset_symbol, asset_context);
+    let risk_metrics = format_risk_metrics_for_prompt(portfolio_data, asset_symbol, asset_context, mode);
     let verdicts = format_recent_verdicts_for_prompt(asset_symbol);
 
     let mut cli_additions = format!(

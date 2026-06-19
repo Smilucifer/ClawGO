@@ -1,3 +1,4 @@
+use super::orchestrator::Mode;
 use super::parser::ParsedFields;
 use super::roles::CommitteeRole;
 use serde::{Deserialize, Serialize};
@@ -134,6 +135,7 @@ pub fn cio_sanity_check(
     round_outputs: &[RoundOutput],
     macro_signal: &str,
     macro_strength: Option<f64>,
+    mode: Mode,
 ) -> SanityCheckResult {
     let mut result = SanityCheckResult {
         gate1_pass: true,
@@ -186,7 +188,8 @@ pub fn cio_sanity_check(
         .and_then(|o| o.parsed.pnl_pct)
         .map_or(false, |pnl| pnl <= -15.0);
 
-    if macro_guard && quant_guard && loss_guard {
+    // research 模式无真实持仓，loss_guard 无意义，跳过 Gate2
+    if mode != Mode::Research && macro_guard && quant_guard && loss_guard {
         result.gate2_pass = false;
         result.final_verdict = "SELL".to_string();
         result.final_confidence = 0.2;
@@ -439,7 +442,7 @@ mod tests {
             ..Default::default()
         };
         let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_off", None);
+        let result = cio_sanity_check(&cio, &outputs, "risk_off", None, Mode::Holding);
         assert!(!result.gate1_pass);
         assert_eq!(result.final_verdict, "HOLD");
     }
@@ -453,7 +456,7 @@ mod tests {
             ..Default::default()
         };
         let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_off", None);
+        let result = cio_sanity_check(&cio, &outputs, "risk_off", None, Mode::Holding);
         assert!(!result.gate1_pass);
         assert_eq!(result.final_verdict, "HOLD");
         assert_eq!(result.final_confidence, 0.4); // min(0.8, 0.4)
@@ -467,7 +470,7 @@ mod tests {
             confidence: Some(0.3),
             ..Default::default()
         };
-        let result = cio_sanity_check(&cio, &[], "risk_off", None);
+        let result = cio_sanity_check(&cio, &[], "risk_off", None, Mode::Holding);
         assert_eq!(result.final_confidence, 0.3); // min(0.3, 0.4)
     }
 
@@ -499,7 +502,7 @@ mod tests {
             confidence: Some(0.5),
             ..Default::default()
         };
-        let result = cio_sanity_check(&cio, &outputs, "risk_off", Some(8.0));
+        let result = cio_sanity_check(&cio, &outputs, "risk_off", Some(8.0), Mode::Holding);
         assert!(!result.gate2_pass);
         assert_eq!(result.final_verdict, "SELL");
         assert_eq!(result.final_confidence, 0.2);
@@ -528,7 +531,7 @@ mod tests {
             confidence: Some(0.5),
             ..Default::default()
         };
-        let result = cio_sanity_check(&cio, &outputs, "risk_off", Some(5.0));
+        let result = cio_sanity_check(&cio, &outputs, "risk_off", Some(5.0), Mode::Holding);
         assert!(result.gate2_pass);
     }
 
@@ -549,7 +552,7 @@ mod tests {
             latency_ms: 0,
             tokens_used: 0,
         }];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", None);
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", None, Mode::Holding);
         assert_eq!(result.final_verdict, "HOLD");
         assert!(result.final_confidence <= 0.4);
     }
@@ -572,7 +575,7 @@ mod tests {
             latency_ms: 0,
             tokens_used: 0,
         }];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", None);
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", None, Mode::Holding);
         assert_eq!(result.final_verdict, "HOLD");
         assert!(result.final_confidence <= 0.4);
     }
@@ -585,7 +588,7 @@ mod tests {
             ..Default::default()
         };
         let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", None);
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", None, Mode::Holding);
         assert!(result.gate1_pass);
         assert!(result.gate2_pass);
         assert_eq!(result.final_verdict, "ACCUMULATE");
@@ -642,7 +645,7 @@ mod tests {
         // HOLD + Quant bullish 7 + Macro risk_on 7 + Risk ok → 升级到 BUY/ACCUMULATE，conf≥0.65
         let cio = ParsedFields { verdict: Some("HOLD".to_string()), confidence: Some(0.35), ..Default::default() };
         let outputs = high_conviction_outputs("bullish", 7.0, "ok");
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", Some(7.0));
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", Some(7.0), Mode::Holding);
         assert!(matches!(result.final_verdict.as_str(), "BUY" | "ACCUMULATE"));
         assert!(result.final_confidence >= 0.65);
         assert!(result.notes.iter().any(|n| n.contains("HIGH_CONVICTION")));
@@ -653,7 +656,7 @@ mod tests {
         // Risk=high_risk → 不升级
         let cio = ParsedFields { verdict: Some("HOLD".to_string()), confidence: Some(0.35), ..Default::default() };
         let outputs = high_conviction_outputs("bullish", 7.0, "high_risk");
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", Some(7.0));
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", Some(7.0), Mode::Holding);
         assert_eq!(result.final_verdict, "HOLD");
     }
 
@@ -662,7 +665,7 @@ mod tests {
         // Quant strength=5 (<6) → 不升级
         let cio = ParsedFields { verdict: Some("HOLD".to_string()), confidence: Some(0.35), ..Default::default() };
         let outputs = high_conviction_outputs("bullish", 5.0, "ok");
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", Some(7.0));
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", Some(7.0), Mode::Holding);
         assert_eq!(result.final_verdict, "HOLD");
     }
 
@@ -672,7 +675,32 @@ mod tests {
         let cio = ParsedFields { verdict: Some("HOLD".to_string()), confidence: Some(0.35), ..Default::default() };
         let mut outputs = high_conviction_outputs("bullish", 7.0, "ok");
         outputs[0].parsed.fallback_reason = Some("missing_critical_fields".to_string());
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", Some(7.0));
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", Some(7.0), Mode::Holding);
         assert_eq!(result.final_verdict, "HOLD");
+    }
+
+    #[test]
+    fn test_gate2_skipped_in_research_mode() {
+        // 即使三重恶化条件全满足,research 模式也不触发 Gate2 强制 SELL
+        let mut macro_parsed = ParsedFields::default();
+        macro_parsed.signal = Some("risk_off".to_string());
+        macro_parsed.strength = Some(8.0);
+        macro_parsed.raw_text = "macro".to_string();
+        let mut quant_parsed = ParsedFields::default();
+        quant_parsed.signal = Some("bearish".to_string());
+        quant_parsed.strength = Some(7.0);
+        quant_parsed.raw_text = "quant".to_string();
+        let mut risk_parsed = ParsedFields::default();
+        risk_parsed.pnl_pct = Some(-20.0);
+        risk_parsed.raw_text = "risk".to_string();
+        let outputs = vec![
+            RoundOutput { role: CommitteeRole::Macro, round: 1, parsed: macro_parsed, latency_ms: 0, tokens_used: 0 },
+            RoundOutput { role: CommitteeRole::Quant, round: 1, parsed: quant_parsed, latency_ms: 0, tokens_used: 0 },
+            RoundOutput { role: CommitteeRole::Risk, round: 1, parsed: risk_parsed, latency_ms: 0, tokens_used: 0 },
+        ];
+        let cio = ParsedFields { verdict: Some("HOLD".to_string()), confidence: Some(0.5), ..Default::default() };
+        let result = cio_sanity_check(&cio, &outputs, "risk_off", Some(8.0), Mode::Research);
+        assert!(result.gate2_pass); // research 模式 Gate2 不触发
+        assert_ne!(result.final_verdict, "SELL");
     }
 }

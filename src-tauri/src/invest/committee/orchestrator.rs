@@ -551,24 +551,63 @@ pub(crate) fn build_risk_metrics_context(
     portfolio_data: &PortfolioData,
     symbol: &str,
     asset_context: &AssetContext,
+    mode: Mode,
 ) -> String {
-    let holding = portfolio_data.holdings.iter().find(|h| h.symbol == symbol);
+    use crate::storage::invest::portfolio::HoldingKind;
+    // 持仓模式优先取真实持仓(Hold);研究模式取关注记录(Watch)的关注价当成本。
+    let holding = match mode {
+        Mode::Research => portfolio_data
+            .holdings
+            .iter()
+            .find(|h| h.symbol == symbol && h.kind == HoldingKind::Watch)
+            .or_else(|| portfolio_data.holdings.iter().find(|h| h.symbol == symbol)),
+        Mode::Holding => portfolio_data
+            .holdings
+            .iter()
+            .find(|h| h.symbol == symbol && h.kind == HoldingKind::Hold)
+            .or_else(|| portfolio_data.holdings.iter().find(|h| h.symbol == symbol)),
+    };
 
     let concentration_pct = concentration_for_symbol(symbol, portfolio_data);
 
-    let (pnl_pct, current_price, avg_cost, shares) = holding
-        .and_then(|h| {
-            let shares = h.shares?;
-            let avg_cost = h.avg_cost?;
-            if shares > 0.0 && avg_cost > 0.0 {
-                let current_price = h.notional / shares;
-                let pnl = (current_price - avg_cost) / avg_cost * 100.0;
-                Some((pnl, current_price, avg_cost, shares))
+    let (pnl_pct, current_price, avg_cost, shares) = match mode {
+        Mode::Research => {
+            // 研究模式:成本=关注价(avg_cost),涨跌相对关注价。无 shares 也算。
+            let avg_cost = holding.and_then(|h| h.avg_cost).unwrap_or(0.0);
+            let current_price = asset_context
+                .latest_close
+                .or_else(|| {
+                    holding.and_then(|h| {
+                        let s = h.shares?;
+                        if s > 0.0 {
+                            Some(h.notional / s)
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .unwrap_or(0.0);
+            let pnl = if avg_cost > 0.0 {
+                (current_price - avg_cost) / avg_cost * 100.0
             } else {
-                None
-            }
-        })
-        .unwrap_or((0.0, 0.0, 0.0, 0.0));
+                0.0 // 无关注价 → 退化为 N/A 纯标的判断
+            };
+            (pnl, current_price, avg_cost, 0.0)
+        }
+        Mode::Holding => holding
+            .and_then(|h| {
+                let shares = h.shares?;
+                let avg_cost = h.avg_cost?;
+                if shares > 0.0 && avg_cost > 0.0 {
+                    let current_price = h.notional / shares;
+                    let pnl = (current_price - avg_cost) / avg_cost * 100.0;
+                    Some((pnl, current_price, avg_cost, shares))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or((0.0, 0.0, 0.0, 0.0)),
+    };
 
     // 最大回撤（假设价格跌 20%）
     let max_dd = crate::storage::invest::portfolio::max_drawdown_for_symbol(
@@ -1493,8 +1532,7 @@ async fn run_role_phase(
     asset_context: &AssetContext,
     mode: Mode,
 ) -> Result<RoundOutput, String> {
-    // Task 10 透传管道:本任务暂不读 mode,Task 11/12 才用,避免 unused 警告。
-    let _ = mode;
+    // mode 由 Task 11 起用于 Risk R1 prompt 透传(成本来源切换 + Gate2 语义)。
     let cli = match super::cli_executor::CliCommitteeExecutor::global() {
         Some(c) => c,
         None => {
@@ -1534,7 +1572,7 @@ async fn run_role_phase(
             let company_news = super::cli_executor::fetch_company_news_for_prompt(symbol).await;
             super::cli_executor::build_cli_risk_r1_prompt(
                 &asset_name, symbol, asset_context, portfolio_data,
-                &strategy_ctx, &profile_ctx, &company_news,
+                &strategy_ctx, &profile_ctx, &company_news, mode,
             )
         }
         (CommitteeRole::Risk, _) => {
@@ -1955,6 +1993,7 @@ pub(crate) async fn run_committee(
         &round_outputs,
         &macro_signal,
         macro_strength,
+        mode,
     );
 
     // Determine final verdict — sentinel override takes priority
