@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>委员会直播 UI 重设计 — 方案预览</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel-2: #1c2330;
+    --border: #2a313c;
+    --border-soft: #232a35;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --text-faint: #6e7681;
+    --accent: #58a6ff;
+    --macro: #a371f7;
+    --regime: #c084fc;
+    --quant: #58a6ff;
+    --risk: #f0883e;
+    --cio: #e3b341;
+    --buy: #3fb950;
+    --sell: #f85149;
+    --hold-c: #58a6ff;
+    --neutral: #8b949e;
+    --mono: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-size: 14px; line-height: 1.5; padding: 32px;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 40px 0 12px; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  h3 { font-size: 13px; margin: 20px 0 8px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; }
+  .sub { color: var(--text-dim); margin: 0 0 24px; }
+  .note { background: var(--panel-2); border-left: 3px solid var(--accent); padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 12px 0; color: var(--text-dim); font-size: 13px; }
+  .tag { display:inline-block; font-size:11px; padding:1px 7px; border-radius:10px; font-weight:600; }
+
+  /* ── symbol card ── */
+  .symbol-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
+  .symbol-card.streaming { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent); }
+
+  /* header row: name | hold/watch | REGIME | gap | progress | verdict | run | expand */
+  .card-header { display:flex; align-items:center; gap:12px; padding:11px 16px; cursor:pointer; user-select:none; }
+  .card-header:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+  .card-id { display:flex; flex-direction:column; min-width:124px; }
+  .card-name { font-size:14px; font-weight:600; }
+  .card-ticker { font-size:11px; font-family:var(--mono); color:var(--text-faint); }
+  .badge { font-size:11px; padding:2px 9px; border-radius:6px; font-weight:600; white-space:nowrap; }
+  .badge.holding { background: color-mix(in srgb, var(--buy) 18%, transparent); color: var(--buy); }
+  .badge.watch { background: color-mix(in srgb, var(--neutral) 20%, transparent); color: var(--text-dim); }
+
+  /* NEW: inline regime chip in header */
+  .regime-chip { display:flex; align-items:center; gap:7px; padding:3px 10px; border-radius:8px; background: color-mix(in srgb, var(--regime) 13%, transparent); border:1px solid color-mix(in srgb, var(--regime) 30%, transparent); white-space:nowrap; }
+  .regime-chip .rg-tag { font-size:11px; font-weight:700; color:var(--regime); text-transform:uppercase; letter-spacing:.3px; }
+  .regime-chip .rg-metrics { font-size:10.5px; font-family:var(--mono); color:var(--text-dim); display:flex; gap:8px; }
+  .regime-chip.unknown { opacity:.5; }
+
+  .spacer { flex: 1 1 auto; }
+
+  /* NEW: slimmer progress bar, fixed width, not stretched */
+  .pipeline-bar { display:flex; gap:2px; width:148px; height:14px; flex:0 0 auto; }
+  .pipeline-bar .seg { flex:1; border-radius:2px; display:flex; align-items:center; justify-content:center; font-size:8px; color:#fff; background: var(--border); }
+  .pipeline-bar .seg.done { background: color-mix(in srgb, var(--seg) 75%, transparent); }
+  .pipeline-bar .seg.active { background: color-mix(in srgb, var(--seg) 45%, transparent); animation: pulse 1.2s infinite; }
+  .pipeline-bar .seg.pending { background: var(--border); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.45} }
+
+  .verdict-badge-sm { font-size:11px; padding:3px 10px; border-radius:7px; font-weight:700; white-space:nowrap; }
+  .v-buy { background: color-mix(in srgb, var(--buy) 20%, transparent); color: var(--buy); }
+  .v-sell { background: color-mix(in srgb, var(--sell) 20%, transparent); color: var(--sell); }
+  .v-hold { background: color-mix(in srgb, var(--hold-c) 20%, transparent); color: var(--hold-c); }
+
+  .run-btn { font-size:12px; padding:5px 12px; border-radius:7px; border:1px solid var(--border); background:var(--panel-2); color:var(--text); cursor:pointer; white-space:nowrap; }
+  .run-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .expand-arrow { color: var(--text-faint); font-size:11px; transition: transform .2s; width:14px; text-align:center; }
+  .expand-arrow.open { transform: rotate(90deg); }
+
+  /* ── before/after comparison labels ── */
+  .label-bad { color: var(--sell); font-weight:600; }
+  .label-good { color: var(--buy); font-weight:600; }
+
+  /* OLD progress bar for comparison */
+  .pipeline-bar.old { width:auto; flex:1; height:22px; min-width:200px; }
+  .pipeline-bar.old .seg { font-size:11px; }
+
+  /* ── expanded body: column layout ── */
+  .card-body { padding:18px 20px; border-top:1px solid var(--border-soft); background: var(--bg); }
+  .flow-grid { display:grid; grid-template-columns: 1fr 1fr; gap:14px; max-width:1040px; margin:0 auto; }
+  .step-card { background: var(--panel); border:1px solid var(--border); border-left:3px solid var(--seg, var(--border)); border-radius:9px; padding:12px 14px; }
+  .step-card.fw { grid-column: 1 / -1; }                 /* full width: macro / cio / verdict */
+  .step-head { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+  .step-dot { width:8px; height:8px; border-radius:50%; background:var(--seg); }
+  .step-title { font-size:12px; font-weight:600; }
+  .step-round { font-size:10px; color:var(--text-faint); margin-left:auto; font-family:var(--mono); }
+
+  /* connector */
+  .connector { grid-column:1/-1; height:18px; display:flex; align-items:center; justify-content:center; color:var(--border); }
+
+  /* ── render option A: chip grid + structured fields ── */
+  .chip-row { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .chip { font-size:11px; padding:2px 9px; border-radius:6px; background:var(--panel-2); border:1px solid var(--border); color:var(--text-dim); }
+  .chip b { color:var(--text); font-weight:600; }
+  .chip.sig-buy { border-color: color-mix(in srgb, var(--buy) 50%, transparent); color: var(--buy); }
+  .chip.sig-sell { border-color: color-mix(in srgb, var(--sell) 50%, transparent); color: var(--sell); }
+  .field-list { display:flex; flex-direction:column; gap:8px; }
+  .field { display:grid; grid-template-columns: 96px 1fr; gap:10px; font-size:12.5px; align-items:start; }
+  .field .k { color:var(--text-faint); font-size:11px; padding-top:1px; }
+  .field .v { color:var(--text); }
+  .oneliner { font-size:13px; font-weight:500; color:var(--text); padding:8px 10px; background: color-mix(in srgb, var(--seg) 8%, transparent); border-radius:6px; margin-bottom:10px; }
+  .reasoning { font-size:12.5px; color:var(--text-dim); line-height:1.6; }
+
+  /* ── render option B: raw text (current) ── */
+  .raw-text { font-size:12px; color:var(--text-dim); white-space:pre-wrap; font-family:var(--mono); line-height:1.55; max-height:200px; overflow-y:auto; }
+
+  /* ── render option C: markdown-ish ── */
+  .md-body { font-size:12.5px; color:var(--text); line-height:1.6; }
+  .md-body strong { color:#fff; }
+  .md-body ul { margin:6px 0; padding-left:18px; }
+  .md-body li { margin:3px 0; }
+
+  /* meter */
+  .meter { height:5px; border-radius:3px; background:var(--border); overflow:hidden; margin-top:4px; }
+  .meter > i { display:block; height:100%; background:var(--seg); }
+
+  .legend { display:flex; gap:18px; flex-wrap:wrap; font-size:12px; color:var(--text-dim); margin:10px 0; }
+  .legend span { display:flex; align-items:center; gap:6px; }
+  .dot { width:9px; height:9px; border-radius:2px; }
+  .verdict-block { grid-column:1/-1; }
+  .gate { font-size:11px; padding:2px 8px; border-radius:5px; background: color-mix(in srgb, var(--buy) 18%, transparent); color:var(--buy); }
+</style>
+</head>
+<body>
+
+<h1>委员会直播 UI 重设计 — 方案预览</h1>
+<p class="sub">任务 3 + 4。深色主题为示意,实际取项目 CSS 变量。下面分三部分:① 卡片头部行重排 ② 展开后列布局 ③ 卡片内部渲染方案对比。</p>
+
+<!-- ============ PART 1: HEADER ROW ============ -->
+<h2>① 卡片头部行(折叠态)</h2>
+
+<h3 class="label-bad">改之前 · 进度条占满中间、REGIME 藏在展开里</h3>
+<div class="symbol-card">
+  <div class="card-header">
+    <div class="card-id"><span class="card-name">贵州茅台</span><span class="card-ticker">600519.SH</span></div>
+    <span class="badge holding">持仓</span>
+    <div class="pipeline-bar old">
+      <div class="seg done" style="--seg:var(--macro)">✓</div>
+      <div class="seg done" style="--seg:var(--regime)">✓</div>
+      <div class="seg done" style="--seg:var(--quant)">✓</div>
+      <div class="seg active" style="--seg:var(--risk)">◉</div>
+      <div class="seg pending" style="--seg:var(--quant)"></div>
+      <div class="seg pending" style="--seg:var(--risk)"></div>
+      <div class="seg pending" style="--seg:var(--cio)"></div>
+    </div>
+    <span class="verdict-badge-sm v-buy">BUY</span>
+    <button class="run-btn">运行</button>
+    <span class="expand-arrow">▶</span>
+  </div>
+</div>
+<p class="note">问题:进度条 <code>flex:1</code> 把中间撑满不好看;REGIME(确定的市场状态)明明是事实数据却要展开才能看到。</p>
+
+<h3 class="label-good">改之后 · 名字 | 持仓 | REGIME | 空档 | 瘦进度条 | 判断 | 运行 | 展开</h3>
+<div class="symbol-card streaming">
+  <div class="card-header">
+    <div class="card-id"><span class="card-name">贵州茅台</span><span class="card-ticker">600519.SH</span></div>
+    <span class="badge holding">持仓</span>
+    <div class="regime-chip">
+      <span class="rg-tag">上涨趋势</span>
+      <span class="rg-metrics"><span>RSI 61</span><span>MA20↑</span><span>分位 78%</span></span>
+    </div>
+    <div class="spacer"></div>
+    <div class="pipeline-bar">
+      <div class="seg done" style="--seg:var(--macro)">✓</div>
+      <div class="seg done" style="--seg:var(--regime)">✓</div>
+      <div class="seg done" style="--seg:var(--quant)">✓</div>
+      <div class="seg active" style="--seg:var(--risk)"></div>
+      <div class="seg pending" style="--seg:var(--quant)"></div>
+      <div class="seg pending" style="--seg:var(--risk)"></div>
+      <div class="seg pending" style="--seg:var(--cio)"></div>
+    </div>
+    <span class="verdict-badge-sm v-buy">BUY</span>
+    <button class="run-btn">运行</button>
+    <span class="expand-arrow open">▶</span>
+  </div>
+</div>
+
+<div class="symbol-card">
+  <div class="card-header">
+    <div class="card-id"><span class="card-name">宁德时代</span><span class="card-ticker">300750.SZ</span></div>
+    <span class="badge watch">观察</span>
+    <div class="regime-chip">
+      <span class="rg-tag">区间震荡</span>
+      <span class="rg-metrics"><span>RSI 48</span><span>MA20→</span><span>分位 41%</span></span>
+    </div>
+    <div class="spacer"></div>
+    <div class="pipeline-bar">
+      <div class="seg pending" style="--seg:var(--macro)"></div>
+      <div class="seg pending" style="--seg:var(--regime)"></div>
+      <div class="seg pending" style="--seg:var(--quant)"></div>
+      <div class="seg pending" style="--seg:var(--risk)"></div>
+      <div class="seg pending" style="--seg:var(--quant)"></div>
+      <div class="seg pending" style="--seg:var(--risk)"></div>
+      <div class="seg pending" style="--seg:var(--cio)"></div>
+    </div>
+    <span class="verdict-badge-sm v-hold" style="opacity:.4">—</span>
+    <button class="run-btn">运行</button>
+    <span class="expand-arrow">▶</span>
+  </div>
+</div>
+
+<p class="note">REGIME 为 <code>unknown</code> 时:chip 整体淡化或不显示,头部行回退为「名字 | 持仓 | 空档 | 进度条 | 判断 | 运行 | 展开」。进度条固定 ~148px 宽,中间用 <code>spacer</code> 顶开,布局稳定。</p>
+
+<!-- ============ PART 2: EXPANDED COLUMN LAYOUT ============ -->
+<h2>② 展开后列布局</h2>
+<p class="sub">移除展开体内独立的 REGIME 框(已上移到头部)。宏观 / CIO / 最终判决 = 全宽;量化 + 风控 = 两列对半。全宽块宽度 ≈ 量化+风控之和。</p>
+
+<div class="legend">
+  <span><i class="dot" style="background:var(--macro)"></i> 宏观 Macro</span>
+  <span><i class="dot" style="background:var(--quant)"></i> 量化 Quant</span>
+  <span><i class="dot" style="background:var(--risk)"></i> 风控 Risk</span>
+  <span><i class="dot" style="background:var(--cio)"></i> CIO</span>
+</div>
+
+<div class="symbol-card">
+  <div class="card-body">
+    <div class="flow-grid">
+      <!-- macro full width -->
+      <div class="step-card fw" style="--seg:var(--macro)">
+        <div class="step-head"><span class="step-dot"></span><span class="step-title">宏观 Macro</span><span class="step-round">R1 · 1.2s · 1.8k tok</span></div>
+        <div class="chip-row">
+          <span class="chip sig-buy"><b>看多</b></span>
+          <span class="chip">强度 <b>72</b></span>
+          <span class="chip">市场阶段 <b>主升</b></span>
+          <span class="chip">情绪 <b>偏热</b></span>
+        </div>
+        <div class="oneliner">流动性宽松 + 北向连续净流入,白酒板块情绪修复,趋势向上。</div>
+        <div class="reasoning">M2 同比回升至 8.1%,沪深 300 站稳 MA60;消费板块资金回流明显,催化来自中报预期。短期注意获利盘。</div>
+      </div>
+
+      <div class="connector">┌── 并行 R1 ──┐</div>
+
+      <!-- quant + risk half/half -->
+      <div class="step-card" style="--seg:var(--quant)">
+        <div class="step-head"><span class="step-dot"></span><span class="step-title">量化 Quant</span><span class="step-round">R1 · 0.9s</span></div>
+        <div class="chip-row">
+          <span class="chip sig-buy"><b>BUY</b></span>
+          <span class="chip">置信 <b>68%</b></span>
+        </div>
+        <div class="field-list">
+          <div class="field"><span class="k">买点</span><span class="v">回踩 MA20 不破,可低吸</span></div>
+          <div class="field"><span class="k">估值</span><span class="v">PE 28x,近 3 年 55% 分位</span></div>
+          <div class="field"><span class="k">资金流</span><span class="v">主力净流入 +1.2 亿</span></div>
+        </div>
+      </div>
+      <div class="step-card" style="--seg:var(--risk)">
+        <div class="step-head"><span class="step-dot"></span><span class="step-title">风控 Risk</span><span class="step-round">R1 · 0.8s</span></div>
+        <div class="chip-row">
+          <span class="chip"><b>可交易</b></span>
+          <span class="chip">集中度 <b>18%</b></span>
+        </div>
+        <div class="field-list">
+          <div class="field"><span class="k">可用现金</span><span class="v">¥ 42,000</span></div>
+          <div class="field"><span class="k">持仓盈亏</span><span class="v" style="color:var(--buy)">+6.4%</span></div>
+          <div class="field"><span class="k">个股风险</span><span class="v">单一持仓占比未超限</span></div>
+        </div>
+      </div>
+
+      <div class="connector">└── 汇聚 → CIO ──┘</div>
+
+      <!-- cio full width -->
+      <div class="step-card fw" style="--seg:var(--cio)">
+        <div class="step-head"><span class="step-dot"></span><span class="step-title">CIO 裁决</span><span class="step-round">R2 · 1.4s</span></div>
+        <div class="chip-row">
+          <span class="chip">催化等级 <b>T2</b></span>
+          <span class="chip">执行 <b>分批建仓</b></span>
+          <span class="chip">首笔 <b>¥ 15,000</b></span>
+        </div>
+        <div class="reasoning">综合宏观看多 + 量化低吸信号 + 风控未触限,给予 BUY。建议分两笔建仓,首笔 1.5 万,回踩 MA20 加第二笔。止损 MA60。</div>
+      </div>
+
+      <!-- final verdict full width -->
+      <div class="step-card fw verdict-block" style="--seg:var(--buy)">
+        <div class="step-head"><span class="step-dot"></span><span class="step-title">最终判决</span>
+          <span class="step-round"><span class="gate">Gate1 ✓</span> <span class="gate">Gate2 ✓</span> · 已收敛</span>
+        </div>
+        <div class="chip-row">
+          <span class="verdict-badge-sm v-buy" style="font-size:13px">BUY</span>
+          <span class="chip">置信 <b>71%</b></span>
+        </div>
+        <div class="reasoning">四角色一致看多,无哨兵覆盖。分批建仓执行,首笔 ¥15,000。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ PART 3: RENDER OPTIONS ============ -->
+<h2>③ 卡片内部内容渲染方案(任务4「出个主意」)</h2>
+<p class="sub">同一份角色输出,三种渲染方式对比。后端解析出的结构化字段很全(signal/strength/verdict/confidence/oneLiner/买点/估值/资金流/催化…),不必受限于 MD。</p>
+
+<h3>方案 A · 结构化字段卡(推荐)</h3>
+<div class="symbol-card"><div class="card-body"><div style="max-width:520px">
+  <div class="step-card" style="--seg:var(--quant)">
+    <div class="step-head"><span class="step-dot"></span><span class="step-title">量化 Quant</span><span class="step-round">R1 · 0.9s · 1.5k</span></div>
+    <div class="chip-row">
+      <span class="chip sig-buy"><b>BUY</b></span>
+      <span class="chip">置信 <b>68%</b><div class="meter" style="--seg:var(--quant)"><i style="width:68%"></i></div></span>
+    </div>
+    <div class="oneliner">回踩 MA20 不破,量价配合,可低吸建仓。</div>
+    <div class="field-list">
+      <div class="field"><span class="k">买点评估</span><span class="v">回踩 MA20(¥1,612)不破即低吸,跌破则等待</span></div>
+      <div class="field"><span class="k">估值评估</span><span class="v">PE 28x,近 3 年 55% 分位,合理偏低</span></div>
+      <div class="field"><span class="k">资金流</span><span class="v">主力净流入 +1.2 亿,北向同步加仓</span></div>
+    </div>
+  </div>
+</div></div></div>
+<p class="note">把 parsed 字段映射成「signal/置信度 chip + 一句话结论 + key-value 字段表」。带迷你进度条显示置信度。最规整、信息密度高、零依赖。rawText 仅在解析失败(fallback)时兜底显示。</p>
+
+<h3>方案 B · 原始文本(现状)</h3>
+<div class="symbol-card"><div class="card-body"><div style="max-width:520px">
+  <div class="step-card" style="--seg:var(--quant)">
+    <div class="step-head"><span class="step-dot"></span><span class="step-title">量化 Quant</span></div>
+    <div class="raw-text">SIGNAL: BUY
+CONFIDENCE: 68
+BUY_POINT: 回踩 MA20(1612)不破即低吸
+VALUATION: PE 28x,近3年55%分位
+MONEY_FLOW: 主力净流入+1.2亿
+REASONING: 量价配合,趋势未破,建议低吸建仓...</div>
+  </div>
+</div></div></div>
+<p class="note">现状。等宽字体直出,信息全但不好看、不分层。</p>
+
+<h3>方案 C · Markdown 渲染</h3>
+<div class="symbol-card"><div class="card-body"><div style="max-width:520px">
+  <div class="step-card" style="--seg:var(--quant)">
+    <div class="step-head"><span class="step-dot"></span><span class="step-title">量化 Quant</span></div>
+    <div class="md-body">
+      <strong>信号:BUY · 置信 68%</strong>
+      <ul>
+        <li><strong>买点</strong>:回踩 MA20(1612)不破即低吸</li>
+        <li><strong>估值</strong>:PE 28x,近 3 年 55% 分位</li>
+        <li><strong>资金流</strong>:主力净流入 +1.2 亿</li>
+      </ul>
+      量价配合,趋势未破,建议低吸建仓。
+    </div>
+  </div>
+</div></div></div>
+<p class="note">复用项目已有的 <code>MarkdownContent</code>(Replay/Archive 已在用)。比纯文本好看,但依赖模型稳定输出 MD 格式,且不如方案 A 规整可控。</p>
+
+<div class="note" style="border-left-color:var(--cio); margin-top:30px">
+  <b>我的推荐:</b>头部行用「改之后」布局(REGIME chip + 瘦进度条 + spacer);展开体移除 REGIME 框、宏观/CIO/判决全宽;内部内容用<b>方案 A(结构化字段卡)</b>,fallback 时退回方案 B。
+</div>
+
+</body>
+</html>
