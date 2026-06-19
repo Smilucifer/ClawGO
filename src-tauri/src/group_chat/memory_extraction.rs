@@ -39,30 +39,34 @@ static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(reqwest::Client::new);
 static LAST_EXTRACTION: Lazy<Mutex<HashMap<String, Instant>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-// Daily caps: count of extractions today
-static DAILY_EXTRACTION_COUNT: Lazy<Mutex<(String, u32)>> =
-    Lazy::new(|| Mutex::new((String::new(), 0)));
+// Daily caps: per-source count of extractions today.
+// Map<source_key, (date_yyyy_mm_dd, count_today)>
+static DAILY_EXTRACTION_COUNT: Lazy<Mutex<HashMap<String, (String, u32)>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
-pub fn can_extract(group_chat_id: &str) -> bool {
-    // Debounce: 5 min per group_chat
+const DAILY_CAP_PER_SOURCE: u32 = 50;
+
+pub fn can_extract(source_key: &str) -> bool {
+    // Debounce: 5 min per source
     {
         let map = LAST_EXTRACTION.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(last) = map.get(group_chat_id) {
+        if let Some(last) = map.get(source_key) {
             if last.elapsed().as_secs() < 300 {
                 return false;
             }
         }
     }
 
-    // Daily cap: 50 per day (global, not per-character)
+    // Daily cap: per-source, resets on date change
     {
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
         let mut guard = DAILY_EXTRACTION_COUNT.lock().unwrap_or_else(|e| e.into_inner());
-        if guard.0 != today {
-            guard.0 = today;
-            guard.1 = 0;
+        let entry = guard.entry(source_key.to_string())
+            .or_insert_with(|| (today.clone(), 0));
+        if entry.0 != today {
+            *entry = (today.clone(), 0);
         }
-        if guard.1 >= 50 {
+        if entry.1 >= DAILY_CAP_PER_SOURCE {
             return false;
         }
     }
@@ -70,14 +74,20 @@ pub fn can_extract(group_chat_id: &str) -> bool {
     true
 }
 
-pub fn record_extraction(group_chat_id: &str) {
+pub fn record_extraction(source_key: &str) {
     {
         let mut map = LAST_EXTRACTION.lock().unwrap_or_else(|e| e.into_inner());
-        map.insert(group_chat_id.to_string(), Instant::now());
+        map.insert(source_key.to_string(), Instant::now());
     }
     {
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
         let mut guard = DAILY_EXTRACTION_COUNT.lock().unwrap_or_else(|e| e.into_inner());
-        guard.1 += 1;
+        let entry = guard.entry(source_key.to_string())
+            .or_insert_with(|| (today.clone(), 0));
+        if entry.0 != today {
+            *entry = (today.clone(), 0);
+        }
+        entry.1 += 1;
     }
 }
 
@@ -355,5 +365,46 @@ fn derive_chat_endpoint(embedding_endpoint: &str) -> String {
             "{}/chat/completions",
             embedding_endpoint.trim_end_matches('/')
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn per_source_daily_cap_is_independent() {
+        // 两个不同 source 各自独立计数,互不挤占。
+        let src_a = "test-source-a-unique";
+        let src_b = "test-source-b-unique";
+
+        // 初始都允许
+        assert!(can_extract(src_a));
+        // src_a 记一次后,因 5 分钟去抖,src_a 立即再问应为 false
+        record_extraction(src_a);
+        assert!(!can_extract(src_a), "same source within 5min should be debounced");
+        // src_b 不受 src_a 影响
+        assert!(can_extract(src_b), "different source must be independent");
+    }
+
+    #[test]
+    fn daily_cap_counts_per_source() {
+        // 单 source 当日累计达到 50 后拒绝(绕过去抖:直接操作计数)。
+        let src = "test-source-cap-unique";
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        {
+            let mut map = DAILY_EXTRACTION_COUNT
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            map.insert(src.to_string(), (today.clone(), 50));
+        }
+        // 清掉去抖记录,确保是 daily cap 在起作用
+        {
+            let mut last = LAST_EXTRACTION
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            last.remove(src);
+        }
+        assert!(!can_extract(src), "source at 50/day must be rejected");
     }
 }
