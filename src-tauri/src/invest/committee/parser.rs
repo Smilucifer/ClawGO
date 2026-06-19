@@ -56,6 +56,10 @@ pub struct ParsedFields {
     pub money_flow: Option<String>,
     /// 买点评估: "低吸" | "突破" | "回踩" | "追高" | "不可交易"
     pub buy_point_assessment: Option<String>,
+    /// Quant R1: 进场价(结构化点位,供复盘)
+    pub entry_price: Option<f64>,
+    /// Quant R1: 目标价(结构化点位,供复盘)
+    pub target_price: Option<f64>,
     /// 估值评估原始文本
     pub valuation_assessment: Option<String>,
 
@@ -84,6 +88,8 @@ pub struct ParsedFields {
     pub first_tranche_cny: Option<f64>,
     /// CIO: risk plan
     pub risk_plan: Option<String>,
+    /// CIO: 止损价(结构化数字,与自由文本 adjusted_stop_loss 并存)
+    pub stop_loss_price: Option<f64>,
     /// 催化剂层级: "Tier1" | "Tier2" | "Tier3" | "无"
     pub catalyst_tier: Option<String>,
     /// 一句话催化剂摘要
@@ -424,6 +430,8 @@ fn parse_quant(text: &str, parsed: &mut ParsedFields) {
     // 买点评估: "低吸" | "突破" | "回踩" | "追高" | "不可交易"
     parsed.buy_point_assessment =
         extract_field_any(text, &["BUY_POINT_ASSESSMENT", "买点评估"]);
+    parsed.entry_price = extract_f64_any(text, &["进场价", "ENTRY_PRICE"]);
+    parsed.target_price = extract_f64_any(text, &["目标价", "TARGET_PRICE"]);
     // 估值评估原始文本
     parsed.valuation_assessment =
         extract_field_any(text, &["VALUATION_ASSESSMENT", "估值评估"]);
@@ -486,6 +494,7 @@ fn parse_cio(text: &str, parsed: &mut ParsedFields) {
     parsed.execution_mode = extract_field_any(text, &["EXECUTION_MODE", "执行模式"]);
     parsed.first_tranche_cny = extract_f64_any(text, &["FIRST_TRANCHE_CNY", "首笔金额"]);
     parsed.risk_plan = extract_field_any(text, &["RISK_PLAN", "风控计划"]);
+    parsed.stop_loss_price = extract_f64_any(text, &["止损价", "STOP_LOSS_PRICE"]);
     // 催化剂层级: "Tier1" | "Tier2" | "Tier3" | "无"
     parsed.catalyst_tier = extract_field_any(text, &["CATALYST_TIER", "催化剂层级"]);
     // 一句话催化剂摘要
@@ -531,6 +540,30 @@ mod tests {
             Some(&["沪深300 PE=13.5".to_string(), "北向资金净流入120亿".to_string()][..])
         );
         assert_eq!(parsed.one_liner.as_deref(), Some("技术面偏多"));
+    }
+
+    #[test]
+    fn test_parse_quant_r1_prices() {
+        let text = "SIGNAL: risk_on\nSTRENGTH: 7\n进场价: 12.50\n目标价: 15.80\nONE_LINER: 技术面偏多";
+        let parsed = parse_role_output(CommitteeRole::Quant, text, false);
+        assert_eq!(parsed.entry_price, Some(12.50));
+        assert_eq!(parsed.target_price, Some(15.80));
+    }
+
+    #[test]
+    fn test_parse_cio_stop_loss_price() {
+        let text = "VERDICT: BUY\nCONFIDENCE: 0.7\n止损价: 11.20\n止损条件: 跌破20日线";
+        let parsed = parse_role_output(CommitteeRole::Cio, text, false);
+        assert_eq!(parsed.stop_loss_price, Some(11.20));
+    }
+
+    #[test]
+    fn test_parse_prices_absent_is_none() {
+        let text = "SIGNAL: risk_on\nSTRENGTH: 7";
+        let parsed = parse_role_output(CommitteeRole::Quant, text, false);
+        assert_eq!(parsed.entry_price, None);
+        assert_eq!(parsed.target_price, None);
+        assert_eq!(parsed.stop_loss_price, None);
     }
 
     #[test]
