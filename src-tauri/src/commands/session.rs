@@ -899,6 +899,7 @@ pub(crate) async fn start_session_impl(
         initial_auto_ctx_id,
         msvc_injected,
         auto_approve_mcp,
+        is_group_chat,
     );
     let cmd_tx = actor_handle.cmd_tx.clone();
     sessions.lock().await.insert(run_id.clone(), actor_handle);
@@ -1493,6 +1494,7 @@ pub(crate) async fn approve_session_tool_impl(
         normal + 1,
         msvc_injected,
         false, // auto_approve_mcp: approval flow doesn't auto-approve
+        false, // is_group_chat
     );
     sessions.lock().await.insert(run_id.clone(), actor_handle);
 

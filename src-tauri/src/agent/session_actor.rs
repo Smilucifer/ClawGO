@@ -242,6 +242,16 @@ struct SessionActor {
     /// Auto-approve MCP tool calls (Group Chat participants).
     /// When true, permission prompts for tools starting with "mcp__" are auto-approved.
     auto_approve_mcp: bool,
+
+    /// True when this actor backs a Group Chat participant. Group chat
+    /// memory extraction is handled by the orchestrator, so the actor must
+    /// NOT also extract (avoids duplicate extraction).
+    is_group_chat: bool,
+    /// User input text for the current turn (for memory extraction on turn end).
+    turn_user_text: Option<String>,
+    /// Top-level assistant texts accumulated during the current turn
+    /// (for memory extraction on turn end).
+    turn_assistant_texts: Vec<String>,
 }
 
 // ── Spawn entry point ──
@@ -269,6 +279,7 @@ pub fn spawn_actor(
     initial_auto_ctx_id: u32,
     msvc_injected: Option<bool>,
     auto_approve_mcp: bool,
+    is_group_chat: bool,
 ) -> SessionActorHandle {
     let tag = Arc::new(());
     let (cmd_tx, cmd_rx) = mpsc::channel::<ActorCommand>(64);
@@ -316,6 +327,9 @@ pub fn spawn_actor(
         pending_interactive_request: None,
         msvc_injected,
         auto_approve_mcp,
+        is_group_chat,
+        turn_user_text: None,
+        turn_assistant_texts: Vec::new(),
     };
 
     let join_handle = tokio::spawn(async move {
@@ -695,6 +709,14 @@ impl SessionActor {
 
         // Reply success to caller
         let _ = ticket.reply.send(Ok(()));
+
+        // Capture user input for end-of-turn memory extraction (non-group, normal turns only)
+        if !self.is_group_chat {
+            if let UserTurnKind::Normal { .. } = &ticket.kind {
+                self.turn_user_text = Some(ticket.text.clone());
+                self.turn_assistant_texts.clear();
+            }
+        }
 
         // Set active turn
         let now = Instant::now();
@@ -1602,6 +1624,43 @@ impl SessionActor {
                         self.active_extractor = None;
                         self.protocol.set_pending_slash_command(None);
 
+                        // ── Auto-extract memories from this normal-chat turn (non-group) ──
+                        // Only fire on idle (success); failed turns don't produce reliable
+                        // assistant content. Slash-command turns are skipped naturally because
+                        // turn_user_text is only set for UserTurnKind::Normal. Per-run debounce
+                        // via can_extract / record_extraction (Task 2 per-source counting).
+                        if emit_state == "idle" && !self.is_group_chat {
+                            if let Some(user_text) = self.turn_user_text.take() {
+                                let assistant_text = self.turn_assistant_texts.join("\n");
+                                self.turn_assistant_texts.clear();
+                                if !assistant_text.trim().is_empty() {
+                                    let source_key = self.run_id.clone();
+                                    let turn_texts = vec![
+                                        format!("[user]: {}", user_text),
+                                        format!("[assistant]: {}", assistant_text),
+                                    ];
+                                    tokio::spawn(async move {
+                                        use crate::group_chat::memory_extraction::{
+                                            auto_extract_memories, can_extract, log_to_file,
+                                            record_extraction,
+                                        };
+                                        if !can_extract(&source_key) {
+                                            return;
+                                        }
+                                        let memories = auto_extract_memories(&turn_texts).await;
+                                        log_to_file(&format!(
+                                            "[memory-extraction] RETURN run={} count={}",
+                                            source_key,
+                                            memories.len()
+                                        ));
+                                        if !memories.is_empty() {
+                                            record_extraction(&source_key);
+                                        }
+                                    });
+                                }
+                            }
+                        }
+
                         // Ralph loop: state transition on turn end
                         self.ralph_on_turn_end(&turn, &emit_state);
 
@@ -1640,6 +1699,24 @@ impl SessionActor {
                     self.persist_and_emit(&enriched);
                 }
                 _ => {
+                    // Normal (non-group) user turns: accumulate top-level assistant text
+                    // for end-of-turn memory extraction. MessageComplete events arrive here
+                    // because Step 4b's match only specializes RunState/SessionInit; everything
+                    // else (MessageComplete, ToolUse, UsageUpdate, ...) falls into this arm.
+                    if let BusEvent::MessageComplete {
+                        ref text,
+                        ref parent_tool_use_id,
+                        ..
+                    } = &event
+                    {
+                        if parent_tool_use_id.is_none()
+                            && !self.is_group_chat
+                            && self.turn_user_text.is_some()
+                        {
+                            self.turn_assistant_texts.push(text.clone());
+                        }
+                    }
+
                     // Inject backend-authoritative turn_index into UsageUpdate for user turns
                     if let BusEvent::UsageUpdate { .. } = &event {
                         if let Some(ref turn) = self.active_turn {
