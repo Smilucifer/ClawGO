@@ -622,6 +622,14 @@ pub fn run() {
         Err(e) => log::warn!("[invest] dream_snapshots prune failed: {}", e),
     }
 
+    // One-shot startup cleanup: drop scheduler_logs older than 30 days.
+    // jin10_collector writes ~5760 rows/day, so 30 days caps at ~170k rows.
+    match crate::storage::invest::scheduler::prune_scheduler_logs(30) {
+        Ok(0) => log::debug!("[invest] scheduler_logs within retention window, nothing to prune"),
+        Ok(n) => log::info!("[invest] pruned {} scheduler_logs older than 30 days", n),
+        Err(e) => log::warn!("[invest] scheduler_logs prune failed: {}", e),
+    }
+
     // Sync trade calendar on startup (non-blocking).
     {
         tauri::async_runtime::spawn(async move {

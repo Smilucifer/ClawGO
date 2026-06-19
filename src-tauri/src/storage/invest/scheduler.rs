@@ -157,6 +157,30 @@ pub fn upsert_trade_calendar(date: &str, is_open: bool, pretrade_date: Option<&s
     })
 }
 
+/// Retention pruning: delete scheduler_logs rows whose started_at is older
+/// than keep_days days. Returns the number of rows deleted.
+///
+/// started_at is a UTC rfc3339 string with millisecond precision and a
+/// trailing Z (written by log_task_start). UTC rfc3339 strings of identical
+/// shape sort lexicographically the same as chronologically, so the string
+/// filter is sound as long as the cutoff uses the same to_rfc3339_opts call.
+pub fn prune_scheduler_logs(keep_days: i64) -> Result<usize, String> {
+    if keep_days < 0 {
+        return Err(format!("keep_days must be >= 0, got {keep_days}"));
+    }
+    with_conn_mut(|conn| {
+        let cutoff = (chrono::Utc::now() - chrono::Duration::days(keep_days))
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let deleted = conn
+            .execute(
+                "DELETE FROM scheduler_logs WHERE started_at < ?1",
+                params![cutoff],
+            )
+            .map_err(|e| format!("prune scheduler_logs: {}", e))?;
+        Ok(deleted)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
