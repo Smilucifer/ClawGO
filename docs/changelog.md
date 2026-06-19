@@ -1,5 +1,39 @@
 # Changelog / 更新日志
 
+## v5.5.3 (2026-06-19)
+
+### invest 定时调度器 9 项修复(根因 + 运行时实证)
+
+读 invest.db 6.1 万行 scheduler_logs + scheduler.json 实证确认 11 个 bug,经 subagent 逐任务实现 + 两阶段审查 + 全分支 final review。完整计划见 `docs/superpowers/plans/2026-06-19-invest-scheduler-fixes.md`。
+
+**根因(每分钟空转 / 漏执行):**
+
+1. **cron 读取归一化(根因 #13)**: `config.rs::load_jobs_base()` 读取磁盘覆盖时未调 `normalize_cron_6field`(归一化只在 `update_cron`/`save_dream_config` 写入路径做)。任何被持久化成 5 字段的 cron(`scheduler.json` 里 `dream_invest` = `"0 3 * * *"`)→ `compute_next_run_for_job` 的 `Schedule::from_str` 失败 → 返回 `None` → 主循环 `None => true` 每 tick(~60s)触发。实证:dream_invest 在 DB 中 12377 条日志、9521 条 `insights_written:0` 空转快照。修复:读取时也归一化 + 解析失败加 `log::warn!`。
+2. **skip 不推进 next_run(#14)**: `requires_trading_day` 任务非交易日被 skip 时不更新 next_run,下一 tick 仍判 due、每分钟刷 `skipped` 日志。新增纯函数 `config::should_fire(job, now)`,主循环 to_fire 收集块改为 for 循环,skip 分支推进 next_run + dirty/批量 save_jobs。
+
+**双重调度(#1/#2):**
+
+3. **删除 lib.rs pnl_snapshot 独立循环**: lib.rs 有一段硬编码 9:30/11:00/13:00/15:00(注释写 "Beijing time" 实际用 `chrono::Local`)的 spawn 循环,与 scheduler 的 pnl_snapshot 任务并存,导致同一时刻插两条快照 + 两份日志(status `success` vs `ok`)。删除副本,default_jobs cron 改为 `"0 30 9,11,13,15 * * 1-5"` 覆盖 4 个盘中时刻。
+4. **删除 lib.rs event_scan 独立循环**: `spawn_event_scanner_cron`(每 30min)与 scheduler event_scan 任务重复扫描 Tushare/LLM。删除副本,event_scan 改由 scheduler 单一驱动。
+
+**持久化与并发健壮性(#3/#4/#7/#8):**
+
+5. **save_jobs 原子写 + 串行化锁**: `save_jobs` 从 `std::fs::write` 非原子覆盖改为 tmp+rename + PermissionDenied 重试 3 次(沿用 `committee/queue.rs::save_queue` 范本);新增模块级 `SCHEDULER_FILE_LOCK: Lazy<Mutex<()>>`,在 `load_jobs_base`/`save_jobs` 入口串行化(两段式 load→save 无嵌套,无重入死锁)。
+6. **per-job 互斥 + panic 兜底 + CancellationToken**: 新增 `RUNNING_JOBS: Lazy<Mutex<HashSet<String>>>` + `try_acquire_job`/`release_job`/`JobGuard`(Drop 释放),主循环/dedicated 循环/`trigger_cron_job` 三处不再并发跑同一 job;dispatch 用 `tokio::spawn(fut).await` 包裹,task panic 由 JoinHandle 捕获为 error 日志而非杀死整个循环;`start` 接 `CancellationToken`,所有 sleep 改 `tokio::select!`,app 关闭时优雅退出 + `RUNNING` 复位。`run_job_guarded` 返回 bool,锁竞争跳过时主循环不误推进 next_run(避免 cron 触发被静默吞掉)。
+
+**时区与交易日(#5/#6):**
+
+7. **beijing_today + 交易日判定收紧**: 新增 `storage::invest::scheduler::beijing_today()`(`Utc::now() + 8h`,北京时间日历日,无 05:00 cutoff,区别于 `get_invest_date` 业务日),主循环交易日判定改用它,不再受宿主机时区影响;`is_trading_day` 在 trade_calendar 表无记录时加 `log::warn!` 后保留 weekday 回退(让节假日误跑可观测)。
+
+**数据治理(#11):**
+
+8. **dream_snapshots 保留清理**: 新增 `dream_snapshots::prune_keep_recent(20)`,用单条 DELETE + `ROW_NUMBER() OVER (PARTITION BY dream_type ORDER BY created_at DESC, id DESC)` 每类型保留最近 20 条;启动时一次性回收 #13 产生的 9500+ 空转快照。
+9. **scheduler_logs 保留清理**: 新增 `scheduler::prune_scheduler_logs(30)`,删除 started_at 早于 30 天的记录(cutoff 用与 `log_task_start` 同一 `to_rfc3339_opts(Millis, true)` 保证字典序=时间序);启动时一次性清理(jin10 每 15s 一条,6 万行积压)。
+
+**集成修复(全分支 final review 抓出)**: 删除主循环 fire 段冗余的 last_run/next_run 双写——`persist_job_status` 已是权威路径,外层用 tick 顶部陈旧快照再写会覆盖 dedicated loop(jin10/event_analyzer)期间的更新,导致 UI 时间戳偶发倒退。
+
+**工作流记录**: 因与并行 committee session 共享主工作树发生分支交错事故,迁移到独立 git worktree 隔离后完成;dream_snapshots 表清理与 committee session 协调归本批处理。本机 Rust 单测因 STATUS_ENTRYPOINT_NOT_FOUND(CLAUDE.md §11)无法运行,验证以 `cargo check --tests` + 纯逻辑单测(供 CI)为准。
+
 ## v5.5.2 (2026-06-18)
 
 ### 委员会直播 settings 文件并发竞态修复 + 国际指标反序列化修复

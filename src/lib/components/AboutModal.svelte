@@ -3,7 +3,7 @@
   import { checkForUpdates } from "$lib/api";
   import { renderMarkdown } from "$lib/utils/markdown";
   import { t } from "$lib/i18n/index.svelte";
-  import changelogRaw from "../../../docs/changelog.md?raw";
+  import changelogRaw from "../../../docs/changelog_user.md?raw";
 
   let { open = $bindable(false) }: { open: boolean } = $props();
 
