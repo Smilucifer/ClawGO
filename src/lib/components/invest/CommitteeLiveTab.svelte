@@ -662,8 +662,15 @@
   .flow-grid .fw { grid-column: 1 / -1; width: 100%; }
   .connector { grid-column: 1 / -1; display: flex; justify-content: center; height: 28px; }
   .connector svg { width: 100%; height: 100%; }
+  /* Medium screens: slightly narrower pipeline bar */
+  @media (max-width: 1100px) {
+    .pipeline-bar { width: 120px; }
+  }
   @media (max-width: 700px) {
     .flow-grid { grid-template-columns: 1fr; }
+    .regime-chip .rg-metrics { display: none; }
+    .pipeline-bar { width: 96px; }
+    .field { grid-template-columns: 80px 1fr; }
   }
 
   /* Step card */
