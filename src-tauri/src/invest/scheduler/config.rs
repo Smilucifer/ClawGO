@@ -58,7 +58,7 @@ pub(crate) fn load_jobs_base() -> Vec<CronJob> {
     for ov in config.jobs {
         if let Some(job) = jobs.iter_mut().find(|j| j.id == ov.id) {
             if let Some(c) = ov.cron_expr {
-                job.cron_expr = c;
+                job.cron_expr = normalize_cron_6field(&c);
             }
             if let Some(i) = ov.interval_min {
                 job.interval_min = Some(i);
@@ -103,7 +103,17 @@ pub fn compute_next_run_for_job(job: &CronJob) -> Option<String> {
         return Some(next.format("%Y-%m-%dT%H:%M:%S").to_string());
     }
     // Cron-based
-    let schedule = Schedule::from_str(&job.cron_expr).ok()?;
+    let schedule = match Schedule::from_str(&job.cron_expr) {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!(
+                "compute_next_run_for_job: failed to parse cron '{}' for job '{}': {e}",
+                job.cron_expr,
+                job.id
+            );
+            return None;
+        }
+    };
     let next = schedule.after(&now).next()?;
     Some(next.format("%Y-%m-%dT%H:%M:%S").to_string())
 }
@@ -270,4 +280,68 @@ struct DreamConfigOverride {
     min_score: Option<f64>,
     #[serde(default)]
     min_count: Option<i64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_job(cron_expr: impl Into<String>) -> CronJob {
+        CronJob {
+            id: "test_job".into(),
+            name: "Test Job".into(),
+            cron_expr: cron_expr.into(),
+            interval_min: None,
+            enabled: true,
+            requires_trading_day: false,
+            last_run: None,
+            next_run: None,
+            last_status: None,
+            description: String::new(),
+            dedicated: false,
+        }
+    }
+
+    #[test]
+    fn normalize_5field_prepends_seconds() {
+        assert_eq!(normalize_cron_6field("0 3 * * *"), "0 0 3 * * *");
+        assert_eq!(normalize_cron_6field("*/15 * * * *"), "0 */15 * * * *");
+    }
+
+    #[test]
+    fn normalize_6field_unchanged() {
+        assert_eq!(normalize_cron_6field("0 0 3 * * *"), "0 0 3 * * *");
+        assert_eq!(
+            normalize_cron_6field("0 30 9,11 * * 1-5"),
+            "0 30 9,11 * * 1-5"
+        );
+    }
+
+    #[test]
+    fn compute_next_run_returns_none_for_unnormalized_5field_cron() {
+        // Documents the bug: a raw 5-field cron is unparseable by the
+        // `cron` crate, so without normalization on load we silently get None.
+        let job = make_job("0 3 * * *");
+        assert!(compute_next_run_for_job(&job).is_none());
+    }
+
+    #[test]
+    fn compute_next_run_returns_some_for_5field_cron_after_normalize() {
+        // Simulates what load_jobs_base now writes when a user override
+        // contains a 5-field cron string.
+        let mut job = make_job("");
+        job.cron_expr = normalize_cron_6field("0 3 * * *");
+        assert_eq!(job.cron_expr, "0 0 3 * * *");
+        assert!(
+            compute_next_run_for_job(&job).is_some(),
+            "expected Some next_run for normalized cron '{}'",
+            job.cron_expr
+        );
+    }
+
+    #[test]
+    fn compute_next_run_some_for_6field_cron() {
+        let job = make_job("0 30 9,11 * * 1-5");
+        assert!(compute_next_run_for_job(&job).is_some());
+    }
 }
