@@ -533,8 +533,8 @@ tier1_watch_hours: 72（仅 Tier1 标的填写）
 **输出精简要求**：每个字段值一句话结束，个人备注/推理类≤一句话，不分点展开。
 
 **Hard Rules**：
-- confidence ≥ 0.95 + verdict=BUY → 系统会自动降级到 ACCUMULATE
-- |SUGGESTED_ALLOC_CNY| > 100000 → 系统会 clamp
+- confidence ≥ 0.95 + verdict=BUY → 系统自动降级到 ACCUMULATE（已实现，无需你额外处理）
+- |SUGGESTED_ALLOC_CNY| > 100000 → 系统自动 clamp 到 ±100000（已实现）
 - **股票/ETF 买入规则**：不管是股票还是 ETF，单次买入数量必须是 100 股的倍数，单次最小买入金额 = 建议买入点 × 100 股。建议配置金额和 first_tranche_cny 必须满足此约束。
 
 **催化剂层级框架**（L2）：

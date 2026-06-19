@@ -1965,6 +1965,19 @@ pub(crate) async fn run_committee(
         (sanity.final_verdict.clone(), sanity.final_confidence)
     };
 
+    // Hard rule A/B clamp(CIO_PROMPT 承诺的"系统自动降级/clamp")。
+    // 放在最终 verdict/confidence 决出之后、写库之前，兜住任何来源的高 conf BUY 与超额 alloc。
+    let clamp = crate::invest::committee::analysis::apply_hard_rules(
+        &final_verdict,
+        final_confidence,
+        cio_parsed.suggested_alloc_cny,
+        cio_parsed.first_tranche_cny,
+    );
+    let final_verdict = clamp.verdict;
+    // alloc clamp 后的值（archive_verdict 当前不持久化 alloc，此处保留供未来 result/落库使用）
+    let _clamped_alloc = clamp.alloc_cny;
+    let _first_tranche = clamp.first_tranche_cny;
+
     let total_latency_ms = start.elapsed().as_millis() as u64;
     let reasoning = cio_parsed.raw_text.clone();
 

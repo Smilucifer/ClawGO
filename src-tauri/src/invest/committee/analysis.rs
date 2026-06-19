@@ -214,6 +214,51 @@ pub fn cio_sanity_check(
 }
 
 // ---------------------------------------------------------------------------
+// Hard rule A/B clamp (CIO_PROMPT 承诺的"系统自动降级/clamp")
+// ---------------------------------------------------------------------------
+
+/// Hard rule A/B clamp 结果。
+pub struct HardClamp {
+    pub verdict: String,
+    pub alloc_cny: Option<f64>,
+    pub first_tranche_cny: Option<f64>,
+}
+
+/// 应用两条 hard rule(对应 CIO_PROMPT 承诺):
+/// - rule A: confidence >= 0.95 且 verdict==BUY → 降级 ACCUMULATE。
+/// - rule B: |alloc| > 100000 → clamp 到 ±100000;first_tranche 同步 clamp 到 [-cap, cap]。
+pub fn apply_hard_rules(
+    verdict: &str,
+    confidence: f64,
+    alloc_cny: Option<f64>,
+    first_tranche_cny: Option<f64>,
+) -> HardClamp {
+    // rule A
+    let verdict = if confidence >= 0.95 && verdict == "BUY" {
+        "ACCUMULATE".to_string()
+    } else {
+        verdict.to_string()
+    };
+
+    // rule B
+    let alloc_cny = alloc_cny.map(|a| a.clamp(-100_000.0, 100_000.0));
+    let first_tranche_cny = match (first_tranche_cny, alloc_cny) {
+        (Some(ft), Some(a)) => {
+            let cap = a.abs();
+            // first_tranche 取与 alloc 同号、绝对值不超过 cap
+            Some(ft.clamp(-cap, cap))
+        }
+        (ft, _) => ft,
+    };
+
+    HardClamp {
+        verdict,
+        alloc_cny,
+        first_tranche_cny,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Round output -- accumulated per-role result
 // ---------------------------------------------------------------------------
 
@@ -489,5 +534,34 @@ mod tests {
         assert!(result.gate1_pass);
         assert!(result.gate2_pass);
         assert_eq!(result.final_verdict, "ACCUMULATE");
+    }
+
+    // ---- Hard rule A/B clamp ----
+
+    #[test]
+    fn test_hard_rule_a_downgrades_high_conf_buy() {
+        let r = apply_hard_rules("BUY", 0.97, Some(50_000.0), Some(20_000.0));
+        assert_eq!(r.verdict, "ACCUMULATE");
+    }
+
+    #[test]
+    fn test_hard_rule_a_not_triggered_below_threshold() {
+        // 高信念通道升级用 0.65，刻意不触发 rule A
+        let r = apply_hard_rules("BUY", 0.65, None, None);
+        assert_eq!(r.verdict, "BUY");
+    }
+
+    #[test]
+    fn test_hard_rule_b_clamps_alloc_and_first_tranche() {
+        let r = apply_hard_rules("BUY", 0.7, Some(150_000.0), Some(160_000.0));
+        assert_eq!(r.alloc_cny, Some(100_000.0));
+        assert_eq!(r.first_tranche_cny, Some(100_000.0)); // 同步 clamp 到 cap
+    }
+
+    #[test]
+    fn test_hard_rule_b_preserves_within_limit() {
+        let r = apply_hard_rules("ACCUMULATE", 0.6, Some(80_000.0), Some(30_000.0));
+        assert_eq!(r.alloc_cny, Some(80_000.0));
+        assert_eq!(r.first_tranche_cny, Some(30_000.0));
     }
 }
