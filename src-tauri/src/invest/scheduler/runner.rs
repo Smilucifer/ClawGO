@@ -255,7 +255,7 @@ where
 
         loop {
             let mut jobs = config::load_jobs();
-            let today = crate::invest::date_utils::get_invest_date();
+            let today = crate::storage::invest::scheduler::beijing_today();
             let now_naive = chrono::Local::now().naive_local();
 
             // First pass: pure due-check + non-trading-day skip handling.
