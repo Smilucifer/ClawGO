@@ -1,8 +1,12 @@
 use super::CronJob;
 use chrono::{Local, TimeZone};
 use cron::Schedule;
+use once_cell::sync::Lazy;
+use std::fs;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Mutex;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -28,6 +32,13 @@ struct JobOverride {
     last_status: Option<String>,
 }
 
+/// Serialize concurrent reads/writes to scheduler.json so callers never see
+/// half-written content. `load_jobs_base` and `save_jobs` each take this
+/// lock independently; toggle_job / update_cron / save_dream_config call
+/// load → save sequentially with the lock released in between, so no
+/// re-entrance occurs on the same thread.
+static SCHEDULER_FILE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
 fn config_path() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     home.join(".claw-go").join("invest").join("scheduler.json")
@@ -44,6 +55,7 @@ pub fn load_jobs() -> Vec<CronJob> {
 
 /// Shared base: defaults + disk overlay. No derived-field computation.
 pub(crate) fn load_jobs_base() -> Vec<CronJob> {
+    let _guard = SCHEDULER_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut jobs = super::default_jobs();
     let path = config_path();
     if !path.exists() {
@@ -140,7 +152,12 @@ pub(crate) fn should_fire(job: &CronJob, now: chrono::NaiveDateTime) -> bool {
 }
 
 /// Save user overrides (only changed fields) to scheduler.json.
+///
+/// Atomic write (tmp + rename), retrying up to 3 times on PermissionDenied.
+/// Mirrors `crate::invest::committee::queue::save_queue`.
 pub fn save_jobs(jobs: &[CronJob]) -> Result<(), String> {
+    let _guard = SCHEDULER_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
     let defaults = super::default_jobs();
     let overrides: Vec<JobOverride> = jobs
         .iter()
@@ -169,13 +186,38 @@ pub fn save_jobs(jobs: &[CronJob]) -> Result<(), String> {
             }
         })
         .collect();
+
     let config = SchedulerConfig { jobs: overrides };
     let json = serde_json::to_string_pretty(&config).map_err(|e| format!("{e}"))?;
+
     let path = config_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("{e}"))?;
+    let dir = path
+        .parent()
+        .ok_or_else(|| "scheduler.json path has no parent".to_string())?;
+    fs::create_dir_all(dir).map_err(|e| format!("create_dir_all: {e}"))?;
+
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let tmp = dir.join(format!("scheduler.json.{}.{}.tmp", std::process::id(), nanos));
+
+    fs::write(&tmp, &json).map_err(|e| format!("write tmp: {e}"))?;
+
+    for attempt in 0..3u8 {
+        match fs::rename(&tmp, &path) {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && attempt < 2 => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(format!("rename: {e}"));
+            }
+        }
     }
-    std::fs::write(&path, json).map_err(|e| format!("{e}"))
+    let _ = fs::remove_file(&tmp);
+    Err("rename: PermissionDenied after 3 retries".to_string())
 }
 
 /// Toggle a single job's enabled state and persist.
@@ -411,5 +453,39 @@ mod tests {
         let mut job = make_job("0 0 3 * * *");
         job.next_run = Some("not-a-timestamp".into());
         assert!(should_fire(&job, at("2026-06-19T12:00:00")));
+    }
+
+    use std::sync::Mutex as StdMutex;
+    static TEST_ENV_LOCK: StdMutex<()> = StdMutex::new(());
+
+    #[test]
+    fn save_then_load_base_roundtrips_cron_override() {
+        let _t = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let prev_userprofile = std::env::var_os("USERPROFILE");
+        let prev_home = std::env::var_os("HOME");
+        std::env::set_var("USERPROFILE", tmp.path());
+        std::env::set_var("HOME", tmp.path());
+
+        let mut jobs = super::super::default_jobs();
+        let pnl = jobs.iter_mut().find(|j| j.id == "pnl_snapshot").expect("pnl present");
+        pnl.cron_expr = "0 0 10,14 * * 1-5".to_string();
+        pnl.enabled = false;
+        save_jobs(&jobs).expect("save_jobs ok");
+
+        let reloaded = load_jobs_base();
+        let rp = reloaded.iter().find(|j| j.id == "pnl_snapshot").expect("pnl after reload");
+        assert_eq!(rp.cron_expr, "0 0 10,14 * * 1-5");
+        assert!(!rp.enabled);
+
+        // restore env
+        match prev_userprofile {
+            Some(v) => std::env::set_var("USERPROFILE", v),
+            None => std::env::remove_var("USERPROFILE"),
+        }
+        match prev_home {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
     }
 }
