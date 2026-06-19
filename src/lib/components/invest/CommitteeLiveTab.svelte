@@ -5,6 +5,7 @@
     type PortfolioSnapshot,
     type SnapshotHolding,
     type SymbolProgress,
+    type RoundOutputSummary,
   } from '$lib/stores/invest-committee-store.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
   import { STEP_DEFS, getStepState, getRoundForStep } from './pipeline-config';
@@ -34,6 +35,50 @@
     if (state === 'error') return '✗';
     if (state === 'aborted') return '⊘';
     return '';
+  }
+
+  type ParsedFields = RoundOutputSummary['parsed'];
+
+  /** True if a parsed role output has any displayable content (parsed is a
+   *  required object, so a truthiness check on it alone is always true). */
+  function hasParsedContent(pf: ParsedFields): boolean {
+    return !!(pf.signal || pf.verdict || pf.oneLiner || pf.reasoning || pf.rawText
+      || pf.strength != null || pf.confidence != null || pf.fallbackReason
+      || pf.marketPhase || pf.emotionTemperature || pf.buyPointAssessment
+      || pf.valuationAssessment || pf.moneyFlow || pf.concentrationPct != null
+      || pf.dryPowderCny != null || pf.pnlPct != null || pf.stockRiskSummary
+      || pf.catalystTier || pf.catalystSummary || pf.executionMode || pf.firstTrancheCny != null);
+  }
+
+  function roleFields(stepKey: string, pf: ParsedFields): { label: string; value: string }[] {
+    const out: { label: string; value: string }[] = [];
+    const push = (label: string, v: unknown, suffix = '') => {
+      if (v === null || v === undefined || v === '') return;
+      out.push({ label, value: `${v}${suffix}` });
+    };
+    const role = stepKey.startsWith('quant') ? 'quant'
+      : stepKey.startsWith('risk') ? 'risk'
+      : stepKey;
+    if (role === 'macro') {
+      push(t('invest_field_market_phase'), pf.marketPhase);
+      push(t('invest_field_emotion'), pf.emotionTemperature);
+      push(t('invest_field_phase_reason'), pf.marketPhaseReason);
+    } else if (role === 'quant') {
+      push(t('invest_field_buy_point'), pf.buyPointAssessment);
+      push(t('invest_field_valuation'), pf.valuationAssessment);
+      push(t('invest_field_money_flow'), pf.moneyFlow);
+    } else if (role === 'risk') {
+      push(t('invest_field_concentration'), pf.concentrationPct, '%');
+      push(t('invest_field_dry_powder'), pf.dryPowderCny != null ? `¥${pf.dryPowderCny}` : null);
+      push(t('invest_field_pnl'), pf.pnlPct != null ? `${pf.pnlPct}%` : null);
+      push(t('invest_field_stock_risk'), pf.stockRiskSummary);
+    } else if (role === 'cio') {
+      push(t('invest_field_catalyst_tier'), pf.catalystTier);
+      push(t('invest_field_exec_mode'), pf.executionMode);
+      push(t('invest_field_first_tranche'), pf.firstTrancheCny != null ? `¥${pf.firstTrancheCny}` : null);
+      push(t('invest_field_catalyst'), pf.catalystSummary);
+    }
+    return out;
   }
 
   // Hard fallbacks = truly no content; soft (missing_critical_fields) still has rawText.
@@ -195,22 +240,31 @@
         <div class="fallback-message">
           <span class="fallback-icon">⚠</span><span>{round.parsed.fallbackReason}</span>
         </div>
-      {:else if round?.parsed?.rawText}
+      {:else if round?.parsed && hasParsedContent(round.parsed)}
         {@const pf = round.parsed}
+        {@const fields = roleFields(stepKey, pf)}
         <div class="chip-row">
           {#if pf.signal}<span class="chip sig-{pf.signal.toLowerCase()}">{pf.signal}</span>{/if}
           {#if pf.strength != null}<span class="chip neutral">{t('invest_committee_chip_strength')} {pf.strength}</span>{/if}
           {#if pf.verdict}<span class="chip" style={getVerdictBadgeStyle(pf.verdict)}>{pf.verdict}</span>{/if}
           {#if pf.confidence != null}<span class="chip neutral">{normalizeConfidencePct(pf.confidence).toFixed(0)}%</span>{/if}
-          {#if pf.marketPhase}<span class="chip neutral">{pf.marketPhase}</span>{/if}
-          {#if pf.emotionTemperature}<span class="chip neutral">{pf.emotionTemperature}</span>{/if}
-          {#if pf.buyPointAssessment}<span class="chip neutral">{pf.buyPointAssessment}</span>{/if}
-          {#if pf.valuationAssessment}<span class="chip neutral">{pf.valuationAssessment}</span>{/if}
-          {#if pf.concentrationPct != null}<span class="chip neutral">{t('invest_committee_chip_concentration')} {pf.concentrationPct}%</span>{/if}
-          {#if pf.catalystTier}<span class="chip neutral">{pf.catalystTier}</span>{/if}
           {#if pf.fallbackReason}<span class="chip warn" title={pf.fallbackReason}>⚠ {t('invest_committee_chip_fields_partial')}</span>{/if}
         </div>
-        <div class="raw-text">{pf.rawText}</div>
+        {#if pf.confidence != null}
+          <div class="confidence-meter"><i style="width:{normalizeConfidencePct(pf.confidence)}%"></i></div>
+        {/if}
+        {#if pf.oneLiner}<div class="role-oneliner">{pf.oneLiner}</div>{/if}
+        {#if fields.length > 0}
+          <div class="field-list">
+            {#each fields as f}
+              <div class="field"><span class="field-k">{f.label}</span><span class="field-v">{f.value}</span></div>
+            {/each}
+          </div>
+        {/if}
+        {#if pf.reasoning}<div class="role-reasoning">{pf.reasoning}</div>{/if}
+        {#if fields.length === 0 && !pf.oneLiner && !pf.reasoning && pf.rawText}
+          <div class="raw-text">{pf.rawText}</div>
+        {/if}
       {:else}
         <span class="muted">{t('invest_committee_waiting')}</span>
       {/if}
@@ -640,9 +694,8 @@
   .step-round { font-size: 10px; color: var(--text-tertiary); padding: 1px 5px; border-radius: 3px; background: var(--bg-input); }
   .step-meta { margin-left: auto; display: flex; gap: 10px; font-size: 10px; color: var(--text-tertiary); font-family: var(--font-mono); }
   .step-body {
-    padding: 14px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.85;
+    padding: 14px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.7;
     max-height: 320px; overflow-y: auto; word-break: break-word;
-    white-space: pre-wrap;
   }
   .muted { color: var(--text-tertiary); }
   .waiting { display: flex; align-items: center; gap: 8px; color: var(--text-tertiary); }
@@ -672,6 +725,20 @@
   .chip.sig-hold, .chip.sig-neutral { background: rgba(196,169,110,0.15); color: var(--accent); }
   .chip.sig-trim { background: rgba(255,193,7,0.15); color: var(--color-warning); }
   .chip.sig-risk_off, .chip.sig-sell, .chip.sig-bearish, .chip.sig-high_risk { background: rgba(168,122,122,0.2); color: var(--color-error); }
+
+  /* Option A: structured field card */
+  .confidence-meter { height: 5px; border-radius: 3px; background: var(--bg-input); overflow: hidden; margin-bottom: 10px; }
+  .confidence-meter > i { display: block; height: 100%; background: var(--sc); }
+  .role-oneliner {
+    font-size: 13px; font-weight: 500; color: var(--text-primary);
+    padding: 8px 10px; border-radius: var(--radius-sm); margin-bottom: 10px;
+    background: color-mix(in srgb, var(--sc) 8%, transparent);
+  }
+  .field-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+  .field { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: start; }
+  .field-k { font-size: 11px; color: var(--text-tertiary); padding-top: 1px; }
+  .field-v { font-size: 12.5px; color: var(--text-primary); }
+  .role-reasoning { font-size: 12.5px; color: var(--text-secondary); line-height: 1.7; white-space: pre-wrap; }
 
   /* Verdict block */
   .verdict-block {
