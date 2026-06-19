@@ -188,18 +188,25 @@ where
 /// Acquire the per-job mutex, build the dispatch future, run it under panic
 /// protection. If the slot is already held (manual trigger or a still-running
 /// previous tick), this tick is skipped with a warn log — never blocked.
-async fn run_job_guarded<F, Fut>(dispatch: Arc<F>, job_id: String, compute_next: bool)
+///
+/// Returns `true` iff this caller actually executed the dispatch (success,
+/// error, or panic), and `false` iff it was skipped because another caller
+/// already held the slot. The caller should only advance `last_run` /
+/// `next_run` when this returns `true`; otherwise a contended cron tick gets
+/// silently rolled forward and the fire is permanently lost.
+async fn run_job_guarded<F, Fut>(dispatch: Arc<F>, job_id: String, compute_next: bool) -> bool
 where
     F: Fn(String) -> Fut + Send + Sync + 'static,
     Fut: std::future::Future<Output = Result<String, String>> + Send + 'static,
 {
     if !try_acquire_job(&job_id) {
         log::warn!("[scheduler] job {job_id} already running, skipping this tick");
-        return;
+        return false;
     }
     let _guard = JobGuard(job_id.clone());
     let fut = (dispatch)(job_id.clone());
     run_dispatch_with_panic_catch(&job_id, fut, compute_next).await;
+    true
 }
 
 /// Start the scheduler loop and dedicated timers. Call once from lib.rs setup.
@@ -283,9 +290,17 @@ where
             // Sequential execution: shared LLM + Tushare quotas would burst
             // under parallel fan-out. Per-job mutex + panic catch isolate failures.
             for job_id in to_fire {
-                run_job_guarded(dispatch.clone(), job_id.clone(), true).await;
+                let ran = run_job_guarded(dispatch.clone(), job_id.clone(), true).await;
 
-                // Update last_run/next_run in the local jobs vec for next_run computation
+                // Only advance last_run/next_run when this tick actually executed.
+                // If another caller (manual trigger / dedicated loop / still-running
+                // previous tick) held the slot, leave next_run alone so this fire
+                // gets retried on the next tick — otherwise a contended fire is
+                // silently lost and the UI shows a fake "just ran" status.
+                if !ran {
+                    continue;
+                }
+
                 let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
                 if let Some(j) = jobs.iter_mut().find(|j| j.id == job_id) {
                     j.last_run = Some(now);
