@@ -614,6 +614,18 @@ pub(crate) fn build_cli_risk_r1_prompt(
         cli_additions.push_str(user_profile_context);
     }
 
+    // Research mode 风控职责调整:跳过现金/集中度,只评标的自身风险
+    if mode == crate::invest::committee::orchestrator::Mode::Research {
+        cli_additions.push_str(
+            "\n\n【研究模式 — 风控职责调整】\n\
+             本标的为研究观察,非实际持仓。请:\n\
+             - 忽略现金/子弹充足度,不因无现金而提高风险信号\n\
+             - 忽略组合集中度(标的不在组合内)\n\
+             - 成本对比基于关注价(非真实买入均价),浮盈浮亏表示\u{201C}关注以来涨跌\u{201D}\n\
+             - 只评估标的自身风险(估值/财务/流动性/利空)",
+        );
+    }
+
     format!("{}{}{}", stripped, cli_additions, length_constraint_suffix(role))
 }
 
@@ -653,6 +665,7 @@ pub fn build_cli_cio_prompt(
     strategy_context: &str,
     user_profile_context: &str,
     portfolio_summary: &str,
+    mode: crate::invest::committee::orchestrator::Mode,
 ) -> String {
     use crate::invest::committee::roles::{length_constraint_suffix, load_prompt_for_round, CommitteeRole};
 
@@ -704,6 +717,18 @@ pub fn build_cli_cio_prompt(
     if !hit_rates.is_empty() {
         cli_additions.push_str("\n\n");
         cli_additions.push_str(&hit_rates);
+    }
+
+    // Research mode 裁决语义重定义:BUY/HOLD/SELL = 标的吸引力,而非持仓动作
+    if mode == crate::invest::committee::orchestrator::Mode::Research {
+        cli_additions.push_str(
+            "\n\n【研究模式 — 裁决语义重定义】\n\
+             本标的为研究观察,非持仓评估。裁决语义改为\u{201C}标的吸引力\u{201D}:\n\
+             - BUY/ACCUMULATE = 值得买入 / 可分批建仓\n\
+             - HOLD = 观望\n\
+             - TRIM/SELL = 规避 / 看空\n\
+             忽略现金充足度与组合集中度,基于标的自身基本面/技术面/催化剂判断吸引力。",
+        );
     }
 
     format!("{}{}{}", stripped, cli_additions, length_constraint_suffix(role))

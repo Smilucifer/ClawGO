@@ -1589,7 +1589,7 @@ async fn run_role_phase(
             let portfolio_ctx = build_portfolio_summary(portfolio_data);
             super::cli_executor::build_cli_cio_prompt(
                 &asset_name, symbol, asset_context, round_outputs,
-                &strategy_ctx, &profile_ctx, &portfolio_ctx,
+                &strategy_ctx, &profile_ctx, &portfolio_ctx, mode,
             )
         }
         _ => {
