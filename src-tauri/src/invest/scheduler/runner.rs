@@ -189,24 +189,22 @@ where
 /// protection. If the slot is already held (manual trigger or a still-running
 /// previous tick), this tick is skipped with a warn log — never blocked.
 ///
-/// Returns `true` iff this caller actually executed the dispatch (success,
-/// error, or panic), and `false` iff it was skipped because another caller
-/// already held the slot. The caller should only advance `last_run` /
-/// `next_run` when this returns `true`; otherwise a contended cron tick gets
-/// silently rolled forward and the fire is permanently lost.
-async fn run_job_guarded<F, Fut>(dispatch: Arc<F>, job_id: String, compute_next: bool) -> bool
+/// When this caller wins the slot, `execute_and_log` -> `persist_job_status`
+/// is the single authority that advances `last_run` / `next_run`. When the
+/// slot is contended, no status is written, so the cron tick naturally
+/// re-fires next minute (a contended fire is not silently rolled forward).
+async fn run_job_guarded<F, Fut>(dispatch: Arc<F>, job_id: String, compute_next: bool)
 where
     F: Fn(String) -> Fut + Send + Sync + 'static,
     Fut: std::future::Future<Output = Result<String, String>> + Send + 'static,
 {
     if !try_acquire_job(&job_id) {
         log::warn!("[scheduler] job {job_id} already running, skipping this tick");
-        return false;
+        return;
     }
     let _guard = JobGuard(job_id.clone());
     let fut = (dispatch)(job_id.clone());
     run_dispatch_with_panic_catch(&job_id, fut, compute_next).await;
-    true
 }
 
 /// Start the scheduler loop and dedicated timers. Call once from lib.rs setup.
@@ -290,25 +288,12 @@ where
             // Sequential execution: shared LLM + Tushare quotas would burst
             // under parallel fan-out. Per-job mutex + panic catch isolate failures.
             for job_id in to_fire {
-                let ran = run_job_guarded(dispatch.clone(), job_id.clone(), true).await;
-
-                // Only advance last_run/next_run when this tick actually executed.
-                // If another caller (manual trigger / dedicated loop / still-running
-                // previous tick) held the slot, leave next_run alone so this fire
-                // gets retried on the next tick — otherwise a contended fire is
-                // silently lost and the UI shows a fake "just ran" status.
-                if !ran {
-                    continue;
-                }
-
-                let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
-                if let Some(j) = jobs.iter_mut().find(|j| j.id == job_id) {
-                    j.last_run = Some(now);
-                    j.next_run = config::compute_next_run_for_job(j);
-                    if let Err(e) = config::save_jobs(&jobs) {
-                        log::error!("Failed to save job state: {e}");
-                    }
-                }
+                // persist_job_status (via run_job_guarded -> execute_and_log) is the
+                // single authority for advancing last_run/next_run. Don't write them
+                // again here from the stale tick-top `jobs` snapshot — doing so would
+                // clobber last_run updates that dedicated loops (jin10/event_analyzer)
+                // persisted while this tick's dispatch was running.
+                run_job_guarded(dispatch.clone(), job_id.clone(), true).await;
             }
 
             tokio::select! {
