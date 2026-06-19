@@ -1,3 +1,4 @@
+use super::orchestrator::Mode;
 use super::parser::ParsedFields;
 use super::roles::CommitteeRole;
 use serde::{Deserialize, Serialize};
@@ -134,6 +135,7 @@ pub fn cio_sanity_check(
     round_outputs: &[RoundOutput],
     macro_signal: &str,
     macro_strength: Option<f64>,
+    mode: Mode,
 ) -> SanityCheckResult {
     let mut result = SanityCheckResult {
         gate1_pass: true,
@@ -155,6 +157,9 @@ pub fn cio_sanity_check(
     if (macro_is_bullish && cio_is_bearish) || (macro_is_risk_off && cio_is_bullish) {
         result.gate1_pass = false;
         result.final_verdict = "HOLD".to_string();
+        // 被否决的 HOLD 是低信念观望，压低 confidence 与 Fallback 口径一致，
+        // 避免“HOLD 配 0.7”污染 verdict_reviews 命中率统计。
+        result.final_confidence = result.final_confidence.min(0.4);
         result
             .notes
             .push("G1: 宏观信号与CIO裁决不一致，降级为HOLD".to_string());
@@ -183,7 +188,8 @@ pub fn cio_sanity_check(
         .and_then(|o| o.parsed.pnl_pct)
         .map_or(false, |pnl| pnl <= -15.0);
 
-    if macro_guard && quant_guard && loss_guard {
+    // research 模式无真实持仓，loss_guard 无意义，跳过 Gate2
+    if mode != Mode::Research && macro_guard && quant_guard && loss_guard {
         result.gate2_pass = false;
         result.final_verdict = "SELL".to_string();
         result.final_confidence = 0.2;
@@ -207,7 +213,107 @@ pub fn cio_sanity_check(
             .push("工作节点不可用或输出异常，降级为HOLD".to_string());
     }
 
+    // ── 高信念主动裁决通道 ──────────────────────────────────────────────
+    // 纠正"信息不足即躺平"。仅在以下全部满足时把 HOLD 升级为方向性裁决：
+    //   - 无任何角色 fallback/不可用(数据缺失绝不伪造信念)
+    //   - Gate1 & Gate2 都过(未被宏观矛盾/三重恶化否决)
+    //   - 当前是 HOLD(只兜底躺平，不翻已有方向)
+    //   - Quant 与 Macro 同向且强度都 ≥ 6
+    //   - Risk 信号 != high_risk
+    if !has_unavailable
+        && result.gate1_pass
+        && result.gate2_pass
+        && result.final_verdict == "HOLD"
+    {
+        let quant = round_outputs
+            .iter()
+            .filter(|o| o.role == CommitteeRole::Quant)
+            .last();
+        let quant_signal = quant.and_then(|o| o.parsed.signal.clone());
+        let quant_strength = quant.and_then(|o| o.parsed.strength).unwrap_or(0.0);
+
+        let risk_signal = round_outputs
+            .iter()
+            .filter(|o| o.role == CommitteeRole::Risk)
+            .last()
+            .and_then(|o| o.parsed.signal.clone());
+        let risk_ok = risk_signal.as_deref() != Some("high_risk");
+
+        // macro 方向:risk_on=看多, risk_off=看空
+        let macro_bull = macro_signal == "risk_on";
+        let macro_bear = macro_signal == "risk_off";
+        let macro_strong = macro_strength.map_or(false, |s| s >= 6.0);
+
+        // quant 方向
+        let quant_bull = quant_signal.as_deref() == Some("bullish");
+        let quant_bear = quant_signal.as_deref() == Some("bearish");
+        let quant_strong = quant_strength >= 6.0;
+
+        if risk_ok && macro_strong && quant_strong {
+            let upgraded = if macro_bull && quant_bull {
+                Some("ACCUMULATE")
+            } else if macro_bear && quant_bear {
+                Some("TRIM")
+            } else {
+                None
+            };
+            if let Some(v) = upgraded {
+                result.final_verdict = v.to_string();
+                // 设下限 0.65,避免"方向/0.3"自相矛盾,又刻意 ≤0.95 避开 hard rule A
+                result.final_confidence = result.final_confidence.max(0.65);
+                result
+                    .notes
+                    .push("[HIGH_CONVICTION] Quant与Macro同向强信号，HOLD升级为方向性裁决".to_string());
+            }
+        }
+    }
+
     result
+}
+
+// ---------------------------------------------------------------------------
+// Hard rule A/B clamp (CIO_PROMPT 承诺的"系统自动降级/clamp")
+// ---------------------------------------------------------------------------
+
+/// Hard rule A/B clamp 结果。
+pub struct HardClamp {
+    pub verdict: String,
+    pub alloc_cny: Option<f64>,
+    pub first_tranche_cny: Option<f64>,
+}
+
+/// 应用两条 hard rule(对应 CIO_PROMPT 承诺):
+/// - rule A: confidence >= 0.95 且 verdict==BUY → 降级 ACCUMULATE。
+/// - rule B: |alloc| > 100000 → clamp 到 ±100000;first_tranche 同步 clamp 到 [-cap, cap]。
+pub fn apply_hard_rules(
+    verdict: &str,
+    confidence: f64,
+    alloc_cny: Option<f64>,
+    first_tranche_cny: Option<f64>,
+) -> HardClamp {
+    // rule A
+    let verdict = if confidence >= 0.95 && verdict == "BUY" {
+        "ACCUMULATE".to_string()
+    } else {
+        verdict.to_string()
+    };
+
+    // rule B
+    let alloc_cny = alloc_cny.map(|a| a.clamp(-100_000.0, 100_000.0));
+    let first_tranche_cny = match (first_tranche_cny, alloc_cny) {
+        (Some(ft), Some(a)) => {
+            let cap = a.abs();
+            // first_tranche 绝对值不超过 clamp 后 alloc 的绝对值(cap);符号保持原值
+            Some(ft.clamp(-cap, cap))
+        }
+        (ft, _) => ft,
+    };
+
+    HardClamp {
+        verdict,
+        alloc_cny,
+        first_tranche_cny,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -336,9 +442,36 @@ mod tests {
             ..Default::default()
         };
         let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_off", None);
+        let result = cio_sanity_check(&cio, &outputs, "risk_off", None, Mode::Holding);
         assert!(!result.gate1_pass);
         assert_eq!(result.final_verdict, "HOLD");
+    }
+
+    #[test]
+    fn test_sanity_gate1_lowers_confidence() {
+        // CIO 高信念看多(0.8)，但 macro=risk_off → Gate1 降级 HOLD 并压低 confidence
+        let cio = ParsedFields {
+            verdict: Some("BUY".to_string()),
+            confidence: Some(0.8),
+            ..Default::default()
+        };
+        let outputs = vec![];
+        let result = cio_sanity_check(&cio, &outputs, "risk_off", None, Mode::Holding);
+        assert!(!result.gate1_pass);
+        assert_eq!(result.final_verdict, "HOLD");
+        assert_eq!(result.final_confidence, 0.4); // min(0.8, 0.4)
+    }
+
+    #[test]
+    fn test_sanity_gate1_keeps_lower_confidence() {
+        // 原 confidence 已低于 0.4 时,保持原值(min 语义)
+        let cio = ParsedFields {
+            verdict: Some("BUY".to_string()),
+            confidence: Some(0.3),
+            ..Default::default()
+        };
+        let result = cio_sanity_check(&cio, &[], "risk_off", None, Mode::Holding);
+        assert_eq!(result.final_confidence, 0.3); // min(0.3, 0.4)
     }
 
     #[test]
@@ -369,7 +502,7 @@ mod tests {
             confidence: Some(0.5),
             ..Default::default()
         };
-        let result = cio_sanity_check(&cio, &outputs, "risk_off", Some(8.0));
+        let result = cio_sanity_check(&cio, &outputs, "risk_off", Some(8.0), Mode::Holding);
         assert!(!result.gate2_pass);
         assert_eq!(result.final_verdict, "SELL");
         assert_eq!(result.final_confidence, 0.2);
@@ -398,7 +531,7 @@ mod tests {
             confidence: Some(0.5),
             ..Default::default()
         };
-        let result = cio_sanity_check(&cio, &outputs, "risk_off", Some(5.0));
+        let result = cio_sanity_check(&cio, &outputs, "risk_off", Some(5.0), Mode::Holding);
         assert!(result.gate2_pass);
     }
 
@@ -419,7 +552,7 @@ mod tests {
             latency_ms: 0,
             tokens_used: 0,
         }];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", None);
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", None, Mode::Holding);
         assert_eq!(result.final_verdict, "HOLD");
         assert!(result.final_confidence <= 0.4);
     }
@@ -442,7 +575,7 @@ mod tests {
             latency_ms: 0,
             tokens_used: 0,
         }];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", None);
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", None, Mode::Holding);
         assert_eq!(result.final_verdict, "HOLD");
         assert!(result.final_confidence <= 0.4);
     }
@@ -455,9 +588,119 @@ mod tests {
             ..Default::default()
         };
         let outputs = vec![];
-        let result = cio_sanity_check(&cio, &outputs, "risk_on", None);
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", None, Mode::Holding);
         assert!(result.gate1_pass);
         assert!(result.gate2_pass);
         assert_eq!(result.final_verdict, "ACCUMULATE");
+    }
+
+    // ---- Hard rule A/B clamp ----
+
+    #[test]
+    fn test_hard_rule_a_downgrades_high_conf_buy() {
+        let r = apply_hard_rules("BUY", 0.97, Some(50_000.0), Some(20_000.0));
+        assert_eq!(r.verdict, "ACCUMULATE");
+    }
+
+    #[test]
+    fn test_hard_rule_a_not_triggered_below_threshold() {
+        // 高信念通道升级用 0.65，刻意不触发 rule A
+        let r = apply_hard_rules("BUY", 0.65, None, None);
+        assert_eq!(r.verdict, "BUY");
+    }
+
+    #[test]
+    fn test_hard_rule_b_clamps_alloc_and_first_tranche() {
+        let r = apply_hard_rules("BUY", 0.7, Some(150_000.0), Some(160_000.0));
+        assert_eq!(r.alloc_cny, Some(100_000.0));
+        assert_eq!(r.first_tranche_cny, Some(100_000.0)); // 同步 clamp 到 cap
+    }
+
+    #[test]
+    fn test_hard_rule_b_preserves_within_limit() {
+        let r = apply_hard_rules("ACCUMULATE", 0.6, Some(80_000.0), Some(30_000.0));
+        assert_eq!(r.alloc_cny, Some(80_000.0));
+        assert_eq!(r.first_tranche_cny, Some(30_000.0));
+    }
+
+    // ---- High-conviction upgrade channel ----
+
+    // 构造高信念升级所需的 round_outputs：Quant bullish≥6 + Macro risk_on≥6 + Risk ok
+    fn high_conviction_outputs(quant_signal: &str, quant_str: f64, risk_signal: &str) -> Vec<RoundOutput> {
+        let mut q = ParsedFields::default();
+        q.signal = Some(quant_signal.to_string());
+        q.strength = Some(quant_str);
+        q.raw_text = "quant".to_string();
+        let mut r = ParsedFields::default();
+        r.signal = Some(risk_signal.to_string());
+        r.raw_text = "risk".to_string();
+        vec![
+            RoundOutput { role: CommitteeRole::Quant, round: 1, parsed: q, latency_ms: 0, tokens_used: 0 },
+            RoundOutput { role: CommitteeRole::Risk, round: 1, parsed: r, latency_ms: 0, tokens_used: 0 },
+        ]
+    }
+
+    #[test]
+    fn test_high_conviction_upgrades_hold() {
+        // HOLD + Quant bullish 7 + Macro risk_on 7 + Risk ok → 升级到 BUY/ACCUMULATE，conf≥0.65
+        let cio = ParsedFields { verdict: Some("HOLD".to_string()), confidence: Some(0.35), ..Default::default() };
+        let outputs = high_conviction_outputs("bullish", 7.0, "ok");
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", Some(7.0), Mode::Holding);
+        assert!(matches!(result.final_verdict.as_str(), "BUY" | "ACCUMULATE"));
+        assert!(result.final_confidence >= 0.65);
+        assert!(result.notes.iter().any(|n| n.contains("HIGH_CONVICTION")));
+    }
+
+    #[test]
+    fn test_high_conviction_skipped_when_risk_high() {
+        // Risk=high_risk → 不升级
+        let cio = ParsedFields { verdict: Some("HOLD".to_string()), confidence: Some(0.35), ..Default::default() };
+        let outputs = high_conviction_outputs("bullish", 7.0, "high_risk");
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", Some(7.0), Mode::Holding);
+        assert_eq!(result.final_verdict, "HOLD");
+    }
+
+    #[test]
+    fn test_high_conviction_skipped_when_strength_low() {
+        // Quant strength=5 (<6) → 不升级
+        let cio = ParsedFields { verdict: Some("HOLD".to_string()), confidence: Some(0.35), ..Default::default() };
+        let outputs = high_conviction_outputs("bullish", 5.0, "ok");
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", Some(7.0), Mode::Holding);
+        assert_eq!(result.final_verdict, "HOLD");
+    }
+
+    #[test]
+    fn test_high_conviction_skipped_on_fallback() {
+        // 有 fallback → Fallback 先把 verdict 压成 HOLD/≤0.4，高信念不得翻案
+        let cio = ParsedFields { verdict: Some("HOLD".to_string()), confidence: Some(0.35), ..Default::default() };
+        let mut outputs = high_conviction_outputs("bullish", 7.0, "ok");
+        outputs[0].parsed.fallback_reason = Some("missing_critical_fields".to_string());
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", Some(7.0), Mode::Holding);
+        assert_eq!(result.final_verdict, "HOLD");
+    }
+
+    #[test]
+    fn test_gate2_skipped_in_research_mode() {
+        // 即使三重恶化条件全满足,research 模式也不触发 Gate2 强制 SELL
+        let mut macro_parsed = ParsedFields::default();
+        macro_parsed.signal = Some("risk_off".to_string());
+        macro_parsed.strength = Some(8.0);
+        macro_parsed.raw_text = "macro".to_string();
+        let mut quant_parsed = ParsedFields::default();
+        quant_parsed.signal = Some("bearish".to_string());
+        quant_parsed.strength = Some(7.0);
+        quant_parsed.raw_text = "quant".to_string();
+        let mut risk_parsed = ParsedFields::default();
+        risk_parsed.pnl_pct = Some(-20.0);
+        risk_parsed.raw_text = "risk".to_string();
+        let outputs = vec![
+            RoundOutput { role: CommitteeRole::Macro, round: 1, parsed: macro_parsed, latency_ms: 0, tokens_used: 0 },
+            RoundOutput { role: CommitteeRole::Quant, round: 1, parsed: quant_parsed, latency_ms: 0, tokens_used: 0 },
+            RoundOutput { role: CommitteeRole::Risk, round: 1, parsed: risk_parsed, latency_ms: 0, tokens_used: 0 },
+        ];
+        let cio = ParsedFields { verdict: Some("HOLD".to_string()), confidence: Some(0.5), ..Default::default() };
+        let result = cio_sanity_check(&cio, &outputs, "risk_off", Some(8.0), Mode::Research);
+        assert!(result.gate2_pass); // research 模式 Gate2 不触发
+        assert_ne!(result.final_verdict, "SELL");
     }
 }

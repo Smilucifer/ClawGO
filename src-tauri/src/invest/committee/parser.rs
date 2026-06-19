@@ -56,18 +56,16 @@ pub struct ParsedFields {
     pub money_flow: Option<String>,
     /// 买点评估: "低吸" | "突破" | "回踩" | "追高" | "不可交易"
     pub buy_point_assessment: Option<String>,
+    /// Quant R1: 进场价(结构化点位,供复盘)
+    pub entry_price: Option<f64>,
+    /// Quant R1: 目标价(结构化点位,供复盘)
+    pub target_price: Option<f64>,
     /// 估值评估原始文本
     pub valuation_assessment: Option<String>,
 
     // -- Risk-specific (new fields) --
-    /// L4 否决: true=卫语句触发
-    pub l4_veto: Option<bool>,
-    /// 否决原因
-    pub l4_veto_reason: Option<String>,
     /// 标的风险综合
     pub stock_risk_summary: Option<String>,
-    /// Risk R2: L4 否决复检结果
-    pub l4_veto_r2: Option<bool>,
 
     // -- CIO-specific --
     /// CIO: BUY / ACCUMULATE / HOLD / TRIM / SELL
@@ -90,18 +88,12 @@ pub struct ParsedFields {
     pub first_tranche_cny: Option<f64>,
     /// CIO: risk plan
     pub risk_plan: Option<String>,
+    /// CIO: 止损价(结构化数字,与自由文本 adjusted_stop_loss 并存)
+    pub stop_loss_price: Option<f64>,
     /// 催化剂层级: "Tier1" | "Tier2" | "Tier3" | "无"
     pub catalyst_tier: Option<String>,
     /// 一句话催化剂摘要
     pub catalyst_summary: Option<String>,
-    /// CIO 检查: 止损明确
-    pub l4_check_stop_loss: Option<bool>,
-    /// CIO 检查: 仓位合理
-    pub l4_check_position: Option<bool>,
-    /// CIO 检查: 买点合理
-    pub l4_check_buy_point: Option<bool>,
-    /// 执行检查通过数 (0-3)，Rust 端计算
-    pub l4_execution_checks_passed: Option<f64>,
     /// 是否 Tier1 催化剂
     pub is_tier1: Option<bool>,
     /// Tier1 观察时长（小时）
@@ -438,6 +430,8 @@ fn parse_quant(text: &str, parsed: &mut ParsedFields) {
     // 买点评估: "低吸" | "突破" | "回踩" | "追高" | "不可交易"
     parsed.buy_point_assessment =
         extract_field_any(text, &["BUY_POINT_ASSESSMENT", "买点评估"]);
+    parsed.entry_price = extract_f64_any(text, &["进场价", "ENTRY_PRICE"]);
+    parsed.target_price = extract_f64_any(text, &["目标价", "TARGET_PRICE"]);
     // 估值评估原始文本
     parsed.valuation_assessment =
         extract_field_any(text, &["VALUATION_ASSESSMENT", "估值评估"]);
@@ -461,18 +455,12 @@ fn parse_risk(text: &str, parsed: &mut ParsedFields) {
     parsed.one_liner = extract_field_any(text, &["ONE_LINER", "一句话"]);
     parsed.concentration_pct = extract_f64_any(text, &["CONCENTRATION_PCT", "集中度"]);
     parsed.dry_powder_cny = extract_f64_any(text, &["DRY_POWDER_CNY", "可用子弹"]);
-    // L4 否决: true=卫语句触发
-    parsed.l4_veto = extract_bool_any(text, &["L4否决", "L4_VETO"]);
-    // 否决原因
-    parsed.l4_veto_reason = extract_field_any(text, &["否决原因", "L4_VETO_REASON"]);
     // 标的风险综合
     parsed.stock_risk_summary = extract_field_any(text, &["标的风险", "STOCK_RISK"]);
     // R2 fields — R2 overrides R1 where applicable
     apply_r2_signal_override(parsed, text);
     parsed.adjusted_stop_loss = extract_field_any(text, &["ADJUSTED_STOP_LOSS", "调整止损"]);
     parsed.reasoning = extract_field_any(text, &["REASONING", "推理"]);
-    // R2: L4 否决复检结果
-    parsed.l4_veto_r2 = extract_bool_any(text, &["L4否决复检", "L4_VETO_R2"]);
     // CONCENTRATION_PCT and DRY_POWDER_CNY may also appear in R2
 }
 
@@ -506,30 +494,15 @@ fn parse_cio(text: &str, parsed: &mut ParsedFields) {
     parsed.execution_mode = extract_field_any(text, &["EXECUTION_MODE", "执行模式"]);
     parsed.first_tranche_cny = extract_f64_any(text, &["FIRST_TRANCHE_CNY", "首笔金额"]);
     parsed.risk_plan = extract_field_any(text, &["RISK_PLAN", "风控计划"]);
+    parsed.stop_loss_price = extract_f64_any(text, &["止损价", "STOP_LOSS_PRICE"]);
     // 催化剂层级: "Tier1" | "Tier2" | "Tier3" | "无"
     parsed.catalyst_tier = extract_field_any(text, &["CATALYST_TIER", "催化剂层级"]);
     // 一句话催化剂摘要
     parsed.catalyst_summary = extract_field_any(text, &["CATALYST_SUMMARY", "催化剂摘要"]);
-    // L4 检查: 止损明确
-    parsed.l4_check_stop_loss =
-        extract_bool_any(text, &["STOP_LOSS_CLEAR", "止损明确"]);
-    // L4 检查: 仓位合理
-    parsed.l4_check_position = extract_bool_any(text, &["POSITION_OK", "仓位合理"]);
-    // L4 检查: 买点合理
-    parsed.l4_check_buy_point =
-        extract_bool_any(text, &["BUY_POINT_OK", "买点合理"]);
     // 是否 Tier1 催化剂
     parsed.is_tier1 = extract_bool_any(text, &["IS_TIER1"]);
     // Tier1 观察时长（小时）
     parsed.tier1_watch_hours = extract_f64_any(text, &["TIER1_WATCH_HOURS"]);
-    // 执行检查通过数 (0-3)，Rust 端计算
-    let checks = [
-        parsed.l4_check_stop_loss.unwrap_or(false),
-        parsed.l4_check_position.unwrap_or(false),
-        parsed.l4_check_buy_point.unwrap_or(false),
-    ];
-    let passed = checks.iter().filter(|&&b| b).count() as f64;
-    parsed.l4_execution_checks_passed = Some(passed);
 }
 
 // ---------------------------------------------------------------------------
@@ -567,6 +540,30 @@ mod tests {
             Some(&["沪深300 PE=13.5".to_string(), "北向资金净流入120亿".to_string()][..])
         );
         assert_eq!(parsed.one_liner.as_deref(), Some("技术面偏多"));
+    }
+
+    #[test]
+    fn test_parse_quant_r1_prices() {
+        let text = "SIGNAL: risk_on\nSTRENGTH: 7\n进场价: 12.50\n目标价: 15.80\nONE_LINER: 技术面偏多";
+        let parsed = parse_role_output(CommitteeRole::Quant, text, false);
+        assert_eq!(parsed.entry_price, Some(12.50));
+        assert_eq!(parsed.target_price, Some(15.80));
+    }
+
+    #[test]
+    fn test_parse_cio_stop_loss_price() {
+        let text = "VERDICT: BUY\nCONFIDENCE: 0.7\n止损价: 11.20\n止损条件: 跌破20日线";
+        let parsed = parse_role_output(CommitteeRole::Cio, text, false);
+        assert_eq!(parsed.stop_loss_price, Some(11.20));
+    }
+
+    #[test]
+    fn test_parse_prices_absent_is_none() {
+        let text = "SIGNAL: risk_on\nSTRENGTH: 7";
+        let parsed = parse_role_output(CommitteeRole::Quant, text, false);
+        assert_eq!(parsed.entry_price, None);
+        assert_eq!(parsed.target_price, None);
+        assert_eq!(parsed.stop_loss_price, None);
     }
 
     #[test]
@@ -786,46 +783,26 @@ mod tests {
 
     #[test]
     fn test_parse_risk_new_fields() {
-        let text = "SIGNAL: ok\nSTRENGTH: 5\nL4否决: true\n否决原因: 集中度过高\n情绪状态: warning\n标的风险: 短期波动加剧";
+        let text = "SIGNAL: ok\nSTRENGTH: 5\n情绪状态: warning\n标的风险: 短期波动加剧";
         let parsed = parse_role_output(CommitteeRole::Risk, text, false);
-        assert_eq!(parsed.l4_veto, Some(true));
-        assert_eq!(parsed.l4_veto_reason.as_deref(), Some("集中度过高"));
         assert_eq!(parsed.stock_risk_summary.as_deref(), Some("短期波动加剧"));
     }
 
     #[test]
     fn test_parse_risk_r2_new_fields() {
-        let text = "ADJUSTED_SIGNAL: concerned\nADJUSTED_STOP_LOSS: 0.90\nL4否决复检: true\nREASONING: 确认否决";
+        let text = "ADJUSTED_SIGNAL: concerned\nADJUSTED_STOP_LOSS: 0.90\nREASONING: 确认否决";
         let parsed = parse_role_output(CommitteeRole::Risk, text, false);
-        assert_eq!(parsed.l4_veto_r2, Some(true));
+        assert_eq!(parsed.adjusted_stop_loss.as_deref(), Some("0.90"));
     }
 
     #[test]
     fn test_parse_cio_new_fields() {
-        let text = "VERDICT: ACCUMULATE\nCONFIDENCE: 0.75\nCATALYST_TIER: Tier1\nCATALYST_SUMMARY: 政策利好\nSTOP_LOSS_CLEAR: true\nPOSITION_OK: true\nBUY_POINT_OK: false\nIS_TIER1: true\nTIER1_WATCH_HOURS: 48";
+        let text = "VERDICT: ACCUMULATE\nCONFIDENCE: 0.75\nCATALYST_TIER: Tier1\nCATALYST_SUMMARY: 政策利好\nIS_TIER1: true\nTIER1_WATCH_HOURS: 48";
         let parsed = parse_role_output(CommitteeRole::Cio, text, false);
         assert_eq!(parsed.catalyst_tier.as_deref(), Some("Tier1"));
         assert_eq!(parsed.catalyst_summary.as_deref(), Some("政策利好"));
-        assert_eq!(parsed.l4_check_stop_loss, Some(true));
-        assert_eq!(parsed.l4_check_position, Some(true));
-        assert_eq!(parsed.l4_check_buy_point, Some(false));
-        assert_eq!(parsed.l4_execution_checks_passed, Some(2.0));
         assert_eq!(parsed.is_tier1, Some(true));
         assert_eq!(parsed.tier1_watch_hours, Some(48.0));
-    }
-
-    #[test]
-    fn test_cio_execution_checks_all_pass() {
-        let text = "VERDICT: BUY\nCONFIDENCE: 0.9\nSTOP_LOSS_CLEAR: yes\nPOSITION_OK: yes\nBUY_POINT_OK: yes";
-        let parsed = parse_role_output(CommitteeRole::Cio, text, false);
-        assert_eq!(parsed.l4_execution_checks_passed, Some(3.0));
-    }
-
-    #[test]
-    fn test_cio_execution_checks_none_pass() {
-        let text = "VERDICT: HOLD\nCONFIDENCE: 0.3\nSTOP_LOSS_CLEAR: no\nPOSITION_OK: no\nBUY_POINT_OK: no";
-        let parsed = parse_role_output(CommitteeRole::Cio, text, false);
-        assert_eq!(parsed.l4_execution_checks_passed, Some(0.0));
     }
 
     // ── Task 1: Flexible format variant tests ──────────────────────────

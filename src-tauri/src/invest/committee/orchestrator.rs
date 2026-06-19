@@ -76,6 +76,17 @@ fn check_cancellation(
 // Configuration
 // ---------------------------------------------------------------------------
 
+/// 分析模式:持仓评估(默认)vs 研究观察。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode {
+    /// 持仓模式:考虑现金/集中度/真实成本(现状行为)。
+    #[default]
+    Holding,
+    /// 研究模式:忽略现金/集中度,成本用关注价,裁决语义=标的吸引力。
+    Research,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitteeConfig {
     /// Number of debate rounds (default 2 = Quant/R1+R2 + Risk/R1+R2).
@@ -540,24 +551,63 @@ pub(crate) fn build_risk_metrics_context(
     portfolio_data: &PortfolioData,
     symbol: &str,
     asset_context: &AssetContext,
+    mode: Mode,
 ) -> String {
-    let holding = portfolio_data.holdings.iter().find(|h| h.symbol == symbol);
+    use crate::storage::invest::portfolio::HoldingKind;
+    // 持仓模式优先取真实持仓(Hold);研究模式取关注记录(Watch)的关注价当成本。
+    let holding = match mode {
+        Mode::Research => portfolio_data
+            .holdings
+            .iter()
+            .find(|h| h.symbol == symbol && h.kind == HoldingKind::Watch)
+            .or_else(|| portfolio_data.holdings.iter().find(|h| h.symbol == symbol)),
+        Mode::Holding => portfolio_data
+            .holdings
+            .iter()
+            .find(|h| h.symbol == symbol && h.kind == HoldingKind::Hold)
+            .or_else(|| portfolio_data.holdings.iter().find(|h| h.symbol == symbol)),
+    };
 
     let concentration_pct = concentration_for_symbol(symbol, portfolio_data);
 
-    let (pnl_pct, current_price, avg_cost, shares) = holding
-        .and_then(|h| {
-            let shares = h.shares?;
-            let avg_cost = h.avg_cost?;
-            if shares > 0.0 && avg_cost > 0.0 {
-                let current_price = h.notional / shares;
-                let pnl = (current_price - avg_cost) / avg_cost * 100.0;
-                Some((pnl, current_price, avg_cost, shares))
+    let (pnl_pct, current_price, avg_cost, shares) = match mode {
+        Mode::Research => {
+            // 研究模式:成本=关注价(avg_cost),涨跌相对关注价。无 shares 也算。
+            let avg_cost = holding.and_then(|h| h.avg_cost).unwrap_or(0.0);
+            let current_price = asset_context
+                .latest_close
+                .or_else(|| {
+                    holding.and_then(|h| {
+                        let s = h.shares?;
+                        if s > 0.0 {
+                            Some(h.notional / s)
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .unwrap_or(0.0);
+            let pnl = if avg_cost > 0.0 {
+                (current_price - avg_cost) / avg_cost * 100.0
             } else {
-                None
-            }
-        })
-        .unwrap_or((0.0, 0.0, 0.0, 0.0));
+                0.0 // 无关注价 → 退化为 N/A 纯标的判断
+            };
+            (pnl, current_price, avg_cost, 0.0)
+        }
+        Mode::Holding => holding
+            .and_then(|h| {
+                let shares = h.shares?;
+                let avg_cost = h.avg_cost?;
+                if shares > 0.0 && avg_cost > 0.0 {
+                    let current_price = h.notional / shares;
+                    let pnl = (current_price - avg_cost) / avg_cost * 100.0;
+                    Some((pnl, current_price, avg_cost, shares))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or((0.0, 0.0, 0.0, 0.0)),
+    };
 
     // 最大回撤（假设价格跌 20%）
     let max_dd = crate::storage::invest::portfolio::max_drawdown_for_symbol(
@@ -1480,7 +1530,9 @@ async fn run_role_phase(
     _emitter: &Option<EventEmitter>,
     portfolio_data: &PortfolioData,
     asset_context: &AssetContext,
+    mode: Mode,
 ) -> Result<RoundOutput, String> {
+    // mode 由 Task 11 起用于 Risk R1 prompt 透传(成本来源切换 + Gate2 语义)。
     let cli = match super::cli_executor::CliCommitteeExecutor::global() {
         Some(c) => c,
         None => {
@@ -1520,7 +1572,7 @@ async fn run_role_phase(
             let company_news = super::cli_executor::fetch_company_news_for_prompt(symbol).await;
             super::cli_executor::build_cli_risk_r1_prompt(
                 &asset_name, symbol, asset_context, portfolio_data,
-                &strategy_ctx, &profile_ctx, &company_news,
+                &strategy_ctx, &profile_ctx, &company_news, mode,
             )
         }
         (CommitteeRole::Risk, _) => {
@@ -1537,7 +1589,7 @@ async fn run_role_phase(
             let portfolio_ctx = build_portfolio_summary(portfolio_data);
             super::cli_executor::build_cli_cio_prompt(
                 &asset_name, symbol, asset_context, round_outputs,
-                &strategy_ctx, &profile_ctx, &portfolio_ctx,
+                &strategy_ctx, &profile_ctx, &portfolio_ctx, mode,
             )
         }
         _ => {
@@ -1632,6 +1684,7 @@ async fn run_debate_rounds(
     portfolio_data: &PortfolioData,
     asset_context: &AssetContext,
     cancel: Option<&CancellationToken>,
+    mode: Mode,
 ) -> Result<bool, String> {
     let max_rounds = config.debate_rounds;
     let mut converged = false;
@@ -1665,6 +1718,7 @@ async fn run_debate_rounds(
                 emitter,
                 portfolio_data,
                 asset_context,
+                mode,
             )
             .await?;
             *total_tokens += output.tokens_used;
@@ -1723,6 +1777,7 @@ pub(crate) async fn run_committee(
     dry_run: bool,
     portfolio_override: Option<std::sync::Arc<PortfolioData>>,
     cancel: Option<CancellationToken>,
+    mode: Mode,
 ) -> Result<CommitteeResult, String> {
     let start = std::time::Instant::now();
 
@@ -1875,6 +1930,7 @@ pub(crate) async fn run_committee(
         &portfolio_data,
         &asset_context,
         cancel.as_ref(),
+        mode,
     )
     .await?;
 
@@ -1904,6 +1960,7 @@ pub(crate) async fn run_committee(
             &emitter,
             &portfolio_data,
             &asset_context,
+            mode,
         )
         .await?;
         total_tokens += cio_output.tokens_used;
@@ -1936,6 +1993,7 @@ pub(crate) async fn run_committee(
         &round_outputs,
         &macro_signal,
         macro_strength,
+        mode,
     );
 
     // Determine final verdict — sentinel override takes priority
@@ -1945,6 +2003,19 @@ pub(crate) async fn run_committee(
     } else {
         (sanity.final_verdict.clone(), sanity.final_confidence)
     };
+
+    // Hard rule A/B clamp(CIO_PROMPT 承诺的"系统自动降级/clamp")。
+    // 放在最终 verdict/confidence 决出之后、写库之前，兜住任何来源的高 conf BUY 与超额 alloc。
+    let clamp = crate::invest::committee::analysis::apply_hard_rules(
+        &final_verdict,
+        final_confidence,
+        cio_parsed.suggested_alloc_cny,
+        cio_parsed.first_tranche_cny,
+    );
+    let final_verdict = clamp.verdict;
+    // alloc clamp 后的值（archive_verdict 当前不持久化 alloc，此处保留供未来 result/落库使用）
+    let _clamped_alloc = clamp.alloc_cny;
+    let _first_tranche = clamp.first_tranche_cny;
 
     let total_latency_ms = start.elapsed().as_millis() as u64;
     let reasoning = cio_parsed.raw_text.clone();
@@ -2011,6 +2082,7 @@ pub async fn run_committee_batch(
     symbols: &[String],
     config: &CommitteeConfig,
     dry_run: bool,
+    modes: HashMap<String, Mode>,
 ) -> Vec<Result<CommitteeResult, String>> {
     // Pre-load portfolio once and share across all tasks to avoid redundant
     // DB reads and price-fetch API calls.
@@ -2025,9 +2097,10 @@ pub async fn run_committee_batch(
         let symbol = symbol.clone();
         let portfolio = portfolio_arc.clone();
         let sem = semaphore.clone();
+        let mode = modes.get(&symbol).copied().unwrap_or_default();
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire_owned().await.expect("semaphore closed unexpectedly");
-            run_committee(&symbol, &config, None, dry_run, Some(portfolio), None).await
+            run_committee(&symbol, &config, None, dry_run, Some(portfolio), None, mode).await
         }));
     }
 
@@ -2050,6 +2123,7 @@ pub async fn run_committee_batch_stream(
     emitter: EventEmitter,
     dry_run: bool,
     tokens: HashMap<String, CancellationToken>,
+    modes: HashMap<String, Mode>,
 ) -> Vec<Result<CommitteeResult, String>> {
     // Emit batch-start event
     emitter(CommitteeEvent::CommitteeStart {
@@ -2071,6 +2145,7 @@ pub async fn run_committee_batch_stream(
         let portfolio = portfolio_arc.clone();
         let sem = semaphore.clone();
         let token = tokens.get(&symbol).cloned();
+        let mode = modes.get(&symbol).copied().unwrap_or_default();
         handles.push((
             symbol.clone(),
             tokio::spawn(async move {
@@ -2078,7 +2153,7 @@ pub async fn run_committee_batch_stream(
                     .acquire_owned()
                     .await
                     .expect("semaphore closed unexpectedly");
-                run_committee(&symbol, &config, Some(emitter), dry_run, Some(portfolio), token).await
+                run_committee(&symbol, &config, Some(emitter), dry_run, Some(portfolio), token, mode).await
             }),
         ));
     }

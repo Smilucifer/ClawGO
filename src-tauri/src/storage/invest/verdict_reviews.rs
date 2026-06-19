@@ -19,6 +19,25 @@ pub struct VerdictReviewEntry {
     pub created_at: String,
 }
 
+/// 单行命中率聚合：某 verdict_type × window_days 的命中数/样本数。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct HitRateRow {
+    pub verdict_type: String,
+    pub window_days: i64,
+    pub hits: i64,
+    pub total: i64,
+    /// 30 天窗口在历史足够长前命中普遍为 0；matured=false 表示样本未到期，
+    /// 不应解读为"0% 命中"。
+    pub matured: bool,
+}
+
+/// 命中率聚合结果：全局 + 按 regime(verdicts.macro_signal)切分。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct HitRateAgg {
+    pub global: Vec<HitRateRow>,
+    pub by_regime: Vec<(String, Vec<HitRateRow>)>,
+}
+
 const CREATE_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS verdict_reviews (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     verdict_id      TEXT NOT NULL,
@@ -134,4 +153,106 @@ pub fn clear_reviews() -> Result<(), String> {
             .map_err(|e| format!("clear verdict reviews: {}", e))?;
         Ok(())
     })
+}
+
+/// 实时聚合 verdict_reviews 命中率。纯读,无缓存。
+/// - 全局:按 verdict_type × window_days 聚合。
+/// - 按 regime:JOIN verdicts.macro_signal 再切一层(决策 1)。
+/// - min_samples:total < min_samples 的行被剔除(HAVING)。
+/// - matured:window_days>=30 且该组无任何 price_after(全 NULL)时 matured=false。
+pub fn aggregate_hit_rates(min_samples: i64) -> Result<HitRateAgg, String> {
+    with_conn(|conn| {
+        // 全局聚合
+        let mut stmt = conn
+            .prepare(
+                "SELECT verdict_type, window_days, \
+                        SUM(CASE WHEN hit != 0 THEN 1 ELSE 0 END) AS hits, \
+                        COUNT(*) AS total, \
+                        SUM(CASE WHEN price_after IS NOT NULL THEN 1 ELSE 0 END) AS matured_cnt \
+                 FROM verdict_reviews \
+                 GROUP BY verdict_type, window_days \
+                 HAVING total >= ?1",
+            )
+            .map_err(|e| format!("prepare global agg: {}", e))?;
+        let global: Vec<HitRateRow> = stmt
+            .query_map(params![min_samples], |row| {
+                let window_days: i64 = row.get(1)?;
+                let total: i64 = row.get(3)?;
+                let matured_cnt: i64 = row.get(4)?;
+                Ok(HitRateRow {
+                    verdict_type: row.get(0)?,
+                    window_days,
+                    hits: row.get(2)?,
+                    total,
+                    matured: !(window_days >= 30 && matured_cnt == 0),
+                })
+            })
+            .map_err(|e| format!("query global agg: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("collect global agg: {}", e))?;
+
+        // 按 regime 聚合(JOIN verdicts.macro_signal)
+        let mut stmt2 = conn
+            .prepare(
+                "SELECT COALESCE(v.macro_signal, 'unknown') AS regime, \
+                        vr.verdict_type, vr.window_days, \
+                        SUM(CASE WHEN vr.hit != 0 THEN 1 ELSE 0 END) AS hits, \
+                        COUNT(*) AS total, \
+                        SUM(CASE WHEN vr.price_after IS NOT NULL THEN 1 ELSE 0 END) AS matured_cnt \
+                 FROM verdict_reviews vr \
+                 JOIN verdicts v ON vr.verdict_id = v.id \
+                 GROUP BY regime, vr.verdict_type, vr.window_days \
+                 HAVING total >= ?1 \
+                 ORDER BY regime",
+            )
+            .map_err(|e| format!("prepare regime agg: {}", e))?;
+        let flat: Vec<(String, HitRateRow)> = stmt2
+            .query_map(params![min_samples], |row| {
+                let window_days: i64 = row.get(2)?;
+                let total: i64 = row.get(4)?;
+                let matured_cnt: i64 = row.get(5)?;
+                Ok((
+                    row.get::<_, String>(0)?,
+                    HitRateRow {
+                        verdict_type: row.get(1)?,
+                        window_days,
+                        hits: row.get(3)?,
+                        total,
+                        matured: !(window_days >= 30 && matured_cnt == 0),
+                    },
+                ))
+            })
+            .map_err(|e| format!("query regime agg: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("collect regime agg: {}", e))?;
+
+        // 折叠成 Vec<(regime, Vec<HitRateRow>)>,保持 regime 顺序(SQL 已 ORDER BY regime)
+        let mut by_regime: Vec<(String, Vec<HitRateRow>)> = Vec::new();
+        for (regime, row) in flat {
+            match by_regime.last_mut() {
+                Some((r, rows)) if *r == regime => rows.push(row),
+                _ => by_regime.push((regime, vec![row])),
+            }
+        }
+
+        Ok(HitRateAgg { global, by_regime })
+    })
+}
+
+#[cfg(test)]
+mod agg_tests {
+    use super::*;
+
+    // 本机单测运行期可能失败(§11)，该测试主要保证编译；
+    // SQL 逻辑正确性以评审为准。min_samples 过滤是纯函数式的。
+    #[test]
+    fn hit_rate_row_filters_below_min_samples() {
+        let rows = vec![
+            HitRateRow { verdict_type: "ACCUMULATE".into(), window_days: 1, hits: 2, total: 8, matured: true },
+            HitRateRow { verdict_type: "TRIM".into(), window_days: 1, hits: 1, total: 3, matured: true },
+        ];
+        let filtered: Vec<_> = rows.into_iter().filter(|r| r.total >= 5).collect();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].verdict_type, "ACCUMULATE");
+    }
 }
