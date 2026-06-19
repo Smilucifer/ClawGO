@@ -723,6 +723,7 @@
   "invest_regime_reason": "Reason",
   "invest_regime_inputs": "Inputs",
   "invest_regime_hint": "Strategy Hint",
+  "invest_regime_unknown": "Unknown",
   "invest_signal_label": "Signal",
   "invest_strength_label": "Strength",
   "invest_committee_view_report": "View Full Report",

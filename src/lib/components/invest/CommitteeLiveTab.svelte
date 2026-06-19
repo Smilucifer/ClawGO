@@ -151,6 +151,22 @@
   </div>
 {/snippet}
 
+{#snippet regimeChip(p: SymbolProgress | undefined)}
+  {#if p?.regimeData}
+    {@const rd = p.regimeData}
+    {@const isUnknown = rd.regime === 'unknown' || rd.regime === ''}
+    {@const ma20Dir = rd.metrics.latest >= rd.metrics.ma20 ? '↑' : '↓'}
+    <div class="regime-chip" class:unknown={isUnknown} title={rd.strategyHint}>
+      <span class="rg-tag">{rd.regime || t('invest_regime_unknown')}</span>
+      <span class="rg-metrics">
+        <span>RSI {rd.metrics.rsi14.toFixed(0)}</span>
+        <span>MA20{ma20Dir}</span>
+        <span>{(rd.metrics.priceQuantile2y * 100).toFixed(0)}%</span>
+      </span>
+    </div>
+  {/if}
+{/snippet}
+
 {#snippet stepCard(stepKey: string, p: SymbolProgress | undefined)}
   {@const def = stepDef(stepKey)}
   {@const state = getStepState(p, def.backendIdx, started(p))}
@@ -300,6 +316,8 @@
           <span class="card-ticker">{asset.symbol}</span>
         </div>
         <span class="badge {asset.kind}">{asset.kind === 'hold' ? 'HOLD' : 'WATCH'}</span>
+        {@render regimeChip(p)}
+        <span class="header-spacer"></span>
         {@render pipelineBar(p)}
         {#if result}
           <span class="verdict-badge-sm" style={getVerdictBadgeStyle(result.finalVerdict)}>
@@ -503,6 +521,25 @@
   .card-id { display: flex; flex-direction: column; min-width: 84px; }
   .card-name { font-size: 14px; font-weight: 600; }
   .card-ticker { font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
+  .header-spacer { flex: 1 1 auto; }
+  .regime-chip {
+    --rg-color: #c084fc;  /* regime 紫,独立语义;不复用 --color-quant(那是 quant 蓝 #3b82f6) */
+    display: flex; align-items: center; gap: 7px; flex-shrink: 0;
+    padding: 3px 10px; border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--rg-color) 13%, transparent);
+    border: 1px solid color-mix(in srgb, var(--rg-color) 30%, transparent);
+    white-space: nowrap;
+  }
+  .regime-chip.unknown { opacity: 0.45; }
+  .regime-chip .rg-tag {
+    font-size: 11px; font-weight: 700;
+    color: var(--rg-color);
+    text-transform: uppercase; letter-spacing: 0.3px;
+  }
+  .regime-chip .rg-metrics {
+    display: flex; gap: 8px; font-size: 10.5px;
+    font-family: var(--font-mono); color: var(--text-tertiary);
+  }
   .badge {
     display: inline-flex;
     align-items: center;
@@ -559,11 +596,11 @@
   .expand-arrow.open { transform: rotate(90deg); }
   .card-body { border-top: 1px solid var(--border); padding: 20px; }
 
-  /* Pipeline bar */
+  /* Pipeline bar — fixed slim width, pushed right by header-spacer */
   .pipeline-bar {
-    display: flex; flex: 1; height: 22px;
+    display: flex; height: 14px; width: 148px; flex: 0 0 auto;
     border-radius: var(--radius-sm); overflow: hidden;
-    background: var(--bg-input); gap: 2px; margin: 0 4px; min-width: 200px;
+    background: var(--bg-input); gap: 2px;
   }
   .seg {
     flex: 1; display: flex; align-items: center; justify-content: center;

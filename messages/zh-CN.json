@@ -723,6 +723,7 @@
   "invest_regime_reason": "原因",
   "invest_regime_inputs": "输入指标",
   "invest_regime_hint": "策略建议",
+  "invest_regime_unknown": "未知",
   "invest_signal_label": "信号",
   "invest_strength_label": "强度",
   "invest_committee_view_report": "查看完整报告",
