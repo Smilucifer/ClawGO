@@ -835,19 +835,41 @@ fn build_committee_config(config_data: &InvestLlmConfig, debate_rounds: Option<u
     Ok(committee_config)
 }
 
+/// 把前端传来的 symbol→mode 字符串 map 解析成 Mode 枚举 map。
+/// 未知/缺失值回退 Holding(向后兼容)。
+fn parse_mode_map(
+    modes: Option<std::collections::HashMap<String, String>>,
+) -> std::collections::HashMap<String, crate::invest::committee::orchestrator::Mode> {
+    use crate::invest::committee::orchestrator::Mode;
+    modes
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(k, v)| {
+            let m = match v.as_str() {
+                "research" => Mode::Research,
+                _ => Mode::Holding,
+            };
+            (k, m)
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub async fn run_committee(
     symbols: Vec<String>,
     debate_rounds: Option<u8>,
     dry_run: Option<bool>,
+    modes: Option<std::collections::HashMap<String, String>>,
 ) -> Result<Vec<crate::invest::committee::orchestrator::CommitteeResult>, String> {
     let config_data = get_llm_config()?;
     let committee_config = build_committee_config(&config_data, debate_rounds)?;
 
+    let mode_map = parse_mode_map(modes);
     let results = crate::invest::committee::orchestrator::run_committee_batch(
         &symbols,
         &committee_config,
         dry_run.unwrap_or(false),
+        mode_map,
     )
     .await;
 
@@ -881,6 +903,7 @@ pub async fn run_committee_stream(
     symbols: Vec<String>,
     debate_rounds: Option<u8>,
     dry_run: Option<bool>,
+    modes: Option<std::collections::HashMap<String, String>>,
     cancel_registry: tauri::State<'_, CommitteeCancelRegistry>,
 ) -> Result<Vec<crate::invest::committee::orchestrator::CommitteeResult>, String> {
     let config_data = get_llm_config()?;
@@ -906,12 +929,14 @@ pub async fn run_committee_stream(
         }
     }
 
+    let mode_map = parse_mode_map(modes);
     let results = crate::invest::committee::orchestrator::run_committee_batch_stream(
         &symbols,
         &committee_config,
         emitter,
         dry_run.unwrap_or(false),
         tokens,
+        mode_map,
     )
     .await;
 

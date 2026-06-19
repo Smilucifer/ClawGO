@@ -30,6 +30,9 @@ pub struct QueueItem {
     /// Backend persists it verbatim and never parses its shape.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub progress: Option<serde_json::Value>,
+    /// 分析模式(前端持久化用;后端 mode 来源是 IPC 的 modes map，非此字段)。
+    #[serde(default)]
+    pub mode: crate::invest::committee::orchestrator::Mode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,12 +146,14 @@ mod tests {
                     status: QueueItemStatus::Done,
                     error: None,
                     progress: Some(serde_json::json!({ "completedSteps": 7, "done": true })),
+                    mode: Default::default(),
                 },
                 QueueItem {
                     symbol: "000001".into(),
                     status: QueueItemStatus::Failed,
                     error: Some("boom".into()),
                     progress: None,
+                    mode: Default::default(),
                 },
             ],
             snapshot: Some(PortfolioSnapshot {

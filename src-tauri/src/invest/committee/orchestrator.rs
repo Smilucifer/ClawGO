@@ -76,6 +76,17 @@ fn check_cancellation(
 // Configuration
 // ---------------------------------------------------------------------------
 
+/// 分析模式:持仓评估(默认)vs 研究观察。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode {
+    /// 持仓模式:考虑现金/集中度/真实成本(现状行为)。
+    #[default]
+    Holding,
+    /// 研究模式:忽略现金/集中度,成本用关注价,裁决语义=标的吸引力。
+    Research,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitteeConfig {
     /// Number of debate rounds (default 2 = Quant/R1+R2 + Risk/R1+R2).
@@ -1480,7 +1491,10 @@ async fn run_role_phase(
     _emitter: &Option<EventEmitter>,
     portfolio_data: &PortfolioData,
     asset_context: &AssetContext,
+    mode: Mode,
 ) -> Result<RoundOutput, String> {
+    // Task 10 透传管道:本任务暂不读 mode,Task 11/12 才用,避免 unused 警告。
+    let _ = mode;
     let cli = match super::cli_executor::CliCommitteeExecutor::global() {
         Some(c) => c,
         None => {
@@ -1632,6 +1646,7 @@ async fn run_debate_rounds(
     portfolio_data: &PortfolioData,
     asset_context: &AssetContext,
     cancel: Option<&CancellationToken>,
+    mode: Mode,
 ) -> Result<bool, String> {
     let max_rounds = config.debate_rounds;
     let mut converged = false;
@@ -1665,6 +1680,7 @@ async fn run_debate_rounds(
                 emitter,
                 portfolio_data,
                 asset_context,
+                mode,
             )
             .await?;
             *total_tokens += output.tokens_used;
@@ -1723,6 +1739,7 @@ pub(crate) async fn run_committee(
     dry_run: bool,
     portfolio_override: Option<std::sync::Arc<PortfolioData>>,
     cancel: Option<CancellationToken>,
+    mode: Mode,
 ) -> Result<CommitteeResult, String> {
     let start = std::time::Instant::now();
 
@@ -1875,6 +1892,7 @@ pub(crate) async fn run_committee(
         &portfolio_data,
         &asset_context,
         cancel.as_ref(),
+        mode,
     )
     .await?;
 
@@ -1904,6 +1922,7 @@ pub(crate) async fn run_committee(
             &emitter,
             &portfolio_data,
             &asset_context,
+            mode,
         )
         .await?;
         total_tokens += cio_output.tokens_used;
@@ -2011,6 +2030,7 @@ pub async fn run_committee_batch(
     symbols: &[String],
     config: &CommitteeConfig,
     dry_run: bool,
+    modes: HashMap<String, Mode>,
 ) -> Vec<Result<CommitteeResult, String>> {
     // Pre-load portfolio once and share across all tasks to avoid redundant
     // DB reads and price-fetch API calls.
@@ -2025,9 +2045,10 @@ pub async fn run_committee_batch(
         let symbol = symbol.clone();
         let portfolio = portfolio_arc.clone();
         let sem = semaphore.clone();
+        let mode = modes.get(&symbol).copied().unwrap_or_default();
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire_owned().await.expect("semaphore closed unexpectedly");
-            run_committee(&symbol, &config, None, dry_run, Some(portfolio), None).await
+            run_committee(&symbol, &config, None, dry_run, Some(portfolio), None, mode).await
         }));
     }
 
@@ -2050,6 +2071,7 @@ pub async fn run_committee_batch_stream(
     emitter: EventEmitter,
     dry_run: bool,
     tokens: HashMap<String, CancellationToken>,
+    modes: HashMap<String, Mode>,
 ) -> Vec<Result<CommitteeResult, String>> {
     // Emit batch-start event
     emitter(CommitteeEvent::CommitteeStart {
@@ -2071,6 +2093,7 @@ pub async fn run_committee_batch_stream(
         let portfolio = portfolio_arc.clone();
         let sem = semaphore.clone();
         let token = tokens.get(&symbol).cloned();
+        let mode = modes.get(&symbol).copied().unwrap_or_default();
         handles.push((
             symbol.clone(),
             tokio::spawn(async move {
@@ -2078,7 +2101,7 @@ pub async fn run_committee_batch_stream(
                     .acquire_owned()
                     .await
                     .expect("semaphore closed unexpectedly");
-                run_committee(&symbol, &config, Some(emitter), dry_run, Some(portfolio), token).await
+                run_committee(&symbol, &config, Some(emitter), dry_run, Some(portfolio), token, mode).await
             }),
         ));
     }
