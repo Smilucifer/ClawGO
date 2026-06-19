@@ -80,7 +80,7 @@
 
 ### C1. 删除两个前端 tab(任务5)
 
-- **委员会 - Tool 调用 tab:** 删 `CommitteeToolsTab.svelte`、`/invest` 中 `tools` sub-tab 注册、相关 i18n。直播卡内的简版 tool-strip(`CommitteeLiveTab.svelte:410-417`,同一份 `toolCallHistory` 的精简视图)一并移除。store 的 `toolCallHistory` 字段及 `tool_call` 事件处理保留(后端仍发送,前端不再展示;确认无其它消费方后可在后续清理)。
+- **委员会 - Tool 调用 tab:** 删 `CommitteeToolsTab.svelte`、`/invest` 中 `tools` sub-tab 注册、相关 i18n。直播卡内的简版 tool-strip(`CommitteeLiveTab.svelte:410-417`)一并移除。删除后前端无任何地方再读取工具调用数据,因此一并清理 store 中的死状态:`invest-committee-store.svelte.ts` 的 `toolCallHistory` 字段、`ToolCallRecord` 类型、`tool_call` 事件处理分支(`:519-534`)及入队时的清理逻辑(`:251`)。后端可继续发送 `tool_call` 事件(无消费方,无副作用),不强制改动后端。
 - **系统 - 市场 Regime tab:** 删 `SystemRegimeTab.svelte`、`/invest` 中 `regime` sub-tab 注册、`get_regime_classification` 命令(`commands/invest.rs:1354-1378` + `lib.rs:476` 注册)、相关 i18n。
   - **保留 `src-tauri/src/invest/regime.rs`**——委员会 pipeline 第 2 步、Quant/Risk/CIO 角色 prompt 硬规则、parser 字段、前端 7 节点 pipeline 全依赖它。只删独立的单股分类 UI 入口。
 
