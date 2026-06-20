@@ -154,6 +154,50 @@
       actionLoadingId = null;
     }
   }
+
+  // ── Manual add memory ─────────────────────────────────────────────
+
+  const MEMORY_TYPES = ["fact", "preference", "skill", "feedback"] as const;
+  const ADD_SCOPE_OPTIONS = ["global", "project", "invest"] as const;
+
+  let showAddForm = $state(false);
+  let addContent = $state("");
+  let addType = $state<(typeof MEMORY_TYPES)[number]>("fact");
+  let addTagsRaw = $state("");
+  let addScope = $state<(typeof ADD_SCOPE_OPTIONS)[number]>("global");
+  let addSubmitting = $state(false);
+  let addError = $state<string | null>(null);
+
+  function resetAddForm() {
+    addContent = "";
+    addType = "fact";
+    addTagsRaw = "";
+    addScope = "global";
+    addError = null;
+  }
+
+  async function submitAddMemory() {
+    const trimmed = addContent.trim();
+    if (!trimmed || addSubmitting) return;
+    addSubmitting = true;
+    addError = null;
+    try {
+      // save_memory signature: { content, memory_type, source_run_id?, confidence?, scope?, project_id? }
+      // Tags input is captured for UX but not yet persisted by save_memory backend.
+      await getTransport().invoke("save_memory", {
+        content: trimmed,
+        memory_type: addType,
+        scope: addScope,
+      });
+      resetAddForm();
+      showAddForm = false;
+      await loadMemoryList("approved");
+    } catch (e) {
+      addError = e instanceof Error ? e.message : String(e);
+    } finally {
+      addSubmitting = false;
+    }
+  }
 </script>
 
 <div class="flex h-full flex-col">
@@ -177,20 +221,110 @@
 
   <div class="flex-1 overflow-auto p-4">
     {#if activeTab === "userMemory"}
-      <div class="mb-4 flex gap-2">
-        {#each scopeOptions as scope}
-          <button
-            class="rounded-md px-2.5 py-1 text-xs transition-colors"
-            class:bg-primary={scopeFilter === scope}
-            class:text-primary-foreground={scopeFilter === scope}
-            class:bg-muted={scopeFilter !== scope}
-            class:text-muted-foreground={scopeFilter !== scope}
-            onclick={() => (scopeFilter = scope)}
-          >
-            {scope ?? "all"}
-          </button>
-        {/each}
+      <div class="mb-4 flex items-center justify-between gap-2">
+        <div class="flex gap-2">
+          {#each scopeOptions as scope}
+            <button
+              class="rounded-md px-2.5 py-1 text-xs transition-colors"
+              class:bg-primary={scopeFilter === scope}
+              class:text-primary-foreground={scopeFilter === scope}
+              class:bg-muted={scopeFilter !== scope}
+              class:text-muted-foreground={scopeFilter !== scope}
+              onclick={() => (scopeFilter = scope)}
+            >
+              {scope ?? "all"}
+            </button>
+          {/each}
+        </div>
+        <button
+          class="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          onclick={() => {
+            showAddForm = !showAddForm;
+            if (!showAddForm) resetAddForm();
+          }}
+        >
+          {showAddForm ? t("common_cancel") : t("memory_mgmt_add")}
+        </button>
       </div>
+
+      {#if showAddForm}
+        <div class="mb-4 rounded-md border border-border bg-muted/30 p-3">
+          <div class="mb-2">
+            <label class="mb-1 block text-xs font-medium" for="add-mem-content">
+              {t("memory_mgmt_add_content")}
+            </label>
+            <textarea
+              id="add-mem-content"
+              bind:value={addContent}
+              rows="3"
+              class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              placeholder=""
+            ></textarea>
+          </div>
+          <div class="mb-2 flex gap-2">
+            <div class="flex-1">
+              <label class="mb-1 block text-xs font-medium" for="add-mem-type">
+                {t("memory_mgmt_add_type")}
+              </label>
+              <select
+                id="add-mem-type"
+                bind:value={addType}
+                class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                {#each MEMORY_TYPES as ty}
+                  <option value={ty}>{ty}</option>
+                {/each}
+              </select>
+            </div>
+            <div class="flex-1">
+              <label class="mb-1 block text-xs font-medium" for="add-mem-scope">scope</label>
+              <select
+                id="add-mem-scope"
+                bind:value={addScope}
+                class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                {#each ADD_SCOPE_OPTIONS as sc}
+                  <option value={sc}>{sc}</option>
+                {/each}
+              </select>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="mb-1 block text-xs font-medium" for="add-mem-tags">
+              {t("memory_mgmt_add_tags")}
+            </label>
+            <input
+              id="add-mem-tags"
+              type="text"
+              bind:value={addTagsRaw}
+              class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              placeholder="tag1, tag2"
+            />
+          </div>
+          {#if addError}
+            <div class="mb-2 text-xs text-destructive">{addError}</div>
+          {/if}
+          <div class="flex justify-end gap-2">
+            <button
+              class="rounded-md bg-muted px-3 py-1 text-xs font-medium transition-colors hover:bg-muted/80 disabled:opacity-50"
+              disabled={addSubmitting}
+              onclick={() => {
+                showAddForm = false;
+                resetAddForm();
+              }}
+            >
+              {t("common_cancel")}
+            </button>
+            <button
+              class="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={addSubmitting || !addContent.trim()}
+              onclick={submitAddMemory}
+            >
+              {addSubmitting ? "..." : t("memory_mgmt_add_submit")}
+            </button>
+          </div>
+        </div>
+      {/if}
 
       {#if loading}
         <div class="text-muted-foreground text-sm">Loading...</div>

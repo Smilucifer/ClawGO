@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getTransport } from "$lib/transport";
+  import { t } from "$lib/i18n/index.svelte";
 
   interface SetupProgress {
     stage: "starting" | "verifying" | "ready" | "error";
@@ -13,6 +14,8 @@
   let message = $state<string>("");
   let errorMsg = $state<string | null>(null);
   let fadingOut = $state(false);
+  let restarting = $state(false);
+  let restartError = $state<string | null>(null);
 
   function handleProgress(p: SetupProgress) {
     stage = p.stage;
@@ -70,6 +73,27 @@
     // Emit retry event — backend will re-run bootstrap
     getTransport().invoke("get_python_status", {});
   }
+
+  async function restartRuntime() {
+    if (restarting) return;
+    restarting = true;
+    restartError = null;
+    try {
+      await getTransport().invoke("restart_python_runtime", {});
+      // Refresh status after restart — backend will emit new progress events
+      const status = await getTransport().invoke("get_python_status", {});
+      const s = status as { ready: boolean; progress?: SetupProgress };
+      if (s.progress) {
+        handleProgress(s.progress);
+      } else if (s.ready) {
+        handleProgress({ stage: "ready", message: "Python ready" });
+      }
+    } catch (e) {
+      restartError = e instanceof Error ? e.message : String(e);
+    } finally {
+      restarting = false;
+    }
+  }
 </script>
 
 {#if visible}
@@ -100,7 +124,15 @@
           {#if errorMsg}
             <p class="error-detail">{errorMsg}</p>
           {/if}
-          <button class="retry-btn" onclick={retry}> 重试 </button>
+          {#if restartError}
+            <p class="error-detail">{restartError}</p>
+          {/if}
+          <div class="action-row">
+            <button class="retry-btn" onclick={retry} disabled={restarting}> 重试 </button>
+            <button class="retry-btn" onclick={restartRuntime} disabled={restarting}>
+              {restarting ? "..." : t("python_restart_runtime")}
+            </button>
+          </div>
         {:else}
           <div class="spinner"></div>
           <p class="status-text">{message || "正在初始化..."}</p>
@@ -211,6 +243,21 @@
 
   .retry-btn:hover {
     background: rgba(255, 255, 255, 0.2);
+  }
+
+  .retry-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  .action-row {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .action-row .retry-btn {
+    margin-top: 0;
   }
 
   @keyframes fadeIn {

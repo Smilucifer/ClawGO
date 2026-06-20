@@ -774,6 +774,14 @@
   "memoryMgmt_tab_userMemory": "User Memory",
   "memoryMgmt_tab_extractionConfig": "Extraction Config",
 
+  "memory_mgmt_add": "Add Memory",
+  "memory_mgmt_add_content": "Content",
+  "memory_mgmt_add_type": "Type",
+  "memory_mgmt_add_tags": "Tags (comma separated)",
+  "memory_mgmt_add_submit": "Save",
+
+  "python_restart_runtime": "Restart Python Runtime",
+
   "layout_appName": "Claw GO",
   "layout_newConversation": "New conversation",
   "layout_selectProjectFolder": "Select Project Folder",
