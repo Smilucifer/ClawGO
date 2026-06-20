@@ -1,5 +1,7 @@
 # Phase 4.5 Research Follow-up Implementation Plan
 
+> **[废弃 2026-06-20]** 本计划的 Group Chat Research/Driver 产物已从代码树移除（Rust 类型、storage、turn 枚举变体、前端消费者均不存在）。文档保留作历史记录，不代表现状。
+
 **Feature:** Phase 4.5 follow-up - Full Research Room artifact and Arena Memory candidates
 **Status:** Implemented locally on 2026-05-02 in `feat/research-followup`.
 **Goal:** Turn the Research Room MVP output into a reusable artifact stream that can preserve history and surface durable facts, decisions, and lessons as Arena Memory candidates.

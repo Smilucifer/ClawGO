@@ -4,7 +4,7 @@ This file guides Claude Code (claude.ai/code) when working in this repository.
 
 ## Overview
 
-Windows-first Tauri desktop app: SvelteKit (Svelte 5 runes) frontend + Rust backend. Built on Claw GO's local-first architecture, adding Claude Session Hub concepts (Group Chats, Memo, Roundtable, Driver/Copilot, Research) and the openInvest quant subsystem, without disrupting the core `/chat` path.
+Windows-first Tauri desktop app: SvelteKit (Svelte 5 runes) frontend + Rust backend. Built on Claw GO's local-first architecture, adding Claude Session Hub concepts (Group Chats, Memo, Roundtable) and the openInvest quant subsystem, without disrupting the core `/chat` path.
 
 Core product model:
 - `Run` — the smallest execution unit (one persisted agent session).
