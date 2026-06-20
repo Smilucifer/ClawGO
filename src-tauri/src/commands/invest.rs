@@ -950,6 +950,33 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
             }
         }
 
+        // Tushare 新闻 (major_news API — different permission tier than quote)
+        // Probe a small recent date window (today) using "sina" as the source.
+        let today = Local::now().format("%Y%m%d").to_string();
+        match client.major_news("sina", &today, &today).await {
+            Ok(items) => {
+                let sample = items
+                    .first()
+                    .map(|i| i.title.chars().take(20).collect::<String>())
+                    .unwrap_or_else(|| "(empty)".into());
+                sources.push(DataSourceStatus {
+                    name: "Tushare 新闻".into(),
+                    ok: true,
+                    last_success: Some(now_str.clone()),
+                    sample_value: Some(sample),
+                });
+            }
+            Err(e) => {
+                log::warn!("[datasource] Tushare 新闻 probe failed: {}", e);
+                sources.push(DataSourceStatus {
+                    name: "Tushare 新闻".into(),
+                    ok: false,
+                    last_success: None,
+                    sample_value: Some(format!("{e}")),
+                });
+            }
+        }
+
     } else {
         sources.push(DataSourceStatus {
             name: "Tushare 行情".into(),
@@ -957,16 +984,103 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
             last_success: None,
             sample_value: Some("no token configured".into()),
         });
+        sources.push(DataSourceStatus {
+            name: "Tushare 新闻".into(),
+            ok: false,
+            last_success: None,
+            sample_value: Some("no token configured".into()),
+        });
     }
 
-    // Check invest.db
-    let db_ok = crate::storage::invest::with_conn(|_| Ok(())).is_ok();
-    sources.push(DataSourceStatus {
-        name: "invest.db".into(),
-        ok: db_ok,
-        last_success: if db_ok { Some(now_str.clone()) } else { None },
-        sample_value: if db_ok { Some("connected".into()) } else { Some("connection failed".into()) },
+    // Tencent realtime quote (does not require a token; HTTP qt.gtimg.cn)
+    let tencent_http = reqwest::Client::new();
+    match crate::tencent_quotes::fetch_quotes(&tencent_http, &["000001.SZ"]).await {
+        Ok(quotes) => {
+            let sample = quotes
+                .first()
+                .map(|q| format!("{} = {:.2}", q.ts_code, q.close))
+                .unwrap_or_else(|| "(empty)".into());
+            sources.push(DataSourceStatus {
+                name: "腾讯 实时行情".into(),
+                ok: !quotes.is_empty(),
+                last_success: if quotes.is_empty() { None } else { Some(now_str.clone()) },
+                sample_value: Some(sample),
+            });
+        }
+        Err(e) => {
+            log::warn!("[datasource] 腾讯 实时行情 probe failed: {}", e);
+            sources.push(DataSourceStatus {
+                name: "腾讯 实时行情".into(),
+                ok: false,
+                last_success: None,
+                sample_value: Some(e),
+            });
+        }
+    }
+
+    // Tencent CSI300 K-line (used by macro_refresh fallback)
+    match crate::tencent_quotes::fetch_csi300_kline(&tencent_http, 25).await {
+        Ok(kline) => {
+            sources.push(DataSourceStatus {
+                name: "腾讯 CSI300 K线".into(),
+                ok: true,
+                last_success: Some(now_str.clone()),
+                sample_value: Some(format!(
+                    "close = {:.2}, vol20 = {}",
+                    kline.close,
+                    kline.vol20.map(|v| format!("{:.2}", v)).unwrap_or_else(|| "n/a".into())
+                )),
+            });
+        }
+        Err(e) => {
+            log::warn!("[datasource] 腾讯 CSI300 K线 probe failed: {}", e);
+            sources.push(DataSourceStatus {
+                name: "腾讯 CSI300 K线".into(),
+                ok: false,
+                last_success: None,
+                sample_value: Some(e),
+            });
+        }
+    }
+
+    // Check invest.db (light schema check — confirms the holdings table exists)
+    let db_probe: Result<(), String> = crate::storage::invest::with_conn(|conn| {
+        conn.query_row("SELECT 1 FROM holdings LIMIT 1", [], |_| Ok(()))
+            .or_else(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(()),
+                other => Err(format!("{other}")),
+            })
     });
+    match db_probe {
+        Ok(()) => sources.push(DataSourceStatus {
+            name: "invest.db".into(),
+            ok: true,
+            last_success: Some(now_str.clone()),
+            sample_value: Some("connected, schema ok".into()),
+        }),
+        Err(e) => sources.push(DataSourceStatus {
+            name: "invest.db".into(),
+            ok: false,
+            last_success: None,
+            sample_value: Some(format!("schema check failed: {e}")),
+        }),
+    }
+
+    // Python runtime — root dependency for AkShare / Jin10 / Yahoo (yfinance)
+    match crate::python::require() {
+        Ok(_) => sources.push(DataSourceStatus {
+            name: "Python 运行时".into(),
+            ok: true,
+            last_success: Some(now_str.clone()),
+            sample_value: Some("ready".into()),
+        }),
+        Err(e) => sources.push(DataSourceStatus {
+            name: "Python 运行时".into(),
+            ok: false,
+            last_success: None,
+            sample_value: Some(format!("{e}")),
+        }),
+    }
 
     // Check international data sources (AkShare + Jin10)
     let intl_client = crate::invest::international::InternationalClient::from_settings();
@@ -1011,6 +1125,52 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
     sources.push(probe_news("AkShare 个股", &now_str, intl_client.fetch_akshare_stock_news("000001", 1).await).await);
     sources.push(probe_news("金十数据", &now_str, intl_client.fetch_jinshi_news("", 1, None).await).await);
 
+    // AkShare 10Y bond yield (used by macro_refresh fallback)
+    match intl_client.fetch_akshare_bond_yield().await {
+        Ok(b) => {
+            sources.push(DataSourceStatus {
+                name: "AkShare 10Y国债".into(),
+                ok: true,
+                last_success: Some(now_str.clone()),
+                sample_value: Some(format!("yield = {:.3} ({})", b.yield_10y, b.date)),
+            });
+        }
+        Err(e) => {
+            log::warn!("[datasource] AkShare 10Y国债 probe failed: {}", e);
+            sources.push(DataSourceStatus {
+                name: "AkShare 10Y国债".into(),
+                ok: false,
+                last_success: None,
+                sample_value: Some(e),
+            });
+        }
+    }
+
+    // AkShare market stats (limit-up / limit-down counts)
+    let today_compact = Local::now().format("%Y%m%d").to_string();
+    match intl_client.fetch_akshare_market_stats(&today_compact).await {
+        Ok(stats) => {
+            sources.push(DataSourceStatus {
+                name: "AkShare 涨跌停".into(),
+                ok: true,
+                last_success: Some(now_str.clone()),
+                sample_value: Some(format!(
+                    "up = {}, down = {} ({})",
+                    stats.limit_up_count, stats.limit_down_count, stats.date
+                )),
+            });
+        }
+        Err(e) => {
+            log::warn!("[datasource] AkShare 涨跌停 probe failed: {}", e);
+            sources.push(DataSourceStatus {
+                name: "AkShare 涨跌停".into(),
+                ok: false,
+                last_success: None,
+                sample_value: Some(e),
+            });
+        }
+    }
+
     // Yahoo Finance (VIX, TNX, DXY, Gold, Oil, USDCNY)
     match intl_client.fetch_yahoo_quote("^VIX").await {
         Ok(q) => {
@@ -1025,6 +1185,31 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
             log::warn!("[datasource] Yahoo Finance probe failed: {}", e);
             sources.push(DataSourceStatus {
                 name: "Yahoo Finance".into(),
+                ok: false,
+                last_success: None,
+                sample_value: Some(e),
+            });
+        }
+    }
+
+    // Yahoo Finance history (distinct from quote — uses yfinance.history endpoint)
+    match intl_client.fetch_yahoo_history("^VIX", 5).await {
+        Ok(bars) => {
+            let sample = bars
+                .last()
+                .map(|b| format!("{} {} close = {:.2}", b.symbol, b.date, b.close))
+                .unwrap_or_else(|| "(empty)".into());
+            sources.push(DataSourceStatus {
+                name: "Yahoo Finance 历史".into(),
+                ok: !bars.is_empty(),
+                last_success: if bars.is_empty() { None } else { Some(now_str.clone()) },
+                sample_value: Some(sample),
+            });
+        }
+        Err(e) => {
+            log::warn!("[datasource] Yahoo Finance 历史 probe failed: {}", e);
+            sources.push(DataSourceStatus {
+                name: "Yahoo Finance 历史".into(),
                 ok: false,
                 last_success: None,
                 sample_value: Some(e),
