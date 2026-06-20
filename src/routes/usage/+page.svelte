@@ -567,7 +567,7 @@
         {@const deepseek = balanceStatusText("deepseek")}
         {@const packy = balanceStatusText("packyapi")}
         {@const mimo = balanceStatusText("mimo")}
-        <div class="grid gap-4 md:grid-cols-3">
+        <div class="grid gap-4 md:grid-cols-2">
           <!-- DeepSeek panel -->
           <div
             class="rounded-xl bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent border border-blue-500/20 p-5 space-y-3"
@@ -717,7 +717,7 @@
 
           <!-- Xiaomi panel (spans full row) -->
           <div
-            class="rounded-xl bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/20 p-5 space-y-3 md:col-span-3"
+            class="rounded-xl bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/20 p-5 space-y-3 md:col-span-2"
           >
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2.5">
