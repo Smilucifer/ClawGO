@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 use crate::invest::international::InternationalClient;
-use crate::invest::llm::{InvestLlmClient, LlmConfig, Message, collect_stream};
 
 /// Truncate string at char boundary for logging (≤40 chars).
 pub fn short(s: &str) -> &str {
@@ -159,12 +158,10 @@ pub fn default_normalizer_prompt(language: &str) -> &'static str {
     }
 }
 
-/// Normalize a batch of raw events using LLM.
+/// Normalize a batch of raw events using the committee CLI executor.
 /// Returns normalized results in the same order as input.
 /// Falls back to rule-based severity on parse failure.
 pub async fn normalize_events(
-    client: &dyn InvestLlmClient,
-    config: &LlmConfig,
     raw_events: &[RawEvent],
     system_prompt: &str,
 ) -> Vec<NormalizedEvent> {
@@ -185,20 +182,14 @@ pub async fn normalize_events(
         ));
     }
 
-    let system = system_prompt;
-    let messages = vec![Message::user(items)];
-
-    // Call LLM
-    let stream = match client.chat_stream(system, &messages, None, config).await {
-        Ok(s) => s,
+    // Call LLM via committee CLI executor
+    let content = match crate::invest::event_analyzer::cli_complete(system_prompt, &items).await {
+        Ok(c) => c,
         Err(e) => {
-            log::warn!("Event normalizer LLM call failed: {}, falling back to rule-based", e);
+            log::warn!("Event normalizer CLI call failed: {}, falling back to rule-based", e);
             return raw_events.iter().map(|ev| fallback_normalize_from(&ev.title, &ev.body)).collect();
         }
     };
-
-    let collected = collect_stream(stream).await;
-    let content = collected.content;
 
     // Parse JSON response
     parse_normalized_response(&content, raw_events, |ev| fallback_normalize_from(&ev.title, &ev.body))
@@ -217,11 +208,9 @@ pub struct ScanResult {
 }
 
 /// Run a full event scan: fetch from Tushare announcements + Jin10 flash + AkShare per-stock,
-/// filter by keywords, normalize via LLM, save to DB.
+/// filter by keywords, normalize via CLI, save to DB.
 pub async fn scan_events(
     tushare: &crate::tushare::TushareClient,
-    llm_client: &dyn InvestLlmClient,
-    llm_config: &LlmConfig,
     normalizer_prompt: Option<&str>,
     language: &str,
 ) -> Result<ScanResult, String> {
@@ -400,9 +389,9 @@ pub async fn scan_events(
         });
     }
 
-    // 5. Normalize via LLM
+    // 5. Normalize via CLI
     let effective_prompt = normalizer_prompt.unwrap_or_else(|| default_normalizer_prompt(language));
-    let normalized = normalize_events(llm_client, llm_config, &filtered_events, effective_prompt).await;
+    let normalized = normalize_events(&filtered_events, effective_prompt).await;
 
     // 6. Save to DB (dedup by source+title via INSERT OR IGNORE)
     let mut saved = 0usize;

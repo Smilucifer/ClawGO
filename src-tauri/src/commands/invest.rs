@@ -890,13 +890,11 @@ pub async fn scan_events(
     normalizer_prompt: Option<String>,
     language: Option<String>,
 ) -> Result<crate::invest::event_scanner::ScanResult, String> {
-    let (tushare, client, llm_config) = build_scan_clients()?;
+    let tushare = crate::tushare::TushareClient::from_settings()?;
     let lang = language.as_deref().unwrap_or(crate::invest::event_scanner::DEFAULT_LANGUAGE);
 
     crate::invest::event_scanner::scan_events(
         &tushare,
-        &client,
-        &llm_config,
         normalizer_prompt.as_deref(),
         lang,
     )

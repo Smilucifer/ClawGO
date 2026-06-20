@@ -52,11 +52,9 @@ pub async fn dispatch_job(id: &str) -> Result<String, String> {
             Ok(result)
         }
         "event_scan" => {
-            let (tushare, llm_client, llm_config) = crate::commands::invest::build_scan_clients()?;
+            let tushare = crate::tushare::client::TushareClient::from_settings()?;
             let result = crate::invest::event_scanner::scan_events(
                 &tushare,
-                &llm_client,
-                &llm_config,
                 None,
                 crate::invest::event_scanner::DEFAULT_LANGUAGE,
             )
@@ -74,10 +72,7 @@ pub async fn dispatch_job(id: &str) -> Result<String, String> {
             ))
         }
         "event_analyzer" => {
-            let (_, llm_client, llm_config) = crate::commands::invest::build_scan_clients()?;
             let result = crate::invest::event_analyzer::analyze_pending_events(
-                &llm_client,
-                &llm_config,
                 None,
                 crate::invest::event_scanner::DEFAULT_LANGUAGE,
             )

@@ -7,11 +7,25 @@ use crate::invest::event_scanner::{
     NormalizedEvent, Severity, default_normalizer_prompt,
     fallback_normalize_from, parse_normalized_response, short,
 };
-use crate::invest::llm::{InvestLlmClient, LlmConfig, Message, collect_stream};
 use crate::storage::invest::events::{Event, list_unanalyzed_events, update_event_analysis};
 
 /// Max events to analyze in a single batch.
 const MAX_BATCH_SIZE: i64 = 50;
+
+/// Run a single text-completion via the committee CLI executor.
+///
+/// Used by event scanner/analyzer normalization in place of `OpenAiCompatClient`.
+/// `settings_path: None` means use the ambient `~/.claude` settings — committee
+/// roles use `write_committee_settings_json` for platform_credentials, but event
+/// normalization is fine on the default Claude provider.
+pub async fn cli_complete(
+    system_prompt: &str,
+    user_message: &str,
+) -> Result<String, String> {
+    let exec = crate::invest::committee::cli_executor::CliCommitteeExecutor::global()
+        .ok_or("claude CLI not available")?;
+    exec.run_role(system_prompt, user_message, 0, None).await
+}
 
 /// Result of an analysis run.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -29,8 +43,6 @@ pub struct AnalyzerResult {
 /// Events classified as LOW by the LLM keep their original severity
 /// (preserving jin10 collector events that haven't been keyword-filtered).
 pub async fn analyze_pending_events(
-    llm_client: &dyn InvestLlmClient,
-    llm_config: &LlmConfig,
     normalizer_prompt: Option<&str>,
     language: &str,
 ) -> Result<AnalyzerResult, String> {
@@ -55,7 +67,7 @@ pub async fn analyze_pending_events(
 
     // Build batch prompt for LLM
     let effective_prompt = normalizer_prompt.unwrap_or_else(|| default_normalizer_prompt(language));
-    let normalized = normalize_events_batch(llm_client, llm_config, &pending, effective_prompt).await;
+    let normalized = normalize_events_batch(&pending, effective_prompt).await;
 
     // Update each event
     for (event, norm) in pending.iter().zip(normalized.iter()) {
@@ -109,10 +121,8 @@ pub async fn analyze_pending_events(
     })
 }
 
-/// Normalize a batch of events using LLM.
+/// Normalize a batch of events using the committee CLI executor.
 async fn normalize_events_batch(
-    client: &dyn InvestLlmClient,
-    config: &LlmConfig,
     events: &[Event],
     system_prompt: &str,
 ) -> Vec<NormalizedEvent> {
@@ -134,22 +144,17 @@ async fn normalize_events_batch(
         ));
     }
 
-    let messages = vec![Message::user(items)];
-
-    // Call LLM
-    let stream = match client.chat_stream(system_prompt, &messages, None, config).await {
-        Ok(s) => s,
+    // Call CLI
+    let content = match cli_complete(system_prompt, &items).await {
+        Ok(c) => c,
         Err(e) => {
-            log::warn!("Event analyzer LLM call failed: {}, falling back to rule-based", e);
+            log::warn!("Event analyzer CLI call failed: {}, falling back to rule-based", e);
             return events.iter().map(|ev| {
                 let body = ev.body.as_deref().unwrap_or(&ev.title);
                 fallback_normalize_from(&ev.title, body)
             }).collect();
         }
     };
-
-    let collected = collect_stream(stream).await;
-    let content = collected.content;
 
     // Parse JSON response using shared generic parser
     parse_normalized_response(&content, events, |ev| {
