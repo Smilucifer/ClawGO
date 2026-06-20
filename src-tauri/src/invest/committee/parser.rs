@@ -1338,4 +1338,22 @@ mod tests {
         assert_eq!(parsed.stock_risk_summary.as_deref(), Some("估值偏高"));
         assert_eq!(parsed.strength, Some(6.0));
     }
+
+    #[test]
+    fn test_list_prefixed_bold_key_not_merged() {
+        // 真正会触发 Task 3 修复的 RED 场景:
+        // 老 is_structured_key_line 对 `+ **风险信号**: concerned` 返回 false
+        // (`+ **风险信号**` 段含空格);而 merge_continuation_lines 的 is_list_item
+        // 守门只识别 `- `/`* `,不挡 `+ `,所以该行会被并入上一字段的值,
+        // 导致 signal 提不出、stock_risk_summary 串到下一段。
+        // Task 3 在 is_structured_key_line 内先归一化(剥列表前缀 + `**…**` 包裹),
+        // 该行被识别为独立 key 行,各字段干净分离。
+        // 注:用户最初提议的 `- **风险信号**: ...` 形式实际不会 mis-merge ——
+        // is_list_item 已为 `- ` 短路;故改用 `+ ` 作为真正 RED 的列表前缀。
+        let text = "标的风险: 估值偏高\n+ **风险信号**: concerned\n强度: 6";
+        let parsed = parse_role_output(CommitteeRole::Risk, text, false);
+        assert_eq!(parsed.signal.as_deref(), Some("concerned"));
+        assert_eq!(parsed.stock_risk_summary.as_deref(), Some("估值偏高"));
+        assert_eq!(parsed.strength, Some(6.0));
+    }
 }
