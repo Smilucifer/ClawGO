@@ -168,4 +168,14 @@ describe('InvestCommitteeStore mode', () => {
     const save = invokeMock.mock.calls.find((c) => c[0] === 'save_committee_mode_overrides');
     expect(save?.[1]).toEqual({ overrides: {} });
   });
+
+  it('passes per-symbol mode to run_committee_stream', async () => {
+    const store = new InvestCommitteeStore();
+    store.maxConcurrent = 2;
+    await store.addToQueue(['A', 'B'], undefined, { A: 'research', B: 'holding' });
+    const callA = streamCalls().find((c) => c[1].symbols[0] === 'A');
+    const callB = streamCalls().find((c) => c[1].symbols[0] === 'B');
+    expect(callA?.[1].modes).toEqual({ A: 'research' });
+    expect(callB?.[1].modes).toEqual({ B: 'holding' });
+  });
 });

@@ -145,6 +145,7 @@ export interface QueueItem {
   status: QueueItemStatus;
   error?: string;
   progress?: PersistedProgress | null;
+  mode?: 'research' | 'holding';
 }
 
 /** Serializable subset of SymbolProgress persisted to disk for cross-restart recovery. */
@@ -222,7 +223,11 @@ export class InvestCommitteeStore {
   }
 
   /** Enqueue symbols and start draining. Optional snapshot is captured once. */
-  async addToQueue(symbols: string[], snapshot?: PortfolioSnapshot) {
+  async addToQueue(
+    symbols: string[],
+    snapshot?: PortfolioSnapshot,
+    modes?: Record<string, 'research' | 'holding'>,
+  ) {
     if (symbols.length === 0) return;
     await this._ensureListening();
     if (snapshot && !this.portfolioSnapshot) {
@@ -235,7 +240,7 @@ export class InvestCommitteeStore {
       }
       // Re-enqueue at tail: drop any prior entry, then push fresh.
       this.queue = this.queue.filter((q) => q.symbol !== sym);
-      this.queue.push({ symbol: sym, status: 'queued' });
+      this.queue.push({ symbol: sym, status: 'queued', mode: modes?.[sym] });
       this.perSymbolProgress.set(sym, this._freshProgress('queued'));
       this.results = this.results.filter((r) => r.symbol !== sym);
     }
@@ -248,7 +253,9 @@ export class InvestCommitteeStore {
 
   /** Re-run a finished/failed/aborted symbol — appended to the queue tail. */
   async retrySymbol(symbol: string) {
-    await this.addToQueue([symbol]);
+    const existing = this.queue.find((q) => q.symbol === symbol);
+    const modes = existing?.mode ? { [symbol]: existing.mode } : undefined;
+    await this.addToQueue([symbol], undefined, modes);
   }
 
   /** Cancel one in-flight symbol; backend also emits symbol_aborted. */
@@ -431,14 +438,17 @@ export class InvestCommitteeStore {
 
   private _startSymbol(symbol: string) {
     this._markRunning(symbol);
+    const item = this.queue.find((q) => q.symbol === symbol);
+    const modes = item?.mode ? { [symbol]: item.mode } : undefined;
     invoke<CommitteeResult[]>('run_committee_stream', {
       symbols: [symbol],
       debateRounds: null,
       dryRun: false,
+      modes,
     }).catch((e) => {
       // Whole invoke rejected without emitting symbol_complete/error.
-      const item = this.queue.find((q) => q.symbol === symbol);
-      if (item && item.status === 'running') {
+      const found = this.queue.find((q) => q.symbol === symbol);
+      if (found && found.status === 'running') {
         this._settleQueue(symbol, 'failed', String(e));
       }
     });
