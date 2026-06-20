@@ -213,7 +213,7 @@ pub fn cio_sanity_check(
             || o.parsed
                 .fallback_reason
                 .as_deref()
-                .map_or(false, is_hard_fallback)
+                .is_some_and(is_hard_fallback)
     });
     if has_unavailable {
         result.final_verdict = "HOLD".to_string();
