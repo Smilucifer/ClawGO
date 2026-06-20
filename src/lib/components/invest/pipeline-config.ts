@@ -1,6 +1,6 @@
 /**
  * 委员会 Pipeline 步骤定义
- * 在 CommitteeLiveTab / CommitteeReplayTab / CommitteeToolsTab 之间共享
+ * 在 CommitteeLiveTab / CommitteeReplayTab 之间共享
  */
 import type { RoundOutputSummary, SymbolProgress } from '$lib/stores/invest-committee-store.svelte';
 

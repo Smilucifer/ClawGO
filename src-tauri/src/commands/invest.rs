@@ -1339,44 +1339,6 @@ pub fn list_daily_reports(limit: Option<i64>) -> Result<Vec<crate::invest::daily
     crate::invest::daily_report::list_daily_reports(limit.unwrap_or(30))
 }
 
-// ── Regime Classification ──────────────────────────────────────────────
-
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RegimeResult {
-    pub ts_code: String,
-    pub regime: String,
-    pub brief: String,
-    pub metrics: std::collections::HashMap<String, f64>,
-    pub computed_at: String,
-}
-
-#[tauri::command]
-pub async fn get_regime_classification(ts_code: String, tushare_token: String) -> Result<RegimeResult, String> {
-    use chrono::Local;
-    use crate::tushare::client::TushareClient;
-
-    let client = TushareClient::with_token(tushare_token);
-    let result = crate::invest::regime::compute_regime_for_symbol(&client, &ts_code).await?;
-
-    let m = &result.metrics;
-    let mut metrics = std::collections::HashMap::new();
-    metrics.insert("latest".into(), m.latest);
-    metrics.insert("ma20".into(), m.ma20);
-    metrics.insert("ma60".into(), m.ma60);
-    metrics.insert("rsi14".into(), m.rsi14);
-    metrics.insert("volatility_ann".into(), m.volatility_ann);
-    metrics.insert("price_quantile_2y".into(), m.price_quantile_2y);
-
-    Ok(RegimeResult {
-        ts_code,
-        regime: result.regime.to_string(),
-        brief: result.reason,
-        metrics,
-        computed_at: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-    })
-}
-
 // ── Data Source Health ──────────────────────────────────────────────────
 
 #[derive(serde::Serialize)]

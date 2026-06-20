@@ -119,23 +119,10 @@ export type CommitteeEventType =
   | { type: 'role_start'; symbol: string; role: string; round: number; stepIndex: number }
   | { type: 'role_complete'; symbol: string; role: string; round: number; summary: RoundOutputSummary; stepIndex: number }
   | { type: 'regime_step'; symbol: string; success: boolean; contextPreview: string; stepIndex: number; regime?: string; reason?: string; strategyHint?: string; metrics?: RegimeMetrics }
-  | { type: 'tool_call'; symbol: string; role: string; round: number; toolName: string; arguments: string; result?: string; success: boolean; latencyMs: number }
   | { type: 'symbol_complete'; symbol: string; result: CommitteeResult }
   | { type: 'done'; completed: number; total: number }
   | { type: 'error'; symbol: string; error: string }
   | { type: 'symbol_aborted'; symbol: string };
-
-export interface ToolCallRecord {
-  symbol: string;
-  role: string;
-  round: number;
-  toolName: string;
-  arguments: string;
-  result?: string;
-  success: boolean;
-  latencyMs: number;
-  timestamp: number;
-}
 
 export type QueueItemStatus = 'queued' | 'running' | 'done' | 'failed' | 'aborted';
 
@@ -204,7 +191,6 @@ export class InvestCommitteeStore {
   // Streaming state
   streaming = $state(false);
   perSymbolProgress = $state<Map<string, SymbolProgress>>(new Map());
-  toolCallHistory = $state<ToolCallRecord[]>([]);
 
   // Queue scheduler state
   queue = $state<QueueItem[]>([]);
@@ -248,7 +234,6 @@ export class InvestCommitteeStore {
       this.queue.push({ symbol: sym, status: 'queued' });
       this.perSymbolProgress.set(sym, this._freshProgress('queued'));
       this.results = this.results.filter((r) => r.symbol !== sym);
-      this.toolCallHistory = this.toolCallHistory.filter((e) => e.symbol !== sym);
     }
     this.queue = [...this.queue];
     this.perSymbolProgress = new Map(this.perSymbolProgress);
@@ -515,22 +500,6 @@ export class InvestCommitteeStore {
     switch (event.type) {
       case 'committee_start':
       case 'done':
-        return;
-      case 'tool_call':
-        this.toolCallHistory = [
-          ...this.toolCallHistory,
-          {
-            symbol: event.symbol,
-            role: event.role,
-            round: event.round,
-            toolName: event.toolName,
-            arguments: event.arguments,
-            result: event.result,
-            success: event.success,
-            latencyMs: event.latencyMs,
-            timestamp: Date.now(),
-          },
-        ];
         return;
       case 'symbol_aborted':
         // Queue-level only — no perSymbolProgress mutation needed, so avoid the

@@ -16,19 +16,17 @@
   import CommitteeArchiveTab from '$lib/components/invest/CommitteeArchiveTab.svelte';
   import CommitteeRolesTab from '$lib/components/invest/CommitteeRolesTab.svelte';
   import CommitteeAccuracyTab from '$lib/components/invest/CommitteeAccuracyTab.svelte';
-  import CommitteeToolsTab from '$lib/components/invest/CommitteeToolsTab.svelte';
   import EventWatchTab from '$lib/components/invest/EventWatchTab.svelte';
   import SchedulerTab from '$lib/components/invest/SchedulerTab.svelte';
   import InsightsFeed from '$lib/components/invest/InsightsFeed.svelte';
-  import SystemRegimeTab from '$lib/components/invest/SystemRegimeTab.svelte';
   import SystemDatasourceTab from '$lib/components/invest/SystemDatasourceTab.svelte';
   import SystemPnlHistoryTab from '$lib/components/invest/SystemPnlHistoryTab.svelte';
   import SystemDreamsTab from '$lib/components/invest/SystemDreamsTab.svelte';
   import type { Holding } from '$lib/types';
 
   type InvestTab = 'dashboard' | 'committee' | 'strategy' | 'trades' | 'system';
-  type CommitteeSubTab = 'live' | 'replay' | 'archive' | 'roles' | 'accuracy' | 'tools';
-  type SystemSubTab = 'cron' | 'regime' | 'events' | 'datasource' | 'pnl_history' | 'insights' | 'dreams' | 'profile';
+  type CommitteeSubTab = 'live' | 'replay' | 'archive' | 'roles' | 'accuracy';
+  type SystemSubTab = 'cron' | 'events' | 'datasource' | 'pnl_history' | 'insights' | 'dreams' | 'profile';
 
   let activeTab: InvestTab = $state('dashboard');
   let committeeSubTab: CommitteeSubTab = $state('live');
@@ -44,7 +42,6 @@
 
   const systemSubTabs: { id: SystemSubTab; label: string }[] = $derived([
     { id: 'cron', label: t('invest_system_sub_cron') },
-    { id: 'regime', label: t('invest_system_sub_regime') },
     { id: 'events', label: t('invest_system_sub_events') },
     { id: 'datasource', label: t('invest_system_sub_datasource') },
     { id: 'pnl_history', label: t('invest_system_sub_pnl_history') },
@@ -59,7 +56,6 @@
     { id: 'archive', label: t('invest_committee_sub_archive') },
     { id: 'roles', label: t('invest_committee_sub_roles') },
     { id: 'accuracy', label: t('invest_committee_sub_accuracy') },
-    { id: 'tools', label: t('invest_committee_sub_tools') },
   ]);
 
   let tushareToken = $state<string>('');
@@ -230,8 +226,6 @@
         <CommitteeRolesTab />
       {:else if committeeSubTab === 'accuracy'}
         <CommitteeAccuracyTab />
-      {:else if committeeSubTab === 'tools'}
-        <CommitteeToolsTab />
       {/if}
     {:else if activeTab === 'system'}
       <!-- System sub-tab navigation (pill style) -->
@@ -294,8 +288,6 @@
 
       {#if systemSubTab === 'cron'}
         <SchedulerTab />
-      {:else if systemSubTab === 'regime'}
-        <SystemRegimeTab />
       {:else if systemSubTab === 'events'}
         <EventWatchTab onNavigateToCommittee={() => { activeTab = 'committee'; committeeSubTab = 'live'; }} />
       {:else if systemSubTab === 'datasource'}

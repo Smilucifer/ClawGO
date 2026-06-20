@@ -129,15 +129,6 @@
 
   // O(1) per-row lookups for the symbol card list (avoids O(assets×n) scans).
   const queueMap = $derived(new Map(store.queue.map((q) => [q.symbol, q])));
-  const toolMap = $derived.by(() => {
-    const m = new Map<string, typeof store.toolCallHistory>();
-    for (const tc of store.toolCallHistory) {
-      const bucket = m.get(tc.symbol);
-      if (bucket) bucket.push(tc);
-      else m.set(tc.symbol, [tc]);
-    }
-    return m;
-  });
 
   function buildSnapshot(): PortfolioSnapshot {
     const holdings: SnapshotHolding[] = [...invest.holdHoldings, ...invest.watchHoldings].map(
@@ -391,7 +382,6 @@
       </div>
 
       {#if isExpanded}
-        {@const tools = toolMap.get(asset.symbol) ?? []}
         <div class="card-body">
           <div class="flow-grid">
             <div class="fw">{@render stepCard('macro', p)}</div>
@@ -462,15 +452,6 @@
                     ⚠ {result.sentinelOverride.reason} → {result.sentinelOverride.forcedVerdict}
                   </div>
                 {/if}
-              </div>
-            {/if}
-
-            {#if tools.length > 0}
-              <div class="tool-strip">
-                🔧 {t('invest_committee_tools')}：
-                {#each tools as tc}
-                  <span class="tool-chip">{tc.toolName} <span class="tool-ms">{tc.latencyMs}ms</span></span>
-                {/each}
               </div>
             {/if}
           </div>
@@ -764,12 +745,5 @@
   .verdict-notes { margin: 0; padding-left: 18px; font-size: 11.5px; color: var(--text-tertiary); }
   .sentinel-override { font-size: 12px; color: var(--color-warning); }
 
-  /* Tool strip */
-  .tool-strip {
-    grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-    font-size: 11px; color: var(--text-tertiary);
-  }
-  .tool-chip { padding: 2px 8px; border-radius: var(--radius-sm); background: var(--bg-input); font-family: var(--font-mono); }
-  .tool-ms { opacity: 0.5; }
   .empty-hint { padding: 32px; text-align: center; color: var(--text-tertiary); font-size: 13px; }
 </style>

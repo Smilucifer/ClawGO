@@ -473,7 +473,6 @@ pub fn run() {
             commands::invest::save_user_profile,
             commands::invest::generate_daily_report,
             commands::invest::list_daily_reports,
-            commands::invest::get_regime_classification,
             commands::invest::get_datasource_health,
             commands::python_status::get_python_status,
             commands::python_status::restart_python_runtime,
