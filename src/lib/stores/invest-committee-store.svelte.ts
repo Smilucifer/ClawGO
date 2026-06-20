@@ -317,6 +317,7 @@ export class InvestCommitteeStore {
         symbol: it.symbol,
         status: settle(it.status),
         error: it.error,
+        mode: it.mode,
       }));
       const progress = new Map<string, SymbolProgress>();
       const restoredResults: CommitteeResult[] = [];
@@ -351,6 +352,7 @@ export class InvestCommitteeStore {
           symbol: q.symbol,
           status: q.status,
           error: q.error,
+          mode: q.mode,
           progress: p ? this._toPersisted(p) : null,
         };
       }),

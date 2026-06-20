@@ -178,4 +178,29 @@ describe('InvestCommitteeStore mode', () => {
     expect(callA?.[1].modes).toEqual({ A: 'research' });
     expect(callB?.[1].modes).toEqual({ B: 'holding' });
   });
+
+  it('queue persistence and restore round-trips per-symbol mode', async () => {
+    // Phase 1: enqueue with a non-default mode, then flush the persistence
+    // path directly (bypassing the 300 ms debounce) and capture what was sent
+    // to save_committee_queue.
+    const store1 = new InvestCommitteeStore();
+    store1.maxConcurrent = 1;
+    await store1.addToQueue(['A'], undefined, { A: 'research' });
+    await (store1 as unknown as { _flushQueue: () => Promise<void> })._flushQueue();
+
+    const saveCall = invokeMock.mock.calls.find((c) => c[0] === 'save_committee_queue');
+    expect(saveCall).toBeDefined();
+    const persisted = (saveCall![1] as { state: { items: Array<{ symbol: string; mode?: string }> } }).state;
+    expect(persisted.items.find((it) => it.symbol === 'A')?.mode).toBe('research');
+
+    // Phase 2: a fresh store loads the persisted state and re-surfaces mode.
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'load_committee_queue') return persisted;
+      return [];
+    });
+    const store2 = new InvestCommitteeStore();
+    await store2.loadQueue();
+    expect(store2.queue.find((q) => q.symbol === 'A')?.mode).toBe('research');
+  });
 });
