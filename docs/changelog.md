@@ -1,5 +1,22 @@
 # Changelog / 更新日志
 
+## v5.5.5 (2026-06-20)
+
+### 委员会字段解析误报修复 + Risk/CIO 卡片分段展示
+
+委员会直播卡片频繁报"部分字段未识别"(`missing_critical_fields`)并把最终裁决无差别降级到 HOLD(置信度 ≤ 0.4)。经 brainstorming → 计划(`docs/superpowers/plans/[done] 2026-06-20-committee-field-parsing-fix.md`)→ subagent 逐任务实现(TDD)+ 每任务两阶段独立审查 + opus 全分支终审完成。合并 `dafe32a..56c2497`,净 +307 / -14。
+
+**根因(真实归档样本 002384.SZ / 002735.SZ 验证):** Risk/CIO 的 LLM 把关键字段包进 markdown——`**SIGNAL: concerned** | **强度: 6/10**`、`**集中度:** 30.5%`、`- **集中度**:`——而 `parser.rs::matches_key_line` 只认 6 种裸 `KEY:` 格式,提取失败 → `detect_fallback_reason` 误报 `missing_critical_fields` → `analysis.rs` 检测到任一角色有 fallback 即把整盘 verdict 降级 HOLD。高发于 Risk R1(其 prompt 充满 markdown 标题诱导"报告模式";Macro/Quant 输出裸行故不受影响)。用户两个现象(误报降级 + 卡片一坨平铺)是同一根因的两面:解析失效导致前端 `roleFields()` 拿不到字段、落入 rawText 兜底平铺。
+
+**四层修复:**
+
+1. **parser 加固容错(`parser.rs`)**: 新增 `normalize_key_line` 剥离行首列表/引用前缀(`-`/`*`/`+`/`>`/有序列表)与整体 `**...**` 包裹后再匹配;`extract_field` 支持行内 `|`(含全角 `｜`)多字段拆分,保守守门(每段都是 `KEY: VALUE` 结构才拆,值含 `|` 的正常字段不破坏);新增 `parse_leading_f64` 数值容错(`6/10`→6.0、`30.5%`→30.5、全角 `％`、负数保留);`is_structured_key_line` 同步归一化,避免被包裹的 key 行在续行合并时被误并入上一字段。真实样本 002384 Risk R1 端到端回归锁测试。
+2. **软/硬 fallback 分离(`analysis.rs`)**: 新增 `is_hard_fallback`(`worker_unavailable`/`empty_text`/`cli_executor_none` + `cli_error` 前缀,与前端 `CommitteeLiveTab.svelte` 的 `HARD_FALLBACKS` 严格一致)。`cio_sanity_check` 的全局降级检查只对硬 fallback 生效;软 fallback(`missing_critical_fields`,有原文仅缺结构化字段)不再降级 verdict,也不再阻止高信念升级通道。`[WORKER_UNAVAILABLE]` marker 仍始终视为硬不可用。
+3. **prompt 收紧(`roles.rs`)**: `RISK_PROMPT`/`RISK_R2_PROMPT`/`CIO_PROMPT` 输出区前加"关键字段格式硬约束"——关键字段独占一行裸 `KEY: 值`,禁止 `**`/`#`/列表符号/行内 `|`,报告正文叙述仍可自由 markdown。从源头减少 LLM 产生包裹格式。
+4. **前端分段展示(`CommitteeLiveTab.svelte` + `invest-committee-store.svelte.ts`)**: 前端 `ParsedFields` 类型补 8 个字段(后端已全字段 camelCase 序列化,无需改后端);`roleFields()` 为 Risk 补最大回撤/调整止损,为 CIO 补主流观点/建议配置/止损价/执行计划/风控计划/个人备注,使 Risk/CIO 卡片像 Macro/量化一样走结构化 field-list 分段而非 rawText 平铺。8 个 `invest_field_*` i18n key 双语。
+
+**顺带修复:** `roles.rs` 一个本就存在(被本机 Rust 测试运行期 `STATUS_ENTRYPOINT_NOT_FOUND` 掩盖)的测试断言 bug——`test_load_prompt_for_round_risk_r2` 断言 `调整信号` 但 `RISK_R2_PROMPT` 实为 `调整风险信号`(非连续子串),改为正确断言;以及本批次引入的一个 clippy lint(`map_or(false,..)` → `is_some_and`)。另:`/usage` 余额卡片布局调整——DeepSeek 与 PackyAPI 各占半行(合计宽度对齐小米卡片),小米独占整行。
+
 ## v5.5.4 (2026-06-20)
 
 ### 多模块维护批次(memory 修复 / 委员会直播重设计 / 功能清理 / usage 卡片)
