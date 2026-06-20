@@ -681,7 +681,7 @@ mod tests {
     fn test_load_prompt_for_round_risk_r2() {
         let prompt = load_prompt_for_round(CommitteeRole::Risk, 2, "贵州茅台", "600519.SH", &default_ctx());
         assert!(prompt.contains("cross-challenge"));
-        assert!(prompt.contains("调整信号"));
+        assert!(prompt.contains("调整风险信号"));
     }
 
     #[test]
