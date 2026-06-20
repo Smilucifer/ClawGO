@@ -88,12 +88,20 @@
   }
 
   const allAssets = $derived.by(() => {
-    const assets: { symbol: string; name: string | null; kind: 'hold' | 'watch' }[] = [
-      ...invest.holdHoldings.map((h) => ({ symbol: h.symbol, name: h.name, kind: h.kind })),
+    const assets: { symbol: string; name: string | null; kind: 'hold' | 'watch'; mode: 'research' | 'holding'; overridden: boolean }[] = [
+      ...invest.holdHoldings.map((h) => ({
+        symbol: h.symbol, name: h.name, kind: h.kind as 'hold',
+        mode: store.effectiveMode(h.symbol, 'hold'),
+        overridden: store.modeOverrides.has(h.symbol),
+      })),
     ];
     if (includeWatch) {
       assets.push(
-        ...invest.watchHoldings.map((h) => ({ symbol: h.symbol, name: h.name, kind: h.kind })),
+        ...invest.watchHoldings.map((h) => ({
+          symbol: h.symbol, name: h.name, kind: h.kind as 'watch',
+          mode: store.effectiveMode(h.symbol, 'watch'),
+          overridden: store.modeOverrides.has(h.symbol),
+        })),
       );
     }
     return assets;
@@ -149,15 +157,25 @@
   }
 
   function runAll() {
+    if (allAssets.length === 0) return;
     const syms = allAssets.map((a) => a.symbol);
-    if (syms.length === 0) return;
-    store.addToQueue(syms, buildSnapshot());
+    const modes: Record<string, 'research' | 'holding'> = {};
+    for (const a of allAssets) modes[a.symbol] = a.mode;
+    store.addToQueue(syms, buildSnapshot(), modes);
   }
 
   function runSymbol(sym: string) {
     expandedSymbols.add(sym);
     expandedSymbols = new Set(expandedSymbols);
-    store.addToQueue([sym], buildSnapshot());
+    const asset = allAssets.find((a) => a.symbol === sym);
+    const modes = asset ? { [sym]: asset.mode } : undefined;
+    store.addToQueue([sym], buildSnapshot(), modes);
+  }
+
+  function toggleMode(sym: string, kind: 'hold' | 'watch', current: 'research' | 'holding', e: Event) {
+    e.stopPropagation();
+    const next = current === 'research' ? 'holding' : 'research';
+    store.setSymbolMode(sym, kind, next);
   }
 
   function toggleExpand(sym: string) {
@@ -173,6 +191,7 @@
 
   onMount(() => {
     store.loadQueue();
+    store.loadModeOverrides();
   });
 </script>
 
@@ -348,6 +367,17 @@
           <span class="card-ticker">{asset.symbol}</span>
         </div>
         <span class="badge {asset.kind}">{asset.kind === 'hold' ? 'HOLD' : 'WATCH'}</span>
+        <button
+          class="mode-toggle {asset.mode}"
+          class:overridden={asset.overridden}
+          onclick={(e) => toggleMode(asset.symbol, asset.kind, asset.mode, e)}
+          title={asset.mode === 'research'
+            ? t('invest_committee_mode_switch_to_holding')
+            : t('invest_committee_mode_switch_to_research')}
+        >
+          {asset.mode === 'research' ? t('invest_committee_mode_research') : t('invest_committee_mode_holding')}
+          {#if asset.overridden}<span class="mode-dot" title={t('invest_committee_mode_overridden')}></span>{/if}
+        </button>
         {@render regimeChip(p)}
         <span class="header-spacer"></span>
         {@render pipelineBar(p)}
@@ -574,6 +604,17 @@
   }
   .badge.hold { background: rgba(138, 154, 118, 0.15); color: var(--color-success); }
   .badge.watch { background: rgba(196, 169, 110, 0.12); color: var(--accent-muted); }
+  .mode-toggle {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 9px; border-radius: var(--radius-sm);
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;
+    border: 1px solid var(--border); background: var(--bg-input);
+    cursor: pointer; flex-shrink: 0; transition: all 0.15s;
+  }
+  .mode-toggle:hover { border-color: var(--accent-muted); }
+  .mode-toggle.research { color: var(--accent); }
+  .mode-toggle.holding { color: var(--color-success); }
+  .mode-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent-muted); }
   .verdict-badge-sm {
     padding: 3px 10px;
     border-radius: var(--radius-sm);

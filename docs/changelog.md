@@ -1,5 +1,35 @@
 # Changelog / 更新日志
 
+## v5.5.4 (2026-06-20)
+
+### 多模块维护批次(memory 修复 / 委员会直播重设计 / 功能清理 / usage 卡片)
+
+四批改动经 brainstorming → spec(经用户审阅)→ 4 份实现计划 → subagent 逐任务实现 + 每任务两阶段独立审查完成。设计见 `docs/superpowers/specs/2026-06-19-multi-module-maintenance-design.md`,计划见 `docs/superpowers/plans/[done] 2026-06-19-batch-{a,b,c,d}-*.md`。合并 `b36d205..1c96400`,净 +1768 / -3913。
+
+**批次 A — 记忆系统修复:**
+
+1. **`/memory` 按 cwd 过滤失效**: `MemoryFileCandidate`(`models.rs`)缺 `#[serde(rename_all="camelCase")]`,Tauri 序列化为 snake_case `project_slug` 而前端按 `projectSlug` 读取恒为 `undefined`,导致选中 cwd 后永远列不出 `~/.claude/projects/<slug>/memory/*.md`。加注解即修复(单处后端改动)。
+2. **记忆自动抽取只在群聊触发**: `auto_extract_memories` 全仓库唯一调用点在 `group_chat/orchestrator.rs`,普通 `/chat` 会话从不触发。新增 `agent/session_actor.rs` 回合 idle 时的 fire-and-forget 抽取(新增 `is_group_chat` 标志 + 回合用户/助手文本缓冲,跳过群聊避免重复),抽取每日上限从全局单计数改为 per-source(`memory_extraction.rs`)。
+
+**批次 B — 委员会直播 UI 重设计(`CommitteeLiveTab.svelte`):**
+
+3. **头部行重排 + REGIME chip 上移**: 头部改为 `名字 | 持仓/观察 | REGIME chip | 空档 | 瘦进度条 | 判断 | 运行 | 展开`;REGIME 作为确定事实数据上移到头部 chip(状态名 + RSI/MA20方向/价格分位),`unknown` 时淡化;进度条从 `flex:1` 撑满改为固定 148px。
+4. **展开体重构 + 结构化字段卡渲染**: 移除展开体内独立 REGIME 框;宏观/CIO/最终判决改全宽占满;卡片内部从原始文本块改为结构化字段卡(方案A)——signal/置信度 chip + 迷你进度条 + 一句话结论 + 按角色的 key-value 字段表 + reasoning,解析失败时回退 rawText;响应式断点(宽/中/窄三档自适应)。
+
+**批次 C — 功能清理 / 数据源补全 / llm_config 迁移 / DB 清理:**
+
+5. **删除业务无用功能**: 删除"委员会-Tool调用" tab(`CommitteeToolsTab.svelte`)+ 直播卡内 tool-strip + store 的 `toolCallHistory` 死状态;删除"系统-市场Regime" tab(`SystemRegimeTab.svelte`)+ `get_regime_classification` 命令(保留 `regime.rs`——委员会 pipeline 仍依赖)。
+6. **接线缺 UI 的有用命令**: 为已注册但无前端入口的 `restart_python_runtime`(Python 重启按钮)与 `save_memory`(`/memory-mgmt` 手动新增记忆)接线。
+7. **删除 18 个孤儿 IPC 命令**: 清理已注册但无前端连接、且被内部路径/`record_trade` 取代的命令(`add/update/delete_holding`、`save_verdict`、`save_event`、`is_trading_day` 等);`sync_trade_calendar` 因 `init_invest_data` 内部调用,只去 `#[tauri::command]` 属性保留私有 fn。
+8. **event 分析迁移 CLI + 删除 llm_config 全链路**: `event_scanner`/`event_analyzer` 从 `OpenAiCompatClient` + `llm_config.json` HTTP 路径迁移到 CLI 执行器(两阶段:先迁移独立提交,再删除);删除 `invest/llm/client.rs`、`build_scan_clients`、orchestrator 死代码(`build_llm_config`/`llm_call_with_retry`/`run_with_tool_loop` 等)、`get/save_llm_config`/`InvestLlmConfig`/非流式 `run_committee`;委员会调参迁至独立 `CommitteeTuning` 结构(默认走 ambient `~/.claude`,缺凭据时报错而非静默降级)。净删约 2853 行。
+9. **数据源检测补全**: `get_datasource_health` 新增 7 个探针——腾讯实时/CSI300 K线、Tushare 新闻、AkShare 10Y国债/涨跌停、Yahoo history、Python 运行时(置于 AkShare/Jin10/Yahoo 之前作根因指示器);invest.db 检查从打开连接增强为 `SELECT 1 FROM holdings`。LLM provider 不再单独检测(已全走 CLI)。
+10. **数据库清理命令**: 删除死代码模块 `storage/invest/round_cache.rs`;新增 `commands/invest_cleanup.rs` 的 `invest_cleanup_scan`(只读计数)/`invest_cleanup_apply`(按用户确认的 target 删除)+ `SystemCleanupTab.svelte`,清理 daily_reports/event_sources 只写不读表、domain_insights 空转 dreaming 记录、legacy `~/.claw-go/rooms/` 目录;scan 与 apply 共用单一来源 WHERE 谓词,删除前 scan→确认→apply 三段式。
+
+**批次 D — /usage 余额卡片:**
+
+11. **PackyAPI 余额卡片**: `/usage` 在 DeepSeek 右侧新增 PackyAPI 余额面板(三列网格,小米独占整行)。后端 `query_packyapi_balance` 走 New-API `GET /api/user/self`(Cookie: session + TDC_itoken + `New-Api-User` 头),`quota`/`used_quota` 按 500000=$1 换算。
+12. **cookie 自动续期(小米 + PackyAPI)**: `reqwest::Client` 启用 `cookies` feature + 显式 `Arc<Jar>`,请求后从 jar 回读服务端 `Set-Cookie` 续期的 token 写回设置(`update_cookie_from_jar` 在 cookie 缺失/空值时保留原值,不会清空凭据),缓解小米 cookie 频繁失效需手动重取的问题;mimo `userId`(稳定标识)不种入 jar。
+
 ## v5.5.3 (2026-06-19)
 
 ### invest 定时调度器 9 项修复(根因 + 运行时实证)

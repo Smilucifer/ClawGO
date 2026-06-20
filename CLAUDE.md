@@ -4,7 +4,7 @@ This file guides Claude Code (claude.ai/code) when working in this repository.
 
 ## Overview
 
-Windows-first Tauri desktop app: SvelteKit (Svelte 5 runes) frontend + Rust backend. Built on Claw GO's local-first architecture, adding Claude Session Hub concepts (Group Chats, Memo, Roundtable, Driver/Copilot, Research) and the openInvest quant subsystem, without disrupting the core `/chat` path.
+Windows-first Tauri desktop app: SvelteKit (Svelte 5 runes) frontend + Rust backend. Built on Claw GO's local-first architecture, adding Claude Session Hub concepts (Group Chats, Memo, Roundtable) and the openInvest quant subsystem, without disrupting the core `/chat` path.
 
 Core product model:
 - `Run` — the smallest execution unit (one persisted agent session).
@@ -12,7 +12,7 @@ Core product model:
 - `AiCharacter` — a reusable persona template (role_type, role_instruction, default provider/model), stored in UserSettings.
 - The provider shown in the UI is not always the execution agent under the hood (see architecture §5).
 
-**Current version:** v5.5.3 (Phase 10+). Full per-version history lives in `docs/changelog.md` — consult it instead of duplicating release notes here.
+**Current version:** v5.5.4 (Phase 10+). Full per-version history lives in `docs/changelog.md` — consult it instead of duplicating release notes here.
 
 ## Standard workflow
 
@@ -69,7 +69,7 @@ See §11 for a known Rust-test runtime issue on this machine — prefer `cargo c
 **Backend (`src-tauri/src/`)** — Rust:
 - `commands/` — the Tauri IPC boundary (§3). ~35 modules incl. chat, session, group_chat, characters, runs, history, memos, settings, invest, teams, agents, mcp, git, files, diagnostics, balance. (There is no `plans.rs` — PlanArtifact CRUD lives in `group_chat.rs`.)
 - `agent/` — launch/session/stream, executor dispatch (claude/codex), control protocol, Windows MSVC env.
-- `group_chat/` — turn orchestration + user/character memory (injection, extraction, dream, context) + execution adapters.
+- `group_chat/` — turn orchestration + user/character memory (injection, extraction, dream, context) + execution adapters. Auto memory extraction (`memory_extraction.rs`) now fires for **both** group-chat turns (via `orchestrator.rs`) and normal `/chat` turns (via `agent/session_actor.rs` on turn idle), with per-source debounce/daily-cap.
 - `invest/` — the openInvest quant subsystem (§12).
 - `storage/` — local-first persistence (runs, group_chats, memos, settings, events, indexes, `invest/`).
 - `tushare/`, `tencent_quotes.rs` — market-data clients. `python/` — Python RPC bridge (AkShare). `web_server/` — browser/WS mode. `hooks/` — CC hook setup + team watcher.
@@ -126,7 +126,7 @@ Without it, `cargo build`/`test` and `npm run tauri build` fail at the link step
 
 ### 12. openInvest subsystem (`invest/`)
 A self-contained quant/portfolio assistant under `src-tauri/src/invest/`, surfaced at `/invest`. Largely independent of the chat/group-chat core; persists to `storage/invest/` (`invest.db`, SQLite). Frontend state: `invest-store.svelte.ts`, `invest-committee-store.svelte.ts`. The committee role count and pipeline shape have changed across versions — read the source rather than trusting a number here.
-- **Committee** (`invest/committee/`) — a multi-role LLM debate that emits a per-symbol verdict. Active roles in `roles.rs` (Macro, Quant, Risk, CIO) across two rounds (R1/R2). `orchestrator.rs` drives the pipeline; `cli_executor.rs` runs each role through the Claude CLI; `parser.rs` + `analysis.rs` extract structured fields; `tools.rs` exposes role-scoped data tools; `queue.rs` persists the run queue with CancellationToken-based abort; `archive.rs` writes verdict reports.
+- **Committee** (`invest/committee/`) — a multi-role LLM debate that emits a per-symbol verdict. Active roles in `roles.rs` (Macro, Quant, Risk, CIO) across two rounds (R1/R2). `orchestrator.rs` drives the pipeline; `cli_executor.rs` runs each role through the Claude CLI (committee runs CLI-only — the legacy `OpenAiCompatClient`/`llm_config.json` path was removed in v5.5.4; provider/model now come from `CommitteeTuning` + `platform_credentials`); `parser.rs` + `analysis.rs` extract structured fields; `tools.rs` exposes role-scoped data tools; `queue.rs` persists the run queue with CancellationToken-based abort; `archive.rs` writes verdict reports.
 - **Data** — `tushare/` (HTTP client, custom proxy), `tencent_quotes.rs` (realtime), Python AkShare via the `python/` bridge, `international.rs` (global indices). `indicators.rs` is shared TA (RSI/MA/percentiles); `regime.rs` computes market regime; `macro_refresh.rs` caches macro indicators.
 - **Scheduler** (`invest/scheduler/`) — cron jobs: PnL snapshots, event scan, daily report (`daily_report.rs`), dreaming.
 - **Events** — `jin10_collector.rs` (high-frequency Jin10 feed), `event_analyzer.rs` (LLM normalization), `event_scanner.rs`.

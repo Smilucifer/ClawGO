@@ -132,3 +132,75 @@ describe('InvestCommitteeStore queue', () => {
     expect(store.queue.find((q) => q.symbol === 'B')?.status).toBe('running');
   });
 });
+
+describe('InvestCommitteeStore mode', () => {
+  beforeEach(() => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    eventHandler = null;
+  });
+
+  it('effectiveMode defaults: watch→research, hold→holding', () => {
+    const store = new InvestCommitteeStore();
+    expect(store.effectiveMode('A', 'watch')).toBe('research');
+    expect(store.effectiveMode('B', 'hold')).toBe('holding');
+  });
+
+  it('effectiveMode honors override over kind default', () => {
+    const store = new InvestCommitteeStore();
+    store.modeOverrides.set('A', 'holding'); // watch 票被改成实盘
+    expect(store.effectiveMode('A', 'watch')).toBe('holding');
+  });
+
+  it('setSymbolMode records non-default and persists', async () => {
+    const store = new InvestCommitteeStore();
+    await store.setSymbolMode('A', 'watch', 'holding'); // 偏离默认
+    expect(store.modeOverrides.get('A')).toBe('holding');
+    const save = invokeMock.mock.calls.find((c) => c[0] === 'save_committee_mode_overrides');
+    expect(save?.[1]).toEqual({ overrides: { A: 'holding' } });
+  });
+
+  it('setSymbolMode back to default removes the override', async () => {
+    const store = new InvestCommitteeStore();
+    store.modeOverrides.set('A', 'holding');
+    await store.setSymbolMode('A', 'watch', 'research'); // 回到 watch 默认
+    expect(store.modeOverrides.has('A')).toBe(false);
+    const save = invokeMock.mock.calls.find((c) => c[0] === 'save_committee_mode_overrides');
+    expect(save?.[1]).toEqual({ overrides: {} });
+  });
+
+  it('passes per-symbol mode to run_committee_stream', async () => {
+    const store = new InvestCommitteeStore();
+    store.maxConcurrent = 2;
+    await store.addToQueue(['A', 'B'], undefined, { A: 'research', B: 'holding' });
+    const callA = streamCalls().find((c) => c[1].symbols[0] === 'A');
+    const callB = streamCalls().find((c) => c[1].symbols[0] === 'B');
+    expect(callA?.[1].modes).toEqual({ A: 'research' });
+    expect(callB?.[1].modes).toEqual({ B: 'holding' });
+  });
+
+  it('queue persistence and restore round-trips per-symbol mode', async () => {
+    // Phase 1: enqueue with a non-default mode, then flush the persistence
+    // path directly (bypassing the 300 ms debounce) and capture what was sent
+    // to save_committee_queue.
+    const store1 = new InvestCommitteeStore();
+    store1.maxConcurrent = 1;
+    await store1.addToQueue(['A'], undefined, { A: 'research' });
+    await (store1 as unknown as { _flushQueue: () => Promise<void> })._flushQueue();
+
+    const saveCall = invokeMock.mock.calls.find((c) => c[0] === 'save_committee_queue');
+    expect(saveCall).toBeDefined();
+    const persisted = (saveCall![1] as { state: { items: Array<{ symbol: string; mode?: string }> } }).state;
+    expect(persisted.items.find((it) => it.symbol === 'A')?.mode).toBe('research');
+
+    // Phase 2: a fresh store loads the persisted state and re-surfaces mode.
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'load_committee_queue') return persisted;
+      return [];
+    });
+    const store2 = new InvestCommitteeStore();
+    await store2.loadQueue();
+    expect(store2.queue.find((q) => q.symbol === 'A')?.mode).toBe('research');
+  });
+});
