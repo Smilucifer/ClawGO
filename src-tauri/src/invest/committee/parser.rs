@@ -320,10 +320,28 @@ fn is_structured_key_line(line: &str) -> bool {
 
 fn extract_field(text: &str, key: &str) -> Option<String> {
     for line in text.lines() {
+        // 行内多字段:出现 | 且**每段**都像 KEY: VALUE 时,按 | 拆分逐段优先尝试。
+        // 反例守门:任一段不是结构化 KEY: VALUE 就放弃拆分(避免破坏值中含 | 的正常字段)。
+        if line.contains('|') || line.contains('｜') {
+            let all_structured = line
+                .split(['|', '｜'])
+                .all(|seg| is_structured_key_line(&normalize_key_line(seg)));
+            if all_structured {
+                for seg in line.split(['|', '｜']) {
+                    let seg_norm = normalize_key_line(seg);
+                    if let Some(rest) = matches_key_line(&seg_norm, key) {
+                        return Some(strip_markdown_formatting(rest.trim()));
+                    }
+                }
+                // 该行已按段尝试过,key 不在此行——继续看下一行,
+                // 不再走整行匹配(否则会把别的字段值串当作本 key 的值)。
+                continue;
+            }
+        }
+        // 整行归一化匹配(单字段或值中含 | 但不是多字段结构)
         let normalized = normalize_key_line(line);
         if let Some(rest) = matches_key_line(&normalized, key) {
-            let val = rest.trim().to_string();
-            return Some(strip_markdown_formatting(&val));
+            return Some(strip_markdown_formatting(rest.trim()));
         }
     }
     None
@@ -341,11 +359,20 @@ fn extract_field_any(text: &str, keys: &[&str]) -> Option<String> {
 }
 
 fn extract_f64(text: &str, key: &str) -> Option<f64> {
-    extract_field(text, key).and_then(|v| {
-        // 容忍 LLM 在数值后追加百分号或全角百分号:`30.5%` / `30.5％`
-        let trimmed = v.trim().trim_end_matches(['%', '％']).trim();
-        trimmed.parse::<f64>().ok()
-    })
+    extract_field(text, key).and_then(|v| parse_leading_f64(&v))
+}
+
+/// 从值串中解析前导数字:支持 "6"、"6.5"、"6/10"(取分子)、"30.5%"(去尾符)。
+/// 同时容忍全角百分号 `％`、全角括号 `（` 等常见 LLM 输出后缀。
+fn parse_leading_f64(v: &str) -> Option<f64> {
+    let v = v.trim();
+    // 在 / % ％ 空格 ( （ 等分隔符处截断,取首段作为数值候选
+    let head = v
+        .split(['/', '%', '％', ' ', '（', '('])
+        .next()
+        .unwrap_or(v)
+        .trim();
+    head.parse::<f64>().ok()
 }
 
 /// Try extracting an f64 field by multiple keys.
@@ -1275,5 +1302,24 @@ mod tests {
         // 002384 真实形态:**集中度:** 30.5%
         let parsed = parse_role_output(CommitteeRole::Risk, "**集中度:** 30.5%", false);
         assert_eq!(parsed.concentration_pct, Some(30.5));
+    }
+
+    // ── Task 2: Inline `|` multi-field split + N/M、% numeric tolerance ──
+
+    #[test]
+    fn test_inline_pipe_multi_field() {
+        // Risk R1 真实形态:同一行两个字段用 | 分隔,且整体加粗分段
+        let text = "**SIGNAL: concerned** | **强度: 6/10**";
+        let parsed = parse_role_output(CommitteeRole::Risk, text, false);
+        assert_eq!(parsed.signal.as_deref(), Some("concerned"));
+        assert_eq!(parsed.strength, Some(6.0));
+    }
+
+    #[test]
+    fn test_pipe_inside_value_not_split() {
+        // 反例:值里含 | 但不是多字段(止损条件描述),不应被破坏
+        let text = "调整止损: 跌破MA20 | 或浮盈归零即减仓";
+        let parsed = parse_role_output(CommitteeRole::Risk, text, false);
+        assert_eq!(parsed.adjusted_stop_loss.as_deref(), Some("跌破MA20 | 或浮盈归零即减仓"));
     }
 }
