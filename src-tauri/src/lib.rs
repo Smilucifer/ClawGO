@@ -427,6 +427,8 @@ pub fn run() {
             commands::invest::abort_committee_symbol,
             commands::invest::abort_committee_all,
             commands::invest::load_committee_queue,
+            commands::invest::get_committee_mode_overrides,
+            commands::invest::save_committee_mode_overrides,
             commands::invest::save_committee_queue,
             commands::invest::load_committee_archive,
             commands::invest::get_role_prompts,

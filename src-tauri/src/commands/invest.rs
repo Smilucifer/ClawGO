@@ -420,6 +420,44 @@ pub fn save_committee_tuning(tuning: CommitteeTuning) -> Result<(), String> {
     std::fs::write(&path, json).map_err(|e| format!("write committee_tuning: {}", e))
 }
 
+// ── Committee Mode Overrides ─────────────────────────────────────────────────
+
+/// 每标的的分析模式覆盖表，持久化到 `~/.claw-go/invest/committee_mode_overrides.json`。
+/// key = symbol，value = "research" | "holding"。只记录被用户手动改过、偏离默认推导的票
+/// （默认：watch→research / hold→holding，由前端 store 推导）。后端只负责整表存/取，
+/// 不参与默认值判定（persist 层不知道 symbol 的 kind）。
+fn committee_mode_overrides_path() -> std::path::PathBuf {
+    let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    home.join(".claw-go")
+        .join("invest")
+        .join("committee_mode_overrides.json")
+}
+
+#[tauri::command]
+pub fn get_committee_mode_overrides() -> Result<std::collections::HashMap<String, String>, String> {
+    let path = committee_mode_overrides_path();
+    if !path.exists() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| format!("read committee_mode_overrides: {}", e))?;
+    serde_json::from_str(&content)
+        .map_err(|e| format!("parse committee_mode_overrides: {}", e))
+}
+
+#[tauri::command]
+pub fn save_committee_mode_overrides(
+    overrides: std::collections::HashMap<String, String>,
+) -> Result<(), String> {
+    let path = committee_mode_overrides_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("create dir: {}", e))?;
+    }
+    let json = serde_json::to_string_pretty(&overrides)
+        .map_err(|e| format!("serialize mode overrides: {}", e))?;
+    std::fs::write(&path, json).map_err(|e| format!("write committee_mode_overrides: {}", e))
+}
+
 // ── Committee ───────────────────────────────────────────────────────────────
 
 /// Parse a provider ID string into the `ProviderId` enum used by the
