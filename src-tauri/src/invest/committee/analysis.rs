@@ -114,6 +114,14 @@ pub struct SentinelOverride {
 // CIO Sanity Check -- 2 Gates + fallback
 // ---------------------------------------------------------------------------
 
+/// 硬 fallback = 工作节点真不可用/输出真空，必须降级 HOLD。
+/// 软 fallback（missing_critical_fields 等）= 有原文仅缺结构化字段，不全局降级。
+/// 口径须与前端 CommitteeLiveTab.svelte 的 HARD_FALLBACKS 一致。
+fn is_hard_fallback(reason: &str) -> bool {
+    matches!(reason, "worker_unavailable" | "empty_text" | "cli_executor_none")
+        || reason.starts_with("cli_error")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SanityCheckResult {
@@ -198,12 +206,14 @@ pub fn cio_sanity_check(
         );
     }
 
-    // Check for any role fallback (CLI failure, missing fields, empty output, etc.)
-    // Covers both [WORKER_UNAVAILABLE] marker in raw_text AND fallback_reason set by
-    // detect_fallback_reason (missing_critical_fields, empty_text, etc.)
+    // 仅硬 fallback 触发全局 HOLD；软 fallback（仅缺结构化字段，原文完整）不降级。
+    // [WORKER_UNAVAILABLE] marker 始终视为硬不可用。
     let has_unavailable = round_outputs.iter().any(|o| {
         o.parsed.raw_text.contains("[WORKER_UNAVAILABLE]")
-            || o.parsed.fallback_reason.is_some()
+            || o.parsed
+                .fallback_reason
+                .as_deref()
+                .map_or(false, is_hard_fallback)
     });
     if has_unavailable {
         result.final_verdict = "HOLD".to_string();
@@ -558,7 +568,8 @@ mod tests {
     }
 
     #[test]
-    fn test_sanity_fallback_reason_without_marker() {
+    fn test_soft_fallback_does_not_force_hold() {
+        // missing_critical_fields 是软 fallback：有原文仅缺结构化字段，不应把整盘压成 HOLD
         let cio = ParsedFields {
             verdict: Some("BUY".to_string()),
             confidence: Some(0.8),
@@ -570,6 +581,28 @@ mod tests {
             parsed: ParsedFields {
                 raw_text: "保护触发: yes".to_string(),
                 fallback_reason: Some("missing_critical_fields".to_string()),
+                ..Default::default()
+            },
+            latency_ms: 0,
+            tokens_used: 0,
+        }];
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", None, Mode::Holding);
+        assert_eq!(result.final_verdict, "BUY"); // 保留 CIO 原裁决，不再降级
+    }
+
+    #[test]
+    fn test_hard_fallback_still_forces_hold() {
+        let cio = ParsedFields {
+            verdict: Some("BUY".to_string()),
+            confidence: Some(0.8),
+            ..Default::default()
+        };
+        let outputs = vec![RoundOutput {
+            role: CommitteeRole::Risk,
+            round: 1,
+            parsed: ParsedFields {
+                raw_text: "[WORKER_UNAVAILABLE] cli failed".to_string(),
+                fallback_reason: Some("cli_error: timeout".to_string()),
                 ..Default::default()
             },
             latency_ms: 0,
@@ -670,13 +703,24 @@ mod tests {
     }
 
     #[test]
-    fn test_high_conviction_skipped_on_fallback() {
-        // 有 fallback → Fallback 先把 verdict 压成 HOLD/≤0.4，高信念不得翻案
+    fn test_high_conviction_skipped_on_hard_fallback() {
+        // 硬 fallback → Fallback 先把 verdict 压成 HOLD/≤0.4，高信念不得翻案
+        let cio = ParsedFields { verdict: Some("HOLD".to_string()), confidence: Some(0.35), ..Default::default() };
+        let mut outputs = high_conviction_outputs("bullish", 7.0, "ok");
+        outputs[0].parsed.raw_text = "[WORKER_UNAVAILABLE]".to_string();
+        outputs[0].parsed.fallback_reason = Some("worker_unavailable".to_string());
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", Some(7.0), Mode::Holding);
+        assert_eq!(result.final_verdict, "HOLD");
+    }
+
+    #[test]
+    fn test_high_conviction_not_blocked_by_soft_fallback() {
+        // 软 fallback 不阻止高信念升级
         let cio = ParsedFields { verdict: Some("HOLD".to_string()), confidence: Some(0.35), ..Default::default() };
         let mut outputs = high_conviction_outputs("bullish", 7.0, "ok");
         outputs[0].parsed.fallback_reason = Some("missing_critical_fields".to_string());
         let result = cio_sanity_check(&cio, &outputs, "risk_on", Some(7.0), Mode::Holding);
-        assert_eq!(result.final_verdict, "HOLD");
+        assert!(matches!(result.final_verdict.as_str(), "ACCUMULATE" | "BUY"));
     }
 
     #[test]
