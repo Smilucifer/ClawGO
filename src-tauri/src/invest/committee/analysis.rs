@@ -614,6 +614,34 @@ mod tests {
     }
 
     #[test]
+    fn test_cli_error_without_marker_forces_hold() {
+        // 隔离 is_hard_fallback 的 cli_error 前缀分支：
+        // raw_text 中没有 [WORKER_UNAVAILABLE]，fallback_reason 也不在 matches!() 三元组里，
+        // 唯一能让 has_unavailable=true 的路径就是 starts_with("cli_error")。
+        // 若有人把 starts_with 改成 == "cli_error"，本用例会 RED：final_verdict 会停在 BUY/0.8。
+        // macro=risk_on + cio=BUY 双多头 → G1 不冲突；macro 非 risk_off → G2 macro_guard=false。
+        let cio = ParsedFields {
+            verdict: Some("BUY".to_string()),
+            confidence: Some(0.8),
+            ..Default::default()
+        };
+        let outputs = vec![RoundOutput {
+            role: CommitteeRole::Quant,
+            round: 1,
+            parsed: ParsedFields {
+                raw_text: "分析超时".to_string(),
+                fallback_reason: Some("cli_error: deadline exceeded".to_string()),
+                ..Default::default()
+            },
+            latency_ms: 0,
+            tokens_used: 0,
+        }];
+        let result = cio_sanity_check(&cio, &outputs, "risk_on", None, Mode::Holding);
+        assert_eq!(result.final_verdict, "HOLD");
+        assert!(result.final_confidence <= 0.4);
+    }
+
+    #[test]
     fn test_sanity_all_gates_pass() {
         let cio = ParsedFields {
             verdict: Some("ACCUMULATE".to_string()),
