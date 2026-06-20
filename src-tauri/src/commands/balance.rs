@@ -6,6 +6,11 @@ use std::time::Duration;
 
 const DEEPSEEK_BALANCE_BASE_URL: &str = "https://api.deepseek.com";
 const MIMO_API_BASE_URL: &str = "https://platform.xiaomimimo.com";
+#[allow(dead_code)] // wired into refresh_balance_status_inner in Batch D Task 3
+const PACKYAPI_BASE_URL: &str = "https://www.packyapi.com";
+/// New-API quota unit: 500000 quota = $1.
+#[allow(dead_code)] // wired into refresh_balance_status_inner in Batch D Task 3
+const PACKYAPI_QUOTA_PER_USD: f64 = 500_000.0;
 
 fn balance_cache_entry(source: &str, result: Result<String, String>) -> BalanceCacheEntry {
     balance_cache_entry_with_tokens(source, result.map(|bt| (bt, None, None, None)))
@@ -138,6 +143,94 @@ async fn query_deepseek_balance(
         .await
         .map_err(|_| "DeepSeek balance response was not valid JSON".to_string())?;
     format_deepseek_balance(&body)
+}
+
+#[allow(dead_code)] // wired into refresh_balance_status_inner in Batch D Task 3
+fn format_packyapi_balance(body: &Value) -> Result<String, String> {
+    let data = body
+        .get("data")
+        .filter(|d| !d.is_null())
+        .ok_or_else(|| "PackyAPI response did not include account data".to_string())?;
+    let quota = data
+        .get("quota")
+        .and_then(Value::as_f64)
+        .ok_or_else(|| "PackyAPI response missing quota".to_string())?;
+    let used = data.get("used_quota").and_then(Value::as_f64).unwrap_or(0.0);
+    let remain_usd = quota / PACKYAPI_QUOTA_PER_USD;
+    let used_usd = used / PACKYAPI_QUOTA_PER_USD;
+    Ok(format!("${:.2} 剩 / ${:.2} 用", remain_usd, used_usd))
+}
+
+#[allow(dead_code)] // wired into refresh_balance_status_inner in Batch D Task 3
+async fn query_packyapi_balance(
+    client: &reqwest::Client,
+    session: &str,
+    itoken: &str,
+    user_id: &str,
+) -> Result<String, String> {
+    let session = session.trim();
+    let user_id = user_id.trim();
+    if session.is_empty() {
+        return Err("PackyAPI session cookie is not configured".to_string());
+    }
+    if user_id.is_empty() {
+        return Err("PackyAPI user id is not configured".to_string());
+    }
+
+    let cookie_value = if itoken.trim().is_empty() {
+        format!("session={session}")
+    } else {
+        format!("session={session}; TDC_itoken={}", itoken.trim())
+    };
+
+    let url = format!("{}/api/user/self", PACKYAPI_BASE_URL);
+    let response = client
+        .get(url)
+        .header(
+            COOKIE,
+            HeaderValue::from_str(&cookie_value).map_err(|_| {
+                "PackyAPI credentials contain invalid header characters".to_string()
+            })?,
+        )
+        .header(
+            "New-Api-User",
+            HeaderValue::from_str(user_id)
+                .map_err(|_| "PackyAPI user id is invalid".to_string())?,
+        )
+        .header("Accept", HeaderValue::from_static("application/json"))
+        .send()
+        .await
+        .map_err(|e| {
+            if e.is_timeout() {
+                "PackyAPI balance request timed out".to_string()
+            } else {
+                format!("PackyAPI balance request failed: {e}")
+            }
+        })?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(match status.as_u16() {
+            401 | 403 => "PackyAPI authentication failed".to_string(),
+            429 => "PackyAPI balance request was rate limited".to_string(),
+            code => format!("PackyAPI balance request failed with HTTP {code}"),
+        });
+    }
+
+    let body = response
+        .json::<Value>()
+        .await
+        .map_err(|_| "PackyAPI balance response was not valid JSON".to_string())?;
+
+    // New-API returns success:false + message on auth/business errors with HTTP 200
+    if body.get("success").and_then(Value::as_bool) == Some(false) {
+        let msg = body
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown error");
+        return Err(format!("PackyAPI: {msg}"));
+    }
+    format_packyapi_balance(&body)
 }
 
 fn build_mimo_headers(
@@ -504,5 +597,22 @@ mod tests {
         assert!(!err.contains("sk-live"));
         assert!(!err.contains("session_token=abc"));
         assert!(err.contains("[redacted]"));
+    }
+
+    #[test]
+    fn formats_packyapi_quota() {
+        let body = serde_json::json!({
+            "success": true,
+            "data": { "quota": 52819275, "used_quota": 397680725, "display_name": "Tester" }
+        });
+        let s = format_packyapi_balance(&body).unwrap();
+        assert!(s.contains("$105.6"), "got: {s}"); // 52819275 / 500000
+        assert!(s.contains("$795.3"), "got: {s}"); // 397680725 / 500000
+    }
+
+    #[test]
+    fn rejects_packyapi_missing_data() {
+        let body = serde_json::json!({ "success": false, "message": "unauthorized" });
+        assert!(format_packyapi_balance(&body).is_err());
     }
 }
