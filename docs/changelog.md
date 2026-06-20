@@ -30,6 +30,21 @@
 11. **PackyAPI 余额卡片**: `/usage` 在 DeepSeek 右侧新增 PackyAPI 余额面板(三列网格,小米独占整行)。后端 `query_packyapi_balance` 走 New-API `GET /api/user/self`(Cookie: session + TDC_itoken + `New-Api-User` 头),`quota`/`used_quota` 按 500000=$1 换算。
 12. **cookie 自动续期(小米 + PackyAPI)**: `reqwest::Client` 启用 `cookies` feature + 显式 `Arc<Jar>`,请求后从 jar 回读服务端 `Set-Cookie` 续期的 token 写回设置(`update_cookie_from_jar` 在 cookie 缺失/空值时保留原值,不会清空凭据),缓解小米 cookie 频繁失效需手动重取的问题;mimo `userId`(稳定标识)不种入 jar。
 
+### 委员会研究/实盘分析模式接入 + 废弃 Research 概念清理
+
+后端委员会(`invest/committee/`)早已实现 `Mode::Holding` / `Mode::Research` 双模式全链路,唯一缺口是前端 `invest-committee-store._startSymbol` 调 `run_committee_stream` 时未传 `modes`,导致所有标的退化为默认 `Holding`。本批补齐前端接线并做持久化覆盖;另清理已从代码树移除、仅剩孤儿 i18n/文档引用的 Group Chat「Research / Driver」概念。设计见 `docs/superpowers/specs/[done] 2026-06-20-committee-analysis-mode-design.md`,计划见 `docs/superpowers/plans/[done] 2026-06-20-committee-analysis-mode.md`。合并 `30a7161..76c0120`。
+
+**事项 1 — 分析模式接入(模式与 kind 正交):**
+
+13. **持久化层**: `commands/invest.rs` 新增 `committee_mode_overrides.json`(`HashMap<String,String>`,symbol → `"research"`/`"holding"`)读写,沿用 `committee_tuning.json` 的 `~/.claw-go/invest/` JSON 先例,不进 `invest.db`。后端只负责整表存/取,「等于默认值时删除条目」的精简判定放前端 store。
+14. **命令层**: 新增 `get_committee_mode_overrides` / `set_committee_mode_override(symbol, mode: Option<String>)` 两个 Tauri command 并注册。
+15. **Store 层**: `invest-committee-store` 新增 `modeOverrides` 状态 + `effectiveMode(symbol, kind) = override[symbol] ?? defaultByKind(kind)`(默认 `watch→research`、`hold→holding`)+ `setSymbolMode`(切到默认值即从覆盖表删除);`_startSymbol` 传 `modes`,queue item 携带 `mode` 并持久化,重启后保留研究/实盘覆盖。
+16. **UI 层**: `CommitteeLiveTab.svelte` 卡片新增研究/实盘模式一键切换徽章,手动切换后显示「手动设置」小圆点;入队时带模式。后端枚举名保持 `Mode::Research`/`Mode::Holding`、传输串 `"research"`/`"holding"` 不变,前端展示层映射为「研究/实盘」。
+
+**事项 2 — 废弃概念清理:**
+
+17. **清理 Research/Driver 残留**: 删除已从代码树移除的 Group Chat「Research / Driver」概念遗留的孤儿 i18n 字符串与过时文档引用;CLAUDE.md 已实现概念清单收敛为实际存在的 Group Chats / Memo / Roundtable。
+
 ## v5.5.3 (2026-06-19)
 
 ### invest 定时调度器 9 项修复(根因 + 运行时实证)
