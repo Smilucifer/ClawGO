@@ -1356,4 +1356,23 @@ mod tests {
         assert_eq!(parsed.stock_risk_summary.as_deref(), Some("估值偏高"));
         assert_eq!(parsed.strength, Some(6.0));
     }
+
+    // ── Task 4: 真实 Risk R1 LLM 输出端到端回归锁 ───────────────────────
+
+    #[test]
+    fn test_real_risk_r1_no_false_fallback() {
+        let text = "## 🛡️ Risk Officer 裁决 — 002384.SZ (东山精密)\n\
+                    \n---\n\n\
+                    **SIGNAL: concerned** | **强度: 6/10**\n\
+                    \n### 一、用户财务风险\n\n\
+                    **集中度:** 30.5%，处于策略单一资产上限70%以内\n\
+                    **可用子弹:** 460.63 CNY，账户现金近乎枯竭\n\
+                    **盈亏比:** +37.6%，浮盈丰厚\n\
+                    **标的风险:** PE=189.4 极高，估值透支增长预期";
+        let parsed = parse_role_output(CommitteeRole::Risk, text, false);
+        assert_eq!(parsed.signal.as_deref(), Some("concerned"));
+        assert_eq!(parsed.strength, Some(6.0));
+        // 关键:不再误报 fallback
+        assert_eq!(detect_fallback_reason(CommitteeRole::Risk, 1, &parsed), None);
+    }
 }
