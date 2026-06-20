@@ -14,7 +14,7 @@
   let platformCredentials = $state<Array<{ platform_id: string; name?: string }>>([]);
   let credentialsLoaded = $state(false);
 
-  const config = $derived(investCommitteeStore.llmConfig);
+  const tuning = $derived(investCommitteeStore.tuning);
 
   async function loadCredentials() {
     if (credentialsLoaded) return;
@@ -33,15 +33,15 @@
 
   function handleProviderChange(e: Event) {
     const target = e.target as HTMLSelectElement;
-    if (!config) return;
-    config.selectedProvider = target.value;
+    if (!tuning) return;
+    tuning.selectedProvider = target.value;
     scheduleSave();
   }
 
   function handleRoundsChange(e: Event) {
     const target = e.target as HTMLSelectElement;
-    if (!config) return;
-    config.debateRounds = Number(target.value);
+    if (!tuning) return;
+    tuning.debateRounds = Number(target.value);
     scheduleSave();
   }
 
@@ -50,10 +50,10 @@
   function scheduleSave() {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(async () => {
-      if (!config) return;
+      if (!tuning) return;
       saving = true;
       try {
-        await investCommitteeStore.saveConfig({ ...config });
+        await investCommitteeStore.saveTuning({ ...tuning });
       } catch (e) {
         console.error('Auto-save failed:', e);
       } finally {
@@ -62,14 +62,14 @@
     }, 500);
   }
 
-  let configLoadAttempted = $state(false);
+  let tuningLoadAttempted = $state(false);
 
   $effect(() => {
     let mounted = true;
-    if (!investCommitteeStore.llmConfig && !investCommitteeStore.configLoading && !configLoadAttempted) {
-      configLoadAttempted = true;
-      investCommitteeStore.loadConfig().then(() => {
-        if (mounted && investCommitteeStore.llmConfig) configLoadAttempted = false;
+    if (!investCommitteeStore.tuning && !investCommitteeStore.tuningLoading && !tuningLoadAttempted) {
+      tuningLoadAttempted = true;
+      investCommitteeStore.loadTuning().then(() => {
+        if (mounted && investCommitteeStore.tuning) tuningLoadAttempted = false;
       });
     }
     // Load platform credentials on first expand
@@ -92,7 +92,7 @@
     }}
   >
     <span class="flex items-center gap-2">
-      {t('invest_committee_llm_config')}
+      {t('invest_committee_tuning')}
       {#if saving}
         <span class="text-[11px] text-[var(--text-tertiary)]">saving...</span>
       {/if}
@@ -102,9 +102,9 @@
 
   {#if expanded}
     <div class="border-t border-border px-[var(--space-4)] py-[var(--space-3)]">
-      {#if investCommitteeStore.configLoading}
+      {#if investCommitteeStore.tuningLoading}
         <div class="text-[13px] text-[var(--text-secondary)]">Loading...</div>
-      {:else if config}
+      {:else if tuning}
         <!-- Provider selector (from App settings → Connection) -->
         <div class="mb-3">
           <label class="mb-1 block text-[11px] text-[var(--text-tertiary)]">
@@ -112,7 +112,7 @@
           </label>
           <select
             class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
-            value={config.selectedProvider}
+            value={tuning.selectedProvider}
             onchange={handleProviderChange}
           >
             <option value="default">{t('invest_committee_provider_default')}</option>
@@ -133,7 +133,7 @@
             </label>
             <select
               class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-[var(--space-2)] py-[var(--space-1)] text-[13px] text-[var(--text-primary)]"
-              value={config.debateRounds}
+              value={tuning.debateRounds}
               onchange={handleRoundsChange}
             >
               {#each DEBATE_ROUND_OPTIONS as opt}
@@ -144,7 +144,7 @@
         </div>
       {:else}
         <div class="text-[13px] text-[var(--text-secondary)]">
-          {t('invest_committee_no_config')}
+          {t('invest_committee_no_tuning')}
         </div>
       {/if}
     </div>

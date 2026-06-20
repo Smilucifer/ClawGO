@@ -337,7 +337,6 @@
   "invest_system_ds_status": "Status",
   "invest_system_ds_last_success": "Last Success",
   "invest_system_ds_sample": "Sample",
-  "invest_system_ds_llm_none": "No provider configured",
 
   "invest_system_pnl_history_title": "PnL Snapshot History",
   "invest_system_pnl_history_empty": "No snapshots yet.",
@@ -416,13 +415,13 @@
   "invest_accuracy_hit": "Hit",
   "invest_accuracy_lastReview": "Last review:",
 
-  "invest_committee_provider": "LLM Provider",
-  "invest_committee_llm_config": "LLM Provider Config",
+  "invest_committee_provider": "Committee CLI Provider",
+  "invest_committee_tuning": "Committee Tuning",
   "invest_committee_api_key": "API Key",
   "invest_committee_base_url": "Base URL",
   "invest_committee_model": "Model",
   "invest_committee_debate_rounds": "Debate Rounds",
-  "invest_committee_no_config": "No config loaded.",
+  "invest_committee_no_tuning": "Tuning not loaded.",
   "invest_committee_provider_default": "Default (Claude)",
   "invest_committee_concurrency": "Concurrency",
   "invest_committee_add_all": "Run All",
@@ -466,7 +465,7 @@
   "invest_committee_sub_archive": "Archive",
   "invest_committee_sub_roles": "Role Config",
   "invest_committee_sub_accuracy": "Accuracy",
-  "invest_committee_config": "Provider Config",
+  "invest_committee_tuning_section": "Committee Tuning",
 
   "invest_roles_verdict_options": "5 Verdict Options",
   "invest_roles_verdict_buy_desc": "Full position entry (only strong bullish + Risk ok)",

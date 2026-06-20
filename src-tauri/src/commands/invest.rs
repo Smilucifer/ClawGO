@@ -354,23 +354,23 @@ pub async fn init_invest_data(
     Ok(steps.join("; "))
 }
 
-// ── LLM Config ──────────────────────────────────────────────────────────────
+// ── Committee Tuning ────────────────────────────────────────────────────────
 
+/// Lightweight knobs for the committee pipeline, persisted to
+/// `~/.claw-go/invest/committee_tuning.json`. Replaces the legacy
+/// `llm_config.json` (which carried HTTP-side `api_key`/`base_url` for the
+/// removed `OpenAiCompatClient`). Provider routing now goes through the CLI
+/// executor + `write_committee_settings_json`, so all this struct needs is the
+/// platform_id + model_override + a few scheduling knobs.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct InvestLlmProviderConfig {
-    pub provider_id: String,
-    pub api_key: String,
-    pub base_url: String,
-    pub default_model: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InvestLlmConfig {
-    pub providers: Vec<InvestLlmProviderConfig>,
-    /// The currently selected provider ID (e.g. "deepseek", "mimo-plan", "mimo-api").
+pub struct CommitteeTuning {
+    /// Platform credential id (matches `UserSettings.platform_credentials[].platform_id`)
+    /// or `"default"` for the ambient `~/.claude` config.
     pub selected_provider: String,
+    /// Optional model override; empty = use the CLI's native default.
+    #[serde(default)]
+    pub model: String,
     pub debate_rounds: u8,
     pub timeout_secs: u64,
     /// Maximum number of concurrent symbol pipelines (default 5).
@@ -382,34 +382,17 @@ fn default_max_concurrent() -> usize {
     5
 }
 
-fn llm_config_path() -> std::path::PathBuf {
+fn committee_tuning_path() -> std::path::PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-    home.join(".claw-go").join("invest").join("llm_config.json")
+    home.join(".claw-go")
+        .join("invest")
+        .join("committee_tuning.json")
 }
 
-fn default_llm_config() -> InvestLlmConfig {
-    InvestLlmConfig {
-        providers: vec![
-            InvestLlmProviderConfig {
-                provider_id: "deepseek".to_string(),
-                api_key: String::new(),
-                base_url: "https://api.deepseek.com/v1".to_string(),
-                default_model: "deepseek-v4-pro".to_string(),
-            },
-            InvestLlmProviderConfig {
-                provider_id: "mimo-plan".to_string(),
-                api_key: String::new(),
-                base_url: "https://token-plan-cn.xiaomimimo.com/v1".to_string(),
-                default_model: "mimo-v2.5-pro".to_string(),
-            },
-            InvestLlmProviderConfig {
-                provider_id: "mimo-api".to_string(),
-                api_key: String::new(),
-                base_url: "https://api.xiaomimimo.com/v1".to_string(),
-                default_model: "mimo-v2.5-pro".to_string(),
-            },
-        ],
-        selected_provider: "deepseek".to_string(),
+fn default_committee_tuning() -> CommitteeTuning {
+    CommitteeTuning {
+        selected_provider: "default".to_string(),
+        model: String::new(),
         debate_rounds: 4,
         timeout_secs: 120,
         max_concurrent_symbols: 5,
@@ -417,126 +400,32 @@ fn default_llm_config() -> InvestLlmConfig {
 }
 
 #[tauri::command]
-pub fn get_llm_config() -> Result<InvestLlmConfig, String> {
-    let path = llm_config_path();
+pub fn get_committee_tuning() -> Result<CommitteeTuning, String> {
+    let path = committee_tuning_path();
     if !path.exists() {
-        return Ok(default_llm_config());
+        return Ok(default_committee_tuning());
     }
     let content =
-        std::fs::read_to_string(&path).map_err(|e| format!("read llm_config: {}", e))?;
-    let data: serde_json::Value =
-        serde_json::from_str(&content).map_err(|e| format!("parse llm_config: {}", e))?;
-
-    // Known non-provider keys in the config JSON
-    const META_KEYS: &[&str] = &["selected_provider", "debate_rounds", "timeout_secs", "max_concurrent_symbols"];
-
-    let mut providers = Vec::new();
-    if let Some(obj) = data.as_object() {
-        for (key, val) in obj {
-            if META_KEYS.contains(&key.as_str()) {
-                continue;
-            }
-            // Only process keys that look like provider configs (objects with api_key)
-            if val.get("api_key").is_some() || val.get("base_url").is_some() {
-                // Internal keys use underscores (mimo_plan), display IDs use hyphens (mimo-plan)
-                let display_id = key.replace('_', "-");
-                providers.push(InvestLlmProviderConfig {
-                    provider_id: display_id,
-                    api_key: val["api_key"]
-                        .as_str()
-                        .unwrap_or("")
-                        .to_string(),
-                    base_url: val["base_url"]
-                        .as_str()
-                        .unwrap_or("")
-                        .to_string(),
-                    default_model: val["default_model"]
-                        .as_str()
-                        .unwrap_or("")
-                        .to_string(),
-                });
-            }
-        }
-    }
-
-    Ok(InvestLlmConfig {
-        providers,
-        selected_provider: data["selected_provider"]
-            .as_str()
-            .unwrap_or("deepseek")
-            .to_string(),
-        debate_rounds: data["debate_rounds"].as_u64().unwrap_or(4) as u8,
-        timeout_secs: data["timeout_secs"].as_u64().unwrap_or(120),
-        max_concurrent_symbols: data["max_concurrent_symbols"].as_u64().unwrap_or(5) as usize,
-    })
+        std::fs::read_to_string(&path).map_err(|e| format!("read committee_tuning: {}", e))?;
+    serde_json::from_str(&content).map_err(|e| format!("parse committee_tuning: {}", e))
 }
 
 #[tauri::command]
-pub fn save_llm_config(config: InvestLlmConfig) -> Result<(), String> {
-    let path = llm_config_path();
+pub fn save_committee_tuning(tuning: CommitteeTuning) -> Result<(), String> {
+    let path = committee_tuning_path();
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("create dir: {}", e))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("create dir: {}", e))?;
     }
-
-    let mut data = serde_json::Map::new();
-
-    // Write providers in the nested key format expected by resolve_api_key()
-    for p in &config.providers {
-        let internal_id = match p.provider_id.as_str() {
-            "deepseek" => "deepseek",
-            "mimo-plan" => "mimo_plan",
-            "mimo-api" => "mimo_api",
-            other => other,
-        };
-        let mut obj = serde_json::Map::new();
-        obj.insert("api_key".into(), serde_json::Value::String(p.api_key.clone()));
-        obj.insert(
-            "base_url".into(),
-            serde_json::Value::String(p.base_url.clone()),
-        );
-        obj.insert(
-            "default_model".into(),
-            serde_json::Value::String(p.default_model.clone()),
-        );
-        data.insert(
-            internal_id.to_string(),
-            serde_json::Value::Object(obj),
-        );
-    }
-
-    data.insert(
-        "selected_provider".into(),
-        serde_json::Value::String(config.selected_provider.clone()),
-    );
-
-    data.insert(
-        "debate_rounds".into(),
-        serde_json::Value::Number(config.debate_rounds.into()),
-    );
-    data.insert(
-        "timeout_secs".into(),
-        serde_json::Value::Number(config.timeout_secs.into()),
-    );
-    data.insert(
-        "max_concurrent_symbols".into(),
-        serde_json::Value::Number(config.max_concurrent_symbols.into()),
-    );
-
-    let json = serde_json::to_string_pretty(&serde_json::Value::Object(data))
-        .map_err(|e| format!("serialize: {}", e))?;
-    std::fs::write(&path, json).map_err(|e| format!("write llm_config: {}", e))
+    let json = serde_json::to_string_pretty(&tuning).map_err(|e| format!("serialize: {}", e))?;
+    std::fs::write(&path, json).map_err(|e| format!("write committee_tuning: {}", e))
 }
 
 // ── Committee ───────────────────────────────────────────────────────────────
 
-/// Parse the selected_provider string into a ProviderId enum.
-/// Returns DeepSeek as fallback for unknown IDs.
-fn parse_provider_id(id: &str) -> crate::invest::llm::types::ProviderId {
-    try_parse_provider_id(id).unwrap_or(crate::invest::llm::types::ProviderId::DeepSeek)
-}
-
-/// Parse a provider ID string, returning Err for unrecognized IDs.
+/// Parse a provider ID string into the `ProviderId` enum used by the
+/// committee orchestrator (for archival labels at line 2029 only). Unknown IDs
+/// (`"default"`, `custom-*`, ...) bubble up as `Err` — the caller treats that
+/// as "no enum-mapped provider" and routes through `--settings` instead.
 fn try_parse_provider_id(id: &str) -> Result<crate::invest::llm::types::ProviderId, String> {
     match id {
         "deepseek" => Ok(crate::invest::llm::types::ProviderId::DeepSeek),
@@ -546,29 +435,43 @@ fn try_parse_provider_id(id: &str) -> Result<crate::invest::llm::types::Provider
     }
 }
 
-/// Build a CommitteeConfig from the saved InvestLlmConfig, applying the
-/// selected provider to all roles.
-///
-/// Generates a `--settings` JSON for CLI-based third-party provider routing.
-/// The settings path is stored in `CommitteeConfig.settings_path` for the CLI executor.
-fn build_committee_config(config_data: &InvestLlmConfig, debate_rounds: Option<u8>) -> Result<crate::invest::committee::orchestrator::CommitteeConfig, String> {
-    let provider = parse_provider_id(&config_data.selected_provider);
-    let mut committee_config = crate::invest::committee::orchestrator::CommitteeConfig::default();
-    committee_config.debate_rounds = debate_rounds.unwrap_or(config_data.debate_rounds);
-    committee_config.timeout_secs = config_data.timeout_secs;
-    committee_config.max_concurrent_symbols = config_data.max_concurrent_symbols.max(1);
-    // Pass user-configured model for the selected provider
-    let model_override = config_data.providers.iter()
-        .find(|p| p.provider_id == config_data.selected_provider)
-        .filter(|p| !p.default_model.is_empty())
-        .map(|p| p.default_model.clone());
-    committee_config.model_override = model_override.clone();
-    // Apply selected provider to all roles
+/// Build a `CommitteeConfig` from the persisted `CommitteeTuning`, generating
+/// a `--settings` JSON for CLI-based third-party provider routing. The
+/// settings path is stored in `CommitteeConfig.settings_path` for the CLI
+/// executor.
+fn build_committee_config(
+    tuning: &CommitteeTuning,
+    debate_rounds: Option<u8>,
+) -> Result<crate::invest::committee::orchestrator::CommitteeConfig, String> {
+    // ProviderId enum is best-effort: only the three first-party platforms
+    // (deepseek/mimo-plan/mimo-api) map cleanly. For "default" / custom-*
+    // selections we fall back to DeepSeek for `role_providers`, but the actual
+    // CLI invocation is routed via `settings_path` (write_committee_settings_json).
+    let provider_for_archive = try_parse_provider_id(&tuning.selected_provider)
+        .unwrap_or(crate::invest::llm::types::ProviderId::DeepSeek);
+
+    let model_override = if tuning.model.is_empty() {
+        None
+    } else {
+        Some(tuning.model.clone())
+    };
+
+    let mut committee_config = crate::invest::committee::orchestrator::CommitteeConfig {
+        debate_rounds: debate_rounds.unwrap_or(tuning.debate_rounds),
+        timeout_secs: tuning.timeout_secs,
+        max_concurrent_symbols: tuning.max_concurrent_symbols.max(1),
+        model_override: model_override.clone(),
+        ..Default::default()
+    };
+
     for role in crate::invest::committee::roles::CommitteeRole::all() {
-        committee_config.role_providers.insert(*role, provider);
+        committee_config
+            .role_providers
+            .insert(*role, provider_for_archive);
     }
-    // Generate --settings JSON for CLI executor (third-party provider routing)
-    let platform_id = &config_data.selected_provider;
+
+    // Generate --settings JSON for CLI executor (third-party provider routing).
+    let platform_id = &tuning.selected_provider;
     let settings_result = crate::invest::committee::cli_executor::write_committee_settings_json(
         platform_id,
         model_override.as_deref(),
@@ -585,7 +488,10 @@ fn build_committee_config(config_data: &InvestLlmConfig, debate_rounds: Option<u
             // CLI would silently fall back to CC native config (wrong provider).
             // Surface the error so the user knows their provider selection didn't take effect.
             if platform_id != "default" && !platform_id.is_empty() {
-                return Err(format!("无法为供应商 '{}' 生成 CLI 配置: {}。请检查 API Key 是否已配置。", platform_id, e));
+                return Err(format!(
+                    "无法为供应商 '{}' 生成 CLI 配置: {}。请检查 API Key 是否已配置。",
+                    platform_id, e
+                ));
             }
             log::warn!("build_committee_config: settings generation note: {e}");
         }
@@ -613,49 +519,6 @@ fn parse_mode_map(
 }
 
 #[tauri::command]
-pub async fn run_committee(
-    symbols: Vec<String>,
-    debate_rounds: Option<u8>,
-    dry_run: Option<bool>,
-    modes: Option<std::collections::HashMap<String, String>>,
-) -> Result<Vec<crate::invest::committee::orchestrator::CommitteeResult>, String> {
-    let config_data = get_llm_config()?;
-    let committee_config = build_committee_config(&config_data, debate_rounds)?;
-
-    let mode_map = parse_mode_map(modes);
-    let results = crate::invest::committee::orchestrator::run_committee_batch(
-        &symbols,
-        &committee_config,
-        dry_run.unwrap_or(false),
-        mode_map,
-    )
-    .await;
-
-    // Collect successes; report first error but still return partial results
-    let mut out = Vec::with_capacity(results.len());
-    let mut first_err: Option<String> = None;
-    for r in results {
-        match r {
-            Ok(v) => out.push(v),
-            Err(e) => {
-                if first_err.is_none() {
-                    first_err = Some(e);
-                }
-            }
-        }
-    }
-    // If ALL failed, return the first error. If partial success, return what we have.
-    if out.is_empty() {
-        Err(first_err.unwrap_or_else(|| "all symbols failed".to_string()))
-    } else {
-        Ok(out)
-    }
-}
-
-/// Streaming variant of `run_committee` — emits real-time `CommitteeEvent`s
-/// on the `"committee-event"` Tauri event channel as each role starts/completes.
-/// Returns the same `Vec<CommitteeResult>` as the non-streaming version.
-#[tauri::command]
 pub async fn run_committee_stream(
     app: tauri::AppHandle,
     symbols: Vec<String>,
@@ -664,8 +527,8 @@ pub async fn run_committee_stream(
     modes: Option<std::collections::HashMap<String, String>>,
     cancel_registry: tauri::State<'_, CommitteeCancelRegistry>,
 ) -> Result<Vec<crate::invest::committee::orchestrator::CommitteeResult>, String> {
-    let config_data = get_llm_config()?;
-    let committee_config = build_committee_config(&config_data, debate_rounds)?;
+    let tuning = get_committee_tuning()?;
+    let committee_config = build_committee_config(&tuning, debate_rounds)?;
 
     let emitter: crate::invest::committee::orchestrator::EventEmitter = {
         let app = app.clone();
@@ -855,35 +718,6 @@ pub fn save_role_prompt(role: String, content: String, round: Option<u8>) -> Res
 }
 
 // ── Event Scanner ─────────────────────────────────────────────────────────
-
-/// Build TushareClient + LLM client + config for event scanning.
-/// Used by both the `scan_events` Tauri command and the background cron.
-pub fn build_scan_clients() -> Result<(crate::tushare::TushareClient, crate::invest::llm::client::OpenAiCompatClient, crate::invest::llm::types::LlmConfig), String> {
-    let tushare = crate::tushare::TushareClient::from_settings()?;
-
-    let config_data = get_llm_config()?;
-    let client =
-        crate::invest::llm::client::OpenAiCompatClient::new().map_err(|e| format!("init LLM client: {}", e))?;
-
-    // Use the first provider that has an API key configured
-    let provider_cfg = config_data
-        .providers
-        .iter()
-        .find(|p| !p.api_key.is_empty())
-        .ok_or("no LLM provider with an API key configured")?;
-
-    let provider_id = try_parse_provider_id(&provider_cfg.provider_id)?;
-
-    let llm_config = crate::invest::llm::types::LlmConfig {
-        provider: provider_id,
-        model: provider_cfg.default_model.clone(),
-        temperature: 0.7,
-        max_tokens: 4096,
-        timeout_secs: config_data.timeout_secs,
-    };
-
-    Ok((tushare, client, llm_config))
-}
 
 #[tauri::command]
 pub async fn scan_events(
@@ -1133,63 +967,6 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
         last_success: if db_ok { Some(now_str.clone()) } else { None },
         sample_value: if db_ok { Some("connected".into()) } else { Some("connection failed".into()) },
     });
-
-    // Check LLM config — read from ~/.claw-go/invest/llm_config.json
-    let llm_path = llm_config_path();
-    if llm_path.exists() {
-        match std::fs::read_to_string(&llm_path) {
-            Ok(content) => {
-                let parsed: Result<serde_json::Value, _> = serde_json::from_str(&content);
-                match parsed {
-                    Ok(data) => {
-                        // Check that at least one provider has a non-empty api_key
-                        let has_key = ["deepseek", "mimo_plan", "mimo_api"]
-                            .iter()
-                            .any(|pid| {
-                                data.get(*pid)
-                                    .and_then(|v| v.get("api_key"))
-                                    .and_then(|v| v.as_str())
-                                    .map(|s| !s.is_empty())
-                                    .unwrap_or(false)
-                            });
-                        sources.push(DataSourceStatus {
-                            name: "LLM Config".into(),
-                            ok: has_key,
-                            last_success: if has_key { Some(now_str.clone()) } else { None },
-                            sample_value: if has_key {
-                                Some("loaded".into())
-                            } else {
-                                Some("no api_key set".into())
-                            },
-                        });
-                    }
-                    Err(e) => {
-                        sources.push(DataSourceStatus {
-                            name: "LLM Config".into(),
-                            ok: false,
-                            last_success: None,
-                            sample_value: Some(format!("parse error: {e}")),
-                        });
-                    }
-                }
-            }
-            Err(e) => {
-                sources.push(DataSourceStatus {
-                    name: "LLM Config".into(),
-                    ok: false,
-                    last_success: None,
-                    sample_value: Some(format!("read error: {e}")),
-                });
-            }
-        }
-    } else {
-        sources.push(DataSourceStatus {
-            name: "LLM Config".into(),
-            ok: false,
-            last_success: None,
-            sample_value: Some("file not found".into()),
-        });
-    }
 
     // Check international data sources (AkShare + Jin10)
     let intl_client = crate::invest::international::InternationalClient::from_settings();

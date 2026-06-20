@@ -337,7 +337,6 @@
   "invest_system_ds_status": "状态",
   "invest_system_ds_last_success": "最后成功",
   "invest_system_ds_sample": "采样值",
-  "invest_system_ds_llm_none": "未配置供应商",
 
   "invest_system_pnl_history_title": "PnL 快照历史",
   "invest_system_pnl_history_empty": "暂无快照。",
@@ -416,13 +415,13 @@
   "invest_accuracy_hit": "命中",
   "invest_accuracy_lastReview": "上次评审：",
 
-  "invest_committee_provider": "LLM 供应商",
-  "invest_committee_llm_config": "LLM 供应商配置",
+  "invest_committee_provider": "委员会 CLI 供应商",
+  "invest_committee_tuning": "委员会调参",
   "invest_committee_api_key": "API Key",
   "invest_committee_base_url": "Base URL",
   "invest_committee_model": "模型",
   "invest_committee_debate_rounds": "辩论轮次",
-  "invest_committee_no_config": "暂无配置。",
+  "invest_committee_no_tuning": "调参未加载。",
   "invest_committee_provider_default": "默认 (Claude)",
   "invest_committee_concurrency": "并发数",
   "invest_committee_add_all": "运行全部",
@@ -466,7 +465,7 @@
   "invest_committee_sub_archive": "决议归档",
   "invest_committee_sub_roles": "角色配置",
   "invest_committee_sub_accuracy": "命中率",
-  "invest_committee_config": "供应商配置",
+  "invest_committee_tuning_section": "委员会调参",
 
   "invest_roles_verdict_options": "5 个 verdict 选项",
   "invest_roles_verdict_buy_desc": "一次建满（仅强 bullish + Risk ok）",

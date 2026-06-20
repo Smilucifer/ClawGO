@@ -306,7 +306,7 @@
   <div class="rounded-[var(--radius-lg)] border border-border p-4 bg-[var(--bg-card)]">
     <h3 class="mb-3 text-sm font-semibold flex items-center gap-2 text-[var(--text-primary)]">
       <span class="h-4 w-0.5 rounded-full bg-[var(--accent)]"></span>
-      {t('invest_committee_config')}
+      {t('invest_committee_tuning_section')}
     </h3>
     <ProviderConfigPanel />
   </div>

@@ -7,19 +7,21 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
-export interface InvestLlmProviderConfig {
-  providerId: string;
-  apiKey: string;
-  baseUrl: string;
-  defaultModel: string;
-}
-
-export interface InvestLlmConfig {
-  providers: InvestLlmProviderConfig[];
+/**
+ * Committee tuning persisted to ~/.claw-go/invest/committee_tuning.json.
+ * Mirrors the Rust `CommitteeTuning` struct in `commands/invest.rs`.
+ *
+ * Replaces the legacy `InvestLlmConfig` (deleted with the OpenAiCompatClient
+ * stack in Task C4). Provider routing is now handled CLI-side via
+ * `write_committee_settings_json(platform_id, model_override)`; this struct
+ * just records the user's selection so it survives restarts.
+ */
+export interface CommitteeTuning {
   selectedProvider: string;
+  model: string;
   debateRounds: number;
   timeoutSecs: number;
-  maxConcurrentSymbols?: number;
+  maxConcurrentSymbols: number;
 }
 
 export interface RoundOutputSummary {
@@ -181,8 +183,8 @@ export interface CommitteeQueueState {
 // ── Store ───────────────────────────────────────────────────────────────────
 
 export class InvestCommitteeStore {
-  llmConfig = $state<InvestLlmConfig | null>(null);
-  configLoading = $state(false);
+  tuning = $state<CommitteeTuning | null>(null);
+  tuningLoading = $state(false);
 
   running = $state(false);
   results = $state<CommitteeResult[]>([]);
@@ -475,22 +477,22 @@ export class InvestCommitteeStore {
     this._drainQueue();
   }
 
-  // ── Config ─────────────────────────────────────────────────────────────
+  // ── Tuning ─────────────────────────────────────────────────────────────
 
-  async loadConfig() {
-    this.configLoading = true;
+  async loadTuning() {
+    this.tuningLoading = true;
     try {
-      this.llmConfig = await invoke<InvestLlmConfig>('get_llm_config');
+      this.tuning = await invoke<CommitteeTuning>('get_committee_tuning');
     } catch (e) {
-      console.error('Failed to load LLM config:', e);
+      console.error('Failed to load committee tuning:', e);
     } finally {
-      this.configLoading = false;
+      this.tuningLoading = false;
     }
   }
 
-  async saveConfig(config: InvestLlmConfig) {
-    await invoke('save_llm_config', { config });
-    this.llmConfig = config;
+  async saveTuning(tuning: CommitteeTuning) {
+    await invoke('save_committee_tuning', { tuning });
+    this.tuning = tuning;
   }
 
   // ── Event handler ──────────────────────────────────────────────────────
