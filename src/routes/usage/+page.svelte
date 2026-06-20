@@ -41,6 +41,10 @@
   let mimoSlhInput = $state("");
   let mimoPhInput = $state("");
   let showMimoCredentials = $state(false);
+  let packyapiSession = $state("");
+  let packyapiItoken = $state("");
+  let packyapiUserId = $state("");
+  let showPackyapiCredentials = $state(false);
   let balanceSaving = $state(false);
 
   function balanceStatusText(source: string): {
@@ -89,7 +93,7 @@
     return n.toLocaleString();
   }
 
-  async function refreshBalanceStatus(source: "all" | "deepseek" | "mimo" = "all") {
+  async function refreshBalanceStatus(source: "all" | "deepseek" | "mimo" | "packyapi" = "all") {
     if (balanceRefreshing) return;
     balanceRefreshing = true;
     balanceRefreshError = null;
@@ -150,6 +154,54 @@
       balanceRefreshError = null;
     } catch (e) {
       dbgWarn("usage", "clearMimoCredentials error", e);
+    } finally {
+      balanceSaving = false;
+    }
+  }
+
+  async function savePackyapiCredentials() {
+    balanceSaving = true;
+    try {
+      const next = {
+        ...(balanceHelper ?? { auto_refresh_secs: 120, cache: {} }),
+        packyapi_session: packyapiSession.trim() || null,
+        packyapi_itoken: packyapiItoken.trim() || null,
+        packyapi_user_id: packyapiUserId.trim() || null,
+      };
+      const settings = await api.updateUserSettings({
+        balance_helper: next,
+      } as Partial<UserSettings>);
+      balanceHelper = settings.balance_helper ?? null;
+      packyapiSession = balanceHelper?.packyapi_session ?? "";
+      packyapiItoken = balanceHelper?.packyapi_itoken ?? "";
+      packyapiUserId = balanceHelper?.packyapi_user_id ?? "";
+      void refreshBalanceStatus("packyapi");
+    } catch (e) {
+      dbgWarn("usage", "savePackyapiCredentials error", e);
+    } finally {
+      balanceSaving = false;
+    }
+  }
+
+  async function clearPackyapiCredentials() {
+    balanceSaving = true;
+    try {
+      const next = {
+        ...(balanceHelper ?? { auto_refresh_secs: 120, cache: {} }),
+        packyapi_session: null,
+        packyapi_itoken: null,
+        packyapi_user_id: null,
+      };
+      const settings = await api.updateUserSettings({
+        balance_helper: next,
+      } as Partial<UserSettings>);
+      balanceHelper = settings.balance_helper ?? null;
+      packyapiSession = "";
+      packyapiItoken = "";
+      packyapiUserId = "";
+      balanceRefreshError = null;
+    } catch (e) {
+      dbgWarn("usage", "clearPackyapiCredentials error", e);
     } finally {
       balanceSaving = false;
     }
@@ -361,6 +413,9 @@
         mimoUserIdInput = balanceHelper?.mimo_user_id ?? "";
         mimoSlhInput = balanceHelper?.mimo_slh ?? "";
         mimoPhInput = balanceHelper?.mimo_ph ?? "";
+        packyapiSession = balanceHelper?.packyapi_session ?? "";
+        packyapiItoken = balanceHelper?.packyapi_itoken ?? "";
+        packyapiUserId = balanceHelper?.packyapi_user_id ?? "";
         void refreshBalanceStatus("all");
         const secs = Math.max(
           60,
@@ -510,8 +565,9 @@
         {/if}
 
         {@const deepseek = balanceStatusText("deepseek")}
+        {@const packy = balanceStatusText("packyapi")}
         {@const mimo = balanceStatusText("mimo")}
-        <div class="grid gap-4 md:grid-cols-2">
+        <div class="grid gap-4 md:grid-cols-3">
           <!-- DeepSeek panel -->
           <div
             class="rounded-xl bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent border border-blue-500/20 p-5 space-y-3"
@@ -556,9 +612,112 @@
             </div>
           </div>
 
-          <!-- Xiaomi panel (spans 2 columns) -->
+          <!-- PackyAPI panel -->
           <div
-            class="rounded-xl bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/20 p-5 space-y-3 md:col-span-2"
+            class="rounded-xl bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent border border-emerald-500/20 p-5 space-y-3"
+          >
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <div
+                  class="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/15"
+                >
+                  <svg
+                    class="h-5 w-5 text-emerald-400"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                    <path d="m3.3 7 8.7 5 8.7-5" />
+                    <path d="M12 22V12" />
+                  </svg>
+                </div>
+                <div>
+                  <div class="text-sm font-semibold">PackyAPI</div>
+                  <div
+                    class="flex items-center gap-1.5 text-xs text-muted-foreground"
+                  >
+                    <span
+                      class="inline-block h-1.5 w-1.5 rounded-full {packy.dotClass}"
+                    ></span>
+                    {packy.label}
+                  </div>
+                </div>
+              </div>
+              <div class="text-right">
+                <div class="text-lg font-bold tabular-nums">{packy.balance}</div>
+                {#if packy.sub}
+                  <div class="text-[10px] text-muted-foreground">{packy.sub}</div>
+                {/if}
+              </div>
+            </div>
+
+            <!-- PackyAPI credential inputs (collapsible) -->
+            <button
+              class="w-full text-left text-xs text-muted-foreground hover:text-foreground transition-colors"
+              onclick={() => (showPackyapiCredentials = !showPackyapiCredentials)}
+            >
+              <span class="flex items-center gap-1">
+                <svg
+                  class="h-3 w-3 transition-transform {showPackyapiCredentials ? 'rotate-90' : ''}"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+                {t("settings_balance_packyapi_creds")}
+              </span>
+            </button>
+            {#if showPackyapiCredentials}
+              <div class="space-y-2">
+                <Input
+                  type="password"
+                  placeholder="session"
+                  value={packyapiSession}
+                  oninput={(e) =>
+                    (packyapiSession = (e.currentTarget as HTMLInputElement).value)}
+                />
+                <Input
+                  type="password"
+                  placeholder="TDC_itoken"
+                  value={packyapiItoken}
+                  oninput={(e) =>
+                    (packyapiItoken = (e.currentTarget as HTMLInputElement).value)}
+                />
+                <Input
+                  type="text"
+                  placeholder="New-Api-User"
+                  value={packyapiUserId}
+                  oninput={(e) =>
+                    (packyapiUserId = (e.currentTarget as HTMLInputElement).value)}
+                />
+                <div class="flex justify-end gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={balanceSaving}
+                    onclick={clearPackyapiCredentials}
+                  >
+                    {t("settings_balance_clear")}
+                  </Button>
+                  <Button size="sm" disabled={balanceSaving} onclick={savePackyapiCredentials}>
+                    {balanceSaving
+                      ? t("settings_balance_saving")
+                      : t("settings_balance_save")}
+                  </Button>
+                </div>
+              </div>
+            {/if}
+          </div>
+
+          <!-- Xiaomi panel (spans full row) -->
+          <div
+            class="rounded-xl bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/20 p-5 space-y-3 md:col-span-3"
           >
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2.5">

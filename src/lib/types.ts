@@ -283,6 +283,9 @@ export interface BalanceHelperSettings {
   mimo_user_id?: string | null;
   mimo_slh?: string | null;
   mimo_ph?: string | null;
+  packyapi_session?: string | null;
+  packyapi_itoken?: string | null;
+  packyapi_user_id?: string | null;
   auto_refresh_secs: number;
   cache: Record<string, BalanceCacheEntry>;
 }

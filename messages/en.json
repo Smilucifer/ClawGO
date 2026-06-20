@@ -1720,6 +1720,7 @@
   "settings_balance_mimoUserId": "MiMo user ID",
   "settings_balance_mimoSlh": "MiMo SLH cookie",
   "settings_balance_mimoPh": "MiMo PH cookie",
+  "settings_balance_packyapi_creds": "PackyAPI Credentials",
   "settings_balance_clear": "Clear",
   "settings_balance_save": "Save",
   "settings_balance_saving": "Saving...",

@@ -478,7 +478,7 @@ export async function validatePlatformCredentials(
 }
 
 export async function refreshBalanceStatus(
-  source?: "all" | "deepseek" | "mimo",
+  source?: "all" | "deepseek" | "mimo" | "packyapi",
 ): Promise<BalanceHelperSettings> {
   dbg("api", "refreshBalanceStatus", { source });
   return invoke<BalanceHelperSettings>("refresh_balance_status", { source: source ?? null });

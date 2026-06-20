@@ -1720,6 +1720,7 @@
   "settings_balance_mimoUserId": "MiMo 用户 ID",
   "settings_balance_mimoSlh": "MiMo SLH Cookie",
   "settings_balance_mimoPh": "MiMo PH Cookie",
+  "settings_balance_packyapi_creds": "PackyAPI 凭据",
   "settings_balance_clear": "清除",
   "settings_balance_save": "保存",
   "settings_balance_saving": "保存中...",
