@@ -163,7 +163,6 @@
   let showAddForm = $state(false);
   let addContent = $state("");
   let addType = $state<(typeof MEMORY_TYPES)[number]>("fact");
-  let addTagsRaw = $state("");
   let addScope = $state<(typeof ADD_SCOPE_OPTIONS)[number]>("global");
   let addSubmitting = $state(false);
   let addError = $state<string | null>(null);
@@ -171,7 +170,6 @@
   function resetAddForm() {
     addContent = "";
     addType = "fact";
-    addTagsRaw = "";
     addScope = "global";
     addError = null;
   }
@@ -183,7 +181,6 @@
     addError = null;
     try {
       // save_memory signature: { content, memory_type, source_run_id?, confidence?, scope?, project_id? }
-      // Tags input is captured for UX but not yet persisted by save_memory backend.
       await getTransport().invoke("save_memory", {
         content: trimmed,
         memory_type: addType,
@@ -277,7 +274,9 @@
               </select>
             </div>
             <div class="flex-1">
-              <label class="mb-1 block text-xs font-medium" for="add-mem-scope">scope</label>
+              <label class="mb-1 block text-xs font-medium" for="add-mem-scope">
+                {t("memory_mgmt_add_scope")}
+              </label>
               <select
                 id="add-mem-scope"
                 bind:value={addScope}
@@ -288,18 +287,6 @@
                 {/each}
               </select>
             </div>
-          </div>
-          <div class="mb-2">
-            <label class="mb-1 block text-xs font-medium" for="add-mem-tags">
-              {t("memory_mgmt_add_tags")}
-            </label>
-            <input
-              id="add-mem-tags"
-              type="text"
-              bind:value={addTagsRaw}
-              class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              placeholder="tag1, tag2"
-            />
           </div>
           {#if addError}
             <div class="mb-2 text-xs text-destructive">{addError}</div>

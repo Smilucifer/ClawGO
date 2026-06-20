@@ -777,7 +777,7 @@
   "memory_mgmt_add": "新增记忆",
   "memory_mgmt_add_content": "内容",
   "memory_mgmt_add_type": "类型",
-  "memory_mgmt_add_tags": "标签（逗号分隔）",
+  "memory_mgmt_add_scope": "范围",
   "memory_mgmt_add_submit": "保存",
 
   "python_restart_runtime": "重启 Python 运行时",

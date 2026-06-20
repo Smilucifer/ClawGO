@@ -128,7 +128,9 @@
             <p class="error-detail">{restartError}</p>
           {/if}
           <div class="action-row">
-            <button class="retry-btn" onclick={retry} disabled={restarting}> 重试 </button>
+            <button class="retry-btn" onclick={retry} disabled={restarting}>
+              {t("common_retry")}
+            </button>
             <button class="retry-btn" onclick={restartRuntime} disabled={restarting}>
               {restarting ? "..." : t("python_restart_runtime")}
             </button>

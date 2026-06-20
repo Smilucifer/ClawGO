@@ -777,7 +777,7 @@
   "memory_mgmt_add": "Add Memory",
   "memory_mgmt_add_content": "Content",
   "memory_mgmt_add_type": "Type",
-  "memory_mgmt_add_tags": "Tags (comma separated)",
+  "memory_mgmt_add_scope": "Scope",
   "memory_mgmt_add_submit": "Save",
 
   "python_restart_runtime": "Restart Python Runtime",
