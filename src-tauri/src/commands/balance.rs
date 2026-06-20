@@ -1,15 +1,15 @@
 use crate::models::{BalanceCacheEntry, BalanceHelperSettings};
 use crate::storage;
+use reqwest::cookie::{CookieStore, Jar};
 use reqwest::header::{HeaderMap, HeaderValue, COOKIE, USER_AGENT};
 use serde_json::Value;
+use std::sync::Arc;
 use std::time::Duration;
 
 const DEEPSEEK_BALANCE_BASE_URL: &str = "https://api.deepseek.com";
 const MIMO_API_BASE_URL: &str = "https://platform.xiaomimimo.com";
-#[allow(dead_code)] // wired into refresh_balance_status_inner in Batch D Task 3
 const PACKYAPI_BASE_URL: &str = "https://www.packyapi.com";
 /// New-API quota unit: 500000 quota = $1.
-#[allow(dead_code)] // wired into refresh_balance_status_inner in Batch D Task 3
 const PACKYAPI_QUOTA_PER_USD: f64 = 500_000.0;
 
 fn balance_cache_entry(source: &str, result: Result<String, String>) -> BalanceCacheEntry {
@@ -145,7 +145,6 @@ async fn query_deepseek_balance(
     format_deepseek_balance(&body)
 }
 
-#[allow(dead_code)] // wired into refresh_balance_status_inner in Batch D Task 3
 fn format_packyapi_balance(body: &Value) -> Result<String, String> {
     let data = body
         .get("data")
@@ -161,7 +160,6 @@ fn format_packyapi_balance(body: &Value) -> Result<String, String> {
     Ok(format!("${:.2} 剩 / ${:.2} 用", remain_usd, used_usd))
 }
 
-#[allow(dead_code)] // wired into refresh_balance_status_inner in Batch D Task 3
 async fn query_packyapi_balance(
     client: &reqwest::Client,
     session: &str,
@@ -433,18 +431,37 @@ async fn query_mimo_balance(
     format_mimo_balance(&balance_body, &usage_body)
 }
 
+/// Extract `name`'s value from a merged cookie header (`a=1; b=2`) and, if present
+/// and non-empty, overwrite the stored credential so server-renewed cookies persist.
+fn update_cookie_from_jar(stored: &mut Option<String>, cookie_header: &str, name: &str) {
+    for part in cookie_header.split(';') {
+        let part = part.trim();
+        if let Some(val) = part.strip_prefix(&format!("{name}=")) {
+            if !val.is_empty() {
+                *stored = Some(val.to_string());
+            }
+            return;
+        }
+    }
+}
+
 async fn refresh_balance_status_inner(
     source: Option<String>,
 ) -> Result<BalanceHelperSettings, String> {
     let requested = source.unwrap_or_else(|| "all".to_string());
-    if !matches!(requested.as_str(), "all" | "deepseek" | "mimo") {
+    if !matches!(
+        requested.as_str(),
+        "all" | "deepseek" | "mimo" | "packyapi"
+    ) {
         return Err(format!("Unknown balance source: {requested}"));
     }
 
     let settings = storage::settings::get_user_settings();
     let mut helper = settings.balance_helper.clone();
+    let jar = Arc::new(Jar::default());
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
+        .cookie_provider(jar.clone())
         .build()
         .map_err(|e| format!("Balance HTTP client build failed: {e}"))?;
 
@@ -463,6 +480,19 @@ async fn refresh_balance_status_inner(
     }
 
     if requested == "all" || requested == "mimo" {
+        // Seed jar with stored MiMo cookies so Set-Cookie renewals can be read back.
+        let mimo_url: Option<reqwest::Url> = MIMO_API_BASE_URL.parse().ok();
+        if let Some(ref url) = mimo_url {
+            if let Some(ref tok) = helper.mimo_service_token {
+                jar.add_cookie_str(&format!("api-platform_serviceToken={tok}"), url);
+            }
+            if let Some(ref slh) = helper.mimo_slh {
+                jar.add_cookie_str(&format!("api-platform_slh={slh}"), url);
+            }
+            if let Some(ref ph) = helper.mimo_ph {
+                jar.add_cookie_str(&format!("api-platform_ph={ph}"), url);
+            }
+        }
         let result = query_mimo_balance(
             &client,
             helper.mimo_service_token.as_deref().unwrap_or(""),
@@ -471,6 +501,20 @@ async fn refresh_balance_status_inner(
             helper.mimo_ph.as_deref().unwrap_or(""),
         )
         .await;
+        // Read back any renewed MiMo cookies the server set.
+        if let Some(ref url) = mimo_url {
+            if let Some(renewed) = jar.cookies(url) {
+                if let Ok(cookie_hdr) = renewed.to_str() {
+                    update_cookie_from_jar(
+                        &mut helper.mimo_service_token,
+                        cookie_hdr,
+                        "api-platform_serviceToken",
+                    );
+                    update_cookie_from_jar(&mut helper.mimo_slh, cookie_hdr, "api-platform_slh");
+                    update_cookie_from_jar(&mut helper.mimo_ph, cookie_hdr, "api-platform_ph");
+                }
+            }
+        }
         let mapped = result.map(|d| {
             (
                 d.balance_text,
@@ -482,6 +526,37 @@ async fn refresh_balance_status_inner(
         helper.cache.insert(
             "mimo".to_string(),
             balance_cache_entry_with_tokens("mimo", mapped),
+        );
+    }
+
+    if requested == "all" || requested == "packyapi" {
+        let url: reqwest::Url = format!("{}/api/user/self", PACKYAPI_BASE_URL)
+            .parse()
+            .map_err(|e| format!("packyapi url: {e}"))?;
+        // Seed jar with stored cookies so the request authenticates.
+        if let Some(ref sess) = helper.packyapi_session {
+            jar.add_cookie_str(&format!("session={sess}"), &url);
+        }
+        if let Some(ref it) = helper.packyapi_itoken {
+            jar.add_cookie_str(&format!("TDC_itoken={it}"), &url);
+        }
+        let result = query_packyapi_balance(
+            &client,
+            helper.packyapi_session.as_deref().unwrap_or(""),
+            helper.packyapi_itoken.as_deref().unwrap_or(""),
+            helper.packyapi_user_id.as_deref().unwrap_or(""),
+        )
+        .await;
+        // Read back any renewed cookies the server set.
+        if let Some(renewed) = jar.cookies(&url) {
+            if let Ok(cookie_hdr) = renewed.to_str() {
+                update_cookie_from_jar(&mut helper.packyapi_session, cookie_hdr, "session");
+                update_cookie_from_jar(&mut helper.packyapi_itoken, cookie_hdr, "TDC_itoken");
+            }
+        }
+        helper.cache.insert(
+            "packyapi".to_string(),
+            balance_cache_entry("packyapi", result),
         );
     }
 
