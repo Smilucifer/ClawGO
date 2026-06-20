@@ -132,3 +132,40 @@ describe('InvestCommitteeStore queue', () => {
     expect(store.queue.find((q) => q.symbol === 'B')?.status).toBe('running');
   });
 });
+
+describe('InvestCommitteeStore mode', () => {
+  beforeEach(() => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    eventHandler = null;
+  });
+
+  it('effectiveMode defaults: watch→research, hold→holding', () => {
+    const store = new InvestCommitteeStore();
+    expect(store.effectiveMode('A', 'watch')).toBe('research');
+    expect(store.effectiveMode('B', 'hold')).toBe('holding');
+  });
+
+  it('effectiveMode honors override over kind default', () => {
+    const store = new InvestCommitteeStore();
+    store.modeOverrides.set('A', 'holding'); // watch 票被改成实盘
+    expect(store.effectiveMode('A', 'watch')).toBe('holding');
+  });
+
+  it('setSymbolMode records non-default and persists', async () => {
+    const store = new InvestCommitteeStore();
+    await store.setSymbolMode('A', 'watch', 'holding'); // 偏离默认
+    expect(store.modeOverrides.get('A')).toBe('holding');
+    const save = invokeMock.mock.calls.find((c) => c[0] === 'save_committee_mode_overrides');
+    expect(save?.[1]).toEqual({ overrides: { A: 'holding' } });
+  });
+
+  it('setSymbolMode back to default removes the override', async () => {
+    const store = new InvestCommitteeStore();
+    store.modeOverrides.set('A', 'holding');
+    await store.setSymbolMode('A', 'watch', 'research'); // 回到 watch 默认
+    expect(store.modeOverrides.has('A')).toBe(false);
+    const save = invokeMock.mock.calls.find((c) => c[0] === 'save_committee_mode_overrides');
+    expect(save?.[1]).toEqual({ overrides: {} });
+  });
+});

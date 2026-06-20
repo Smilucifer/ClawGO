@@ -203,6 +203,8 @@ export class InvestCommitteeStore {
   rolePrompts = $state<RolePrompts>({});
   showConfigPanel = $state(false);
 
+  modeOverrides = $state<Map<string, 'research' | 'holding'>>(new Map());
+
   private _unlisten: (() => void) | null = null;
   /** loadQueue restores from disk only once per process — the singleton store
    *  keeps live state across tab re-mounts, so re-restoring would clobber it. */
@@ -475,6 +477,54 @@ export class InvestCommitteeStore {
     this._recomputeRunning();
     this._persistQueue();
     this._drainQueue();
+  }
+
+  // ── Analysis Mode (research/holding) ────────────────────────────────────
+
+  /** Default mode by asset kind — only a starting guess, any symbol can be
+   *  overridden. watch (not held) → research (intrinsic attractiveness);
+   *  hold (held) → holding (portfolio-aware add/trim). */
+  private _defaultMode(kind: 'hold' | 'watch'): 'research' | 'holding' {
+    return kind === 'watch' ? 'research' : 'holding';
+  }
+
+  /** Effective mode = manual override if present, else kind default. */
+  effectiveMode(symbol: string, kind: 'hold' | 'watch'): 'research' | 'holding' {
+    return this.modeOverrides.get(symbol) ?? this._defaultMode(kind);
+  }
+
+  async loadModeOverrides() {
+    try {
+      const obj = await invoke<Record<string, string>>('get_committee_mode_overrides');
+      const map = new Map<string, 'research' | 'holding'>();
+      for (const [sym, m] of Object.entries(obj)) {
+        if (m === 'research' || m === 'holding') map.set(sym, m);
+      }
+      this.modeOverrides = map;
+    } catch (e) {
+      console.error('get_committee_mode_overrides failed:', e);
+      this.modeOverrides = new Map();
+    }
+  }
+
+  /** Set a symbol's mode. If it equals the kind default, the override is
+   *  removed (keeps the table minimal); otherwise it's recorded. Persists
+   *  the full table to disk. */
+  async setSymbolMode(symbol: string, kind: 'hold' | 'watch', mode: 'research' | 'holding') {
+    const next = new Map(this.modeOverrides);
+    if (mode === this._defaultMode(kind)) {
+      next.delete(symbol);
+    } else {
+      next.set(symbol, mode);
+    }
+    this.modeOverrides = next;
+    try {
+      await invoke('save_committee_mode_overrides', {
+        overrides: Object.fromEntries(next),
+      });
+    } catch (e) {
+      console.error('save_committee_mode_overrides failed:', e);
+    }
   }
 
   // ── Tuning ─────────────────────────────────────────────────────────────
