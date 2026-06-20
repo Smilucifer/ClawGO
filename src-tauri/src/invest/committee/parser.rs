@@ -310,7 +310,11 @@ fn merge_continuation_lines(text: &str) -> String {
 
 /// 检测一行是否为结构化 KEY: VALUE 格式。
 /// key 部分应为 1-30 个非空格字符，后跟中英文冒号或等号。
+/// 先归一化(剥列表/引用前缀 + 行首 `**...**` 包裹),再判定 — 这样
+/// `- **KEY**: v` / `**KEY: v**` / `> **KEY**: v` 等被装饰的 key 行
+/// 也能被识别,避免在 `merge_continuation_lines` 中被误并到上一字段。
 fn is_structured_key_line(line: &str) -> bool {
+    let line = normalize_key_line(line);
     if let Some(pos) = line.find(':').or_else(|| line.find('：')).or_else(|| line.find('=')) {
         pos > 0 && pos < 30 && !line[..pos].contains(' ')
     } else {
@@ -1321,5 +1325,17 @@ mod tests {
         let text = "调整止损: 跌破MA20 | 或浮盈归零即减仓";
         let parsed = parse_role_output(CommitteeRole::Risk, text, false);
         assert_eq!(parsed.adjusted_stop_loss.as_deref(), Some("跌破MA20 | 或浮盈归零即减仓"));
+    }
+
+    // ── Task 3: 续行合并识别被包裹的 key 行 ─────────────────────────────
+
+    #[test]
+    fn test_wrapped_key_not_merged_as_continuation() {
+        // 多行:裸 key 行后跟一个被 ** 包裹的 key 行,后者不应被并入前者的值
+        let text = "标的风险: 估值偏高\n**SIGNAL: concerned**\n强度: 6";
+        let parsed = parse_role_output(CommitteeRole::Risk, text, false);
+        assert_eq!(parsed.signal.as_deref(), Some("concerned"));
+        assert_eq!(parsed.stock_risk_summary.as_deref(), Some("估值偏高"));
+        assert_eq!(parsed.strength, Some(6.0));
     }
 }
