@@ -71,12 +71,20 @@
       push(t('invest_field_concentration'), pf.concentrationPct, '%');
       push(t('invest_field_dry_powder'), pf.dryPowderCny != null ? `¥${pf.dryPowderCny}` : null);
       push(t('invest_field_pnl'), pf.pnlPct != null ? `${pf.pnlPct}%` : null);
+      push(t('invest_field_worst_case'), pf.worstCaseLossPct != null ? `${pf.worstCaseLossPct}%` : null);
+      push(t('invest_field_adjusted_stop'), pf.adjustedStopLoss);
       push(t('invest_field_stock_risk'), pf.stockRiskSummary);
     } else if (role === 'cio') {
       push(t('invest_field_catalyst_tier'), pf.catalystTier);
+      push(t('invest_field_dominant_view'), pf.dominantView);
       push(t('invest_field_exec_mode'), pf.executionMode);
       push(t('invest_field_first_tranche'), pf.firstTrancheCny != null ? `¥${pf.firstTrancheCny}` : null);
+      push(t('invest_field_suggested_alloc'), pf.suggestedAllocCny != null ? `¥${pf.suggestedAllocCny}` : null);
+      push(t('invest_field_stop_loss'), pf.stopLossPrice != null ? `¥${pf.stopLossPrice}` : null);
       push(t('invest_field_catalyst'), pf.catalystSummary);
+      push(t('invest_field_exec_plan'), pf.executionPlan);
+      push(t('invest_field_risk_plan'), pf.riskPlan);
+      push(t('invest_field_personal_note'), pf.personalNote);
     }
     return out;
   }
