@@ -177,6 +177,43 @@ pub fn detect_fallback_reason(role: CommitteeRole, round: u8, parsed: &ParsedFie
     }
 }
 
+/// 归一化一行以便 key 检测:剥离行首列表/引用前缀,以及整体包裹的成对 `**`。
+/// 不改变字段值本身的内部内容(strip_markdown_formatting 仍在值阶段处理)。
+fn normalize_key_line(line: &str) -> String {
+    let mut s = line.trim();
+    // 剥列表/引用前缀(可能叠加,如 "- > "):循环剥一层
+    loop {
+        let stripped = s
+            .strip_prefix("- ")
+            .or_else(|| s.strip_prefix("* "))
+            .or_else(|| s.strip_prefix("+ "))
+            .or_else(|| s.strip_prefix("> "));
+        match stripped {
+            Some(rest) => s = rest.trim_start(),
+            None => break,
+        }
+    }
+    // 剥有序列表前缀 "N. " / "N、"
+    if let Some(pos) = s.find(['.', '、']) {
+        if pos > 0 && pos <= 3 && s[..pos].chars().all(|c| c.is_ascii_digit()) {
+            s = s[pos + s[pos..].chars().next().map_or(1, |c| c.len_utf8())..].trim_start();
+        }
+    }
+    // 若行首是 `**`,寻找第一个闭合 `**`,剥掉这对包裹,让 key/冒号暴露出来。
+    // 同时覆盖两种 LLM 输出形态:
+    //   `**KEY**: VALUE`   —— 闭合 ** 在 key 末尾、冒号外
+    //   `**KEY:** VALUE`   —— 闭合 ** 在冒号之后(行中部)
+    // 仅在行首存在 `**` 时触发;不会影响值内部的 `**bold**`。
+    let mut out = s.to_string();
+    if out.starts_with("**") {
+        if let Some(close) = out[2..].find("**") {
+            let close_abs = 2 + close;
+            out = format!("{}{}", &out[2..close_abs], &out[close_abs + 2..]);
+        }
+    }
+    out
+}
+
 /// Check if a trimmed line starts with one of the 6 supported key formats.
 /// Returns the value portion after the key+delimiter if matched.
 pub(crate) fn matches_key_line<'a>(line: &'a str, key: &str) -> Option<&'a str> {
@@ -283,8 +320,8 @@ fn is_structured_key_line(line: &str) -> bool {
 
 fn extract_field(text: &str, key: &str) -> Option<String> {
     for line in text.lines() {
-        let line = line.trim();
-        if let Some(rest) = matches_key_line(line, key) {
+        let normalized = normalize_key_line(line);
+        if let Some(rest) = matches_key_line(&normalized, key) {
             let val = rest.trim().to_string();
             return Some(strip_markdown_formatting(&val));
         }
@@ -304,7 +341,11 @@ fn extract_field_any(text: &str, keys: &[&str]) -> Option<String> {
 }
 
 fn extract_f64(text: &str, key: &str) -> Option<f64> {
-    extract_field(text, key).and_then(|v| v.parse::<f64>().ok())
+    extract_field(text, key).and_then(|v| {
+        // 容忍 LLM 在数值后追加百分号或全角百分号:`30.5%` / `30.5％`
+        let trimmed = v.trim().trim_end_matches(['%', '％']).trim();
+        trimmed.parse::<f64>().ok()
+    })
 }
 
 /// Try extracting an f64 field by multiple keys.
@@ -1211,5 +1252,28 @@ mod tests {
         let parsed = parse_role_output(CommitteeRole::Macro, text, false);
         assert_eq!(parsed.signal_reason.as_deref(), Some("北向资金持续流入"));
         assert_eq!(parsed.market_phase_reason.as_deref(), Some("站上MA60"));
+    }
+
+    // ── Task 1: Markdown wrap & list-prefix tolerance ──────────────────
+
+    #[test]
+    fn test_matches_markdown_wrapped_signal() {
+        // Risk R1 真实形态:整行被 ** 包裹,冒号在加粗内部
+        let parsed = parse_role_output(CommitteeRole::Risk, "**SIGNAL: concerned**", false);
+        assert_eq!(parsed.signal.as_deref(), Some("concerned"));
+    }
+
+    #[test]
+    fn test_matches_list_prefixed_bold_key() {
+        // 002735 真实形态:列表前缀 + 加粗 key
+        let parsed = parse_role_output(CommitteeRole::Risk, "- **集中度**: 30.5%", false);
+        assert_eq!(parsed.concentration_pct, Some(30.5));
+    }
+
+    #[test]
+    fn test_matches_bold_key_colon_inside() {
+        // 002384 真实形态:**集中度:** 30.5%
+        let parsed = parse_role_output(CommitteeRole::Risk, "**集中度:** 30.5%", false);
+        assert_eq!(parsed.concentration_pct, Some(30.5));
     }
 }
