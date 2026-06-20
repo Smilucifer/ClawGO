@@ -49,10 +49,18 @@ export interface RoundOutputSummary {
     concentrationPct?: number;
     dryPowderCny?: number;
     pnlPct?: number;
+    worstCaseLossPct?: number;
     stockRiskSummary?: string;
+    adjustedStopLoss?: string;
     // CIO
     catalystTier?: string;
     catalystSummary?: string;
+    dominantView?: string;
+    suggestedAllocCny?: number;
+    stopLossPrice?: number;
+    executionPlan?: string;
+    riskPlan?: string;
+    personalNote?: string;
     // Task 4 additions
     executionMode?: string;
     firstTrancheCny?: number;

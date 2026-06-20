@@ -177,6 +177,43 @@ pub fn detect_fallback_reason(role: CommitteeRole, round: u8, parsed: &ParsedFie
     }
 }
 
+/// 归一化一行以便 key 检测:剥离行首列表/引用前缀,以及整体包裹的成对 `**`。
+/// 不改变字段值本身的内部内容(strip_markdown_formatting 仍在值阶段处理)。
+fn normalize_key_line(line: &str) -> String {
+    let mut s = line.trim();
+    // 剥列表/引用前缀(可能叠加,如 "- > "):循环剥一层
+    loop {
+        let stripped = s
+            .strip_prefix("- ")
+            .or_else(|| s.strip_prefix("* "))
+            .or_else(|| s.strip_prefix("+ "))
+            .or_else(|| s.strip_prefix("> "));
+        match stripped {
+            Some(rest) => s = rest.trim_start(),
+            None => break,
+        }
+    }
+    // 剥有序列表前缀 "N. " / "N、"
+    if let Some(pos) = s.find(['.', '、']) {
+        if pos > 0 && pos <= 3 && s[..pos].chars().all(|c| c.is_ascii_digit()) {
+            s = s[pos + s[pos..].chars().next().map_or(1, |c| c.len_utf8())..].trim_start();
+        }
+    }
+    // 若行首是 `**`,寻找第一个闭合 `**`,剥掉这对包裹,让 key/冒号暴露出来。
+    // 同时覆盖两种 LLM 输出形态:
+    //   `**KEY**: VALUE`   —— 闭合 ** 在 key 末尾、冒号外
+    //   `**KEY:** VALUE`   —— 闭合 ** 在冒号之后(行中部)
+    // 仅在行首存在 `**` 时触发;不会影响值内部的 `**bold**`。
+    let mut out = s.to_string();
+    if out.starts_with("**") {
+        if let Some(close) = out[2..].find("**") {
+            let close_abs = 2 + close;
+            out = format!("{}{}", &out[2..close_abs], &out[close_abs + 2..]);
+        }
+    }
+    out
+}
+
 /// Check if a trimmed line starts with one of the 6 supported key formats.
 /// Returns the value portion after the key+delimiter if matched.
 pub(crate) fn matches_key_line<'a>(line: &'a str, key: &str) -> Option<&'a str> {
@@ -273,7 +310,11 @@ fn merge_continuation_lines(text: &str) -> String {
 
 /// 检测一行是否为结构化 KEY: VALUE 格式。
 /// key 部分应为 1-30 个非空格字符，后跟中英文冒号或等号。
+/// 先归一化(剥列表/引用前缀 + 行首 `**...**` 包裹),再判定 — 这样
+/// `- **KEY**: v` / `**KEY: v**` / `> **KEY**: v` 等被装饰的 key 行
+/// 也能被识别,避免在 `merge_continuation_lines` 中被误并到上一字段。
 fn is_structured_key_line(line: &str) -> bool {
+    let line = normalize_key_line(line);
     if let Some(pos) = line.find(':').or_else(|| line.find('：')).or_else(|| line.find('=')) {
         pos > 0 && pos < 30 && !line[..pos].contains(' ')
     } else {
@@ -283,10 +324,28 @@ fn is_structured_key_line(line: &str) -> bool {
 
 fn extract_field(text: &str, key: &str) -> Option<String> {
     for line in text.lines() {
-        let line = line.trim();
-        if let Some(rest) = matches_key_line(line, key) {
-            let val = rest.trim().to_string();
-            return Some(strip_markdown_formatting(&val));
+        // 行内多字段:出现 | 且**每段**都像 KEY: VALUE 时,按 | 拆分逐段优先尝试。
+        // 反例守门:任一段不是结构化 KEY: VALUE 就放弃拆分(避免破坏值中含 | 的正常字段)。
+        if line.contains('|') || line.contains('｜') {
+            let all_structured = line
+                .split(['|', '｜'])
+                .all(|seg| is_structured_key_line(&normalize_key_line(seg)));
+            if all_structured {
+                for seg in line.split(['|', '｜']) {
+                    let seg_norm = normalize_key_line(seg);
+                    if let Some(rest) = matches_key_line(&seg_norm, key) {
+                        return Some(strip_markdown_formatting(rest.trim()));
+                    }
+                }
+                // 该行已按段尝试过,key 不在此行——继续看下一行,
+                // 不再走整行匹配(否则会把别的字段值串当作本 key 的值)。
+                continue;
+            }
+        }
+        // 整行归一化匹配(单字段或值中含 | 但不是多字段结构)
+        let normalized = normalize_key_line(line);
+        if let Some(rest) = matches_key_line(&normalized, key) {
+            return Some(strip_markdown_formatting(rest.trim()));
         }
     }
     None
@@ -304,7 +363,20 @@ fn extract_field_any(text: &str, keys: &[&str]) -> Option<String> {
 }
 
 fn extract_f64(text: &str, key: &str) -> Option<f64> {
-    extract_field(text, key).and_then(|v| v.parse::<f64>().ok())
+    extract_field(text, key).and_then(|v| parse_leading_f64(&v))
+}
+
+/// 从值串中解析前导数字:支持 "6"、"6.5"、"6/10"(取分子)、"30.5%"(去尾符)。
+/// 同时容忍全角百分号 `％`、全角括号 `（` 等常见 LLM 输出后缀。
+fn parse_leading_f64(v: &str) -> Option<f64> {
+    let v = v.trim();
+    // 在 / % ％ 空格 ( （ 等分隔符处截断,取首段作为数值候选
+    let head = v
+        .split(['/', '%', '％', ' ', '（', '('])
+        .next()
+        .unwrap_or(v)
+        .trim();
+    head.parse::<f64>().ok()
 }
 
 /// Try extracting an f64 field by multiple keys.
@@ -1211,5 +1283,96 @@ mod tests {
         let parsed = parse_role_output(CommitteeRole::Macro, text, false);
         assert_eq!(parsed.signal_reason.as_deref(), Some("北向资金持续流入"));
         assert_eq!(parsed.market_phase_reason.as_deref(), Some("站上MA60"));
+    }
+
+    // ── Task 1: Markdown wrap & list-prefix tolerance ──────────────────
+
+    #[test]
+    fn test_matches_markdown_wrapped_signal() {
+        // Risk R1 真实形态:整行被 ** 包裹,冒号在加粗内部
+        let parsed = parse_role_output(CommitteeRole::Risk, "**SIGNAL: concerned**", false);
+        assert_eq!(parsed.signal.as_deref(), Some("concerned"));
+    }
+
+    #[test]
+    fn test_matches_list_prefixed_bold_key() {
+        // 002735 真实形态:列表前缀 + 加粗 key
+        let parsed = parse_role_output(CommitteeRole::Risk, "- **集中度**: 30.5%", false);
+        assert_eq!(parsed.concentration_pct, Some(30.5));
+    }
+
+    #[test]
+    fn test_matches_bold_key_colon_inside() {
+        // 002384 真实形态:**集中度:** 30.5%
+        let parsed = parse_role_output(CommitteeRole::Risk, "**集中度:** 30.5%", false);
+        assert_eq!(parsed.concentration_pct, Some(30.5));
+    }
+
+    // ── Task 2: Inline `|` multi-field split + N/M、% numeric tolerance ──
+
+    #[test]
+    fn test_inline_pipe_multi_field() {
+        // Risk R1 真实形态:同一行两个字段用 | 分隔,且整体加粗分段
+        let text = "**SIGNAL: concerned** | **强度: 6/10**";
+        let parsed = parse_role_output(CommitteeRole::Risk, text, false);
+        assert_eq!(parsed.signal.as_deref(), Some("concerned"));
+        assert_eq!(parsed.strength, Some(6.0));
+    }
+
+    #[test]
+    fn test_pipe_inside_value_not_split() {
+        // 反例:值里含 | 但不是多字段(止损条件描述),不应被破坏
+        let text = "调整止损: 跌破MA20 | 或浮盈归零即减仓";
+        let parsed = parse_role_output(CommitteeRole::Risk, text, false);
+        assert_eq!(parsed.adjusted_stop_loss.as_deref(), Some("跌破MA20 | 或浮盈归零即减仓"));
+    }
+
+    // ── Task 3: 续行合并识别被包裹的 key 行 ─────────────────────────────
+
+    #[test]
+    fn test_wrapped_key_not_merged_as_continuation() {
+        // 多行:裸 key 行后跟一个被 ** 包裹的 key 行,后者不应被并入前者的值
+        let text = "标的风险: 估值偏高\n**SIGNAL: concerned**\n强度: 6";
+        let parsed = parse_role_output(CommitteeRole::Risk, text, false);
+        assert_eq!(parsed.signal.as_deref(), Some("concerned"));
+        assert_eq!(parsed.stock_risk_summary.as_deref(), Some("估值偏高"));
+        assert_eq!(parsed.strength, Some(6.0));
+    }
+
+    #[test]
+    fn test_list_prefixed_bold_key_not_merged() {
+        // 真正会触发 Task 3 修复的 RED 场景:
+        // 老 is_structured_key_line 对 `+ **风险信号**: concerned` 返回 false
+        // (`+ **风险信号**` 段含空格);而 merge_continuation_lines 的 is_list_item
+        // 守门只识别 `- `/`* `,不挡 `+ `,所以该行会被并入上一字段的值,
+        // 导致 signal 提不出、stock_risk_summary 串到下一段。
+        // Task 3 在 is_structured_key_line 内先归一化(剥列表前缀 + `**…**` 包裹),
+        // 该行被识别为独立 key 行,各字段干净分离。
+        // 注:用户最初提议的 `- **风险信号**: ...` 形式实际不会 mis-merge ——
+        // is_list_item 已为 `- ` 短路;故改用 `+ ` 作为真正 RED 的列表前缀。
+        let text = "标的风险: 估值偏高\n+ **风险信号**: concerned\n强度: 6";
+        let parsed = parse_role_output(CommitteeRole::Risk, text, false);
+        assert_eq!(parsed.signal.as_deref(), Some("concerned"));
+        assert_eq!(parsed.stock_risk_summary.as_deref(), Some("估值偏高"));
+        assert_eq!(parsed.strength, Some(6.0));
+    }
+
+    // ── Task 4: 真实 Risk R1 LLM 输出端到端回归锁 ───────────────────────
+
+    #[test]
+    fn test_real_risk_r1_no_false_fallback() {
+        let text = "## 🛡️ Risk Officer 裁决 — 002384.SZ (东山精密)\n\
+                    \n---\n\n\
+                    **SIGNAL: concerned** | **强度: 6/10**\n\
+                    \n### 一、用户财务风险\n\n\
+                    **集中度:** 30.5%，处于策略单一资产上限70%以内\n\
+                    **可用子弹:** 460.63 CNY，账户现金近乎枯竭\n\
+                    **盈亏比:** +37.6%，浮盈丰厚\n\
+                    **标的风险:** PE=189.4 极高，估值透支增长预期";
+        let parsed = parse_role_output(CommitteeRole::Risk, text, false);
+        assert_eq!(parsed.signal.as_deref(), Some("concerned"));
+        assert_eq!(parsed.strength, Some(6.0));
+        // 关键:不再误报 fallback
+        assert_eq!(detect_fallback_reason(CommitteeRole::Risk, 1, &parsed), None);
     }
 }
