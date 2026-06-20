@@ -721,6 +721,15 @@ fn apply_balance_helper(user: &mut UserSettings, patch: &serde_json::Value) -> R
     if let Some(ph) = v.get("mimo_ph") {
         next.mimo_ph = ph.as_str().map(str::trim).filter(|s| !s.is_empty()).map(|s| s.to_string());
     }
+    if let Some(s) = v.get("packyapi_session") {
+        next.packyapi_session = s.as_str().map(str::trim).filter(|s| !s.is_empty()).map(|s| s.to_string());
+    }
+    if let Some(s) = v.get("packyapi_itoken") {
+        next.packyapi_itoken = s.as_str().map(str::trim).filter(|s| !s.is_empty()).map(|s| s.to_string());
+    }
+    if let Some(s) = v.get("packyapi_user_id") {
+        next.packyapi_user_id = s.as_str().map(str::trim).filter(|s| !s.is_empty()).map(|s| s.to_string());
+    }
     if let Some(secs) = v.get("auto_refresh_secs") {
         next.auto_refresh_secs = secs
             .as_u64()

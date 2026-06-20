@@ -500,6 +500,12 @@ pub struct BalanceHelperSettings {
     pub mimo_slh: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mimo_ph: Option<String>,
+    #[serde(default)]
+    pub packyapi_session: Option<String>,
+    #[serde(default)]
+    pub packyapi_itoken: Option<String>,
+    #[serde(default)]
+    pub packyapi_user_id: Option<String>,
     #[serde(default = "default_balance_auto_refresh_secs")]
     pub auto_refresh_secs: u64,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -513,6 +519,9 @@ impl Default for BalanceHelperSettings {
             mimo_user_id: None,
             mimo_slh: None,
             mimo_ph: None,
+            packyapi_session: None,
+            packyapi_itoken: None,
+            packyapi_user_id: None,
             auto_refresh_secs: default_balance_auto_refresh_secs(),
             cache: HashMap::new(),
         }
