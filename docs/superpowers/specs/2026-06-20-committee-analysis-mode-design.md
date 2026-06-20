@@ -43,11 +43,11 @@ openInvest 委员会(`invest/committee/`)后端已经实现了两种分析模式
 
 ### 1. 持久化层（新）
 
-`storage/invest/` 是模块化 Rust 文件（`committees.rs` / `strategy.rs` / `user_profile.rs` 等），新增覆盖表沿用此模式。
+委员会相关的轻量状态（`committee_tuning.json`、live-queue）走 **JSON 文件**持久化到 `~/.claw-go/invest/`（通过 `dirs::home_dir()`），不进 `invest.db`。覆盖表沿用此先例。
 
-- 新增 `storage/invest/committee_mode_overrides.rs`，持久化一份 `HashMap<String, String>`（symbol → "research" | "holding"），存为 JSON（与 `strategy.rs` / `user_profile.rs` 的轻量 JSON 持久化风格一致，不动 SQLite schema）。
-- 提供两个 storage 函数：`load_mode_overrides()` / `set_mode_override(symbol, mode_or_none)`。`set` 接受 `Option`：传 `None`（或等于该 symbol 当前 kind 的默认值）时**删除该条**，保持表只含真实覆盖。
-- 注：storage 层不知道 symbol 的 kind（kind 在 portfolio 数据里）。「等于默认值时删除」的判定放在**前端 store**，storage 只负责「写入指定 mode」或「删除条目」。storage 函数签名：`set_mode_override(symbol: String, mode: Option<String>)`，`Some(m)` 写入，`None` 删除。
+- 新增持久化函数（放在 `commands/invest.rs`，与 `committee_tuning` 的读写函数相邻，复用其 `~/.claw-go/invest/` 路径风格），持久化一份 `HashMap<String, String>`（symbol → "research" | "holding"），存为 `committee_mode_overrides.json`。
+- 提供读写：load（文件不存在返回空 map）/ write（整表覆盖写入）。
+- 注：persist 层不知道 symbol 的 kind（kind 在 portfolio 数据里）。「等于默认值时删除」的判定放在**前端 store**——store 决定 map 里该有哪些条目，然后整表传给后端写入。后端只负责「把这份 map 原样存盘」和「读出来」。
 
 ### 2. 命令层（新）
 
