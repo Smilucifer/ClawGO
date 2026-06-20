@@ -17,6 +17,7 @@ pub mod fs;
 pub mod git;
 pub mod history;
 pub mod invest;
+pub mod invest_cleanup;
 pub mod mcp;
 pub mod memos;
 pub mod onboarding;

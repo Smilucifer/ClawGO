@@ -22,11 +22,12 @@
   import SystemDatasourceTab from '$lib/components/invest/SystemDatasourceTab.svelte';
   import SystemPnlHistoryTab from '$lib/components/invest/SystemPnlHistoryTab.svelte';
   import SystemDreamsTab from '$lib/components/invest/SystemDreamsTab.svelte';
+  import SystemCleanupTab from '$lib/components/invest/SystemCleanupTab.svelte';
   import type { Holding } from '$lib/types';
 
   type InvestTab = 'dashboard' | 'committee' | 'strategy' | 'trades' | 'system';
   type CommitteeSubTab = 'live' | 'replay' | 'archive' | 'roles' | 'accuracy';
-  type SystemSubTab = 'cron' | 'events' | 'datasource' | 'pnl_history' | 'insights' | 'dreams' | 'profile';
+  type SystemSubTab = 'cron' | 'events' | 'datasource' | 'pnl_history' | 'insights' | 'dreams' | 'profile' | 'cleanup';
 
   let activeTab: InvestTab = $state('dashboard');
   let committeeSubTab: CommitteeSubTab = $state('live');
@@ -48,6 +49,7 @@
     { id: 'insights', label: t('invest_system_sub_insights') },
     { id: 'dreams', label: t('invest_system_sub_dreams') },
     { id: 'profile', label: t('invest_system_sub_profile') },
+    { id: 'cleanup', label: t('invest_system_sub_cleanup') },
   ]);
 
   const committeeSubTabs: { id: CommitteeSubTab; label: string }[] = $derived([
@@ -300,6 +302,8 @@
         <SystemDreamsTab />
       {:else if systemSubTab === 'profile'}
         <UserProfileSection />
+      {:else if systemSubTab === 'cleanup'}
+        <SystemCleanupTab />
       {/if}
     {/if}
   </div>

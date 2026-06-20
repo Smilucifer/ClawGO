@@ -453,6 +453,8 @@ pub fn run() {
             commands::invest::get_user_profile,
             commands::invest::save_user_profile,
             commands::invest::get_datasource_health,
+            commands::invest_cleanup::invest_cleanup_scan,
+            commands::invest_cleanup::invest_cleanup_apply,
             commands::python_status::get_python_status,
             commands::python_status::restart_python_runtime,
         ])
