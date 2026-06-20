@@ -1,7 +1,7 @@
 use crate::storage::invest::{
-    events::{self, Event, EventSource},
+    events::{self, Event},
     portfolio::{self, Holding, Trade},
-    scheduler::{self, SchedulerLog},
+    scheduler,
     strategy,
     verdicts::{self, PnlSnapshot, Verdict},
 };
@@ -29,89 +29,6 @@ pub fn get_holdings() -> Result<Vec<Holding>, String> {
     portfolio::list_holdings()
 }
 
-/// Deprecated: use `record_trade(action="add_watch")` instead.
-#[deprecated(note = "use record_trade with action='add_watch' instead")]
-#[allow(deprecated)]
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub fn add_holding(
-    symbol: String,
-    currency: String,
-    kind: String,
-    name: Option<String>,
-    notional: f64,
-    avg_cost: Option<f64>,
-    shares: Option<f64>,
-    entry_date: Option<String>,
-    linked_verdict_id: Option<String>,
-    notes: Option<String>,
-    asset_type: Option<String>,
-) -> Result<(), String> {
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-    let h = Holding {
-        symbol,
-        currency,
-        kind: kind.parse().unwrap_or_default(),
-        name,
-        notional,
-        avg_cost,
-        shares,
-        frozen_shares: None,
-        entry_date,
-        linked_verdict_id,
-        notes,
-        asset_type: asset_type.or_else(|| Some("stock".to_string())),
-        created_at: now.clone(),
-        updated_at: now,
-    };
-    portfolio::upsert_holding(&h)
-}
-
-/// Deprecated: use `record_trade(action="edit_holding")` instead.
-#[deprecated(note = "use record_trade with action='edit_holding' instead")]
-#[allow(deprecated)]
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub fn update_holding(
-    symbol: String,
-    currency: String,
-    kind: String,
-    name: Option<String>,
-    notional: f64,
-    avg_cost: Option<f64>,
-    shares: Option<f64>,
-    entry_date: Option<String>,
-    linked_verdict_id: Option<String>,
-    notes: Option<String>,
-    asset_type: Option<String>,
-) -> Result<(), String> {
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-    let h = Holding {
-        symbol,
-        currency,
-        kind: kind.parse().unwrap_or_default(),
-        name,
-        notional,
-        avg_cost,
-        shares,
-        frozen_shares: None,
-        entry_date,
-        linked_verdict_id,
-        notes,
-        asset_type: asset_type.or_else(|| Some("stock".to_string())),
-        created_at: now.clone(),
-        updated_at: now,
-    };
-    portfolio::upsert_holding(&h)
-}
-
-#[tauri::command]
-pub fn delete_holding(symbol: String, currency: String, kind: String) -> Result<(), String> {
-    portfolio::delete_holding(&symbol, &currency, &kind.parse().unwrap_or_default())
-}
-
-/// Atomic watch→hold conversion: delete_watch + buy in a single transaction.
-/// Replaces the previous two-step IPC pattern which had an atomicity defect.
 #[tauri::command]
 pub fn convert_watch_to_hold(
     symbol: String,
@@ -218,16 +135,6 @@ pub fn get_initial_cash() -> Result<f64, String> {
     portfolio::get_initial_cash()
 }
 
-#[tauri::command]
-pub fn set_initial_cash(amount: f64) -> Result<(), String> {
-    portfolio::set_initial_cash(amount)
-}
-
-#[tauri::command]
-pub fn update_cash(available: f64) -> Result<(), String> {
-    portfolio::set_cash(available)
-}
-
 // ── Verdicts ────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -235,69 +142,11 @@ pub fn get_verdicts(symbol: Option<String>, limit: Option<i64>) -> Result<Vec<Ve
     verdicts::list_verdicts(symbol.as_deref(), limit)
 }
 
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub fn save_verdict(
-    id: Option<String>,
-    symbol: String,
-    name: Option<String>,
-    verdict: String,
-    confidence: Option<f64>,
-    macro_signal: Option<String>,
-    macro_strength: Option<f64>,
-    reasoning: Option<String>,
-    model: Option<String>,
-    provider: Option<String>,
-    tokens_used: Option<i64>,
-    latency_ms: Option<i64>,
-) -> Result<(), String> {
-    let vid = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-    let v = Verdict {
-        id: vid,
-        symbol,
-        name,
-        verdict,
-        confidence,
-        macro_signal,
-        macro_strength,
-        reasoning,
-        model,
-        provider,
-        tokens_used,
-        latency_ms,
-        created_at: now,
-    };
-    verdicts::save_verdict(&v)
-}
-
 // ── PnL Snapshots ──────────────────────────────────────────────────────────
 
 #[tauri::command]
 pub fn get_pnl_snapshots(limit: Option<i64>) -> Result<Vec<PnlSnapshot>, String> {
     verdicts::list_pnl_snapshots(limit)
-}
-
-#[tauri::command]
-pub fn save_pnl_snapshot(
-    snapshot_date: String,
-    total_value: f64,
-    cash: f64,
-    holdings_value: f64,
-    daily_pnl: Option<f64>,
-    daily_pnl_pct: Option<f64>,
-) -> Result<i64, String> {
-    let s = PnlSnapshot {
-        id: 0, // auto-increment
-        snapshot_date,
-        total_value,
-        cash,
-        holdings_value,
-        daily_pnl,
-        daily_pnl_pct,
-        created_at: String::new(),
-    };
-    verdicts::save_pnl_snapshot(&s)
 }
 
 #[tauri::command]
@@ -313,90 +162,11 @@ pub fn get_events(source: Option<String>, limit: Option<i64>) -> Result<Vec<Even
 }
 
 #[tauri::command]
-pub fn save_event(
-    id: Option<String>,
-    source: String,
-    event_type: String,
-    title: String,
-    body: Option<String>,
-    symbols: Option<String>,
-    severity: Option<String>,
-    stance: Option<String>,
-) -> Result<(), String> {
-    let eid = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-    let e = Event {
-        id: eid,
-        source,
-        event_type,
-        title,
-        body,
-        symbols,
-        severity: severity.unwrap_or_else(|| "info".to_string()),
-        stance: stance.unwrap_or_else(|| "neutral".to_string()),
-        triggered: false,
-        trigger_verdict_id: None,
-        created_at: now,
-        analyzed: true,
-        analyzed_at: Some(chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string()),
-        channels: "[]".to_string(),
-    };
-    events::save_event(&e)
-}
-
-#[tauri::command]
 pub fn mark_event_triggered(id: String, verdict_id: Option<String>) -> Result<(), String> {
     events::mark_event_triggered(&id, verdict_id.as_deref())
 }
 
-#[tauri::command]
-pub fn get_event_sources() -> Result<Vec<EventSource>, String> {
-    events::list_event_sources()
-}
-
-#[tauri::command]
-pub fn save_event_source(
-    id: Option<String>,
-    name: String,
-    source_type: String,
-    config: Option<String>,
-    enabled: bool,
-) -> Result<(), String> {
-    let sid = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-    let s = EventSource {
-        id: sid,
-        name,
-        source_type,
-        config,
-        enabled,
-        last_poll_at: None,
-        created_at: now,
-    };
-    events::save_event_source(&s)
-}
-
-// ── Scheduler ───────────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn is_trading_day(date: String) -> Result<bool, String> {
-    scheduler::is_trading_day(&date)
-}
-
-#[tauri::command]
-pub fn get_scheduler_logs(
-    task_name: Option<String>,
-    limit: Option<i64>,
-) -> Result<Vec<SchedulerLog>, String> {
-    scheduler::list_scheduler_logs(task_name.as_deref(), limit)
-}
-
 // ── Strategy ────────────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn get_strategy(id: String) -> Result<Option<strategy::Strategy>, String> {
-    strategy::get_strategy(&id)
-}
 
 #[tauri::command]
 pub fn list_strategies() -> Result<Vec<strategy::Strategy>, String> {
@@ -460,17 +230,6 @@ pub async fn get_latest_price(
     client.get_latest_price(&ts_code).await
 }
 
-#[tauri::command]
-pub async fn get_daily_bars(
-    ts_code: String,
-    start_date: String,
-    end_date: String,
-    token: String,
-) -> Result<Vec<crate::tushare::client::DailyBar>, String> {
-    let client = crate::tushare::TushareClient::with_token(token);
-    client.daily(&ts_code, &start_date, &end_date).await
-}
-
 /// 批量获取实时行情。股票用 `rt_k`（盘中最新价），ETF 降级到 `fund_daily`。
 #[tauri::command]
 pub async fn get_realtime_quotes(
@@ -484,7 +243,6 @@ pub async fn get_realtime_quotes(
 
 // ── Trade Calendar Sync ──────────────────────────────────────────────────
 
-#[tauri::command]
 pub async fn sync_trade_calendar(token: String) -> Result<usize, String> {
     let client = crate::tushare::TushareClient::with_token(token);
     let today = chrono::Local::now();
@@ -1258,16 +1016,6 @@ pub async fn run_verdict_review_cmd(
 }
 
 #[tauri::command]
-pub fn get_tracking_status() -> Result<Vec<crate::storage::invest::verdict_tracking::TrackedVerdict>, String> {
-    crate::storage::invest::verdict_tracking::list_active_tracking()
-}
-
-#[tauri::command]
-pub fn list_all_tracking(limit: Option<i64>) -> Result<Vec<crate::storage::invest::verdict_tracking::TrackedVerdict>, String> {
-    crate::storage::invest::verdict_tracking::list_all_tracking(limit)
-}
-
-#[tauri::command]
 pub fn get_verdict_review_summary(
 ) -> Result<crate::invest::verdict_review::VerdictReviewSummary, String> {
     use crate::storage::invest::verdict_reviews;
@@ -1324,19 +1072,6 @@ pub fn get_user_profile() -> Result<crate::storage::invest::user_profile::UserPr
 #[tauri::command]
 pub fn save_user_profile(profile: crate::storage::invest::user_profile::UserProfile) -> Result<(), String> {
     crate::storage::invest::user_profile::save_profile(&profile)
-}
-
-// ── Daily Report ──────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn generate_daily_report() -> Result<String, String> {
-    let data_dir = crate::storage::data_dir();
-    crate::invest::daily_report::generate_daily_report(&data_dir)
-}
-
-#[tauri::command]
-pub fn list_daily_reports(limit: Option<i64>) -> Result<Vec<crate::invest::daily_report::DailyReportRecord>, String> {
-    crate::invest::daily_report::list_daily_reports(limit.unwrap_or(30))
 }
 
 // ── Data Source Health ──────────────────────────────────────────────────
