@@ -243,6 +243,7 @@ pub fn build_cli_macro_prompt(
     asset_name: &str,
     asset_symbol: &str,
     asset_context: &crate::invest::committee::orchestrator::AssetContext,
+    verdicts_data: &str,
 ) -> String {
     use crate::invest::committee::roles::{length_constraint_suffix, load_prompt_for_round, CommitteeRole};
 
@@ -260,7 +261,6 @@ pub fn build_cli_macro_prompt(
 
     // Build the CLI-specific additions (cache data that tools would have fetched)
     let macro_data = format_macro_cache_for_prompt();
-    let verdicts_data = format_recent_verdicts_for_prompt(asset_symbol);
 
     // Append cache data and CLI-specific instructions
     let cli_additions = format!(
@@ -338,59 +338,6 @@ pub(crate) fn format_risk_metrics_for_prompt(
     mode: crate::invest::committee::orchestrator::Mode,
 ) -> String {
     crate::invest::committee::orchestrator::build_risk_metrics_context(portfolio_data, symbol, asset_context, mode)
-}
-
-/// Format asset context as a text block for CLI prompt injection.
-pub fn format_asset_context_for_prompt(ctx: &crate::invest::committee::orchestrator::AssetContext) -> String {
-    let mut lines = vec!["【标的数据摘要】".to_string()];
-
-    if let Some(ref industry) = ctx.industry {
-        lines.push(format!("行业: {}", industry));
-    }
-    lines.push(format!("标的类型: {}", ctx.asset_type));
-
-    if let Some(pe) = ctx.pe_ttm {
-        lines.push(format!("PE_TTM: {:.1}", pe));
-    }
-    if let Some(pb) = ctx.pb {
-        lines.push(format!("PB: {:.2}", pb));
-    }
-    if let Some(roe) = ctx.roe {
-        lines.push(format!("ROE: {:.1}%", roe));
-    }
-    if let Some(roa) = ctx.roa {
-        lines.push(format!("ROA: {:.2}%", roa));
-    }
-    if let Some(or_yoy) = ctx.or_yoy {
-        lines.push(format!("营收增速: {:.1}%", or_yoy));
-    }
-    if let Some(np_yoy) = ctx.np_yoy {
-        lines.push(format!("净利增速: {:.1}%", np_yoy));
-    }
-    if let Some(debt) = ctx.debt_to_assets {
-        lines.push(format!("资产负债率: {:.1}%", debt));
-    }
-    if let Some(ref rating) = ctx.rating_summary {
-        lines.push(format!("机构评级: {}", rating));
-    }
-    if let Some(ref mf_daily) = ctx.money_flow_daily_summary {
-        lines.push(format!("资金流向(当日): {}", mf_daily));
-    }
-    if let Some(ref mf) = ctx.money_flow_summary {
-        lines.push(format!("资金流向(近5日): {}", mf));
-    }
-    if let Some(close) = ctx.latest_close {
-        lines.push(format!("最新价: {:.2}", close));
-    }
-    if let Some(pre) = ctx.pre_close {
-        lines.push(format!("昨收价: {:.2}", pre));
-    }
-
-    if !ctx.data_quality.is_empty() {
-        lines.push(format!("⚠️ 数据缺失: {}", ctx.data_quality.join("，")));
-    }
-
-    lines.join("\n")
 }
 
 /// Format prior round outputs as a text block for CLI prompt injection.
@@ -491,8 +438,8 @@ fn render_hit_rates(
     out.join("\n")
 }
 
-/// 读库 + 渲染。供 build_cli_*_prompt 调用。失败或空时返回 ""。
-fn format_hit_rates_for_prompt(current_regime: &str) -> String {
+/// 读库 + 渲染。供 orchestrator 预取 + build_cli_*_prompt 调用。失败或空时返回 ""。
+pub(crate) fn format_hit_rates_for_prompt(current_regime: &str) -> String {
     match crate::storage::invest::verdict_reviews::aggregate_hit_rates(5) {
         Ok(agg) => render_hit_rates(&agg, current_regime),
         Err(e) => {
@@ -509,21 +456,20 @@ fn format_hit_rates_for_prompt(current_regime: &str) -> String {
 /// Build a complete system prompt for the Quant role (R1) with data embedded.
 ///
 /// `load_prompt_for_round` already substitutes `{{precomputed_indicators}}`, `{{pe_ttm}}`,
-/// `{{pb}}`, `{{money_flow_*}}`, and other asset context placeholders. We do NOT re-append
-/// `format_asset_context_for_prompt` or `precomputed_indicators` here to avoid duplication.
+/// `{{pb}}`, `{{money_flow_*}}`, and other asset context placeholders, so we do NOT
+/// re-append `precomputed_indicators` here to avoid duplication.
 pub fn build_cli_quant_r1_prompt(
     asset_name: &str,
     asset_symbol: &str,
     asset_context: &crate::invest::committee::orchestrator::AssetContext,
     regime_context: Option<&str>,
+    verdicts_data: &str,
 ) -> String {
     use crate::invest::committee::roles::{length_constraint_suffix, load_prompt_for_round, CommitteeRole};
 
     let role = CommitteeRole::Quant;
     let base_prompt = load_prompt_for_round(role, 1, asset_name, asset_symbol, asset_context);
     let stripped = strip_tool_section(&base_prompt);
-
-    let verdicts_data = format_recent_verdicts_for_prompt(asset_symbol);
 
     let mut cli_additions = format!(
         "\n\n{verdicts_data}\n\n\
@@ -546,6 +492,7 @@ pub fn build_cli_quant_r2_prompt(
     asset_symbol: &str,
     asset_context: &crate::invest::committee::orchestrator::AssetContext,
     round_outputs: &[crate::invest::committee::analysis::RoundOutput],
+    hit_rates: &str,
 ) -> String {
     use crate::invest::committee::roles::{length_constraint_suffix, load_prompt_for_round, CommitteeRole};
 
@@ -561,13 +508,7 @@ pub fn build_cli_quant_r2_prompt(
         prior_outputs,
     );
 
-    // 历史命中率注入(软提示)。regime 取 Macro 信号,对齐 archive 口径。
-    let regime = round_outputs
-        .iter()
-        .find(|o| o.role == CommitteeRole::Macro)
-        .and_then(|o| o.parsed.signal.clone())
-        .unwrap_or_else(|| "neutral".to_string());
-    let hit_rates = format_hit_rates_for_prompt(&regime);
+    // 历史命中率注入(软提示),由 orchestrator 预取(regime 取 Macro 信号,对齐 archive 口径)。
     let cli_additions = if hit_rates.is_empty() {
         cli_additions
     } else {
@@ -587,6 +528,7 @@ pub(crate) fn build_cli_risk_r1_prompt(
     strategy_context: &str,
     user_profile_context: &str,
     company_news: &str,
+    verdicts: &str,
     mode: crate::invest::committee::orchestrator::Mode,
 ) -> String {
     use crate::invest::committee::roles::{length_constraint_suffix, load_prompt_for_round, CommitteeRole};
@@ -596,7 +538,6 @@ pub(crate) fn build_cli_risk_r1_prompt(
     let stripped = strip_tool_section(&base_prompt);
 
     let risk_metrics = format_risk_metrics_for_prompt(portfolio_data, asset_symbol, asset_context, mode);
-    let verdicts = format_recent_verdicts_for_prompt(asset_symbol);
 
     let mut cli_additions = format!(
         "\n\n{risk_metrics}\n\n{company_news}\n\n{verdicts}\n\n\
@@ -657,7 +598,7 @@ pub fn build_cli_risk_r2_prompt(
 /// Build a complete system prompt for the CIO role with data embedded.
 ///
 /// `load_prompt_for_round` already substitutes asset context placeholders, so we do NOT
-/// re-append `format_asset_context_for_prompt` here to avoid duplication.
+/// re-append a separate asset summary here to avoid duplication.
 pub fn build_cli_cio_prompt(
     asset_name: &str,
     asset_symbol: &str,
@@ -666,6 +607,7 @@ pub fn build_cli_cio_prompt(
     strategy_context: &str,
     user_profile_context: &str,
     portfolio_summary: &str,
+    hit_rates: &str,
     mode: crate::invest::committee::orchestrator::Mode,
 ) -> String {
     use crate::invest::committee::roles::{length_constraint_suffix, load_prompt_for_round, CommitteeRole};
@@ -708,16 +650,10 @@ pub fn build_cli_cio_prompt(
         ));
     }
 
-    // 历史命中率注入(软提示)。regime 取 Macro 信号。
-    let regime = round_outputs
-        .iter()
-        .find(|o| o.role == CommitteeRole::Macro)
-        .and_then(|o| o.parsed.signal.clone())
-        .unwrap_or_else(|| "neutral".to_string());
-    let hit_rates = format_hit_rates_for_prompt(&regime);
+    // 历史命中率注入(软提示),由 orchestrator 预取(regime 取 Macro 信号)。
     if !hit_rates.is_empty() {
         cli_additions.push_str("\n\n");
-        cli_additions.push_str(&hit_rates);
+        cli_additions.push_str(hit_rates);
     }
 
     // Research mode 裁决语义重定义:BUY/HOLD/SELL = 标的吸引力,而非持仓动作

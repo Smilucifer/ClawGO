@@ -32,7 +32,6 @@ pub struct AssetContext {
     pub or_yoy: Option<f64>,             // 营收增速%
     pub np_yoy: Option<f64>,             // 净利增速%
     pub rating_summary: Option<String>,  // "买入15/增持3/中性1/减持0/卖出0"
-    pub risk_news: Option<String>,       // 最多5条风险新闻
     pub turnover_rate: Option<f64>,
 
     // ── 8 段补充字段 ──
@@ -49,6 +48,23 @@ pub struct AssetContext {
 
 /// Callback for emitting committee streaming events.
 pub type EventEmitter = Arc<dyn Fn(CommitteeEvent) + Send + Sync>;
+
+/// Per-symbol prompt context that is identical across roles/rounds within a
+/// single committee run. Computed once in `run_committee` and passed by
+/// reference to every `build_cli_*` builder, avoiding repeated DB reads and
+/// string rendering (previously `verdicts` was queried 3×, `strategy`/`profile`
+/// 2× each, and `hit_rates` 2× per run).
+pub(crate) struct SharedPromptContext {
+    /// Recent committee verdicts for the symbol (Macro / Quant R1 / Risk R1).
+    pub(crate) verdicts: String,
+    /// Active strategy configuration block (Risk R1 / CIO).
+    pub(crate) strategy: String,
+    /// User investment profile block (Risk R1 / CIO).
+    pub(crate) profile: String,
+    /// Historical hit-rate reference, keyed on the Macro signal (Quant R2 / CIO).
+    /// Empty until the Macro phase has produced a signal.
+    pub(crate) hit_rates: String,
+}
 
 /// Returns `Err` (and emits `SymbolAborted`) when the symbol has been
 /// cancelled. Called between pipeline phases so cancellation takes effect at
@@ -968,7 +984,6 @@ async fn build_asset_context(
         or_yoy,
         np_yoy,
         rating_summary,
-        risk_news: None, // 由 get_company_news tool 获取，不缓存
         turnover_rate,
         circ_mv_yi,
         roa,
@@ -1091,6 +1106,7 @@ async fn run_macro_phase(
     portfolio_summary: &str,
     _emitter: &Option<EventEmitter>,
     asset_context: &AssetContext,
+    verdicts: &str,
 ) -> Result<(RoundOutput, u32), String> {
     let role = CommitteeRole::Macro;
     let cli = match super::cli_executor::CliCommitteeExecutor::global() {
@@ -1120,6 +1136,7 @@ async fn run_macro_phase(
         &asset_name,
         symbol,
         asset_context,
+        verdicts,
     );
     let user_msg = build_macro_user_msg(symbol, portfolio_summary);
 
@@ -1164,13 +1181,11 @@ async fn run_role_phase(
     round: u8,
     config: &CommitteeConfig,
     round_outputs: &[RoundOutput],
-    _macro_signal: &str,
-    _min_cash_reserve: f64,
-    _portfolio_summary: &str,
     regime_context: Option<&str>,
     _emitter: &Option<EventEmitter>,
     portfolio_data: &PortfolioData,
     asset_context: &AssetContext,
+    shared: &SharedPromptContext,
     mode: Mode,
 ) -> Result<RoundOutput, String> {
     // mode 由 Task 11 起用于 Risk R1 prompt 透传(成本来源切换 + Gate2 语义)。
@@ -1199,21 +1214,19 @@ async fn run_role_phase(
     let system_prompt = match (role, round) {
         (CommitteeRole::Quant, 1) => {
             super::cli_executor::build_cli_quant_r1_prompt(
-                &asset_name, symbol, asset_context, regime_context,
+                &asset_name, symbol, asset_context, regime_context, &shared.verdicts,
             )
         }
         (CommitteeRole::Quant, _) => {
             super::cli_executor::build_cli_quant_r2_prompt(
-                &asset_name, symbol, asset_context, round_outputs,
+                &asset_name, symbol, asset_context, round_outputs, &shared.hit_rates,
             )
         }
         (CommitteeRole::Risk, 1) => {
-            let strategy_ctx = build_strategy_context();
-            let profile_ctx = build_user_profile_context();
             let company_news = super::cli_executor::fetch_company_news_for_prompt(symbol).await;
             super::cli_executor::build_cli_risk_r1_prompt(
                 &asset_name, symbol, asset_context, portfolio_data,
-                &strategy_ctx, &profile_ctx, &company_news, mode,
+                &shared.strategy, &shared.profile, &company_news, &shared.verdicts, mode,
             )
         }
         (CommitteeRole::Risk, _) => {
@@ -1225,12 +1238,10 @@ async fn run_role_phase(
             return Err("L4 Officer has been removed".to_string());
         }
         (CommitteeRole::Cio, _) => {
-            let strategy_ctx = build_strategy_context();
-            let profile_ctx = build_user_profile_context();
             let portfolio_ctx = build_portfolio_summary(portfolio_data);
             super::cli_executor::build_cli_cio_prompt(
                 &asset_name, symbol, asset_context, round_outputs,
-                &strategy_ctx, &profile_ctx, &portfolio_ctx, mode,
+                &shared.strategy, &shared.profile, &portfolio_ctx, &shared.hit_rates, mode,
             )
         }
         _ => {
@@ -1317,13 +1328,11 @@ async fn run_debate_rounds(
     config: &CommitteeConfig,
     round_outputs: &mut Vec<RoundOutput>,
     total_tokens: &mut u32,
-    macro_signal: &str,
-    min_cash_reserve: f64,
     emitter: &Option<EventEmitter>,
-    portfolio_summary: &str,
     regime_context: Option<&str>,
     portfolio_data: &PortfolioData,
     asset_context: &AssetContext,
+    shared: &SharedPromptContext,
     cancel: Option<&CancellationToken>,
     mode: Mode,
 ) -> Result<bool, String> {
@@ -1352,13 +1361,11 @@ async fn run_debate_rounds(
                 round,
                 config,
                 round_outputs,
-                macro_signal,
-                min_cash_reserve,
-                portfolio_summary,
                 regime_context,
                 emitter,
                 portfolio_data,
                 asset_context,
+                shared,
                 mode,
             )
             .await?;
@@ -1434,20 +1441,6 @@ pub(crate) async fn run_committee(
     };
     let portfolio_summary = build_portfolio_summary(&portfolio_data);
 
-    // Compute effective buffer from strategy's min_cash_pct × total_assets.
-    // Use the maximum min_cash_pct across all strategies (most conservative).
-    // Falls back to 0.0 if no strategy is configured — Gate 3 becomes a no-op.
-    let effective_buffer = {
-        let strategies = crate::storage::invest::strategy::list_strategies().unwrap_or_default();
-        let max_pct = strategies.iter().filter_map(|s| s.min_cash_pct).fold(0.0_f64, f64::max);
-        if max_pct > 0.0 {
-            portfolio_data.total_assets() * max_pct / 100.0
-        } else {
-            log::warn!("run_committee: no strategy with min_cash_pct configured, Gate 3 buffer = 0");
-            0.0
-        }
-    };
-
     // 构建标的上下文数据（行业、估值、资金流向、评级等）
     let asset_context = {
         let asset_type = portfolio_data
@@ -1468,6 +1461,16 @@ pub(crate) async fn run_committee(
         }
     };
 
+    // Precompute per-run shared prompt context once (deduped across roles/rounds).
+    // verdicts/strategy/profile depend only on the symbol; hit_rates depends on
+    // the Macro signal and is filled in after Step 1.
+    let mut shared = SharedPromptContext {
+        verdicts: super::cli_executor::format_recent_verdicts_for_prompt(symbol),
+        strategy: build_strategy_context(),
+        profile: build_user_profile_context(),
+        hit_rates: String::new(),
+    };
+
     // ── Step 1: Macro phase (with tool-call loop) ──────────────────────
     {
         let si = step_index_for_role(CommitteeRole::Macro, 1);
@@ -1482,7 +1485,7 @@ pub(crate) async fn run_committee(
 
         check_cancellation(cancel.as_ref(), &emitter, symbol)?;
         let (macro_output, macro_tokens) =
-            run_macro_phase(symbol, config, &portfolio_summary, &emitter, &asset_context).await?;
+            run_macro_phase(symbol, config, &portfolio_summary, &emitter, &asset_context, &shared.verdicts).await?;
         total_tokens += macro_tokens;
 
         if let Some(ref emit) = emitter {
@@ -1504,6 +1507,10 @@ pub(crate) async fn run_committee(
         .clone()
         .unwrap_or_else(|| "neutral".to_string());
     let macro_strength = round_outputs[0].parsed.strength;
+
+    // Fill in hit_rates now that the Macro signal is known (keyed on it, matching
+    // the per-builder regime口径). Quant R2 / CIO consume this from `shared`.
+    shared.hit_rates = super::cli_executor::format_hit_rates_for_prompt(&macro_signal);
 
     // ── Step 2: REGIME computation ─────────────────────────────────────
     // Compute quantitative regime metrics (RSI-14, MA, volatility, price
@@ -1563,13 +1570,11 @@ pub(crate) async fn run_committee(
         config,
         &mut round_outputs,
         &mut total_tokens,
-        &macro_signal,
-        effective_buffer,
         &emitter,
-        &portfolio_summary,
         regime_context.as_deref(),
         &portfolio_data,
         &asset_context,
+        &shared,
         cancel.as_ref(),
         mode,
     )
@@ -1594,13 +1599,11 @@ pub(crate) async fn run_committee(
             1,
             config,
             &round_outputs,
-            &macro_signal,
-            effective_buffer,
-            &portfolio_summary,
             regime_context.as_deref(),
             &emitter,
             &portfolio_data,
             &asset_context,
+            &shared,
             mode,
         )
         .await?;

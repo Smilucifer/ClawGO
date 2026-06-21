@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## v5.5.6 (2026-06-21)
+
+### 委员会 prompt 构建去重 + 死代码清理
+
+**SharedPromptContext 提取:** 将 `verdicts`/`strategy`/`profile`/`hit_rates` 四项跨角色/轮次共享的 prompt 上下文从各 `build_cli_*_prompt` 内部独立查询改为 orchestrator 预取一次、通过引用传递。此前 `verdicts` 被查询 3×、`strategy`/`profile` 各 2×、`hit_rates` 2× per run，现统一为单次查询。新增 `SharedPromptContext` 结构体承载。
+
+**prompt builder 签名调整:** `build_cli_macro_prompt`、`build_cli_quant_r1_prompt`、`build_cli_quant_r2_prompt`、`build_cli_risk_r1_prompt`、`build_cli_cio_prompt` 新增 `verdicts_data`/`hit_rates` 参数，不再内部调用 `format_recent_verdicts_for_prompt` / `format_hit_rates_for_prompt`。`format_hit_rates_for_prompt` 提升为 `pub(crate)` 供 orchestrator 预取。
+
+**死代码移除:** 删除未使用的 `format_asset_context_for_prompt` 函数（53 行）；删除 `AssetContext.risk_news` 字段（始终为 `None`，由 tool 获取）；删除 `run_committee` 中未使用的 `effective_buffer` 计算（`min_cash_pct × total_assets`，Gate 3 已不使用）。
+
+**函数签名清理:** `run_macro_phase`、`run_role_phase`、`run_debate_rounds` 参数列表精简——移除未使用的 `macro_signal`/`min_cash_reserve`/`portfolio_summary` 透传，改为接收 `&SharedPromptContext`。
+
 ## v5.5.5 (2026-06-20)
 
 ### 委员会字段解析误报修复 + Risk/CIO 卡片分段展示
