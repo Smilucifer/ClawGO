@@ -1,5 +1,34 @@
 # Changelog / 更新日志
 
+## v5.5.7 (2026-06-22)
+
+### 清仓当日保持持仓 + 次日自动转换
+
+持仓股清仓后，当日依然显示为持仓股（Hold 状态），确保当日卖出、当日盈亏、当日盈亏比等条目计算正常。次日 05:05 自动转换为关注（Watch）。
+
+**后端改动：**
+
+1. **DB schema:** `holdings` 表新增 `cleared_date TEXT` 列 + migration（`mod.rs`）。
+2. **`Holding`/`MemHolding` 结构体:** 新增 `cleared_date: Option<String>` 字段（`portfolio.rs`）。
+3. **`process_sell` 重写:** 清仓时标记 `entry.cleared_date = get_invest_date()` 但保持 Hold 状态，不再立即转换为 Watch。合并 pnl_tracker 的 `realized_pnl` 和 `cleared_date` 为单次 `entry()` 调用。
+4. **`process_buy` 增强:** 购入时清除 `entry.cleared_date`，做T场景不会误触发转换。
+5. **`process_edit_holding` 增强:** 编辑后持仓归零时自动设置 `cleared_date`。
+6. **write-back 步骤（step 6）:** 修改跳过条件——仅跳过无 `cleared_date` 的零持仓条目，清仓当日条目（有 `cleared_date`）正常写入 DB。
+7. **post-pass（step 5）:** 新增 stale 清仓检测——`cleared_date < today` 的条目在 recalculate 时转换为 Watch。`copy_core_fields_from` 补全 `linked_verdict_id` 和 `notes` 复制。
+8. **`convert_stale_cleared_holdings`:** 新增轻量定时转换函数（带 BEGIN/COMMIT 事务包裹），按 symbol+currency 检查 Watch 存在性。
+9. **`clearance_convert` 定时任务:** 每日 05:05 执行（`requires_trading_day: false`），注册于 `scheduler/mod.rs` + `runner.rs`。
+10. **`list_holdings`:** SELECT 新增 `cleared_date` 列。
+11. **`upsert_holding`:** INSERT/ON CONFLICT 补全 `cleared_date` 列。
+
+**前端改动：**
+
+12. **`Holding` 类型:** 新增 `clearedDate: string | null`。
+13. **`invest-store`:** 新增 `isClearedToday()` + `getOpeningShares()` 导出函数；`holdingsMarketValue`/`totalCostBasis` 排除清仓当日条目；`dailyPnl`/`dailyPnlPct` 对清仓当日使用开盘持仓（卖出-买入）计算。
+14. **`HoldingsTable`:** 导入共享 `isClearedToday`/`getOpeningShares`，移除本地重复定义；`dailyPnlAmount` 使用开盘持仓；新增 CLEARED 标记（`t('invest_status_cleared')`）。
+15. **i18n:** 新增 `invest_status_cleared`（CLEARED / 已清仓）。
+
+**Code review 修复（9 项）：** write-back 时区一致性（`get_invest_date()` 替代 UTC 日期）、事务原子性、`process_edit_holding` 归零处理、`copy_core_fields_from` 字段完整性、`isClearedToday` 去重导出、watch-existence currency 过滤、`getOpeningShares` helper 提取、`upsert_holding` 列补全。
+
 ## v5.5.6 (2026-06-21)
 
 ### 委员会 prompt 构建去重 + 死代码清理
