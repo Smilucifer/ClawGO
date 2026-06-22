@@ -10,7 +10,7 @@
 
 1. **DB schema:** `holdings` 表新增 `cleared_date TEXT` 列 + migration（`mod.rs`）。
 2. **`Holding`/`MemHolding` 结构体:** 新增 `cleared_date: Option<String>` 字段（`portfolio.rs`）。
-3. **`process_sell` 重写:** 清仓时标记 `entry.cleared_date = get_invest_date()` 但保持 Hold 状态，不再立即转换为 Watch。合并 pnl_tracker 的 `realized_pnl` 和 `cleared_date` 为单次 `entry()` 调用。
+3. **`process_sell` 重写:** 清仓时标记 `entry.cleared_date`（使用交易日期）但保持 Hold 状态，不再立即转换为 Watch。合并 pnl_tracker 的 `realized_pnl` 和 `cleared_date` 为单次 `entry()` 调用。
 4. **`process_buy` 增强:** 购入时清除 `entry.cleared_date`，做T场景不会误触发转换。
 5. **`process_edit_holding` 增强:** 编辑后持仓归零时自动设置 `cleared_date`。
 6. **write-back 步骤（step 6）:** 修改跳过条件——仅跳过无 `cleared_date` 的零持仓条目，清仓当日条目（有 `cleared_date`）正常写入 DB。
@@ -28,6 +28,8 @@
 15. **i18n:** 新增 `invest_status_cleared`（CLEARED / 已清仓）。
 
 **Code review 修复（9 项）：** write-back 时区一致性（`get_invest_date()` 替代 UTC 日期）、事务原子性、`process_edit_holding` 归零处理、`copy_core_fields_from` 字段完整性、`isClearedToday` 去重导出、watch-existence currency 过滤、`getOpeningShares` helper 提取、`upsert_holding` 列补全。
+
+**Bugfix:** `process_sell`/`process_edit_holding` 设置 `cleared_date` 时错误使用 `get_invest_date()`（今天日期），导致每次交易重放（recalculate）时所有历史清仓条目的 `cleared_date` 被刷新为今天，post-pass 的 `cleared_date < today` 条件永远不成立，旧清仓股票无法转换为 Watch 并在 dashboard 持续显示"已清仓"。修复为使用交易实际日期（`trade_date` 或 `created_at`）。
 
 ## v5.5.6 (2026-06-21)
 

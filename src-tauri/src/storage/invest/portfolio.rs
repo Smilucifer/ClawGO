@@ -180,6 +180,21 @@ pub struct Trade {
     pub asset_type: Option<String>,
 }
 
+impl Trade {
+    /// Resolve the effective trade date (YYYY-MM-DD), falling back to `created_at`.
+    ///
+    /// The `trade_date` field is user-specified and optional; `created_at` is always
+    /// present from the DB. This centralises the fallback so `process_*` functions
+    /// don't duplicate the same `unwrap_or_else` expression.
+    pub fn effective_date(&self) -> String {
+        self.trade_date.clone().unwrap_or_else(|| {
+            // Safe slice: created_at is "YYYY-MM-DDThh:mm:ss…" but guard against
+            // corrupt/short data to avoid a panic.
+            self.created_at.get(..10).unwrap_or(&self.created_at).to_string()
+        })
+    }
+}
+
 /// Canonical column list for SELECT queries on the trades table.
 const TRADE_COLUMNS: &str = "id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date, asset_type";
 
@@ -656,6 +671,10 @@ fn process_buy(ctx: &mut RecalcContext, key: (String, String, String), t: &Trade
 fn process_sell(ctx: &mut RecalcContext, key: (String, String, String), t: &Trade) {
     let shares = t.shares.unwrap_or(0.0);
     let sell_price = t.price.unwrap_or(0.0);
+    // Use the trade's actual date, not today — during replay, historical sells
+    // must record their original date so the post-pass can correctly convert
+    // stale clears (cleared_date < today) to Watch.
+    let trade_date = t.effective_date();
     if let Some(entry) = ctx.map.get_mut(&key) {
         // Calculate realized P&L for this sell trade
         // realized_pnl = shares_sold * (sell_price - avg_cost)
@@ -669,7 +688,7 @@ fn process_sell(ctx: &mut RecalcContext, key: (String, String, String), t: &Trad
             tracker.realized_pnl += pnl;
             // 清仓时同步 cleared_date 到 pnl_tracker（用于做T成本调整）
             if is_cleared_before && !entry.is_watch && !ctx.watch_deleted.contains(&t.symbol) {
-                tracker.cleared_date = Some(crate::invest::date_utils::get_invest_date());
+                tracker.cleared_date = Some(trade_date.clone());
             }
         }
         entry.shares = (entry.shares - shares).max(0.0);
@@ -680,7 +699,7 @@ fn process_sell(ctx: &mut RecalcContext, key: (String, String, String), t: &Trad
             && !entry.is_watch
             && !ctx.watch_deleted.contains(&t.symbol);
         if is_cleared {
-            entry.cleared_date = Some(crate::invest::date_utils::get_invest_date());
+            entry.cleared_date = Some(trade_date);
         }
     }
 }
@@ -707,9 +726,9 @@ fn process_edit_holding(ctx: &mut RecalcContext, key: (String, String, String), 
         if t.name.is_some() { entry.name = t.name.clone(); }
         if t.asset_type.is_some() { entry.asset_type = t.asset_type.clone(); }
         entry.recompute_notional();
-        // 编辑后持仓归零，标记清仓日期（与 process_sell 一致）
+        // 编辑后持仓归零，标记清仓日期（与 process_sell 一致，用交易日期而非今天）
         if entry.shares <= 0.0001 && !entry.is_watch {
-            entry.cleared_date = Some(crate::invest::date_utils::get_invest_date());
+            entry.cleared_date = Some(t.effective_date());
         }
         // Only clear P&L tracker when cost basis actually changed.
         // Metadata-only edits (notes, entry_date) should preserve day-trading P&L.
