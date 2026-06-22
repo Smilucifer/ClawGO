@@ -848,6 +848,14 @@ fn recalculate_holdings_inner_body(
         }
     }
     for hold_key in &stale_cleared {
+        // Skip symbols the user explicitly removed from the watchlist —
+        // converting them back to Watch would "resurrect" a deleted entry.
+        // Also remove the stale hold entry so it's not written to DB
+        // (the scheduled task would otherwise convert it to Watch).
+        if watch_deleted.contains(&hold_key.0) {
+            map.remove(hold_key);
+            continue;
+        }
         if let Some(hold_entry) = map.remove(hold_key) {
             let watch_key = (hold_key.0.clone(), hold_key.1.clone(), HoldingKind::Watch.to_string());
             if !map.contains_key(&watch_key) {
@@ -963,6 +971,29 @@ pub fn convert_stale_cleared_holdings() -> Result<u64, String> {
                 )
                 .map_err(|e| format!("check watch exists: {}", e))?
                 > 0;
+
+            // Check if user explicitly deleted this symbol from the watchlist.
+            // If so, skip conversion — creating a Watch entry would "resurrect"
+            // something the user intentionally removed.
+            let watch_deleted: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM trades WHERE symbol = ?1 AND action = 'delete_watch'",
+                    params![h.symbol],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(|e| format!("check watch_deleted: {}", e))?
+                > 0;
+
+            if watch_deleted {
+                // Remove the stale hold entry without creating a watch entry
+                conn.execute(
+                    "DELETE FROM holdings WHERE symbol = ?1 AND currency = ?2 AND kind = 'hold'",
+                    params![h.symbol, h.currency],
+                )
+                .map_err(|e| format!("delete stale hold: {}", e))?;
+                count += 1;
+                continue;
+            }
 
             // Delete the stale Hold entry
             conn.execute(
