@@ -288,11 +288,11 @@ pub fn upsert_holding(h: &Holding) -> Result<(), String> {
         let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
         let created = if h.created_at.is_empty() { &now } else { &h.created_at };
         conn.execute(
-            "INSERT INTO holdings (symbol, currency, kind, name, notional, avg_cost, shares, entry_date, linked_verdict_id, notes, asset_type, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+            "INSERT INTO holdings (symbol, currency, kind, name, notional, avg_cost, shares, entry_date, linked_verdict_id, notes, asset_type, cleared_date, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
              ON CONFLICT(symbol, currency, kind) DO UPDATE SET
-               name=?4, notional=?5, avg_cost=?6, shares=?7, entry_date=?8, linked_verdict_id=?9, notes=?10, asset_type=?11, updated_at=?13",
-            params![h.symbol, h.currency, h.kind, h.name, h.notional, h.avg_cost, h.shares, h.entry_date, h.linked_verdict_id, h.notes, h.asset_type, created, now],
+               name=?4, notional=?5, avg_cost=?6, shares=?7, entry_date=?8, linked_verdict_id=?9, notes=?10, asset_type=?11, cleared_date=?12, updated_at=?14",
+            params![h.symbol, h.currency, h.kind, h.name, h.notional, h.avg_cost, h.shares, h.entry_date, h.linked_verdict_id, h.notes, h.asset_type, h.cleared_date, created, now],
         )
         .map_err(|e| format!("upsert holding: {}", e))?;
         Ok(())
@@ -585,6 +585,8 @@ impl MemHolding {
         self.avg_cost = src.avg_cost;
         self.notional = src.notional;
         self.entry_date = src.entry_date.clone();
+        self.linked_verdict_id = src.linked_verdict_id.clone();
+        self.notes = src.notes.clone();
         self.asset_type = src.asset_type.clone();
         // NOTE: 不复制 cleared_date — 转换时由调用方决定
     }
@@ -667,8 +669,7 @@ fn process_sell(ctx: &mut RecalcContext, key: (String, String, String), t: &Trad
             tracker.realized_pnl += pnl;
             // 清仓时同步 cleared_date 到 pnl_tracker（用于做T成本调整）
             if is_cleared_before && !entry.is_watch && !ctx.watch_deleted.contains(&t.symbol) {
-                let trade_date = t.created_at[..10].to_string();
-                tracker.cleared_date = Some(trade_date);
+                tracker.cleared_date = Some(crate::invest::date_utils::get_invest_date());
             }
         }
         entry.shares = (entry.shares - shares).max(0.0);
@@ -679,8 +680,7 @@ fn process_sell(ctx: &mut RecalcContext, key: (String, String, String), t: &Trad
             && !entry.is_watch
             && !ctx.watch_deleted.contains(&t.symbol);
         if is_cleared {
-            let trade_date = t.created_at[..10].to_string();
-            entry.cleared_date = Some(trade_date);
+            entry.cleared_date = Some(crate::invest::date_utils::get_invest_date());
         }
     }
 }
@@ -707,6 +707,10 @@ fn process_edit_holding(ctx: &mut RecalcContext, key: (String, String, String), 
         if t.name.is_some() { entry.name = t.name.clone(); }
         if t.asset_type.is_some() { entry.asset_type = t.asset_type.clone(); }
         entry.recompute_notional();
+        // 编辑后持仓归零，标记清仓日期（与 process_sell 一致）
+        if entry.shares <= 0.0001 && !entry.is_watch {
+            entry.cleared_date = Some(crate::invest::date_utils::get_invest_date());
+        }
         // Only clear P&L tracker when cost basis actually changed.
         // Metadata-only edits (notes, entry_date) should preserve day-trading P&L.
         if cost_changed {
@@ -839,11 +843,11 @@ fn recalculate_holdings_inner_body(
     // 6. Write rebuilt holdings to database
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     for ((symbol, currency, kind), h) in &map {
-        // Skip zero-share non-watch entries that are still cleared-today
-        // (they should have been converted to Watch in step 5 if stale)
-        if h.shares <= 0.0001 && !h.is_watch {
-            // Only skip if cleared_date is today (still in Hold grace period)
-            // If cleared_date is None or past, something went wrong — skip anyway
+        // Skip zero-share non-watch entries WITHOUT cleared_date
+        // (orphan entries from edit_holding edge cases, etc.)
+        // Cleared-today entries (have cleared_date) must be persisted
+        // so the frontend can display the CLEARED badge and daily PnL.
+        if h.shares <= 0.0001 && !h.is_watch && h.cleared_date.is_none() {
             continue;
         }
         // Watch items have no shares; write null to DB
@@ -924,6 +928,9 @@ pub fn convert_stale_cleared_holdings() -> Result<u64, String> {
             return Ok(0);
         }
 
+        conn.execute_batch("BEGIN TRANSACTION;")
+            .map_err(|e| format!("begin clearance transaction: {}", e))?;
+
         let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
         let mut count: u64 = 0;
 
@@ -931,8 +938,8 @@ pub fn convert_stale_cleared_holdings() -> Result<u64, String> {
             // Check if Watch entry already exists
             let watch_exists: bool = conn
                 .query_row(
-                    "SELECT COUNT(*) FROM holdings WHERE symbol = ?1 AND kind = 'watch'",
-                    params![h.symbol],
+                    "SELECT COUNT(*) FROM holdings WHERE symbol = ?1 AND currency = ?2 AND kind = 'watch'",
+                    params![h.symbol, h.currency],
                     |row| row.get::<_, i64>(0),
                 )
                 .map_err(|e| format!("check watch exists: {}", e))?
@@ -968,6 +975,9 @@ pub fn convert_stale_cleared_holdings() -> Result<u64, String> {
             }
             count += 1;
         }
+
+        conn.execute_batch("COMMIT;")
+            .map_err(|e| format!("commit clearance transaction: {}", e))?;
 
         log::info!("convert_stale_cleared_holdings: converted {} entries", count);
         Ok(count)

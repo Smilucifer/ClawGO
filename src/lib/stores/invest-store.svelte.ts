@@ -50,8 +50,13 @@ function isMarketOpen(): boolean {
 }
 
 /** 判断持仓是否为当日清仓（shares 归零但仍在 Hold 保护期内）。 */
-function isClearedToday(h: Holding): boolean {
+export function isClearedToday(h: Holding): boolean {
   return h.kind === 'hold' && (h.shares ?? 0) <= 0.0001 && !!h.clearedDate && h.clearedDate >= getInvestDate();
+}
+
+/** 计算当日开盘持仓股数（卖出-买入），用于清仓当日盈亏计算。 */
+export function getOpeningShares(traded: { buy: number; sell: number } | undefined): number {
+  return (traded?.sell ?? 0) - (traded?.buy ?? 0);
 }
 
 class InvestStore {
@@ -156,7 +161,7 @@ class InvestStore {
       if (isClearedToday(h)) {
         // 清仓当日: 用开盘持仓(卖出-买入)计算当日盈亏
         const traded = this.todayTradedShares.get(h.symbol);
-        const openingShares = (traded?.sell ?? 0) - (traded?.buy ?? 0);
+        const openingShares = getOpeningShares(traded);
         return sum + q.change * openingShares;
       }
       if (h.shares) return sum + q.change * h.shares;
@@ -172,7 +177,7 @@ class InvestStore {
       if (!q) continue;
       if (isClearedToday(h)) {
         const traded = this.todayTradedShares.get(h.symbol);
-        const openingShares = (traded?.sell ?? 0) - (traded?.buy ?? 0);
+        const openingShares = getOpeningShares(traded);
         prevValue += (q.close - q.change) * openingShares;
       } else if (h.shares) {
         prevValue += (q.close - q.change) * h.shares;

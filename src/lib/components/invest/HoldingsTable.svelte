@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { investStore } from '$lib/stores/invest-store.svelte';
+  import { investStore, isClearedToday, getOpeningShares } from '$lib/stores/invest-store.svelte';
   import { t } from '$lib/i18n/index.svelte';
   import { getVerdictBadgeStyle, normalizeConfidencePct } from '$lib/utils/invest-verdict';
   import { getInvestDate } from '$lib/i18n/format';
@@ -57,7 +57,7 @@
     if (!q) return null;
     if (isClearedToday(h)) {
       const traded = investStore.todayTradedShares.get(h.symbol);
-      const openingShares = (traded?.sell ?? 0) - (traded?.buy ?? 0);
+      const openingShares = getOpeningShares(traded);
       return q.change * openingShares;
     }
     if (!h.shares) return null;
@@ -81,10 +81,6 @@
 
   function todayTraded(sym: string): { buy: number; sell: number } {
     return investStore.todayTradedShares.get(sym) ?? { buy: 0, sell: 0 };
-  }
-
-  function isClearedToday(h: Holding): boolean {
-    return h.kind === 'hold' && (h.shares ?? 0) <= 0.0001 && !!h.clearedDate && h.clearedDate >= getInvestDate();
   }
 
   function isVerdictFresh(createdAt: string | undefined): boolean {
