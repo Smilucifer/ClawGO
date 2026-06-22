@@ -309,6 +309,7 @@ pub async fn migrate_legacy_portfolio() -> Result<String, String> {
                 linked_verdict_id: None,
                 notes: Some("migrated from legacy".to_string()),
                 asset_type: Some("stock".to_string()),
+                cleared_date: None,
                 created_at: String::new(),
                 updated_at: String::new(),
             };

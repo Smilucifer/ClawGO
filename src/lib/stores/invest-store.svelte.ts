@@ -49,6 +49,11 @@ function isMarketOpen(): boolean {
   return cstMinutes >= 780 && cstMinutes <= 900;
 }
 
+/** 判断持仓是否为当日清仓（shares 归零但仍在 Hold 保护期内）。 */
+function isClearedToday(h: Holding): boolean {
+  return h.kind === 'hold' && (h.shares ?? 0) <= 0.0001 && !!h.clearedDate && h.clearedDate >= getInvestDate();
+}
+
 class InvestStore {
   // ── State ────────────────────────────────────────────────────────────
   holdings = $state<Holding[]>([]);
@@ -120,6 +125,7 @@ class InvestStore {
 
   holdingsMarketValue = $derived(
     this.holdHoldings.reduce((sum, h) => {
+      if (isClearedToday(h)) return sum; // 清仓当日无市值
       const price = this.priceMap[h.symbol]?.close;
       if (price && h.shares) return sum + price * h.shares;
       return sum + (h.notional || 0);
@@ -130,6 +136,7 @@ class InvestStore {
 
   totalCostBasis = $derived(
     this.holdHoldings.reduce((sum, h) => {
+      if (isClearedToday(h)) return sum; // 清仓当日无成本
       if (h.avgCost && h.shares) return sum + h.avgCost * h.shares;
       return sum + (h.notional || 0);
     }, 0),
@@ -145,7 +152,14 @@ class InvestStore {
   dailyPnl = $derived(
     this.holdHoldings.reduce((sum, h) => {
       const q = this.priceMap[h.symbol];
-      if (q && h.shares) return sum + q.change * h.shares;
+      if (!q) return sum;
+      if (isClearedToday(h)) {
+        // 清仓当日: 用开盘持仓(卖出-买入)计算当日盈亏
+        const traded = this.todayTradedShares.get(h.symbol);
+        const openingShares = (traded?.sell ?? 0) - (traded?.buy ?? 0);
+        return sum + q.change * openingShares;
+      }
+      if (h.shares) return sum + q.change * h.shares;
       return sum;
     }, 0),
   );
@@ -155,7 +169,14 @@ class InvestStore {
     let prevValue = 0;
     for (const h of this.holdHoldings) {
       const q = this.priceMap[h.symbol];
-      if (q && h.shares) prevValue += (q.close - q.change) * h.shares;
+      if (!q) continue;
+      if (isClearedToday(h)) {
+        const traded = this.todayTradedShares.get(h.symbol);
+        const openingShares = (traded?.sell ?? 0) - (traded?.buy ?? 0);
+        prevValue += (q.close - q.change) * openingShares;
+      } else if (h.shares) {
+        prevValue += (q.close - q.change) * h.shares;
+      }
     }
     return prevValue > 0 ? (this.dailyPnl / prevValue) * 100 : 0;
   });

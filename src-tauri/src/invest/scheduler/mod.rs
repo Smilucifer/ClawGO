@@ -134,6 +134,20 @@ pub fn default_jobs() -> Vec<CronJob> {
             description: "每15分钟刷新12个宏观指标到macro_cache表".into(),
             dedicated: false,
         },
+        CronJob {
+            id: "clearance_convert".into(),
+            name: "清仓持仓转换".into(),
+            cron_expr: "0 5 5 * * 1-5".into(),
+            interval_min: None,
+            enabled: true,
+            // 非交易日也可能有未处理的清仓,确保跨周末/假期也能转换
+            requires_trading_day: false,
+            last_run: None,
+            next_run: None,
+            last_status: None,
+            description: "每日 05:05 将昨日清仓的持仓转换为关注".into(),
+            dedicated: false,
+        },
     ]
 }
 

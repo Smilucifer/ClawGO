@@ -115,6 +115,10 @@ pub async fn dispatch_job(id: &str) -> Result<String, String> {
             let client = TushareClient::with_token(tushare_token);
             crate::invest::macro_refresh::refresh_macro_cache(&client).await
         }
+        "clearance_convert" => {
+            crate::storage::invest::portfolio::convert_stale_cleared_holdings()?;
+            Ok("Clearance convert complete".into())
+        }
         _ => Err(format!("Unknown job: {}", id)),
     }
 }

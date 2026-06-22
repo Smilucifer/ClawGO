@@ -144,6 +144,9 @@ pub struct Holding {
     pub linked_verdict_id: Option<String>,
     pub notes: Option<String>,
     pub asset_type: Option<String>,
+    /// 清仓日期 (YYYY-MM-DD)。当日清仓的持仓保持 Hold 状态直到次日 05:00。
+    #[serde(default)]
+    pub cleared_date: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -202,7 +205,7 @@ fn trade_from_row(row: &rusqlite::Row) -> rusqlite::Result<Trade> {
 pub fn list_holdings() -> Result<Vec<Holding>, String> {
     with_conn(|conn| {
         let mut stmt = conn
-            .prepare("SELECT symbol, currency, kind, name, notional, avg_cost, shares, entry_date, linked_verdict_id, notes, asset_type, created_at, updated_at FROM holdings ORDER BY symbol")
+            .prepare("SELECT symbol, currency, kind, name, notional, avg_cost, shares, entry_date, linked_verdict_id, notes, asset_type, cleared_date, created_at, updated_at FROM holdings ORDER BY symbol")
             .map_err(|e| format!("prepare: {}", e))?;
         let rows = stmt
             .query_map([], |row| {
@@ -219,8 +222,9 @@ pub fn list_holdings() -> Result<Vec<Holding>, String> {
                     linked_verdict_id: row.get(8)?,
                     notes: row.get(9)?,
                     asset_type: row.get(10)?,
-                    created_at: row.get(11)?,
-                    updated_at: row.get(12)?,
+                    cleared_date: row.get(11)?,
+                    created_at: row.get(12)?,
+                    updated_at: row.get(13)?,
                 })
             })
             .map_err(|e| format!("query: {}", e))?;
@@ -565,6 +569,7 @@ struct MemHolding {
     linked_verdict_id: Option<String>,
     notes: Option<String>,
     asset_type: Option<String>,
+    cleared_date: Option<String>,
     is_watch: bool, // true for add_watch entries (no shares, preserved across recalc)
 }
 
@@ -581,6 +586,7 @@ impl MemHolding {
         self.notional = src.notional;
         self.entry_date = src.entry_date.clone();
         self.asset_type = src.asset_type.clone();
+        // NOTE: 不复制 cleared_date — 转换时由调用方决定
     }
 }
 
@@ -604,6 +610,8 @@ fn process_buy(ctx: &mut RecalcContext, key: (String, String, String), t: &Trade
     if entry.name.is_none() {
         entry.name = t.name.clone();
     }
+    // 购入时清除清仓标记 — 重新持仓不再是清仓状态
+    entry.cleared_date = None;
 
     // Day-trading (做T) cost adjustment:
     // P&L from previous sells is amortized into new cost basis,
@@ -646,9 +654,10 @@ fn process_buy(ctx: &mut RecalcContext, key: (String, String, String), t: &Trade
 fn process_sell(ctx: &mut RecalcContext, key: (String, String, String), t: &Trade) {
     let shares = t.shares.unwrap_or(0.0);
     let sell_price = t.price.unwrap_or(0.0);
-    let should_convert = if let Some(entry) = ctx.map.get_mut(&key) {
+    if let Some(entry) = ctx.map.get_mut(&key) {
         // Calculate realized P&L for this sell trade
         // realized_pnl = shares_sold * (sell_price - avg_cost)
+        let is_cleared_before = entry.shares <= shares + 0.0001; // will be cleared after this sell
         if entry.shares > 0.0 && entry.avg_cost > 0.0 {
             let pnl = shares * (sell_price - entry.avg_cost);
             let tracker = ctx.pnl_tracker.entry(t.symbol.clone()).or_insert(PnlTracker {
@@ -656,31 +665,22 @@ fn process_sell(ctx: &mut RecalcContext, key: (String, String, String), t: &Trad
                 cleared_date: None,
             });
             tracker.realized_pnl += pnl;
+            // 清仓时同步 cleared_date 到 pnl_tracker（用于做T成本调整）
+            if is_cleared_before && !entry.is_watch && !ctx.watch_deleted.contains(&t.symbol) {
+                let trade_date = t.created_at[..10].to_string();
+                tracker.cleared_date = Some(trade_date);
+            }
         }
         entry.shares = (entry.shares - shares).max(0.0);
         entry.recompute_notional();
-        // Auto-convert to watch when all shares are sold,
-        // but skip if the user explicitly deleted this symbol from watch
-        let is_cleared = entry.shares <= 0.0001 && !entry.is_watch && !ctx.watch_deleted.contains(&t.symbol);
-        // Record cleared date for P&L expiry tracking
+        // 清仓：标记 cleared_date，但保持 Hold 状态
+        // 第二天 05:00 后由 write-back 步骤或定时任务转换为 Watch
+        let is_cleared = entry.shares <= 0.0001
+            && !entry.is_watch
+            && !ctx.watch_deleted.contains(&t.symbol);
         if is_cleared {
-            let trade_date = &t.created_at[..10];
-            let tracker = ctx.pnl_tracker.entry(t.symbol.clone()).or_insert(PnlTracker {
-                realized_pnl: 0.0,
-                cleared_date: None,
-            });
-            tracker.cleared_date = Some(trade_date.to_string());
-        }
-        is_cleared
-    } else {
-        false
-    };
-    if should_convert {
-        let watch_key = (t.symbol.clone(), t.currency.clone(), HoldingKind::Watch.to_string());
-        if let Some(hold_entry) = ctx.map.remove(&key) {
-            let watch_entry = ctx.map.entry(watch_key).or_default();
-            watch_entry.copy_core_fields_from(&hold_entry);
-            watch_entry.is_watch = true;
+            let trade_date = t.created_at[..10].to_string();
+            entry.cleared_date = Some(trade_date);
         }
     }
 }
@@ -810,11 +810,40 @@ fn recalculate_holdings_inner_body(
         recalculate_cash_inner(conn, &trades)?;
     }
 
-    // 5. Write rebuilt holdings to database
+    // 5. Post-pass: convert stale cleared entries to Watch
+    //    Entries cleared before today should become Watch entries.
+    //    Entries cleared today stay as Hold (shares=0) until next day 05:00.
+    let today = crate::invest::date_utils::get_invest_date();
+    let mut stale_cleared: Vec<(String, String, String)> = Vec::new();
+    for ((symbol, currency, _kind), h) in &map {
+        if !h.is_watch && h.shares <= 0.0001 {
+            if let Some(ref cd) = h.cleared_date {
+                if *cd < today {
+                    stale_cleared.push((symbol.clone(), currency.clone(), HoldingKind::Hold.to_string()));
+                }
+            }
+        }
+    }
+    for hold_key in &stale_cleared {
+        if let Some(hold_entry) = map.remove(hold_key) {
+            let watch_key = (hold_key.0.clone(), hold_key.1.clone(), HoldingKind::Watch.to_string());
+            if !map.contains_key(&watch_key) {
+                let mut watch_entry = MemHolding::default();
+                watch_entry.copy_core_fields_from(&hold_entry);
+                watch_entry.is_watch = true;
+                map.insert(watch_key, watch_entry);
+            }
+        }
+    }
+
+    // 6. Write rebuilt holdings to database
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     for ((symbol, currency, kind), h) in &map {
-        // Skip zero-share holdings (but preserve watch items which have no shares)
+        // Skip zero-share non-watch entries that are still cleared-today
+        // (they should have been converted to Watch in step 5 if stale)
         if h.shares <= 0.0001 && !h.is_watch {
+            // Only skip if cleared_date is today (still in Hold grace period)
+            // If cleared_date is None or past, something went wrong — skip anyway
             continue;
         }
         // Watch items have no shares; write null to DB
@@ -825,8 +854,8 @@ fn recalculate_holdings_inner_body(
             .cloned()
             .unwrap_or_else(|| now.clone());
         conn.execute(
-            "INSERT INTO holdings (symbol, currency, kind, name, notional, avg_cost, shares, entry_date, linked_verdict_id, notes, asset_type, created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            "INSERT INTO holdings (symbol, currency, kind, name, notional, avg_cost, shares, entry_date, linked_verdict_id, notes, asset_type, cleared_date, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 symbol,
                 currency,
@@ -839,6 +868,7 @@ fn recalculate_holdings_inner_body(
                 h.linked_verdict_id,
                 h.notes,
                 h.asset_type,
+                h.cleared_date,
                 created_at,
                 now,
             ],
@@ -852,6 +882,96 @@ fn recalculate_holdings_inner_body(
 /// Replay all trades from scratch to rebuild the holdings table.
 pub fn recalculate_holdings() -> Result<(), String> {
     with_conn(|conn| recalculate_holdings_inner(conn, true))
+}
+
+/// 将昨日清仓的持仓转换为关注（定时任务调用，无需完整交易重放）。
+///
+/// 幂等性：`cleared_date < today` 的条件在每天自然推进，不会重复转换。
+/// 如果 app 在 05:00 未运行，下次启动时 `cleared_date < today` 仍然成立。
+/// `process_buy` 会清除 `cleared_date`，因此做T场景下不会误转换。
+pub fn convert_stale_cleared_holdings() -> Result<u64, String> {
+    let today = crate::invest::date_utils::get_invest_date();
+    with_conn(|conn| {
+        // Step 1: Collect stale cleared holds
+        let mut stmt = conn
+            .prepare("SELECT symbol, currency, name, notional, avg_cost, entry_date, linked_verdict_id, notes, asset_type, created_at FROM holdings WHERE kind = 'hold' AND shares <= 0.0001 AND cleared_date IS NOT NULL AND cleared_date < ?1")
+            .map_err(|e| format!("prepare stale cleared: {}", e))?;
+        let rows: Vec<Holding> = stmt
+            .query_map(params![today], |row| {
+                Ok(Holding {
+                    symbol: row.get(0)?,
+                    currency: row.get(1)?,
+                    kind: HoldingKind::Hold,
+                    name: row.get(2)?,
+                    notional: row.get(3)?,
+                    avg_cost: row.get(4)?,
+                    shares: None,
+                    frozen_shares: None,
+                    entry_date: row.get(5)?,
+                    linked_verdict_id: row.get(6)?,
+                    notes: row.get(7)?,
+                    asset_type: row.get(8)?,
+                    cleared_date: None,
+                    created_at: row.get(9)?,
+                    updated_at: String::new(),
+                })
+            })
+            .map_err(|e| format!("query stale cleared: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("collect stale cleared: {}", e))?;
+
+        if rows.is_empty() {
+            return Ok(0);
+        }
+
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let mut count: u64 = 0;
+
+        for h in &rows {
+            // Check if Watch entry already exists
+            let watch_exists: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM holdings WHERE symbol = ?1 AND kind = 'watch'",
+                    params![h.symbol],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(|e| format!("check watch exists: {}", e))?
+                > 0;
+
+            // Delete the stale Hold entry
+            conn.execute(
+                "DELETE FROM holdings WHERE symbol = ?1 AND currency = ?2 AND kind = 'hold'",
+                params![h.symbol, h.currency],
+            )
+            .map_err(|e| format!("delete stale hold: {}", e))?;
+
+            // Create Watch entry if none exists
+            if !watch_exists {
+                conn.execute(
+                    "INSERT INTO holdings (symbol, currency, kind, name, notional, avg_cost, shares, entry_date, linked_verdict_id, notes, asset_type, cleared_date, created_at, updated_at) \
+                     VALUES (?1, ?2, 'watch', ?3, ?4, ?5, NULL, ?6, ?7, ?8, ?9, NULL, ?10, ?11)",
+                    params![
+                        h.symbol,
+                        h.currency,
+                        h.name,
+                        h.notional,
+                        h.avg_cost,
+                        h.entry_date,
+                        h.linked_verdict_id,
+                        h.notes,
+                        h.asset_type,
+                        h.created_at,
+                        now,
+                    ],
+                )
+                .map_err(|e| format!("insert watch: {}", e))?;
+            }
+            count += 1;
+        }
+
+        log::info!("convert_stale_cleared_holdings: converted {} entries", count);
+        Ok(count)
+    })
 }
 
 pub fn delete_trade(id: &str) -> Result<(), String> {
@@ -1166,6 +1286,7 @@ mod frozen_tests {
             linked_verdict_id: None,
             notes: None,
             asset_type: None,
+            cleared_date: None,
             created_at: String::new(),
             updated_at: String::new(),
         };

@@ -641,6 +641,7 @@
   "invest_status": "Status",
   "invest_status_hold": "HOLD",
   "invest_status_watch": "WATCH",
+  "invest_status_cleared": "CLEARED",
   "invest_asset_type": "Type",
   "invest_asset_type_stock": "Stock",
   "invest_asset_type_etf": "ETF",

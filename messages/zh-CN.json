@@ -641,6 +641,7 @@
   "invest_status": "状态",
   "invest_status_hold": "持仓",
   "invest_status_watch": "观望",
+  "invest_status_cleared": "已清仓",
   "invest_asset_type": "类型",
   "invest_asset_type_stock": "股票",
   "invest_asset_type_etf": "ETF",

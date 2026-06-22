@@ -1751,6 +1751,8 @@ export interface Holding {
   linkedVerdictId: string | null;
   notes: string | null;
   assetType: string | null;
+  /** 清仓日期 (YYYY-MM-DD)。当日清仓的持仓保持 Hold 状态直到次日 05:00。 */
+  clearedDate: string | null;
   createdAt: string;
   updatedAt: string;
 }

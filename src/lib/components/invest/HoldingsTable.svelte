@@ -54,7 +54,13 @@
 
   function dailyPnlAmount(h: Holding): number | null {
     const q = investStore.priceMap[h.symbol];
-    if (!q || !h.shares) return null;
+    if (!q) return null;
+    if (isClearedToday(h)) {
+      const traded = investStore.todayTradedShares.get(h.symbol);
+      const openingShares = (traded?.sell ?? 0) - (traded?.buy ?? 0);
+      return q.change * openingShares;
+    }
+    if (!h.shares) return null;
     return q.change * h.shares;
   }
 
@@ -75,6 +81,10 @@
 
   function todayTraded(sym: string): { buy: number; sell: number } {
     return investStore.todayTradedShares.get(sym) ?? { buy: 0, sell: 0 };
+  }
+
+  function isClearedToday(h: Holding): boolean {
+    return h.kind === 'hold' && (h.shares ?? 0) <= 0.0001 && !!h.clearedDate && h.clearedDate >= getInvestDate();
   }
 
   function isVerdictFresh(createdAt: string | undefined): boolean {
@@ -151,6 +161,9 @@
             <td class="px-[var(--space-3)] py-[var(--space-3)]">
               {#if isHold}
                 <span class="inline-block rounded-[var(--radius-sm)] bg-[rgba(138,154,118,0.15)] px-2 py-0.5 text-[10px] font-semibold text-[#8a9a76]">HOLD</span>
+                {#if isClearedToday(h)}
+                  <span class="ml-1 inline-block rounded-[var(--radius-sm)] bg-[rgba(168,122,122,0.15)] px-2 py-0.5 text-[10px] font-semibold text-[#a87a7a]">{t('invest_status_cleared')}</span>
+                {/if}
               {:else}
                 <span class="inline-block rounded-[var(--radius-sm)] bg-[var(--accent-muted)] px-2 py-0.5 text-[10px] font-semibold text-[var(--accent)]">WATCH</span>
               {/if}

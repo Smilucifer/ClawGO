@@ -282,6 +282,12 @@ fn init_db_inner(db_path: &Path) -> Result<Connection, String> {
             .map_err(|e| format!("Failed to add asset_type column: {}", e))?;
     }
 
+    // Migration: add cleared_date column to holdings table if missing
+    if !has_column(&conn, "holdings", "cleared_date") {
+        conn.execute_batch("ALTER TABLE holdings ADD COLUMN cleared_date TEXT;")
+            .map_err(|e| format!("Failed to add cleared_date column: {}", e))?;
+    }
+
     // Add UNIQUE index on (source, title) for event dedup.
     // If the index doesn't exist yet, deduplicate first to avoid UNIQUE constraint failure.
     let has_dedup_index: bool = conn
@@ -443,6 +449,7 @@ CREATE TABLE IF NOT EXISTS holdings (
     linked_verdict_id TEXT,
     notes TEXT,
     asset_type TEXT NOT NULL DEFAULT 'stock',
+    cleared_date TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (symbol, currency, kind)
