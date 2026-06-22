@@ -29,7 +29,9 @@
 
 **Code review 修复（9 项）：** write-back 时区一致性（`get_invest_date()` 替代 UTC 日期）、事务原子性、`process_edit_holding` 归零处理、`copy_core_fields_from` 字段完整性、`isClearedToday` 去重导出、watch-existence currency 过滤、`getOpeningShares` helper 提取、`upsert_holding` 列补全。
 
-**Bugfix:** `process_sell`/`process_edit_holding` 设置 `cleared_date` 时错误使用 `get_invest_date()`（今天日期），导致每次交易重放（recalculate）时所有历史清仓条目的 `cleared_date` 被刷新为今天，post-pass 的 `cleared_date < today` 条件永远不成立，旧清仓股票无法转换为 Watch 并在 dashboard 持续显示"已清仓"。修复为使用交易实际日期（`trade_date` 或 `created_at`）。
+**Bugfix 1:** `process_sell`/`process_edit_holding` 设置 `cleared_date` 时错误使用 `get_invest_date()`（今天日期），导致每次交易重放（recalculate）时所有历史清仓条目的 `cleared_date` 被刷新为今天，post-pass 的 `cleared_date < today` 条件永远不成立，旧清仓股票无法转换为 Watch 并在 dashboard 持续显示"已清仓"。修复为使用交易实际日期（`Trade::effective_date()`）。
+
+**Bugfix 2:** 无法删除观望列表条目。post-pass 将过期清仓条目（`cleared_date < today`）转换为 Watch 时未检查 `watch_deleted` 集合，`convert_stale_cleared_holdings` 定时任务也未检查 `delete_watch` 交易记录，导致用户删除的观望条目被"复活"。修复：post-pass 检查 `watch_deleted` 并移除 stale hold 条目；定时任务查询 trades 表中的 `delete_watch` 记录。
 
 ## v5.5.6 (2026-06-21)
 
