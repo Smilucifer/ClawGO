@@ -11,6 +11,7 @@
   import { STEP_DEFS, getStepState, getRoundForStep } from './pipeline-config';
   import { getVerdictBadgeStyle, normalizeConfidencePct } from '$lib/utils/invest-verdict';
   import { onMount } from 'svelte';
+  import MarkdownContent from '$lib/components/MarkdownContent.svelte';
 
   const store = investCommitteeStore;
   const invest = investStore;
@@ -470,7 +471,9 @@
                     {result.sanityCheck.gate2Pass ? '✓' : '✗'} Gate 2
                   </span>
                 </div>
-                <div class="verdict-reasoning">{result.reasoning}</div>
+                {#if result.reasoning}
+                  <MarkdownContent text={result.reasoning} class="verdict-reasoning" />
+                {/if}
                 <div class="verdict-meta">
                   <span class="meta-item">⏱ {(result.totalLatencyMs / 1000).toFixed(1)}s</span>
                   <span class="meta-item">🔤 {result.totalTokens} tok</span>
@@ -790,6 +793,28 @@
   .gate-badge.pass { background: rgba(138, 154, 118, 0.18); color: var(--color-success); }
   .gate-badge.fail { background: rgba(168, 122, 122, 0.18); color: var(--color-error); }
   .verdict-reasoning { font-size: 12.5px; color: var(--text-secondary); line-height: 1.8; }
+  .verdict-reasoning :global(h1),
+  .verdict-reasoning :global(h2),
+  .verdict-reasoning :global(h3),
+  .verdict-reasoning :global(h4) {
+    font-size: 13px; font-weight: 600; color: var(--text-primary);
+    margin: 10px 0 4px; line-height: 1.4;
+  }
+  .verdict-reasoning :global(p) { margin: 4px 0; }
+  .verdict-reasoning :global(ul),
+  .verdict-reasoning :global(ol) { margin: 4px 0; padding-left: 18px; }
+  .verdict-reasoning :global(li) { margin: 2px 0; }
+  .verdict-reasoning :global(strong) { color: var(--text-primary); font-weight: 600; }
+  .verdict-reasoning :global(table) {
+    border-collapse: collapse; margin: 6px 0; font-size: 11.5px; width: auto;
+  }
+  .verdict-reasoning :global(th),
+  .verdict-reasoning :global(td) {
+    border: 1px solid var(--border); padding: 3px 8px; text-align: left;
+  }
+  .verdict-reasoning :global(th) { background: var(--bg-base); font-weight: 600; }
+  .verdict-reasoning :global(:first-child) { margin-top: 0; }
+  .verdict-reasoning :global(:last-child) { margin-bottom: 0; }
   .verdict-meta { display: flex; gap: 14px; font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
   .verdict-notes { margin: 0; padding-left: 18px; font-size: 11.5px; color: var(--text-tertiary); }
   .sentinel-override { font-size: 12px; color: var(--color-warning); }
