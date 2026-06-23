@@ -436,8 +436,8 @@
             </div>
 
             {#if result.reasoning}
-              <div class="max-h-32 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-[var(--text-secondary)]">
-                {result.reasoning}
+              <div class="max-h-32 overflow-y-auto">
+                <MarkdownContent text={result.reasoning} class="replay-reasoning" />
               </div>
             {/if}
 
@@ -477,4 +477,27 @@
       grid-template-columns: 1fr;
     }
   }
+  .replay-reasoning { font-size: 12px; color: var(--text-secondary); line-height: 1.7; }
+  .replay-reasoning :global(h1),
+  .replay-reasoning :global(h2),
+  .replay-reasoning :global(h3),
+  .replay-reasoning :global(h4) {
+    font-size: 12.5px; font-weight: 600; color: var(--text-primary);
+    margin: 8px 0 3px; line-height: 1.4;
+  }
+  .replay-reasoning :global(p) { margin: 3px 0; }
+  .replay-reasoning :global(ul),
+  .replay-reasoning :global(ol) { margin: 3px 0; padding-left: 16px; }
+  .replay-reasoning :global(li) { margin: 2px 0; }
+  .replay-reasoning :global(strong) { color: var(--text-primary); font-weight: 600; }
+  .replay-reasoning :global(table) {
+    border-collapse: collapse; margin: 5px 0; font-size: 11px; width: auto;
+  }
+  .replay-reasoning :global(th),
+  .replay-reasoning :global(td) {
+    border: 1px solid var(--border); padding: 3px 7px; text-align: left;
+  }
+  .replay-reasoning :global(th) { background: var(--bg-base); font-weight: 600; }
+  .replay-reasoning :global(:first-child) { margin-top: 0; }
+  .replay-reasoning :global(:last-child) { margin-bottom: 0; }
 </style>

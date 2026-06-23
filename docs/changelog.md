@@ -1,5 +1,18 @@
 # Changelog / 更新日志
 
+## v5.5.8 (2026-06-23)
+
+### 委员会「最终裁决」卡片 Markdown 渲染优化
+
+委员会最终裁决正文（`result.reasoning`）此前被当成纯文本渲染，后端返回的 Markdown（标题/加粗/表格/列表/emoji）全部挤成一坨、源码字符裸露，可读性差。改用项目现有的 `MarkdownContent` 组件（marked + DOMPurify）渲染，让正文正确成型。
+
+**前端改动：**
+
+1. **`CommitteeLiveTab.svelte`（Live tab 实时裁决卡片）：** 导入 `MarkdownContent`；正文从 `{result.reasoning}` 纯文本改为 `<MarkdownContent text={result.reasoning} class="verdict-reasoning" />`，新增 `{#if result.reasoning}` 空值守卫；`.verdict-reasoning` 新增 `:global()` 子元素 CSS（标题/段落/列表/表格/加粗），收紧 prose 默认间距以适配密集暗色卡片。
+2. **`CommitteeReplayTab.svelte`（Replay tab CIO 裁决卡片）：** 正文从 `whitespace-pre-wrap` 纯文本改为 `MarkdownContent`（复用已有 import），保留 `max-h-32 overflow-y-auto` 滚动容器与空值守卫；新增 `.replay-reasoning` 的 `:global()` CSS。
+
+顶部裁决徽章、置信度、Gate、meta 等结构化区域保持不变。纯前端展示层改动，不涉及后端、类型定义与 i18n。
+
 ## v5.5.7 (2026-06-22)
 
 ### 清仓当日保持持仓 + 次日自动转换
