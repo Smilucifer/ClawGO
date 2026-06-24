@@ -47,14 +47,23 @@ fn config_path() -> PathBuf {
 }
 
 /// Load jobs: start from defaults, overlay user overrides, compute next_run.
+///
+/// When a job's `next_run` is `None` on disk (fresh install or reset), the
+/// computed anchor is persisted immediately.  This breaks the deadlock where
+/// `should_fire` returns false (future time) → `persist_job_status` never
+/// runs → disk `next_run` stays `None` forever.
 pub fn load_jobs() -> Vec<CronJob> {
     let mut jobs = load_jobs_base();
+    let mut needs_save = false;
     for job in &mut jobs {
-        // Only compute next_run if not already persisted from disk.
-        // Previously, this always recomputed, which produced a strictly-future
-        // time that caused should_fire() to always return false.
         if job.next_run.is_none() {
             job.next_run = compute_next_run_for_job(job);
+            needs_save = true;
+        }
+    }
+    if needs_save {
+        if let Err(e) = save_jobs(&jobs) {
+            log::error!("[scheduler] failed to persist initial next_run anchors: {e}");
         }
     }
     jobs
@@ -556,6 +565,60 @@ mod tests {
             rp.next_run.as_deref(),
             Some("2026-06-25T09:30:00"),
             "next_run should survive save→load round-trip"
+        );
+    }
+
+    /// Reproduce the deadlock: save a non-dedicated job with next_run=None,
+    /// then verify load_jobs persists a non-None anchor to disk.
+    /// A plain load_jobs_base() after the load must see the anchor.
+    #[test]
+    fn load_jobs_persists_initial_next_run_anchor() {
+        let _t = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let _env = EnvGuard {
+            userprofile: std::env::var_os("USERPROFILE"),
+            home: std::env::var_os("HOME"),
+        };
+        std::env::set_var("USERPROFILE", tmp.path());
+        std::env::set_var("HOME", tmp.path());
+
+        assert!(
+            config_path().starts_with(tmp.path()),
+            "test isolation failed"
+        );
+
+        // Save pnl_snapshot with next_run=None (simulates the stuck state).
+        let mut jobs = super::super::default_jobs();
+        {
+            let pnl = jobs.iter_mut().find(|j| j.id == "pnl_snapshot").unwrap();
+            pnl.next_run = None;
+            // Ensure there is at least one override so the file is written.
+            pnl.last_status = Some("ok".into());
+        }
+        save_jobs(&jobs).expect("save_jobs ok");
+
+        // Verify disk state: next_run is absent (None).
+        let base_before = load_jobs_base();
+        let pnl_before = base_before.iter().find(|j| j.id == "pnl_snapshot").unwrap();
+        assert!(
+            pnl_before.next_run.is_none(),
+            "precondition: disk next_run must be None before load_jobs"
+        );
+
+        // load_jobs must compute and persist next_run.
+        let loaded = load_jobs();
+        let pnl_loaded = loaded.iter().find(|j| j.id == "pnl_snapshot").unwrap();
+        assert!(
+            pnl_loaded.next_run.is_some(),
+            "load_jobs must compute next_run for job with None anchor"
+        );
+
+        // Verify the anchor survived to disk: a fresh base load must see it.
+        let base_after = load_jobs_base();
+        let pnl_after = base_after.iter().find(|j| j.id == "pnl_snapshot").unwrap();
+        assert_eq!(
+            pnl_after.next_run, pnl_loaded.next_run,
+            "anchor must be persisted to disk, not just held in memory"
         );
     }
 }
