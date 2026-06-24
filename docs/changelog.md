@@ -1,5 +1,18 @@
 # Changelog / 更新日志
 
+## v5.5.10 (2026-06-24)
+
+### 调度器死锁修复（初始锚点持久化）
+
+v5.5.9 的 `JobOverride.next_run` 字段修复补齐了持久化的"支持"，但遗漏了唯一能写盘的触发路径从未被走到：`load_jobs()` 在内存中计算 `next_run` → `should_fire()` 返回 false（严格未来时间）→ `persist_job_status` 永远不执行 → 磁盘 `next_run` 永远是 `None` → 死循环。仅 `dedicated: true` 的任务（jin10_collector、event_analyzer）因绕过 `should_fire` 而存活。
+
+**修复：** `load_jobs()` 现在在计算 `next_run` 后立即调用 `save_jobs()` 落盘，建立初始锚点。此后 `should_fire()` 读到固定的锚点时间，到点正确触发。所有调用者（主循环、`toggle_job`、`update_cron`、`load_dream_config`）自动受益，无需 API 变更。
+
+**涉及文件：**
+
+- `scheduler/config.rs` — `load_jobs()` 合并锚点持久化逻辑，删除 `load_jobs_anchored()` 变体，新增 `load_jobs_persists_initial_next_run_anchor` 测试
+- `scheduler/runner.rs` — 主循环回退为 `config::load_jobs()`（无需特殊变体）
+
 ## v5.5.9 (2026-06-24)
 
 ### 定时任务修复 + 宏观指标升级（上证指数 / 涨跌家数）
