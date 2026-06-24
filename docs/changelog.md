@@ -1,5 +1,28 @@
 # Changelog / 更新日志
 
+## v5.5.9 (2026-06-24)
+
+### 定时任务修复 + 宏观指标升级（上证指数 / 涨跌家数）
+
+**1. 定时任务修复：** 自 06-10 起所有 cron 任务从未自动触发。根因：`load_jobs()` 每次 tick 都通过 `schedule.after(&now)` 重算 `next_run`，产出严格未来的时间，`should_fire()` 永远返回 `false`；同时 `JobOverride` 磁盘结构体缺少 `next_run` 字段，`persist_job_status` 写入的值在 save 时被静默丢弃。修复：`JobOverride` 新增 `next_run` 字段，`load_jobs` 仅在 `next_run` 为空时才计算，`save_jobs` diff 逻辑同步更新。新增 round-trip 测试。
+
+**2. 沪深 300 → 上证指数：** 将宏观指标 `csi300_close` / `csi300_vol20` 重命名为 `sh_composite_close` / `sh_composite_vol20`。数据源从 Tushare `000300.SH` 切换为 `000001.SH`（上证综指），Tencent fallback 同步更新为 `sh000001`。`fetch_csi300_kline` 泛化为 `fetch_index_kline(client, symbol, days)` 供复用。委员会 prompt、CLI executor、Macro 角色市场阶段规则、数据源探测面板同步更新。
+
+**3. 涨跌家数：** 新增 AkShare 数据源 `stock_market_activity_legu`，通过 Python RPC 桥接获取全市场上涨/下跌家数，注入 `macro_cache` 为 `advance_count` / `decline_count`。委员会 prompt 宏观快照新增两项指标。指标总数 15 → 17。
+
+**涉及文件：**
+
+- `scheduler/config.rs` — `JobOverride` 新增 `next_run`、`load_jobs_base` overlay、`load_jobs` 条件计算、`save_jobs` diff、round-trip 测试
+- `storage/invest/macro_cache.rs` — `ALL_INDICATORS` 重命名 + 新增 2 项
+- `tencent_quotes.rs` — `IndexKlineResult` + `fetch_index_kline` 泛化
+- `invest/macro_refresh.rs` — `fetch_sh_composite` + `fetch_advance_decline` 任务、doc comment 更新
+- `invest/committee/tools.rs` — 指标标签更新 + 涨跌家数标签
+- `invest/committee/cli_executor.rs` — prompt "沪深300点位" → "上证指数点位"
+- `invest/committee/roles.rs` — 市场阶段规则 "沪深300站上MA60" → "上证指数站上MA60"
+- `commands/invest.rs` — 数据源探测面板更新
+- `invest/international.rs` — `AdvanceDecline` 结构体 + fetch 方法
+- `python-runtime/scripts/providers/akshare_market.py` — `market_advance_decline()` 函数
+
 ## v5.5.8 (2026-06-23)
 
 ### 委员会「最终裁决」卡片 Markdown 渲染优化
