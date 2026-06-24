@@ -1,6 +1,6 @@
 [package]
 name = "ClawGO"
-version = "5.5.9"
+version = "5.5.10"
 edition = "2021"
 description = "Local-first desktop app for AI-assisted vibe coding"
 license = "Apache-2.0"
