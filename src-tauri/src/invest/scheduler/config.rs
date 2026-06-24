@@ -30,6 +30,8 @@ struct JobOverride {
     last_run: Option<String>,
     #[serde(default)]
     last_status: Option<String>,
+    #[serde(default)]
+    next_run: Option<String>,
 }
 
 /// Serialize concurrent reads/writes to scheduler.json so callers never see
@@ -48,7 +50,12 @@ fn config_path() -> PathBuf {
 pub fn load_jobs() -> Vec<CronJob> {
     let mut jobs = load_jobs_base();
     for job in &mut jobs {
-        job.next_run = compute_next_run_for_job(job);
+        // Only compute next_run if not already persisted from disk.
+        // Previously, this always recomputed, which produced a strictly-future
+        // time that caused should_fire() to always return false.
+        if job.next_run.is_none() {
+            job.next_run = compute_next_run_for_job(job);
+        }
     }
     jobs
 }
@@ -86,6 +93,9 @@ pub(crate) fn load_jobs_base() -> Vec<CronJob> {
             }
             if let Some(ls) = ov.last_status {
                 job.last_status = Some(ls);
+            }
+            if let Some(nr) = ov.next_run {
+                job.next_run = Some(nr);
             }
         }
     }
@@ -170,6 +180,7 @@ pub fn save_jobs(jobs: &[CronJob]) -> Result<(), String> {
                     || d.requires_trading_day != job.requires_trading_day
                     || d.last_run != job.last_run
                     || d.last_status != job.last_status
+                    || d.next_run != job.next_run
             });
             if changed {
                 Some(JobOverride {
@@ -180,6 +191,7 @@ pub fn save_jobs(jobs: &[CronJob]) -> Result<(), String> {
                     requires_trading_day: Some(job.requires_trading_day),
                     last_run: job.last_run.clone(),
                     last_status: job.last_status.clone(),
+                    next_run: job.next_run.clone(),
                 })
             } else {
                 None
@@ -515,5 +527,35 @@ mod tests {
         let rp = reloaded.iter().find(|j| j.id == "pnl_snapshot").expect("pnl after reload");
         assert_eq!(rp.cron_expr, "0 0 10,14 * * 1-5");
         assert!(!rp.enabled);
+    }
+
+    #[test]
+    fn next_run_persists_through_save_load_cycle() {
+        let _t = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let _env = EnvGuard {
+            userprofile: std::env::var_os("USERPROFILE"),
+            home: std::env::var_os("HOME"),
+        };
+        std::env::set_var("USERPROFILE", tmp.path());
+        std::env::set_var("HOME", tmp.path());
+
+        assert!(
+            config_path().starts_with(tmp.path()),
+            "test isolation failed"
+        );
+
+        let mut jobs = super::super::default_jobs();
+        let pnl = jobs.iter_mut().find(|j| j.id == "pnl_snapshot").unwrap();
+        pnl.next_run = Some("2026-06-25T09:30:00".into());
+        save_jobs(&jobs).expect("save_jobs ok");
+
+        let reloaded = load_jobs();
+        let rp = reloaded.iter().find(|j| j.id == "pnl_snapshot").unwrap();
+        assert_eq!(
+            rp.next_run.as_deref(),
+            Some("2026-06-25T09:30:00"),
+            "next_run should survive save→load round-trip"
+        );
     }
 }
