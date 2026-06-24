@@ -10,10 +10,10 @@ CREATE TABLE IF NOT EXISTS macro_cache (
     fetched_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );";
 
-/// The 15 canonical macro indicators stored in this table.
+/// The 17 canonical macro indicators stored in this table.
 pub const ALL_INDICATORS: &[&str] = &[
-    "csi300_close",
-    "csi300_vol20",
+    "sh_composite_close",
+    "sh_composite_vol20",
     "northbound_net",
     "margin_balance",
     "shibor_on",
@@ -27,6 +27,8 @@ pub const ALL_INDICATORS: &[&str] = &[
     "limit_up_count",
     "limit_down_count",
     "two_market_volume",
+    "advance_count",
+    "decline_count",
 ];
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

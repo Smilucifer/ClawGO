@@ -1,10 +1,10 @@
-//! Scheduler job: refresh the 15 canonical macro indicators in macro_cache.
+//! Scheduler job: refresh the 17 canonical macro indicators in macro_cache.
 //!
 //! Runs on `*/15 8-22 * * 1-5` (every 15 minutes during 8-22 on weekdays).
 //! Partial failure strategy: failed indicators keep stale data, logged as warn.
 //!
-//! Data sources: Tushare (primary), Tencent Finance (CSI300 fallback + market volume),
-//! AkShare (bond yield fallback + limit up/down stats), Yahoo Finance (international).
+//! Data sources: Tushare (primary), Tencent Finance (Shanghai Composite fallback + market volume),
+//! AkShare (bond yield fallback + limit up/down stats + advance/decline), Yahoo Finance (international).
 
 use crate::storage::invest::macro_cache;
 use crate::tushare::client::TushareClient;
@@ -15,7 +15,7 @@ type MacroEntry = (String, Option<f64>, Option<String>);
 type MacroResult = Result<Vec<MacroEntry>, String>;
 type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
-/// Refresh all 15 macro indicators. Called from the scheduler runner.
+/// Refresh all 17 macro indicators. Called from the scheduler runner.
 ///
 /// Each indicator group is fetched independently. On failure, the existing cache
 /// entry is preserved and a warning is logged.
@@ -27,7 +27,7 @@ pub async fn refresh_macro_cache(client: &TushareClient) -> Result<String, Strin
     // Clone the client for each task to satisfy 'static requirement on BoxFuture.
     // reqwest::Client is cheap to clone (shares the connection pool).
     let tasks: Vec<BoxFuture<MacroResult>> = vec![
-        Box::pin(fetch_csi300(client.clone(), start_date.clone(), end_date.clone())),
+        Box::pin(fetch_sh_composite(client.clone(), start_date.clone(), end_date.clone())),
         Box::pin(fetch_northbound(client.clone(), start_date.clone(), end_date.clone())),
         Box::pin(fetch_margin(client.clone(), start_date.clone(), end_date.clone())),
         Box::pin(fetch_shibor(client.clone(), start_date.clone(), end_date.clone())),
@@ -35,6 +35,7 @@ pub async fn refresh_macro_cache(client: &TushareClient) -> Result<String, Strin
         Box::pin(fetch_international()),
         Box::pin(fetch_market_stats()),
         Box::pin(fetch_two_market_volume()),
+        Box::pin(fetch_advance_decline()),
     ];
 
     let results = futures_util::future::join_all(tasks).await;
@@ -72,51 +73,50 @@ pub async fn refresh_macro_cache(client: &TushareClient) -> Result<String, Strin
 // Tushare-based indicators
 // ---------------------------------------------------------------------------
 
-/// csi300_close + csi300_vol20 from Tushare daily bars.
+/// sh_composite_close + sh_composite_vol20 from Tushare daily bars.
 ///
 /// Falls back to Tencent Finance K-line API when Tushare fails or returns empty.
-async fn fetch_csi300(
+async fn fetch_sh_composite(
     client: TushareClient,
     start_date: String,
     end_date: String,
 ) -> MacroResult {
-    match client.daily("000300.SH", &start_date, &end_date).await {
+    match client.daily("000001.SH", &start_date, &end_date).await {
         Ok(bars) if !bars.is_empty() => {
             let latest_close = bars[0].close;
             let closes: Vec<f64> = bars.iter().take(21).map(|b| b.close).collect();
             let vol20 = crate::tencent_quotes::compute_vol20(&closes);
 
             let mut entries = vec![
-                ("csi300_close".to_string(), Some(latest_close), None),
+                ("sh_composite_close".to_string(), Some(latest_close), None),
             ];
             if let Some(v) = vol20 {
-                entries.push(("csi300_vol20".to_string(), Some(v), None));
+                entries.push(("sh_composite_vol20".to_string(), Some(v), None));
             }
             Ok(entries)
         }
         Ok(_) => {
-            // Tushare succeeded but returned no bars (holiday/weekend) — still try fallback
-            log::info!("macro_refresh: csi300 Tushare returned empty, trying Tencent fallback");
-            csi300_tencent_fallback().await
+            log::info!("macro_refresh: sh_composite Tushare returned empty, trying Tencent fallback");
+            sh_composite_tencent_fallback().await
         }
         Err(e) => {
-            log::warn!("macro_refresh: csi300 Tushare error: {e}, falling back to Tencent");
-            csi300_tencent_fallback().await
+            log::warn!("macro_refresh: sh_composite Tushare error: {e}, falling back to Tencent");
+            sh_composite_tencent_fallback().await
         }
     }
 }
 
-/// Tencent Finance fallback for CSI300 close + vol20.
-async fn csi300_tencent_fallback() -> MacroResult {
+/// Tencent Finance fallback for Shanghai Composite close + vol20.
+async fn sh_composite_tencent_fallback() -> MacroResult {
     let http = reqwest::Client::new();
-    let kline = crate::tencent_quotes::fetch_csi300_kline(&http, 25).await
-        .map_err(|e| format!("csi300 tencent fallback: {e}"))?;
+    let kline = crate::tencent_quotes::fetch_index_kline(&http, "sh000001", 25).await
+        .map_err(|e| format!("sh_composite tencent fallback: {e}"))?;
 
     let mut entries = vec![
-        ("csi300_close".to_string(), Some(kline.close), None),
+        ("sh_composite_close".to_string(), Some(kline.close), None),
     ];
     if let Some(v) = kline.vol20 {
-        entries.push(("csi300_vol20".to_string(), Some(v), None));
+        entries.push(("sh_composite_vol20".to_string(), Some(v), None));
     }
     Ok(entries)
 }
@@ -324,6 +324,23 @@ async fn fetch_market_stats() -> MacroResult {
     ])
 }
 
+/// Fetch market-wide advance/decline stock counts from AkShare.
+///
+/// Uses Python RPC bridge to call `akshare_market.market_advance_decline`.
+/// Returns advance_count and decline_count as two separate entries.
+async fn fetch_advance_decline() -> MacroResult {
+    let client = crate::invest::international::InternationalClient::from_settings();
+    let today = chrono::Local::now().format("%Y%m%d").to_string();
+
+    let ad = client.fetch_akshare_advance_decline(&today).await
+        .map_err(|e| format!("advance_decline: {e}"))?;
+
+    Ok(vec![
+        ("advance_count".to_string(), Some(ad.advance_count as f64), None),
+        ("decline_count".to_string(), Some(ad.decline_count as f64), None),
+    ])
+}
+
 // ---------------------------------------------------------------------------
 // Two-market volume (Tencent Finance)
 // ---------------------------------------------------------------------------
@@ -356,6 +373,7 @@ mod tests {
 
     #[test]
     fn test_all_indicators_count() {
-        assert_eq!(macro_cache::ALL_INDICATORS.len(), 15);
+        // 15 original - 2 (csi300) + 2 (sh_composite) + 2 (advance/decline) = 17
+        assert_eq!(macro_cache::ALL_INDICATORS.len(), 17);
     }
 }

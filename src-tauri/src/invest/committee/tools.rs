@@ -23,8 +23,8 @@ pub fn format_macro_entries(entries: &[macro_cache::MacroCacheEntry]) -> Result<
                 None => "N/A".to_string(),
             };
             let label = match *indicator {
-                "csi300_close" => "沪深300",
-                "csi300_vol20" => "沪深300 20日波动率",
+                "sh_composite_close" => "上证指数",
+                "sh_composite_vol20" => "上证指数 20日波动率",
                 "northbound_net" => "北向资金净流入(亿)",
                 "margin_balance" => "融资余额(元)",
                 "shibor_on" => "SHIBOR隔夜(%)",
@@ -38,6 +38,8 @@ pub fn format_macro_entries(entries: &[macro_cache::MacroCacheEntry]) -> Result<
                 "limit_up_count" => "涨停家数",
                 "limit_down_count" => "跌停家数",
                 "two_market_volume" => "两市成交额(亿)",
+                "advance_count" => "上涨家数",
+                "decline_count" => "下跌家数",
                 _ => indicator,
             };
             let stale_marker = if macro_cache::is_stale(entry, 30) {

@@ -195,28 +195,30 @@ pub async fn fetch_index_quote(
 }
 
 // ---------------------------------------------------------------------------
-// CSI300 K-line + 20-day volatility
+// Index K-line + 20-day volatility
 // ---------------------------------------------------------------------------
 
-/// CSI300 K-line result with latest close and 20-day annualized volatility.
+/// Index K-line result with latest close and 20-day annualized volatility.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Csi300KlineResult {
+pub struct IndexKlineResult {
     pub close: f64,
     /// 20-day annualized volatility (percent), e.g. 19.96.
     pub vol20: Option<f64>,
 }
 
-/// Fetch CSI300 daily K-line from Tencent Finance and compute 20-day volatility.
+/// Fetch any index daily K-line from Tencent Finance and compute 20-day volatility.
 ///
 /// Uses the `web.ifzq.gtimg.cn` K-line API (same endpoint used by the web chart).
+/// `symbol` is the Tencent format, e.g. `"sh000001"` for Shanghai Composite.
 /// `days` controls the lookback window (25 is enough for vol20 computation).
-pub async fn fetch_csi300_kline(
+pub async fn fetch_index_kline(
     client: &reqwest::Client,
+    symbol: &str,
     days: u32,
-) -> Result<Csi300KlineResult, String> {
+) -> Result<IndexKlineResult, String> {
     let url = format!(
-        "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000300,day,,,{days},qfq"
+        "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,,,{days},qfq"
     );
 
     let resp = client
@@ -230,16 +232,16 @@ pub async fn fetch_csi300_kline(
         .await
         .map_err(|e| format!("tencent kline parse failed: {e}"))?;
 
-    // Response: {"data":{"sh000300":{"day":[[date,open,close,high,low,vol],...], "qfqday":[...]}}}
+    // Response: {"data":{"sh000001":{"day":[[date,open,close,high,low,vol],...], "qfqday":[...]}}}
     let day_data = body
         .get("data")
-        .and_then(|d| d.get("sh000300"))
+        .and_then(|d| d.get(symbol))
         .and_then(|s| {
             s.get("day")
                 .or_else(|| s.get("qfqday"))
                 .and_then(|v| v.as_array())
         })
-        .ok_or("tencent kline: missing data.sh000300.day")?;
+        .ok_or(format!("tencent kline: missing data.{symbol}.day"))?;
 
     if day_data.is_empty() {
         return Err("tencent kline: empty day data".into());
@@ -263,10 +265,19 @@ pub async fn fetch_csi300_kline(
 
     let latest_close = closes[0]; // newest first
 
-    Ok(Csi300KlineResult {
+    Ok(IndexKlineResult {
         close: latest_close,
         vol20: compute_vol20(&closes),
     })
+}
+
+/// Backward-compatible alias for CSI300 K-line fetch.
+#[deprecated(note = "Use fetch_index_kline with symbol=\"sh000300\"")]
+pub async fn fetch_csi300_kline(
+    client: &reqwest::Client,
+    days: u32,
+) -> Result<IndexKlineResult, String> {
+    fetch_index_kline(client, "sh000300", days).await
 }
 
 // ---------------------------------------------------------------------------

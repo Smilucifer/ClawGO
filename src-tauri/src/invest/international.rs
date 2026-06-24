@@ -65,6 +65,14 @@ pub struct MarketStats {
     pub date: String,
 }
 
+/// A-share market-wide advance/decline counts from AkShare.
+#[derive(Debug, Clone, serde::Serialize, Deserialize)]
+pub struct AdvanceDecline {
+    pub advance_count: u32,
+    pub decline_count: u32,
+    pub date: String,
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -213,6 +221,17 @@ impl InternationalClient {
     pub async fn fetch_akshare_market_stats(&self, date: &str) -> Result<MarketStats, String> {
         self.rpc_call(
             "akshare_market.market_stats",
+            serde_json::json!({"date": date}),
+        )
+        .await
+    }
+
+    /// Fetch A-share market-wide advance/decline counts from AkShare.
+    ///
+    /// `date` is `"YYYYMMDD"` format; empty string defaults to today.
+    pub async fn fetch_akshare_advance_decline(&self, date: &str) -> Result<AdvanceDecline, String> {
+        self.rpc_call(
+            "akshare_market.market_advance_decline",
             serde_json::json!({"date": date}),
         )
         .await

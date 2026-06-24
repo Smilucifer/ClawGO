@@ -1057,11 +1057,11 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
         }
     }
 
-    // Tencent CSI300 K-line (used by macro_refresh fallback)
-    match crate::tencent_quotes::fetch_csi300_kline(&tencent_http, 25).await {
+    // Tencent Shanghai Composite K-line (used by macro_refresh fallback)
+    match crate::tencent_quotes::fetch_index_kline(&tencent_http, "sh000001", 25).await {
         Ok(kline) => {
             sources.push(DataSourceStatus {
-                name: "腾讯 CSI300 K线".into(),
+                name: "腾讯 上证指数 K线".into(),
                 ok: true,
                 last_success: Some(now_str.clone()),
                 sample_value: Some(format!(
@@ -1072,9 +1072,9 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
             });
         }
         Err(e) => {
-            log::warn!("[datasource] 腾讯 CSI300 K线 probe failed: {}", e);
+            log::warn!("[datasource] 腾讯 上证指数 K线 probe failed: {}", e);
             sources.push(DataSourceStatus {
-                name: "腾讯 CSI300 K线".into(),
+                name: "腾讯 上证指数 K线".into(),
                 ok: false,
                 last_success: None,
                 sample_value: Some(e),

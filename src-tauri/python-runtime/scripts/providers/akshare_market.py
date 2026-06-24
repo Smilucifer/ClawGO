@@ -96,3 +96,61 @@ def market_stats(date: str = "") -> dict:
         pass
 
     return result if any_success else {}
+
+
+def market_advance_decline(date: str = "") -> dict:
+    """Fetch market-wide advance/decline stock counts.
+
+    Uses AkShare's stock_market_activity_legu which returns the daily
+    market breadth: advancing, declining, and unchanged counts.
+
+    Args:
+        date: Trading date in "YYYYMMDD" format. Empty string = today.
+
+    Returns: {"advance_count": int, "decline_count": int, "date": str}
+    or {} on failure.
+    """
+    try:
+        import akshare as ak
+    except ImportError:
+        return {}
+
+    if not date:
+        date = datetime.now().strftime("%Y%m%d")
+
+    try:
+        df = ak.stock_market_activity_legu()
+        if df is None or df.empty:
+            return {}
+
+        # The returned DataFrame has columns like: 日期, 上涨家数, 下跌家数, ...
+        # Filter to the requested date (format may vary; try YYYY-MM-DD and YYYYMMDD)
+        date_dash = f"{date[:4]}-{date[4:6]}-{date[6:]}"
+        row = df[df.iloc[:, 0].astype(str).str.contains(date) | df.iloc[:, 0].astype(str).str.contains(date_dash)]
+
+        if row.empty:
+            # If no exact match, take the latest row
+            row = df.tail(1)
+
+        r = row.iloc[0]
+
+        # Find columns by name pattern (robust to minor naming variations)
+        advance = 0
+        decline = 0
+        for col in df.columns:
+            col_str = str(col)
+            if "上涨" in col_str:
+                advance = int(float(r[col]))
+            elif "下跌" in col_str:
+                decline = int(float(r[col]))
+
+        if advance == 0 and decline == 0:
+            return {}
+
+        return {
+            "advance_count": advance,
+            "decline_count": decline,
+            "date": date,
+        }
+    except Exception as e:
+        return {}

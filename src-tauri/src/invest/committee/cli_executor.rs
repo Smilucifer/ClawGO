@@ -266,7 +266,7 @@ pub fn build_cli_macro_prompt(
     let cli_additions = format!(
         "\n\n{macro_data}\n\n{verdicts_data}\n\n\
          **CLI 模式说明**：以上宏观指标和裁决数据已由系统预取，无需调用工具。\n\
-         市场阶段判定中，MA60/MA20 等均线数据无法直接获取——请根据沪深300点位、\n\
+         市场阶段判定中，MA60/MA20 等均线数据无法直接获取——请根据上证指数点位、\n\
          成交额、北向资金等已有数据综合推断，不要编造具体均线数值。",
         macro_data = macro_data,
         verdicts_data = verdicts_data,
