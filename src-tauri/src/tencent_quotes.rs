@@ -271,15 +271,6 @@ pub async fn fetch_index_kline(
     })
 }
 
-/// Backward-compatible alias for CSI300 K-line fetch.
-#[deprecated(note = "Use fetch_index_kline with symbol=\"sh000300\"")]
-pub async fn fetch_csi300_kline(
-    client: &reqwest::Client,
-    days: u32,
-) -> Result<IndexKlineResult, String> {
-    fetch_index_kline(client, "sh000300", days).await
-}
-
 // ---------------------------------------------------------------------------
 // Shared volatility computation
 // ---------------------------------------------------------------------------

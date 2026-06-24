@@ -124,12 +124,13 @@ def market_advance_decline(date: str = "") -> dict:
             return {}
 
         # The returned DataFrame has columns like: 日期, 上涨家数, 下跌家数, ...
-        # Filter to the requested date (format may vary; try YYYY-MM-DD and YYYYMMDD)
+        # Exact-match the requested date (YYYYMMDD or YYYY-MM-DD)
         date_dash = f"{date[:4]}-{date[4:6]}-{date[6:]}"
-        row = df[df.iloc[:, 0].astype(str).str.contains(date) | df.iloc[:, 0].astype(str).str.contains(date_dash)]
+        col0 = df.iloc[:, 0].astype(str)
+        row = df[(col0 == date) | (col0 == date_dash)]
 
         if row.empty:
-            # If no exact match, take the latest row
+            # No exact match — take the latest row (weekend/holiday fallback)
             row = df.tail(1)
 
         r = row.iloc[0]
@@ -137,14 +138,18 @@ def market_advance_decline(date: str = "") -> dict:
         # Find columns by name pattern (robust to minor naming variations)
         advance = 0
         decline = 0
+        total = 0
         for col in df.columns:
             col_str = str(col)
+            val = int(float(r[col]))
             if "上涨" in col_str:
-                advance = int(float(r[col]))
+                advance = val
             elif "下跌" in col_str:
-                decline = int(float(r[col]))
+                decline = val
+            total += abs(val)
 
-        if advance == 0 and decline == 0:
+        # Distinguish "no data" (API error) from "market flat" (rare but possible)
+        if total == 0:
             return {}
 
         return {
@@ -153,4 +158,6 @@ def market_advance_decline(date: str = "") -> dict:
             "date": date,
         }
     except Exception as e:
+        import sys
+        print(f"[akshare_market] market_advance_decline error: {e}", file=sys.stderr)
         return {}
