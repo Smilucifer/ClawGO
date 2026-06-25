@@ -73,6 +73,30 @@ pub struct AdvanceDecline {
     pub date: String,
 }
 
+/// miniQMT 客户端健康状态。
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct XtdataHealth {
+    pub available: bool,
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// miniQMT 单根 K线（字段已由 xtdata.py 归一化为 tushare 风格）。
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct XtdataKlineBar {
+    pub trade_date: String,
+    pub open: f64,
+    pub high: f64,
+    pub low: f64,
+    pub close: f64,
+    pub vol: f64,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct XtdataKlineResp {
+    items: Vec<XtdataKlineBar>,
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -235,6 +259,29 @@ impl InternationalClient {
             serde_json::json!({"date": date}),
         )
         .await
+    }
+
+    // -- miniQMT provider (xtdata) --------------------------------------------
+
+    /// 探测 miniQMT 客户端是否在线。不在线返回 available=false（不报错）。
+    pub async fn fetch_xtdata_health(&self) -> Result<XtdataHealth, String> {
+        self.rpc_call("xtdata.health", serde_json::json!({})).await
+    }
+
+    /// 获取 miniQMT 历史 K线。
+    pub async fn fetch_xtdata_kline(
+        &self,
+        symbol: &str,
+        period: &str,
+        count: u32,
+    ) -> Result<Vec<XtdataKlineBar>, String> {
+        let resp: XtdataKlineResp = self
+            .rpc_call(
+                "xtdata.kline",
+                serde_json::json!({ "symbol": symbol, "period": period, "count": count }),
+            )
+            .await?;
+        Ok(resp.items)
     }
 }
 
