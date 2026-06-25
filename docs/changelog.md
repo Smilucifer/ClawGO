@@ -1,5 +1,11 @@
 # Changelog / 更新日志
 
+## v5.6.1 (2026-06-25)
+
+### 修复
+
+- **Yahoo Finance 限流根治：** `yfinance` 库的 `info`/`history` 多请求模式触发 Yahoo 429 限流，导致 6 个国际指数（VIX、TNX、DXY、黄金、原油、美元兑人民币）宏指标全部失败。改为直接 HTTP 请求 Yahoo Chart API (`/v8/finance/chart`)，绕过库级限流。macro 刷新从 11/17 恢复为 17/17。
+
 ## v5.6.0 (2026-06-25)
 
 ### 数据源编排层 + miniQMT 接入

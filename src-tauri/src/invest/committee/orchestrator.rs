@@ -731,7 +731,7 @@ async fn refresh_moneyflow_cache(
     use crate::tushare::client::MoneyflowDc;
 
     log::info!(
-        "build_asset_context: moneyflow_dc missing for {}, attempting targeted refresh",
+        "build_asset_context: moneyflow_dc missing or stale for {}, attempting targeted refresh",
         symbol
     );
     let now = chrono::Utc::now();
@@ -791,7 +791,15 @@ async fn build_asset_context(
     let has_type = |t: &str| cache_entries.iter().any(|(dt, _, _)| dt == t);
     let has_daily_basic = has_type("daily_basic");
     let has_fina = has_type("fina_indicator");
-    let has_moneyflow = has_type("moneyflow_dc");
+
+    // moneyflow_dc 当日过期检查：资金流向每个交易日都会变化，
+    // 如果缓存日期早于今天（05:00 前算昨天）则视为过期，需要刷新。
+    let today_compact = crate::invest::date_utils::get_invest_date_compact();
+    let moneyflow_stale = cache_entries
+        .iter()
+        .find(|(dt, _, _)| dt == "moneyflow_dc")
+        .map(|(_, date, _)| date.as_str() < today_compact.as_str())
+        .unwrap_or(true);
 
     // ── 2. 核心数据缺失 → 全量刷新 ──
     if !has_daily_basic || !has_fina {
@@ -800,7 +808,7 @@ async fn build_asset_context(
         }
         cache_entries = stock_data_cache::load_all_latest_for_symbol(symbol)
             .unwrap_or_default();
-    } else if asset_type == "stock" && !has_moneyflow {
+    } else if asset_type == "stock" && moneyflow_stale {
         cache_entries = refresh_moneyflow_cache(client, symbol, cache_entries).await;
     }
 
