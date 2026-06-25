@@ -122,29 +122,37 @@ async fn sh_composite_tencent_fallback() -> MacroResult {
 }
 
 /// northbound_net from Tushare moneyflow_hsgt.
+///
+/// tushare 金额字段单位为百万元；换算到亿元需 ÷ 100（1 亿元 = 100 百万元）。
+/// net_money 字段已于 2024-08 停更，改用 north_money（= 沪股通 + 深股通）。
 async fn fetch_northbound(
     client: TushareClient,
     start_date: String,
     end_date: String,
 ) -> MacroResult {
+    /// tushare 百万元 → 亿元换算系数。
+    const MILLION_TO_YI: f64 = 100.0;
+
     let flows = client
         .moneyflow_hsgt(&start_date, &end_date)
         .await
         .map_err(|e| format!("northbound moneyflow_hsgt: {e}"))?;
 
-    // Latest entry's net_money (unit: 亿元)
     let latest = flows
         .iter()
         .max_by_key(|f| &f.trade_date)
         .ok_or("northbound: no data")?;
 
+    // north_money 单位百万元，转亿元。
+    let northbound_yi = latest.north_money / MILLION_TO_YI;
+
     Ok(vec![(
         "northbound_net".to_string(),
-        Some(latest.net_money),
+        Some(northbound_yi),
         Some(serde_json::json!({
             "trade_date": latest.trade_date,
-            "north_money": latest.north_money,
-            "south_money": latest.south_money,
+            "north_money_yi": northbound_yi,
+            "south_money_yi": latest.south_money / MILLION_TO_YI,
         }).to_string()),
     )])
 }
