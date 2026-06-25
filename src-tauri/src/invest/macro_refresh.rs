@@ -11,7 +11,8 @@ use crate::tushare::client::TushareClient;
 use std::future::Future;
 use std::pin::Pin;
 
-type MacroEntry = (String, Option<f64>, Option<String>);
+/// (indicator, value, extra_json, source)
+type MacroEntry = (String, Option<f64>, Option<String>, &'static str);
 type MacroResult = Result<Vec<MacroEntry>, String>;
 type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
@@ -46,9 +47,9 @@ pub async fn refresh_macro_cache(client: &TushareClient) -> Result<String, Strin
     for result in results {
         match result {
             Ok(entries) => {
-                for (indicator, value, extra) in entries {
+                for (indicator, value, extra, source) in entries {
                     if let Err(e) =
-                        macro_cache::save_macro_cache(&indicator, value, extra.as_deref(), "scheduler")
+                        macro_cache::save_macro_cache(&indicator, value, extra.as_deref(), source)
                     {
                         log::warn!("macro_refresh: failed to save {indicator}: {e}");
                         fail_count += 1;
@@ -88,10 +89,10 @@ async fn fetch_sh_composite(
             let vol20 = crate::tencent_quotes::compute_vol20(&closes);
 
             let mut entries = vec![
-                ("sh_composite_close".to_string(), Some(latest_close), None),
+                ("sh_composite_close".to_string(), Some(latest_close), None, "tushare"),
             ];
             if let Some(v) = vol20 {
-                entries.push(("sh_composite_vol20".to_string(), Some(v), None));
+                entries.push(("sh_composite_vol20".to_string(), Some(v), None, "tushare"));
             }
             Ok(entries)
         }
@@ -113,47 +114,67 @@ async fn sh_composite_tencent_fallback() -> MacroResult {
         .map_err(|e| format!("sh_composite tencent fallback: {e}"))?;
 
     let mut entries = vec![
-        ("sh_composite_close".to_string(), Some(kline.close), None),
+        ("sh_composite_close".to_string(), Some(kline.close), None, "tencent"),
     ];
     if let Some(v) = kline.vol20 {
-        entries.push(("sh_composite_vol20".to_string(), Some(v), None));
+        entries.push(("sh_composite_vol20".to_string(), Some(v), None, "tencent"));
     }
     Ok(entries)
 }
 
-/// northbound_net from Tushare moneyflow_hsgt.
+/// northbound_net via 编排层 Capital 链（tushare → akshare）。
 ///
 /// tushare 金额字段单位为百万元；换算到亿元需 ÷ 100（1 亿元 = 100 百万元）。
 /// net_money 字段已于 2024-08 停更，改用 north_money（= 沪股通 + 深股通）。
+/// AkShare 北向源第一期未实现（Capital 链降级路径预留但暂为 inert）。
 async fn fetch_northbound(
     client: TushareClient,
     start_date: String,
     end_date: String,
 ) -> MacroResult {
+    use crate::invest::data_source::{
+        fetch_with_chain,
+        registry::{chain_for, Category},
+        validity::is_valid_number,
+        SourceId,
+    };
+
     /// tushare 百万元 → 亿元换算系数。
     const MILLION_TO_YI: f64 = 100.0;
 
-    let flows = client
-        .moneyflow_hsgt(&start_date, &end_date)
-        .await
-        .map_err(|e| format!("northbound moneyflow_hsgt: {e}"))?;
-
-    let latest = flows
-        .iter()
-        .max_by_key(|f| &f.trade_date)
-        .ok_or("northbound: no data")?;
-
-    // north_money 单位百万元，转亿元。
-    let northbound_yi = latest.north_money / MILLION_TO_YI;
+    let chain = chain_for(Category::Capital, false); // [Tushare, Akshare]
+    let fetched = fetch_with_chain(
+        &chain,
+        |v: &Option<f64>| is_valid_number(v),
+        |source| {
+            let client = client.clone();
+            let (sd, ed) = (start_date.clone(), end_date.clone());
+            async move {
+                match source {
+                    SourceId::Tushare => {
+                        let flows = client.moneyflow_hsgt(&sd, &ed).await?;
+                        let latest = flows
+                            .iter()
+                            .max_by_key(|f| &f.trade_date)
+                            .ok_or("northbound: no data")?;
+                        // north_money 单位百万元，转亿元。
+                        Ok(Some(latest.north_money / MILLION_TO_YI))
+                    }
+                    SourceId::Akshare => {
+                        Err("northbound: akshare source not implemented (phase 2)".to_string())
+                    }
+                    _ => Err("northbound: unsupported source".to_string()),
+                }
+            }
+        },
+    )
+    .await?;
 
     Ok(vec![(
         "northbound_net".to_string(),
-        Some(northbound_yi),
-        Some(serde_json::json!({
-            "trade_date": latest.trade_date,
-            "north_money_yi": northbound_yi,
-            "south_money_yi": latest.south_money / MILLION_TO_YI,
-        }).to_string()),
+        fetched.value,
+        Some(serde_json::json!({ "unit": "亿元" }).to_string()),
+        fetched.source.as_str(),
     )])
 }
 
@@ -182,6 +203,7 @@ async fn fetch_margin(
             "rzmre": latest.rzmre,
             "rzche": latest.rzche,
         }).to_string()),
+        "tushare",
     )])
 }
 
@@ -210,58 +232,64 @@ async fn fetch_shibor(
             "m1": latest.m1,
             "m3": latest.m3,
         }).to_string()),
+        "tushare",
     )])
 }
 
-/// cgb_10y from Tushare cn_bond_yield.
+/// cgb_10y via 编排层 Macro 链（tushare → akshare）。
 ///
-/// Falls back to AkShare (via Python RPC) when Tushare fails or returns empty.
+/// tushare `cn_bond_yield` 经代理常返回 502；失败或为 0 自动降级 AkShare。
 async fn fetch_cgb_10y(
     client: TushareClient,
     start_date: String,
     end_date: String,
 ) -> MacroResult {
-    match client.cn_bond_yield(&start_date, &end_date).await {
-        Ok(yields) if !yields.is_empty() => {
-            let latest = yields
-                .iter()
-                .find(|y| y.ts_code.contains("10"))
-                .or_else(|| yields.last())
-                .ok_or("cgb_10y: no data")?;
+    use crate::invest::data_source::{
+        fetch_with_chain,
+        registry::{chain_for, Category},
+        validity::is_valid_number,
+        SourceId,
+    };
 
-            Ok(vec![(
-                "cgb_10y".to_string(),
-                Some(latest.yield_10y),
-                Some(serde_json::json!({
-                    "ts_code": latest.ts_code,
-                }).to_string()),
-            )])
-        }
-        Ok(_) => {
-            log::info!("macro_refresh: cgb_10y Tushare returned empty, trying AkShare fallback");
-            cgb_10y_akshare_fallback().await
-        }
-        Err(e) => {
-            log::warn!("macro_refresh: cgb_10y Tushare error: {e}, falling back to AkShare");
-            cgb_10y_akshare_fallback().await
-        }
-    }
-}
-
-/// AkShare fallback for 10Y government bond yield.
-async fn cgb_10y_akshare_fallback() -> MacroResult {
-    let client = crate::invest::international::InternationalClient::from_settings();
-    let bond = client.fetch_akshare_bond_yield().await
-        .map_err(|e| format!("cgb_10y akshare fallback: {e}"))?;
-
-    if bond.yield_10y <= 0.0 {
-        return Err("cgb_10y akshare: invalid yield value".into());
-    }
+    let chain = chain_for(Category::Macro, false); // [Tushare, Akshare]
+    let fetched = fetch_with_chain(
+        &chain,
+        |v: &Option<f64>| is_valid_number(v),
+        |source| {
+            let client = client.clone();
+            let (sd, ed) = (start_date.clone(), end_date.clone());
+            async move {
+                match source {
+                    SourceId::Tushare => {
+                        let rows = client.cn_bond_yield(&sd, &ed).await?;
+                        let latest = rows
+                            .iter()
+                            .find(|y| y.ts_code.contains("10"))
+                            .or_else(|| rows.last())
+                            .ok_or("cgb_10y: no data")?;
+                        Ok(Some(latest.yield_10y))
+                    }
+                    SourceId::Akshare => {
+                        let intl =
+                            crate::invest::international::InternationalClient::from_settings();
+                        let bond = intl.fetch_akshare_bond_yield().await?;
+                        if bond.yield_10y <= 0.0 {
+                            return Err("cgb_10y akshare: invalid yield value".to_string());
+                        }
+                        Ok(Some(bond.yield_10y))
+                    }
+                    _ => Err("cgb_10y: unsupported source".to_string()),
+                }
+            }
+        },
+    )
+    .await?;
 
     Ok(vec![(
         "cgb_10y".to_string(),
-        Some(bond.yield_10y),
-        Some(serde_json::json!({"date": bond.date}).to_string()),
+        fetched.value,
+        Some(serde_json::json!({ "unit": "%" }).to_string()),
+        fetched.source.as_str(),
     )])
 }
 
@@ -297,6 +325,7 @@ async fn fetch_international() -> MacroResult {
                     })
                     .to_string(),
                 ),
+                "yahoo",
             )),
             Err(e) => {
                 log::warn!("macro_refresh: yahoo {yahoo_sym}: {e}");
@@ -327,8 +356,8 @@ async fn fetch_market_stats() -> MacroResult {
         .map_err(|e| format!("market_stats: {e}"))?;
 
     Ok(vec![
-        ("limit_up_count".to_string(), Some(stats.limit_up_count as f64), None),
-        ("limit_down_count".to_string(), Some(stats.limit_down_count as f64), None),
+        ("limit_up_count".to_string(), Some(stats.limit_up_count as f64), None, "akshare"),
+        ("limit_down_count".to_string(), Some(stats.limit_down_count as f64), None, "akshare"),
     ])
 }
 
@@ -344,8 +373,8 @@ async fn fetch_advance_decline() -> MacroResult {
         .map_err(|e| format!("advance_decline: {e}"))?;
 
     Ok(vec![
-        ("advance_count".to_string(), Some(ad.advance_count as f64), None),
-        ("decline_count".to_string(), Some(ad.decline_count as f64), None),
+        ("advance_count".to_string(), Some(ad.advance_count as f64), None, "akshare"),
+        ("decline_count".to_string(), Some(ad.decline_count as f64), None, "akshare"),
     ])
 }
 
@@ -372,6 +401,7 @@ async fn fetch_two_market_volume() -> MacroResult {
         "two_market_volume".to_string(),
         Some(total_yi),
         None,
+        "tencent",
     )])
 }
 
