@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## v5.5.11 (2026-06-24)
+
+### 涨跌家数数据源 API 格式适配
+
+AkShare `stock_market_activity_legu` 接口返回格式从"日期索引宽表"变为"垂直 key/value 表"（12 行 × 2 列：`item` / `value`），导致 `market_advance_decline()` 解析失败、涨跌家数指标无法获取。
+
+**修复：** 重写解析逻辑，将 DataFrame 折叠为 `dict(zip(label_col, value_col))` 的键值查找表，通过子串匹配定位 `上涨` / `下跌` / `统计日期` 行（沿用 `bond_yield_10y` 的 robust-match 风格）。`date` 参数降级为回退标签，实际日期从 API 返回的 `统计日期` 字段提取。
+
+**涉及文件：**
+
+- `python-runtime/scripts/providers/akshare_market.py` — `market_advance_decline()` 重写为垂直表解析
+
 ## v5.5.10 (2026-06-24)
 
 ### 调度器死锁修复（初始锚点持久化）

@@ -12,7 +12,7 @@ Core product model:
 - `AiCharacter` — a reusable persona template (role_type, role_instruction, default provider/model), stored in UserSettings.
 - The provider shown in the UI is not always the execution agent under the hood (see architecture §5).
 
-**Current version:** v5.5.10 (Phase 10+). Full per-version history lives in `docs/changelog.md` — consult it instead of duplicating release notes here.
+**Current version:** v5.5.11 (Phase 10+). Full per-version history lives in `docs/changelog.md` — consult it instead of duplicating release notes here.
 
 ## Standard workflow
 

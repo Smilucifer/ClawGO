@@ -101,11 +101,19 @@ def market_stats(date: str = "") -> dict:
 def market_advance_decline(date: str = "") -> dict:
     """Fetch market-wide advance/decline stock counts.
 
-    Uses AkShare's stock_market_activity_legu which returns the daily
-    market breadth: advancing, declining, and unchanged counts.
+    Uses AkShare's stock_market_activity_legu, which returns a *vertical*
+    item/value table (12 rows, 2 cols) of the current trading snapshot —
+    NOT a date-indexed wide table. Sample rows:
+        item        value
+        上涨        1381.0
+        下跌        3768.0
+        平盘        43.0
+        活跃度      26.52%               (string, ignored)
+        统计日期    2026-06-24 15:00:00  (string, used for date)
 
     Args:
-        date: Trading date in "YYYYMMDD" format. Empty string = today.
+        date: Trading date in "YYYYMMDD" format, used only as a fallback
+            label. The API itself returns the current snapshot regardless.
 
     Returns: {"advance_count": int, "decline_count": int, "date": str}
     or {} on failure.
@@ -123,39 +131,26 @@ def market_advance_decline(date: str = "") -> dict:
         if df is None or df.empty:
             return {}
 
-        # The returned DataFrame has columns like: 日期, 上涨家数, 下跌家数, ...
-        # Exact-match the requested date (YYYYMMDD or YYYY-MM-DD)
-        date_dash = f"{date[:4]}-{date[4:6]}-{date[6:]}"
-        col0 = df.iloc[:, 0].astype(str)
-        row = df[(col0 == date) | (col0 == date_dash)]
+        # Vertical table: collapse the label/value columns into a lookup.
+        # Substring matching mirrors bond_yield_10y's robust-match style, so a
+        # minor label rename (e.g. "上涨" → "上涨家数") still resolves.
+        kv = dict(zip(df.iloc[:, 0].astype(str).str.strip(), df.iloc[:, 1]))
 
-        if row.empty:
-            # No exact match — take the latest row (weekend/holiday fallback)
-            row = df.tail(1)
+        def pick(keyword: str):
+            return next((v for k, v in kv.items() if keyword in k), None)
 
-        r = row.iloc[0]
+        advance = int(float(pick("上涨") or 0))
+        decline = int(float(pick("下跌") or 0))
+        snapshot_date = str(pick("统计日期") or "")[:10]
 
-        # Find columns by name pattern (robust to minor naming variations)
-        advance = 0
-        decline = 0
-        total = 0
-        for col in df.columns:
-            col_str = str(col)
-            val = int(float(r[col]))
-            if "上涨" in col_str:
-                advance = val
-            elif "下跌" in col_str:
-                decline = val
-            total += abs(val)
-
-        # Distinguish "no data" (API error) from "market flat" (rare but possible)
-        if total == 0:
+        # Distinguish "no data" (API error) from a genuine flat reading.
+        if advance == 0 and decline == 0:
             return {}
 
         return {
             "advance_count": advance,
             "decline_count": decline,
-            "date": date,
+            "date": snapshot_date or date,
         }
     except Exception as e:
         import sys
