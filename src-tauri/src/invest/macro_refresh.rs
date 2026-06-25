@@ -25,10 +25,18 @@ pub async fn refresh_macro_cache(client: &TushareClient) -> Result<String, Strin
     let start_date =
         (chrono::Local::now() - chrono::Duration::days(90)).format("%Y%m%d").to_string();
 
+    // 行情类编排：是否启用 miniQMT 优先源（默认关闭，行为与改造前一致）。
+    let miniqmt_on = crate::storage::settings::load().user.invest_miniqmt_enabled;
+
     // Clone the client for each task to satisfy 'static requirement on BoxFuture.
     // reqwest::Client is cheap to clone (shares the connection pool).
     let tasks: Vec<BoxFuture<MacroResult>> = vec![
-        Box::pin(fetch_sh_composite(client.clone(), start_date.clone(), end_date.clone())),
+        Box::pin(fetch_sh_composite(
+            client.clone(),
+            start_date.clone(),
+            end_date.clone(),
+            miniqmt_on,
+        )),
         Box::pin(fetch_northbound(client.clone(), start_date.clone(), end_date.clone())),
         Box::pin(fetch_margin(client.clone(), start_date.clone(), end_date.clone())),
         Box::pin(fetch_shibor(client.clone(), start_date.clone(), end_date.clone())),
@@ -74,50 +82,81 @@ pub async fn refresh_macro_cache(client: &TushareClient) -> Result<String, Strin
 // Tushare-based indicators
 // ---------------------------------------------------------------------------
 
-/// sh_composite_close + sh_composite_vol20 from Tushare daily bars.
+/// sh_composite_close + sh_composite_vol20 via 编排层 Quote 链。
 ///
-/// Falls back to Tencent Finance K-line API when Tushare fails or returns empty.
+/// `miniqmt_on=true` → `[MiniQmt, Tushare, Tencent]`；否则 `[Tushare, Tencent]`，
+/// 与改造前的 tushare-primary + tencent-fallback 行为完全一致。
+/// 编排闭包返回 `(close, Option<vol20>)`，判空仅看 close 有效（!=0 且有限）。
 async fn fetch_sh_composite(
     client: TushareClient,
     start_date: String,
     end_date: String,
+    miniqmt_on: bool,
 ) -> MacroResult {
-    match client.daily("000001.SH", &start_date, &end_date).await {
-        Ok(bars) if !bars.is_empty() => {
-            let latest_close = bars[0].close;
-            let closes: Vec<f64> = bars.iter().take(21).map(|b| b.close).collect();
-            let vol20 = crate::tencent_quotes::compute_vol20(&closes);
+    use crate::invest::data_source::{
+        fetch_with_chain,
+        registry::{chain_for, Category},
+        SourceId,
+    };
 
-            let mut entries = vec![
-                ("sh_composite_close".to_string(), Some(latest_close), None, "tushare"),
-            ];
-            if let Some(v) = vol20 {
-                entries.push(("sh_composite_vol20".to_string(), Some(v), None, "tushare"));
+    let chain = chain_for(Category::Quote, miniqmt_on); // on: [MiniQmt,Tushare,Tencent] / off: [Tushare,Tencent]
+
+    let fetched = fetch_with_chain(
+        &chain,
+        |(close, _): &(f64, Option<f64>)| *close != 0.0 && close.is_finite(),
+        |source| {
+            let client = client.clone();
+            let (sd, ed) = (start_date.clone(), end_date.clone());
+            async move {
+                match source {
+                    SourceId::MiniQmt => {
+                        let intl =
+                            crate::invest::international::InternationalClient::from_settings();
+                        let h = intl.fetch_xtdata_health().await?;
+                        if !h.available {
+                            return Err(format!("miniqmt offline: {}", h.reason));
+                        }
+                        let bars = intl.fetch_xtdata_kline("000001.SH", "1d", 25).await?;
+                        if bars.is_empty() {
+                            return Err("miniqmt: empty kline".into());
+                        }
+                        // miniQMT 升序（最新在末），用 .rev().take(21) 取最近窗口。
+                        let closes: Vec<f64> =
+                            bars.iter().rev().take(21).map(|b| b.close).collect();
+                        let vol20 = crate::tencent_quotes::compute_vol20(&closes);
+                        let latest_close = bars.last().unwrap().close;
+                        Ok((latest_close, vol20))
+                    }
+                    SourceId::Tushare => {
+                        let bars = client.daily("000001.SH", &sd, &ed).await?;
+                        if bars.is_empty() {
+                            return Err("sh_composite: tushare empty".into());
+                        }
+                        // tushare 日线降序（最新在前），bars[0] 为最新，take(21) 即最近窗口。
+                        let latest_close = bars[0].close;
+                        let closes: Vec<f64> = bars.iter().take(21).map(|b| b.close).collect();
+                        let vol20 = crate::tencent_quotes::compute_vol20(&closes);
+                        Ok((latest_close, vol20))
+                    }
+                    SourceId::Tencent => {
+                        let http = reqwest::Client::new();
+                        let kline =
+                            crate::tencent_quotes::fetch_index_kline(&http, "sh000001", 25)
+                                .await?;
+                        Ok((kline.close, kline.vol20))
+                    }
+                    _ => Err("sh_composite: unsupported source".into()),
+                }
             }
-            Ok(entries)
-        }
-        Ok(_) => {
-            log::info!("macro_refresh: sh_composite Tushare returned empty, trying Tencent fallback");
-            sh_composite_tencent_fallback().await
-        }
-        Err(e) => {
-            log::warn!("macro_refresh: sh_composite Tushare error: {e}, falling back to Tencent");
-            sh_composite_tencent_fallback().await
-        }
-    }
-}
+        },
+    )
+    .await?;
 
-/// Tencent Finance fallback for Shanghai Composite close + vol20.
-async fn sh_composite_tencent_fallback() -> MacroResult {
-    let http = reqwest::Client::new();
-    let kline = crate::tencent_quotes::fetch_index_kline(&http, "sh000001", 25).await
-        .map_err(|e| format!("sh_composite tencent fallback: {e}"))?;
-
-    let mut entries = vec![
-        ("sh_composite_close".to_string(), Some(kline.close), None, "tencent"),
-    ];
-    if let Some(v) = kline.vol20 {
-        entries.push(("sh_composite_vol20".to_string(), Some(v), None, "tencent"));
+    let (close, vol20) = fetched.value;
+    let source = fetched.source.as_str();
+    let mut entries = vec![("sh_composite_close".to_string(), Some(close), None, source)];
+    if let Some(v) = vol20 {
+        entries.push(("sh_composite_vol20".to_string(), Some(v), None, source));
     }
     Ok(entries)
 }
