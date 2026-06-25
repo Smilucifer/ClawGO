@@ -1127,6 +1127,9 @@ impl TushareClient {
                     .unwrap_or_default(),
                 net_money: net_money_idx
                     .and_then(|i| get_f64(row, i))
+                    // net_money 字段自 2024-08 交易所停更后已废弃，现行接口不返回。
+                    // 缺失时回退到 north_money（= hgt + sgt，实测自洽）。
+                    .or_else(|| north_money_idx.and_then(|i| get_f64(row, i)))
                     .unwrap_or_default(),
             });
         }

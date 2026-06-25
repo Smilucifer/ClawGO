@@ -572,6 +572,7 @@ pub fn update_user_settings(patch: serde_json::Value) -> Result<UserSettings, St
     apply_hashmap_field(&mut all.user.enabled_plugins, &patch, "enabled_plugins")?;
     apply_optional_string_empty_as_none(&mut all.user.tushare_token, &patch, "tushare_token");
     apply_optional_string_empty_as_none(&mut all.user.tushare_proxy_url, &patch, "tushare_proxy_url");
+    apply_bool_field(&mut all.user.invest_miniqmt_enabled, &patch, "invest_miniqmt_enabled");
     apply_embedding_config(&mut all.user.embedding_config, &patch)?;
     apply_bool_field(&mut all.user.memory_dream_enabled, &patch, "memory_dream_enabled");
     all.user.updated_at = crate::models::now_iso();

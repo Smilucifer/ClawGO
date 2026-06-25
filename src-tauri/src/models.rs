@@ -377,6 +377,9 @@ pub struct UserSettings {
     /// Custom Tushare API proxy URL. When empty, falls back to official `api.tushare.pro`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tushare_proxy_url: Option<String>,
+    /// 启用 miniQMT（xtdata）作为行情类数据的优先源。默认关闭。
+    #[serde(default)]
+    pub invest_miniqmt_enabled: bool,
     /// Enable background memory dream cycle (decay, merge, archive).
     #[serde(default = "default_true")]
     pub memory_dream_enabled: bool,
@@ -569,6 +572,7 @@ impl Default for UserSettings {
             embedding_config: None,
             tushare_token: None,
             tushare_proxy_url: None,
+            invest_miniqmt_enabled: false,
             memory_dream_enabled: true,
             updated_at: now_iso(),
         }

@@ -2272,6 +2272,8 @@
   "settings_tushare_token": "Tushare 数据令牌",
   "settings_tushare_proxy_url": "Tushare 代理地址",
   "settings_tushare_proxy_hint": "留空使用官方 api.tushare.pro，填写自建代理地址可绕过限流",
+  "settings_invest_miniqmt_enabled": "启用 miniQMT 作为行情优先数据源",
+  "settings_invest_miniqmt_hint": "开启后，行情数据（K线、实时报价）优先从 miniQMT 获取，取不到时降级 Tushare 再降级腾讯。需本机运行已登录券商账户的 miniQMT 客户端。",
 
   "scheduler.title": "调度器",
   "scheduler.credits": "额度",

@@ -252,6 +252,7 @@ export interface UserSettings {
   ai_characters?: AiCharacter[];
   tushare_token?: string;
   tushare_proxy_url?: string;
+  invest_miniqmt_enabled?: boolean;
   memory_dream_enabled?: boolean;
   embedding_config?: EmbeddingConfig;
   updated_at: string;
