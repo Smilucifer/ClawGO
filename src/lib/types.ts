@@ -252,9 +252,28 @@ export interface UserSettings {
   ai_characters?: AiCharacter[];
   tushare_token?: string;
   tushare_proxy_url?: string;
+  /** 命名手续费方案列表（买入弹窗可选）。 */
+  invest_fee_profiles?: FeeProfile[];
+  /** 默认手续费方案 id（买入弹窗预选）。 */
+  invest_default_fee_profile_id?: string;
   memory_dream_enabled?: boolean;
   embedding_config?: EmbeddingConfig;
   updated_at: string;
+}
+
+/**
+ * 手续费方案。费率以小数表示（如 0.00025 = 万 2.5）。
+ * - 佣金：买卖双边，max(amount × commission_rate, min_commission)，计入当日盈亏与成本。
+ * - 印花税：仅卖出单边，amount × stamp_duty_rate，不计入当日盈亏。
+ * - 过户费：双边，amount × transfer_fee_rate，并入佣金口径处理。
+ */
+export interface FeeProfile {
+  id: string;
+  name: string;
+  commission_rate: number;
+  min_commission: number;
+  stamp_duty_rate: number;
+  transfer_fee_rate: number;
 }
 
 export interface EmbeddingConfig {
@@ -1781,6 +1800,10 @@ export interface Trade {
   tradeDate: string | null;
   /** Asset type: "stock" or "etf". Propagated to holdings during recalculation. */
   assetType: string | null;
+  /** 佣金（双边收取）。计入当日盈亏与持仓成本。 */
+  commission?: number | null;
+  /** 印花税（卖出单边）。扣减现金，但不计入当日盈亏。 */
+  stampDuty?: number | null;
 }
 
 export interface PnlSnapshot {

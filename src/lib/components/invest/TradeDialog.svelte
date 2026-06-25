@@ -1,9 +1,11 @@
 <script lang="ts">
   import { t } from '$lib/i18n/index.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
+  import { getTransport } from '$lib/transport';
   import { formatYuan } from '$lib/utils/format';
+  import { computeCommission, computeStampDuty } from '$lib/utils/invest-fees';
   import { getInvestDate } from '$lib/i18n/format';
-  import type { Holding, Trade } from '$lib/types';
+  import type { Holding, Trade, FeeProfile, UserSettings } from '$lib/types';
   import type { MessageKey } from '$lib/i18n/types';
 
   let { mode, prefill, editTrade, tushareToken, onClose }: {
@@ -34,6 +36,57 @@
   let searchResults = $state<Array<{ tsCode: string; name: string }>>([]);
   let searchQuery = $state('');
   let assetType = $state<'stock' | 'etf'>('stock');
+  // For add_trade mode (direction selector). Declared before fee derivations that read it.
+  let tradeAction = $state<'buy' | 'sell'>('buy');
+
+  // ── 手续费方案 ──────────────────────────────────────────────────────
+  // buy/sell/add_trade 模式下可选手续费方案,实时估算佣金/印花税并计入提交。
+  let feeProfiles = $state<FeeProfile[]>([]);
+  let selectedFeeId = $state<string>('');
+  const tradeInvoke = <T,>(cmd: string, args?: Record<string, unknown>) =>
+    getTransport().invoke<T>(cmd, args);
+
+  $effect(() => {
+    // 仅交易类模式需要手续费方案。
+    if (mode !== 'buy' && mode !== 'sell' && mode !== 'add_trade') return;
+    tradeInvoke<UserSettings>('get_user_settings')
+      .then((s) => {
+        feeProfiles = s.invest_fee_profiles ?? [];
+        const def = s.invest_default_fee_profile_id;
+        // 预选默认方案;无默认时取第一个;无方案则空(=不收费)。
+        selectedFeeId = def && feeProfiles.some((f) => f.id === def)
+          ? def
+          : (feeProfiles[0]?.id ?? '');
+      })
+      .catch(() => { feeProfiles = []; });
+  });
+
+  const selectedFee = $derived<FeeProfile | null>(
+    feeProfiles.find((f) => f.id === selectedFeeId) ?? null,
+  );
+  /** 当前买卖方向(add_trade 用 tradeAction,buy/sell 用 mode)。 */
+  const feeSide = $derived<'buy' | 'sell'>(
+    mode === 'sell' ? 'sell' : mode === 'add_trade' ? tradeAction : 'buy',
+  );
+  const grossAmount = $derived(quantity * price);
+  const estCommission = $derived(computeCommission(grossAmount, selectedFee));
+  // 印花税仅卖出收取。
+  const estStampDuty = $derived(
+    feeSide === 'sell' ? computeStampDuty(grossAmount, selectedFee) : 0,
+  );
+  // 买入总成本 = 金额 + 佣金;卖出净回款 = 金额 − 佣金 − 印花税。
+  const estTotal = $derived(
+    feeSide === 'sell'
+      ? grossAmount - estCommission - estStampDuty
+      : grossAmount + estCommission,
+  );
+
+  // 成交价必填的模式(买入/卖出/手动记录/转持仓)。add_watch 的价仅作展示参考。
+  const priceRequired = $derived(
+    mode === 'buy' || mode === 'sell' || mode === 'add_trade' || mode === 'convert',
+  );
+  // 价缺失(必填但 ≤0)→ 红框提示 + 阻止提交。
+  const priceMissing = $derived(priceRequired && !(price > 0));
 
   // For edit_holding mode
   let holdingEntryDate = $state('');
@@ -50,9 +103,6 @@
       holdingAvgCost = prefill.holding.avgCost ?? 0;
     }
   });
-
-  // For add_trade mode
-  let tradeAction = $state<'buy' | 'sell'>('buy');
 
   async function doSearch() {
     if (!searchQuery || !tushareToken) return;
@@ -101,9 +151,9 @@
           tradeDate: tradeDate ?? null,
         });
       } else if (mode === 'buy') {
-        await investStore.buyStock(symbol, name, quantity, price, tushareToken, assetType, tradeDate);
+        await investStore.buyStock(symbol, name, quantity, price, tushareToken, assetType, tradeDate, estCommission, estStampDuty);
       } else if (mode === 'sell') {
-        await investStore.sellStock(symbol, quantity, price);
+        await investStore.sellStock(symbol, quantity, price, estCommission, estStampDuty);
       } else if (mode === 'cash') {
         // Record cash transfer/adjustment as a trade for audit trail.
         // Map UI-only 'fine_tune' to the storage-level 'cash_adjust' action.
@@ -139,6 +189,8 @@
           name: name || null,
           tradeDate: tradeDate ?? null,
           assetType,
+          commission: estCommission,
+          stampDuty: estStampDuty,
         });
       } else if (mode === 'edit_holding' && prefill?.holding) {
         // Update holding entry_date, cost, shares, notes
@@ -316,17 +368,57 @@
           </div>
         {/if}
         <div class={mode === 'add_watch' ? 'col-span-2' : ''}>
-          <label for="td-price" class="mb-1 block text-sm text-[var(--text-secondary)]">{mode === 'add_watch' ? t('invest_watch_price') : t('invest_price')}</label>
+          <label for="td-price" class="mb-1 block text-sm text-[var(--text-secondary)]">
+            {mode === 'add_watch' ? t('invest_watch_price') : t('invest_price')}
+            {#if priceRequired}<span class="text-[var(--color-error)]">*</span>{/if}
+          </label>
           <div class="flex gap-1">
-            <input id="td-price" type="number" class="flex-1 rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)] font-[var(--font-mono)]" step={assetType === 'etf' ? '0.001' : '0.01'} bind:value={price} />
+            <input id="td-price" type="number" class="flex-1 rounded-[var(--radius-md)] border bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)] font-[var(--font-mono)] {priceMissing ? 'border-[var(--color-error)]' : 'border-border'}" step={assetType === 'etf' ? '0.001' : '0.01'} min="0" bind:value={price} />
             <button class="rounded-[var(--radius-md)] bg-[var(--bg-input)] px-2 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]" onclick={fillMarketPrice}>{t('invest_market_price')}</button>
           </div>
+          {#if priceMissing}
+            <p class="mt-1 text-xs text-[var(--color-error)]">{t('invest_price_required')}</p>
+          {/if}
         </div>
       </div>
       {#if mode !== 'add_watch'}
         <p class="mb-3 text-sm text-[var(--text-secondary)]">
           {t('invest_amount')}: <span class="font-[var(--font-mono)]">{formatYuan(quantity * price)}</span>
         </p>
+        {#if mode === 'buy' || mode === 'sell' || mode === 'add_trade'}
+          <!-- 手续费方案选择 + 估算 -->
+          <div class="mb-3">
+            <label for="td-fee" class="mb-1 block text-sm text-[var(--text-secondary)]">{t('invest_fee_profile')}</label>
+            <select
+              id="td-fee"
+              class="w-full rounded-[var(--radius-md)] border border-border bg-[var(--bg-input)] px-3 py-1.5 text-sm text-[var(--text-primary)]"
+              bind:value={selectedFeeId}
+            >
+              <option value="">{t('invest_fee_none')}</option>
+              {#each feeProfiles as f}
+                <option value={f.id}>{f.name}</option>
+              {/each}
+            </select>
+            {#if selectedFee}
+              <div class="mt-2 space-y-0.5 text-xs text-[var(--text-tertiary)]">
+                <div class="flex justify-between">
+                  <span>{t('invest_fee_commission')}</span>
+                  <span class="font-[var(--font-mono)]">{formatYuan(estCommission)}</span>
+                </div>
+                {#if feeSide === 'sell'}
+                  <div class="flex justify-between">
+                    <span>{t('invest_fee_stamp_duty')}</span>
+                    <span class="font-[var(--font-mono)]">{formatYuan(estStampDuty)}</span>
+                  </div>
+                {/if}
+                <div class="flex justify-between font-medium text-[var(--text-secondary)]">
+                  <span>{feeSide === 'sell' ? t('invest_fee_net_proceeds') : t('invest_fee_total_cost')}</span>
+                  <span class="font-[var(--font-mono)]">{formatYuan(estTotal)}</span>
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/if}
       {/if}
       <!-- Trade date input -->
       <div class="mb-3">

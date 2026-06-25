@@ -24,6 +24,7 @@ const DB_SIDECAR_EXTS: &[&str] = &["db", "db-wal", "db-shm"];
 const TRADES_COLUMNS: &[&str] = &[
     "id", "symbol", "currency", "kind", "action", "shares", "price", "amount",
     "notes", "created_at", "name", "trade_date", "asset_type",
+    "commission", "stamp_duty",
 ];
 
 /// 根据 ts_code/symbol 前缀判断是否为 ETF/基金。
@@ -212,7 +213,9 @@ fn migrate_trades_table(conn: &mut Connection) -> Result<(), String> {
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             name TEXT,
             trade_date TEXT,
-            asset_type TEXT
+            asset_type TEXT,
+            commission REAL,
+            stamp_duty REAL
         );"
     ).map_err(|e| format!("create trades_new: {}", e))?;
 
@@ -468,7 +471,9 @@ CREATE TABLE IF NOT EXISTS trades (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     name TEXT,
     trade_date TEXT,
-    asset_type TEXT
+    asset_type TEXT,
+    commission REAL,
+    stamp_duty REAL
 );
 
 CREATE TABLE IF NOT EXISTS cash (

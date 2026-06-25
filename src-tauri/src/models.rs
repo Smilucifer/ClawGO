@@ -380,10 +380,34 @@ pub struct UserSettings {
     /// 启用 miniQMT（xtdata）作为行情类数据的优先源。默认关闭。
     #[serde(default)]
     pub invest_miniqmt_enabled: bool,
+    /// 命名手续费方案列表（买入/卖出弹窗可选）。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub invest_fee_profiles: Vec<FeeProfile>,
+    /// 默认手续费方案 id（买入弹窗预选）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invest_default_fee_profile_id: Option<String>,
     /// Enable background memory dream cycle (decay, merge, archive).
     #[serde(default = "default_true")]
     pub memory_dream_enabled: bool,
     pub updated_at: String,
+}
+
+/// 手续费方案。费率以小数表示（如 0.00025 = 万 2.5）。
+/// - 佣金：买卖双边 `max(amount × commission_rate, min_commission)`，计入当日盈亏与成本。
+/// - 印花税：仅卖出单边 `amount × stamp_duty_rate`，不计入当日盈亏。
+/// - 过户费：双边 `amount × transfer_fee_rate`，并入佣金口径。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeeProfile {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub commission_rate: f64,
+    #[serde(default)]
+    pub min_commission: f64,
+    #[serde(default)]
+    pub stamp_duty_rate: f64,
+    #[serde(default)]
+    pub transfer_fee_rate: f64,
 }
 
 fn default_auth_mode() -> String {
@@ -573,6 +597,8 @@ impl Default for UserSettings {
             tushare_token: None,
             tushare_proxy_url: None,
             invest_miniqmt_enabled: false,
+            invest_fee_profiles: Vec::new(),
+            invest_default_fee_profile_id: None,
             memory_dream_enabled: true,
             updated_at: now_iso(),
         }

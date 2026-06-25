@@ -12,6 +12,7 @@
     SshKeyInfo,
     CliCheckResult,
     ProviderValidationResult,
+    FeeProfile,
   } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
   import Button from "$lib/components/Button.svelte";
@@ -36,6 +37,7 @@
   import { dbg, dbgWarn, redactSensitive } from "$lib/utils/debug";
   import { splitPath } from "$lib/utils/format";
   import { IS_WINDOWS } from "$lib/utils/platform";
+  import { uuid } from "$lib/utils/uuid";
   import { t, LOCALE_REGISTRY, currentLocale, switchLocale } from "$lib/i18n/index.svelte";
   import { getTransport } from "$lib/transport";
 
@@ -1183,6 +1185,53 @@
     }
   }
 
+  // ── 手续费方案管理 ────────────────────────────────────────────────────
+  async function saveFeeProfiles(
+    profiles: FeeProfile[],
+    defaultId: string | undefined = settings?.invest_default_fee_profile_id,
+  ) {
+    // 默认 id 若指向已删除方案则清空。显式发 null（而非 undefined）——
+    // JSON.stringify 会丢弃 undefined 键，导致后端保留旧值留下孤儿 id；
+    // null 走后端 apply_optional_string_empty_as_none 的 None 分支真正清空。
+    const validDefault = defaultId && profiles.some((p) => p.id === defaultId) ? defaultId : null;
+    await saveGeneralPatch({
+      invest_fee_profiles: profiles,
+      invest_default_fee_profile_id: validDefault,
+    });
+  }
+
+  function addFeeProfile() {
+    const profiles = [...(settings?.invest_fee_profiles ?? [])];
+    profiles.push({
+      id: uuid(),
+      name: t("settings_fee_new_name"),
+      commission_rate: 0.00025,
+      min_commission: 5,
+      stamp_duty_rate: 0.0005,
+      transfer_fee_rate: 0.00001,
+    });
+    // 首个方案自动设为默认。
+    const defaultId = profiles.length === 1 ? profiles[0].id : settings?.invest_default_fee_profile_id;
+    saveFeeProfiles(profiles, defaultId);
+  }
+
+  function updateFeeProfile(id: string, patch: Partial<FeeProfile>) {
+    const profiles = (settings?.invest_fee_profiles ?? []).map((p) =>
+      p.id === id ? { ...p, ...patch } : p,
+    );
+    saveFeeProfiles(profiles);
+  }
+
+  function deleteFeeProfile(id: string) {
+    const profiles = (settings?.invest_fee_profiles ?? []).filter((p) => p.id !== id);
+    saveFeeProfiles(profiles);
+  }
+
+  function setDefaultFeeProfile(id: string) {
+    // 走 saveFeeProfiles 以集中默认 id 合法性校验,避免规则在两条写入路径分叉。
+    saveFeeProfiles(settings?.invest_fee_profiles ?? [], id);
+  }
+
   function providerValidation(platformId: string): ProviderValidationResult | null {
     return providerValidationResults[platformId] ?? null;
   }
@@ -2006,10 +2055,92 @@
               />
             </div>
           </div>
+
+          <!-- ── 手续费方案 ── -->
+          <div class="border-t border-border pt-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium">{t("settings_fee_profiles")}</p>
+                <p class="text-xs text-muted-foreground">{t("settings_fee_profiles_hint")}</p>
+              </div>
+              <Button size="sm" variant="outline" onclick={addFeeProfile}>
+                {t("settings_fee_add")}
+              </Button>
+            </div>
+
+            {#if (settings?.invest_fee_profiles ?? []).length === 0}
+              <p class="mt-3 text-xs text-muted-foreground">{t("settings_fee_empty")}</p>
+            {:else}
+              <div class="mt-3 space-y-3">
+                {#each settings?.invest_fee_profiles ?? [] as fee (fee.id)}
+                  {@const isDefault = settings?.invest_default_fee_profile_id === fee.id}
+                  <div class="rounded-md border border-border p-3">
+                    <div class="mb-2 flex items-center gap-2">
+                      <input
+                        type="text"
+                        class="flex-1 rounded-md border bg-background px-2 py-1 text-sm font-medium"
+                        value={fee.name}
+                        onblur={(e) => {
+                          const val = (e.currentTarget as HTMLInputElement).value.trim();
+                          if (val && val !== fee.name) updateFeeProfile(fee.id, { name: val });
+                        }}
+                      />
+                      {#if isDefault}
+                        <span class="rounded bg-[var(--accent)] px-2 py-0.5 text-xs text-[#1a1918]">{t("settings_fee_default")}</span>
+                      {:else}
+                        <Button size="sm" variant="ghost" onclick={() => setDefaultFeeProfile(fee.id)}>
+                          {t("settings_fee_set_default")}
+                        </Button>
+                      {/if}
+                      <Button size="sm" variant="ghost" onclick={() => deleteFeeProfile(fee.id)}>
+                        {t("settings_fee_delete")}
+                      </Button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 md:grid-cols-4">
+                      <label class="text-xs text-muted-foreground">
+                        {t("settings_fee_commission_rate")}
+                        <input
+                          type="number" step="0.00001" min="0"
+                          class="mt-0.5 w-full rounded-md border bg-background px-2 py-1 text-sm"
+                          value={fee.commission_rate}
+                          onblur={(e) => updateFeeProfile(fee.id, { commission_rate: Number((e.currentTarget as HTMLInputElement).value) || 0 })}
+                        />
+                      </label>
+                      <label class="text-xs text-muted-foreground">
+                        {t("settings_fee_min_commission")}
+                        <input
+                          type="number" step="0.01" min="0"
+                          class="mt-0.5 w-full rounded-md border bg-background px-2 py-1 text-sm"
+                          value={fee.min_commission}
+                          onblur={(e) => updateFeeProfile(fee.id, { min_commission: Number((e.currentTarget as HTMLInputElement).value) || 0 })}
+                        />
+                      </label>
+                      <label class="text-xs text-muted-foreground">
+                        {t("settings_fee_stamp_duty_rate")}
+                        <input
+                          type="number" step="0.00001" min="0"
+                          class="mt-0.5 w-full rounded-md border bg-background px-2 py-1 text-sm"
+                          value={fee.stamp_duty_rate}
+                          onblur={(e) => updateFeeProfile(fee.id, { stamp_duty_rate: Number((e.currentTarget as HTMLInputElement).value) || 0 })}
+                        />
+                      </label>
+                      <label class="text-xs text-muted-foreground">
+                        {t("settings_fee_transfer_fee_rate")}
+                        <input
+                          type="number" step="0.00001" min="0"
+                          class="mt-0.5 w-full rounded-md border bg-background px-2 py-1 text-sm"
+                          value={fee.transfer_fee_rate}
+                          onblur={(e) => updateFeeProfile(fee.id, { transfer_fee_rate: Number((e.currentTarget as HTMLInputElement).value) || 0 })}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
         </Card>
       </div>
-
-      <!-- ═══ Connection tab ═══ -->
     {:else if activeTab === "connection"}
       <div class="space-y-4">
         <Card class="p-6 space-y-4">

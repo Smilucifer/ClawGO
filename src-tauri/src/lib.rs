@@ -90,15 +90,45 @@ pub async fn run_pnl_snapshot() -> Result<String, String> {
     let cash = portfolio::get_cash()?;
 
     let client = crate::tushare::TushareClient::with_token_and_proxy(token, settings.tushare_proxy_url);
+
+    // Batch-fetch realtime quotes (close + pre_close) for all held symbols.
+    // pre_close is required for the mark-to-market daily P&L baseline.
+    let symbols: Vec<&str> = hold_items.iter().map(|h| h.symbol.as_str()).collect();
+    let quotes = client.realtime_quotes(&symbols).await.unwrap_or_default();
+    let quote_map: std::collections::HashMap<&str, &crate::tushare::client::RealtimeQuote> =
+        quotes.iter().map(|q| (q.ts_code.as_str(), q)).collect();
+
+    // Today's trades, aggregated per symbol (buy_cost 含佣金, sell_proceeds 扣佣金不扣印花税).
+    let today_traded = portfolio::today_traded_by_symbol()?;
+
+    // Per-symbol mark-to-market daily P&L, summed across the portfolio:
+    //   shares_open = shares_now − buy_shares + sell_shares
+    //   pnl = close×shares_now + sell_proceeds − pre_close×shares_open − buy_cost
+    // Holdings whose quote is missing fall back to notional for market value and
+    // contribute 0 to daily P&L (logged), so one failed fetch can't corrupt the figure.
     let mut holdings_value = 0.0;
+    let mut daily_pnl_acc = 0.0;
+    let mut prev_value_acc = 0.0;
+    let mut missing_quote = false;
     for h in &hold_items {
-        if let Some(shares) = h.shares {
-            match client.get_latest_price(&h.symbol).await {
-                Ok(p) => holdings_value += p * shares,
-                Err(e) => {
-                    log::warn!("[invest-pnl] price fetch failed for {}: {}, falling back to notional", h.symbol, e);
-                    holdings_value += h.notional;
-                }
+        let shares_now = h.shares.unwrap_or(0.0);
+        let traded = today_traded.get(&h.symbol).cloned().unwrap_or_default();
+        match quote_map.get(h.symbol.as_str()) {
+            Some(q) if q.close > 0.0 => {
+                let shares_open = shares_now - traded.buy_shares + traded.sell_shares;
+                holdings_value += q.close * shares_now;
+                daily_pnl_acc += q.close * shares_now + traded.sell_proceeds
+                    - q.pre_close * shares_open
+                    - traded.buy_cost;
+                prev_value_acc += q.pre_close * shares_open;
+            }
+            _ => {
+                missing_quote = true;
+                log::warn!(
+                    "[invest-pnl] quote missing for {}, falling back to notional (daily P&L contribution = 0)",
+                    h.symbol
+                );
+                holdings_value += h.notional;
             }
         }
     }
@@ -106,23 +136,19 @@ pub async fn run_pnl_snapshot() -> Result<String, String> {
     let total_value = cash + holdings_value;
 
     let today = crate::invest::date_utils::get_invest_date();
-    // Use get_previous_day_snapshot to get the snapshot from a previous day,
-    // not the most recent snapshot which might be from today (if run multiple times)
-    let prev = verdicts::get_previous_day_snapshot(&today)?;
-    let (daily_pnl, daily_pnl_pct) = if let Some(last) = prev {
-        // Subtract net transfers between snapshots so that transfer_in/out
-        // do not inflate or deflate the daily P&L figure.
-        let net_transfer = portfolio::get_net_transfer_between(&last.snapshot_date, &today)
-            .unwrap_or(0.0);
-        let pnl = (total_value - last.total_value) - net_transfer;
-        let pct = if last.total_value > 0.0 {
-            (pnl / last.total_value) * 100.0
+    // Mark-to-market daily P&L is computed per-symbol from price deltas and today's
+    // cash flows, so it is inherently immune to transfer_in/out (no need to subtract
+    // net transfers as the legacy snapshot-difference method did). When every quote is
+    // missing we have no baseline → record None rather than a misleading 0.
+    let (daily_pnl, daily_pnl_pct) = if missing_quote && prev_value_acc == 0.0 && daily_pnl_acc == 0.0 {
+        (None, None)
+    } else {
+        let pct = if prev_value_acc > 0.0 {
+            (daily_pnl_acc / prev_value_acc) * 100.0
         } else {
             0.0
         };
-        (Some(pnl), Some(pct))
-    } else {
-        (None, None)
+        (Some(daily_pnl_acc), Some(pct))
     };
     let snapshot = verdicts::PnlSnapshot {
         id: 0,

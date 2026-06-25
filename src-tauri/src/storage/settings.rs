@@ -573,6 +573,8 @@ pub fn update_user_settings(patch: serde_json::Value) -> Result<UserSettings, St
     apply_optional_string_empty_as_none(&mut all.user.tushare_token, &patch, "tushare_token");
     apply_optional_string_empty_as_none(&mut all.user.tushare_proxy_url, &patch, "tushare_proxy_url");
     apply_bool_field(&mut all.user.invest_miniqmt_enabled, &patch, "invest_miniqmt_enabled");
+    apply_deser_vec_field(&mut all.user.invest_fee_profiles, &patch, "invest_fee_profiles")?;
+    apply_optional_string_empty_as_none(&mut all.user.invest_default_fee_profile_id, &patch, "invest_default_fee_profile_id");
     apply_embedding_config(&mut all.user.embedding_config, &patch)?;
     apply_bool_field(&mut all.user.memory_dream_enabled, &patch, "memory_dream_enabled");
     all.user.updated_at = crate::models::now_iso();

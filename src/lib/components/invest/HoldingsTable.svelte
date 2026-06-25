@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { investStore, isClearedToday, getOpeningShares } from '$lib/stores/invest-store.svelte';
+  import { investStore, isClearedToday } from '$lib/stores/invest-store.svelte';
+  import { computeDailyPnl } from '$lib/utils/invest-fees';
   import { t } from '$lib/i18n/index.svelte';
   import { getVerdictBadgeStyle, normalizeConfidencePct } from '$lib/utils/invest-verdict';
   import { getInvestDate } from '$lib/i18n/format';
@@ -50,22 +51,6 @@
     const price = getPrice(h.symbol);
     if (price == null || h.avgCost == null || !h.shares) return null;
     return (price - h.avgCost) * h.shares;
-  }
-
-  function dailyPnlAmount(h: Holding): number | null {
-    const q = investStore.priceMap[h.symbol];
-    if (!q) return null;
-    if (isClearedToday(h)) {
-      const traded = investStore.todayTradedShares.get(h.symbol);
-      const openingShares = getOpeningShares(traded);
-      return q.change * openingShares;
-    }
-    if (!h.shares) return null;
-    return q.change * h.shares;
-  }
-
-  function dailyPnlPct(h: Holding): number | null {
-    return investStore.priceMap[h.symbol]?.pctChg ?? null;
   }
 
   function positionPct(h: Holding): number | null {
@@ -143,8 +128,9 @@
           {@const mv = marketValue(h)}
           {@const pnl = isHold ? pnlAmount(h) : null}
           {@const pnlPct = isHold ? getPnlPct(h) : null}
-          {@const dPnl = isHold ? dailyPnlAmount(h) : null}
-          {@const dPct = isHold ? dailyPnlPct(h) : null}
+          {@const daily = isHold ? computeDailyPnl(h, investStore.priceMap[h.symbol], investStore.todayTraded.get(h.symbol)) : null}
+          {@const dPnl = daily?.amount ?? null}
+          {@const dPct = daily?.pct ?? null}
           {@const posPct = isHold ? positionPct(h) : null}
           {@const avail = isHold ? availableShares(h) : null}
           {@const traded = todayTraded(h.symbol)}

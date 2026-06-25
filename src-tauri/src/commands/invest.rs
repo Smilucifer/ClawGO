@@ -58,6 +58,8 @@ pub fn record_trade(
     name: Option<String>,
     trade_date: Option<String>,
     asset_type: Option<String>,
+    commission: Option<f64>,
+    stamp_duty: Option<f64>,
 ) -> Result<(), String> {
     let trade_id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
@@ -75,6 +77,8 @@ pub fn record_trade(
         name,
         trade_date,
         asset_type,
+        commission,
+        stamp_duty,
     };
     portfolio::record_trade(&t)
 }
@@ -104,6 +108,8 @@ pub fn update_trade(
     name: Option<String>,
     trade_date: Option<String>,
     asset_type: Option<String>,
+    commission: Option<f64>,
+    stamp_duty: Option<f64>,
 ) -> Result<(), String> {
     let t = Trade {
         id,
@@ -119,6 +125,8 @@ pub fn update_trade(
         name,
         trade_date,
         asset_type,
+        commission,
+        stamp_duty,
     };
     portfolio::update_trade(&t)
 }

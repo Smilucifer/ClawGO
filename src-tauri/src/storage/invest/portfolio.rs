@@ -178,6 +178,12 @@ pub struct Trade {
     pub trade_date: Option<String>,
     /// Asset type: "stock" or "etf". Propagated to holdings during recalculation.
     pub asset_type: Option<String>,
+    /// 佣金（双边收取）。计入当日盈亏与持仓成本（avg_cost）。
+    #[serde(default)]
+    pub commission: Option<f64>,
+    /// 印花税（卖出单边收取）。扣减现金，但不计入当日盈亏。
+    #[serde(default)]
+    pub stamp_duty: Option<f64>,
 }
 
 impl Trade {
@@ -196,7 +202,7 @@ impl Trade {
 }
 
 /// Canonical column list for SELECT queries on the trades table.
-const TRADE_COLUMNS: &str = "id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date, asset_type";
+const TRADE_COLUMNS: &str = "id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date, asset_type, commission, stamp_duty";
 
 /// Map a DB row to a Trade struct. Used by all SELECT queries.
 fn trade_from_row(row: &rusqlite::Row) -> rusqlite::Result<Trade> {
@@ -214,6 +220,8 @@ fn trade_from_row(row: &rusqlite::Row) -> rusqlite::Result<Trade> {
         name: row.get(10)?,
         trade_date: row.get(11)?,
         asset_type: row.get(12)?,
+        commission: row.get(13)?,
+        stamp_duty: row.get(14)?,
     })
 }
 
@@ -298,6 +306,66 @@ fn today_frozen_shares(conn: &Connection) -> Result<std::collections::HashMap<St
     Ok(map)
 }
 
+/// 今日(交易日)成交聚合,用于盯市口径的当日盈亏计算。
+///
+/// 每个 symbol 返回 `TodayTraded`:
+/// - `buy_shares` / `sell_shares`:当日买入/卖出股数。
+/// - `buy_cost`:当日买入支出 = Σ(price×shares + commission),含佣金。
+/// - `sell_proceeds`:当日卖出回款 = Σ(price×shares − commission),扣佣金、**不扣印花税**。
+///
+/// 印花税不进当日盈亏(只扣现金),因此此处不参与回款计算。
+/// "今日"口径与 [`today_frozen_shares`] 一致(5AM 截止 + localtime 转换)。
+#[derive(Debug, Clone, Default)]
+pub struct TodayTraded {
+    pub buy_shares: f64,
+    pub buy_cost: f64,
+    pub sell_shares: f64,
+    pub sell_proceeds: f64,
+}
+
+pub fn today_traded_by_symbol() -> Result<std::collections::HashMap<String, TodayTraded>, String> {
+    with_conn(|conn| {
+        let today = crate::invest::date_utils::get_invest_date();
+        let mut stmt = conn
+            .prepare(
+                "SELECT symbol, action, \
+                    COALESCE(SUM(shares), 0.0), \
+                    COALESCE(SUM(COALESCE(price,0.0) * COALESCE(shares,0.0)), 0.0), \
+                    COALESCE(SUM(COALESCE(commission,0.0)), 0.0) \
+                 FROM trades \
+                 WHERE action IN ('buy','sell') \
+                   AND COALESCE(trade_date, date(created_at, 'localtime')) = ?1 \
+                 GROUP BY symbol, action",
+            )
+            .map_err(|e| format!("prepare today_traded query: {}", e))?;
+        let rows = stmt
+            .query_map(params![today], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, f64>(2)?,
+                    row.get::<_, f64>(3)?,
+                    row.get::<_, f64>(4)?,
+                ))
+            })
+            .map_err(|e| format!("today_traded query: {}", e))?;
+        let mut map: std::collections::HashMap<String, TodayTraded> = std::collections::HashMap::new();
+        for row in rows {
+            let (sym, action, shares, notional, commission) =
+                row.map_err(|e| format!("today_traded row: {}", e))?;
+            let entry = map.entry(sym).or_default();
+            if action == "buy" {
+                entry.buy_shares += shares;
+                entry.buy_cost += notional + commission;
+            } else {
+                entry.sell_shares += shares;
+                entry.sell_proceeds += notional - commission;
+            }
+        }
+        Ok(map)
+    })
+}
+
 pub fn upsert_holding(h: &Holding) -> Result<(), String> {
     with_conn(|conn| {
         let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
@@ -353,8 +421,8 @@ pub fn delete_holding(symbol: &str, currency: &str, kind: &HoldingKind) -> Resul
 /// Must be called within an active connection/transaction.
 fn insert_trade_sql(conn: &Connection, t: &Trade) -> Result<(), String> {
     conn.execute(
-        "INSERT INTO trades (id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date, asset_type) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
-        params![t.id, t.symbol, t.currency, t.kind, t.action, t.shares, t.price, t.amount, t.notes, t.created_at, t.name, t.trade_date, t.asset_type],
+        "INSERT INTO trades (id, symbol, currency, kind, action, shares, price, amount, notes, created_at, name, trade_date, asset_type, commission, stamp_duty) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+        params![t.id, t.symbol, t.currency, t.kind, t.action, t.shares, t.price, t.amount, t.notes, t.created_at, t.name, t.trade_date, t.asset_type, t.commission, t.stamp_duty],
     )
     .map_err(|e| format!("insert trade: {}", e))?;
     apply_cash_delta_sql(conn, cash_delta_for_trade(t, false))?;
@@ -374,17 +442,24 @@ pub fn record_trade(t: &Trade) -> Result<(), String> {
 
 /// Compute the cash delta for a single trade.
 /// `reverse=true` negates the effect (for undoing a trade on delete/update).
+///
+/// Fees (commission + stamp_duty) always reduce cash: a buy pays amount+fees,
+/// a sell receives amount-fees. They are folded into the same `sign`/`reverse`
+/// machinery so delete/update roll them back symmetrically.
 fn cash_delta_for_trade(t: &Trade, reverse: bool) -> f64 {
     let amount = t.amount.unwrap_or(0.0);
+    let fees = t.commission.unwrap_or(0.0) + t.stamp_duty.unwrap_or(0.0);
     let sign = if reverse { -1.0 } else { 1.0 };
-    match t.action {
-        TradeAction::Buy => -amount * sign,
-        TradeAction::Sell => amount * sign,
-        TradeAction::CashAdjust => amount * sign,
-        TradeAction::TransferIn => amount * sign,
-        TradeAction::TransferOut => -amount * sign,
-        _ => 0.0,
-    }
+    let base = match t.action {
+        TradeAction::Buy => -amount,
+        TradeAction::Sell => amount,
+        TradeAction::CashAdjust => amount,
+        TradeAction::TransferIn => amount,
+        TradeAction::TransferOut => -amount,
+        _ => return 0.0,
+    };
+    // Fees only apply to buy/sell; for other actions we already returned above.
+    (base - fees) * sign
 }
 
 /// Atomic watch→hold conversion: delete_watch + buy in a single transaction.
@@ -416,6 +491,8 @@ pub fn convert_watch_to_hold(
             name: None,
             trade_date: None,
             asset_type: None,
+            commission: None,
+            stamp_duty: None,
         };
         let buy_trade = Trade {
             id: uuid::Uuid::new_v4().to_string(),
@@ -431,6 +508,8 @@ pub fn convert_watch_to_hold(
             name,
             trade_date: None,
             asset_type: asset_type.or_else(|| Some("stock".to_string())),
+            commission: None,
+            stamp_duty: None,
         };
 
         insert_trade_sql(&tx, &delete_trade)?;
@@ -652,9 +731,11 @@ fn process_buy(ctx: &mut RecalcContext, key: (String, String, String), t: &Trade
         0.0
     };
 
-    // Unified cost basis calculation (works for both new and existing positions)
+    // Unified cost basis calculation (works for both new and existing positions).
+    // Commission is capitalised into the cost basis (avg_cost 含佣金), matching
+    // brokerage convention and keeping total-return math consistent.
     let existing_cost_basis = entry.avg_cost * entry.shares;
-    let buy_cost = price * shares;
+    let buy_cost = price * shares + t.commission.unwrap_or(0.0);
     let new_shares = entry.shares + shares;
     let adjusted_cost_basis = existing_cost_basis + buy_cost - realized_pnl;
     entry.avg_cost = if new_shares > 0.0 {
@@ -1052,8 +1133,8 @@ pub fn update_trade(t: &Trade) -> Result<(), String> {
         let new_delta = cash_delta_for_trade(t, false);
         let changed = conn
             .execute(
-                "UPDATE trades SET symbol=?2, currency=?3, kind=?4, action=?5, shares=?6, price=?7, amount=?8, notes=?9, name=?10, trade_date=?11, asset_type=?12 WHERE id=?1",
-                params![t.id, t.symbol, t.currency, t.kind, t.action, t.shares, t.price, t.amount, t.notes, t.name, t.trade_date, t.asset_type],
+                "UPDATE trades SET symbol=?2, currency=?3, kind=?4, action=?5, shares=?6, price=?7, amount=?8, notes=?9, name=?10, trade_date=?11, asset_type=?12, commission=?13, stamp_duty=?14 WHERE id=?1",
+                params![t.id, t.symbol, t.currency, t.kind, t.action, t.shares, t.price, t.amount, t.notes, t.name, t.trade_date, t.asset_type, t.commission, t.stamp_duty],
             )
             .map_err(|e| format!("update trade: {}", e))?;
         if changed == 0 {
@@ -1257,6 +1338,8 @@ mod tests {
             trade_date: Some("2026-06-12".to_string()),
             created_at: "2026-06-12T10:00:00Z".into(),
             asset_type: None,
+            commission: None,
+            stamp_duty: None,
         };
         assert_eq!(cash_delta_for_trade(&t, false), 10000.0);
         assert_eq!(cash_delta_for_trade(&t, true), -10000.0);
@@ -1278,6 +1361,8 @@ mod tests {
             trade_date: Some("2026-06-12".to_string()),
             created_at: "2026-06-12T10:00:00Z".into(),
             asset_type: None,
+            commission: None,
+            stamp_duty: None,
         };
         assert_eq!(cash_delta_for_trade(&t, false), -5000.0);
         assert_eq!(cash_delta_for_trade(&t, true), 5000.0);
@@ -1299,6 +1384,8 @@ mod tests {
             trade_date: Some("2026-06-12".to_string()),
             created_at: "2026-06-12T10:00:00Z".into(),
             asset_type: None,
+            commission: None,
+            stamp_duty: None,
         };
         assert_eq!(cash_delta_for_trade(&t, false), -200.0);
         assert_eq!(cash_delta_for_trade(&t, true), 200.0);
@@ -1321,6 +1408,8 @@ mod tests {
                 trade_date: Some("2026-06-12".to_string()),
                 created_at: "2026-06-12T10:00:00Z".into(),
                 asset_type: None,
+                commission: None,
+                stamp_duty: None,
             };
             assert_eq!(cash_delta_for_trade(&t, false), 0.0, "expected zero for {:?}", t.action);
         }

@@ -1,6 +1,7 @@
 import { getTransport } from "$lib/transport";
 import { currentLocale } from "$lib/i18n/index.svelte";
 import { getInvestDate } from "$lib/i18n/format";
+import { computeDailyPnl, type TodayTraded } from "$lib/utils/invest-fees";
 import type {
   Holding,
   Trade,
@@ -52,11 +53,6 @@ function isMarketOpen(): boolean {
 /** 判断持仓是否为当日清仓（shares 归零但仍在 Hold 保护期内）。 */
 export function isClearedToday(h: Holding): boolean {
   return h.kind === 'hold' && (h.shares ?? 0) <= 0.0001 && !!h.clearedDate && h.clearedDate >= getInvestDate();
-}
-
-/** 计算当日开盘持仓股数（卖出-买入），用于清仓当日盈亏计算。 */
-export function getOpeningShares(traded: { buy: number; sell: number } | undefined): number {
-  return (traded?.sell ?? 0) - (traded?.buy ?? 0);
 }
 
 class InvestStore {
@@ -153,50 +149,64 @@ class InvestStore {
       : 0,
   );
 
-  /** 组合当日收益金额 = Σ(当日价格变动 × 持仓股数),仅 hold。 */
-  dailyPnl = $derived(
-    this.holdHoldings.reduce((sum, h) => {
-      const q = this.priceMap[h.symbol];
-      if (!q) return sum;
-      if (isClearedToday(h)) {
-        // 清仓当日: 用开盘持仓(卖出-买入)计算当日盈亏
-        const traded = this.todayTradedShares.get(h.symbol);
-        const openingShares = getOpeningShares(traded);
-        return sum + q.change * openingShares;
-      }
-      if (h.shares) return sum + q.change * h.shares;
-      return sum;
-    }, 0),
-  );
-
-  /** 组合当日收益率 = 当日收益 / 昨收总市值。昨收 = close - change。 */
-  dailyPnlPct = $derived.by(() => {
-    let prevValue = 0;
+  /**
+   * 组合当日盈亏汇总：单次遍历 holdHoldings,累加各 symbol 盯市当日盈亏(amount)
+   * 与收益率分母(denom)。dailyPnl/dailyPnlPct 从此派生,避免重复遍历与重算分母。
+   */
+  dailyPnlSummary = $derived.by(() => {
+    let amount = 0;
+    let denom = 0;
     for (const h of this.holdHoldings) {
-      const q = this.priceMap[h.symbol];
-      if (!q) continue;
-      if (isClearedToday(h)) {
-        const traded = this.todayTradedShares.get(h.symbol);
-        const openingShares = getOpeningShares(traded);
-        prevValue += (q.close - q.change) * openingShares;
-      } else if (h.shares) {
-        prevValue += (q.close - q.change) * h.shares;
-      }
+      const r = computeDailyPnl(h, this.priceMap[h.symbol], this.todayTraded.get(h.symbol));
+      if (!r) continue;
+      amount += r.amount;
+      denom += r.denom;
     }
-    return prevValue > 0 ? (this.dailyPnl / prevValue) * 100 : 0;
+    return { amount, denom };
   });
 
-  /** 每 symbol 今日买入/卖出股数聚合(从 trades)。 */
-  todayTradedShares = $derived.by(() => {
+  /** 组合当日收益金额,仅 hold。 */
+  dailyPnl = $derived(this.dailyPnlSummary.amount);
+
+  /** 组合当日收益率 = 当日收益 / 昨收开盘总市值(各 symbol denom 之和)。 */
+  dailyPnlPct = $derived(
+    this.dailyPnlSummary.denom > 0
+      ? (this.dailyPnlSummary.amount / this.dailyPnlSummary.denom) * 100
+      : 0,
+  );
+
+  /**
+   * 每 symbol 今日成交聚合(股数 + 金额),供盯市当日盈亏计算。
+   * 买入支出含佣金;卖出回款扣佣金、不扣印花税。"今日"为 5AM 截止的交易日。
+   */
+  todayTraded = $derived.by(() => {
     const today = getInvestDate(); // YYYY-MM-DD, 5AM cutoff
-    const map = new Map<string, { buy: number; sell: number }>();
+    const map = new Map<string, TodayTraded>();
     for (const tr of this.trades) {
       const d = tr.tradeDate ?? tr.createdAt?.slice(0, 10);
       if (d !== today) continue;
       if (tr.action !== 'buy' && tr.action !== 'sell') continue;
-      const cur = map.get(tr.symbol) ?? { buy: 0, sell: 0 };
-      cur[tr.action] += tr.shares ?? 0;
+      const cur = map.get(tr.symbol) ?? { buyShares: 0, buyCost: 0, sellShares: 0, sellProceeds: 0 };
+      const shares = tr.shares ?? 0;
+      const notional = (tr.price ?? 0) * shares;
+      const commission = tr.commission ?? 0;
+      if (tr.action === 'buy') {
+        cur.buyShares += shares;
+        cur.buyCost += notional + commission;
+      } else {
+        cur.sellShares += shares;
+        cur.sellProceeds += notional - commission;
+      }
       map.set(tr.symbol, cur);
+    }
+    return map;
+  });
+
+  /** 每 symbol 今日买入/卖出股数聚合(从 trades),供 UI 显示与冻结量。 */
+  todayTradedShares = $derived.by(() => {
+    const map = new Map<string, { buy: number; sell: number }>();
+    for (const [sym, t] of this.todayTraded) {
+      map.set(sym, { buy: t.buyShares, sell: t.sellShares });
     }
     return map;
   });
@@ -356,6 +366,8 @@ class InvestStore {
     _tushareToken: string,
     assetType?: string,
     tradeDate?: string,
+    commission?: number,
+    stampDuty?: number,
   ): Promise<void> {
     const amount = qty * price;
 
@@ -372,6 +384,8 @@ class InvestStore {
       name: name || null,
       tradeDate: tradeDate || null,
       assetType: assetType || null,
+      commission: commission ?? null,
+      stampDuty: stampDuty ?? null,
     });
 
     // record_trade triggers recalculate_holdings_inner which rebuilds holdings
@@ -380,7 +394,13 @@ class InvestStore {
     await this.loadAll();
   }
 
-  async sellStock(symbol: string, qty: number, price: number): Promise<void> {
+  async sellStock(
+    symbol: string,
+    qty: number,
+    price: number,
+    commission?: number,
+    stampDuty?: number,
+  ): Promise<void> {
     const existing = this.holdHoldings.find((h) => h.symbol === symbol);
     if (!existing) throw new Error("Holding not found");
 
@@ -404,6 +424,8 @@ class InvestStore {
       name: existing.name || null,
       tradeDate: null,
       assetType: existing.assetType || null,
+      commission: commission ?? null,
+      stampDuty: stampDuty ?? null,
     });
 
     // record_trade triggers recalculate_holdings_inner which rebuilds holdings
@@ -522,6 +544,8 @@ class InvestStore {
     name?: string | null;
     tradeDate?: string | null;
     assetType?: string | null;
+    commission?: number | null;
+    stampDuty?: number | null;
   }): Promise<void> {
     await invoke("update_trade", {
       id: trade.id,
@@ -536,6 +560,8 @@ class InvestStore {
       name: trade.name ?? null,
       tradeDate: trade.tradeDate ?? null,
       assetType: trade.assetType ?? null,
+      commission: trade.commission ?? null,
+      stampDuty: trade.stampDuty ?? null,
     });
     await this.loadAll();
   }
@@ -658,6 +684,8 @@ class InvestStore {
     name?: string | null;
     tradeDate?: string | null;
     assetType?: string | null;
+    commission?: number | null;
+    stampDuty?: number | null;
   }): Promise<void> {
     await invoke("record_trade", {
       id: null,
@@ -672,6 +700,8 @@ class InvestStore {
       name: trade.name ?? null,
       tradeDate: trade.tradeDate ?? null,
       assetType: trade.assetType ?? null,
+      commission: trade.commission ?? null,
+      stampDuty: trade.stampDuty ?? null,
     });
     await this.loadAll();
   }
