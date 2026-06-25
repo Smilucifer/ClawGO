@@ -58,7 +58,10 @@ where
                 return Ok(Fetched { value, source });
             }
             Ok(_) => {
-                log::debug!("data_source: {} returned invalid value, falling back", source.as_str());
+                log::debug!(
+                    "data_source: {} returned invalid value, falling back",
+                    source.as_str()
+                );
                 last_err = format!("{} returned invalid value", source.as_str());
             }
             Err(e) => {
@@ -74,9 +77,10 @@ where
 mod tests {
     use super::*;
 
-    async fn run(chain: Vec<SourceId>, behavior: impl Fn(SourceId) -> Result<f64, String>)
-        -> Result<Fetched<f64>, String>
-    {
+    async fn run(
+        chain: Vec<SourceId>,
+        behavior: impl Fn(SourceId) -> Result<f64, String>,
+    ) -> Result<Fetched<f64>, String> {
         fetch_with_chain(
             &chain,
             |v: &f64| *v != 0.0,
@@ -84,12 +88,15 @@ mod tests {
                 let r = behavior(s);
                 async move { r }
             },
-        ).await
+        )
+        .await
     }
 
     #[tokio::test]
     async fn first_source_success() {
-        let got = run(vec![SourceId::Tushare, SourceId::Akshare], |_| Ok(1.4)).await.unwrap();
+        let got = run(vec![SourceId::Tushare, SourceId::Akshare], |_| Ok(1.4))
+            .await
+            .unwrap();
         assert_eq!(got.source, SourceId::Tushare);
         assert_eq!(got.value, 1.4);
     }
@@ -97,8 +104,14 @@ mod tests {
     #[tokio::test]
     async fn falls_back_on_invalid() {
         let got = run(vec![SourceId::Tushare, SourceId::Akshare], |s| {
-            if s == SourceId::Tushare { Ok(0.0) } else { Ok(1.7) }
-        }).await.unwrap();
+            if s == SourceId::Tushare {
+                Ok(0.0)
+            } else {
+                Ok(1.7)
+            }
+        })
+        .await
+        .unwrap();
         assert_eq!(got.source, SourceId::Akshare);
         assert_eq!(got.value, 1.7);
     }
@@ -106,14 +119,23 @@ mod tests {
     #[tokio::test]
     async fn falls_back_on_error() {
         let got = run(vec![SourceId::Tushare, SourceId::Akshare], |s| {
-            if s == SourceId::Tushare { Err("boom".into()) } else { Ok(2.2) }
-        }).await.unwrap();
+            if s == SourceId::Tushare {
+                Err("boom".into())
+            } else {
+                Ok(2.2)
+            }
+        })
+        .await
+        .unwrap();
         assert_eq!(got.source, SourceId::Akshare);
     }
 
     #[tokio::test]
     async fn all_fail_returns_err() {
-        let r = run(vec![SourceId::Tushare, SourceId::Akshare], |_| Err("x".into())).await;
+        let r = run(vec![SourceId::Tushare, SourceId::Akshare], |_| {
+            Err("x".into())
+        })
+        .await;
         assert!(r.is_err());
     }
 }

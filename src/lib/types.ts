@@ -252,6 +252,7 @@ export interface UserSettings {
   ai_characters?: AiCharacter[];
   tushare_token?: string;
   tushare_proxy_url?: string;
+  invest_miniqmt_enabled?: boolean;
   /** 命名手续费方案列表（买入弹窗可选）。 */
   invest_fee_profiles?: FeeProfile[];
   /** 默认手续费方案 id（买入弹窗预选）。 */

@@ -60,13 +60,22 @@ mod tests {
 
     #[test]
     fn capital_ignores_miniqmt_flag() {
-        assert_eq!(chain_for(Category::Capital, true), vec![SourceId::Tushare, SourceId::Akshare]);
-        assert_eq!(chain_for(Category::Capital, false), vec![SourceId::Tushare, SourceId::Akshare]);
+        assert_eq!(
+            chain_for(Category::Capital, true),
+            vec![SourceId::Tushare, SourceId::Akshare]
+        );
+        assert_eq!(
+            chain_for(Category::Capital, false),
+            vec![SourceId::Tushare, SourceId::Akshare]
+        );
     }
 
     #[test]
     fn tushare_only_is_single_source() {
-        assert_eq!(chain_for(Category::TushareOnly, true), vec![SourceId::Tushare]);
+        assert_eq!(
+            chain_for(Category::TushareOnly, true),
+            vec![SourceId::Tushare]
+        );
     }
 
     #[test]

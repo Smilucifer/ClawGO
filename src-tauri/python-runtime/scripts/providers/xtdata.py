@@ -30,7 +30,7 @@ def health() -> dict:
     """探测 miniQMT 是否可用。不抛异常。"""
     try:
         xt = _get_xtdata()
-        # get_market_data_ex 对空列表应快速返回而不报错，作为客户端连通性探针。
+        # get_sector_list 不依赖行情订阅，作为客户端连通性探针：客户端离线时抛异常。
         xt.get_sector_list()
         return {"available": True, "reason": ""}
     except Exception as e:  # noqa: BLE001

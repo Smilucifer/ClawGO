@@ -2056,6 +2056,22 @@
             </div>
           </div>
 
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium">{t("settings_invest_miniqmt_enabled")}</p>
+              <p class="text-xs text-muted-foreground">{t("settings_invest_miniqmt_hint")}</p>
+            </div>
+            <input
+              type="checkbox"
+              class="rounded"
+              checked={settings?.invest_miniqmt_enabled ?? false}
+              onchange={async (e) => {
+                const val = (e.currentTarget as HTMLInputElement).checked;
+                await saveGeneralPatch({ invest_miniqmt_enabled: val });
+              }}
+            />
+          </div>
+
           <!-- ── 手续费方案 ── -->
           <div class="border-t border-border pt-4">
             <div class="flex items-center justify-between">

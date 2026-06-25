@@ -2291,6 +2291,8 @@
   "settings_fee_min_commission": "最低佣金",
   "settings_fee_stamp_duty_rate": "印花税率",
   "settings_fee_transfer_fee_rate": "过户费率",
+  "settings_invest_miniqmt_enabled": "启用 miniQMT 作为行情优先数据源",
+  "settings_invest_miniqmt_hint": "开启后，行情数据（K线、实时报价）优先从 miniQMT 获取，取不到时降级 Tushare 再降级腾讯。需本机运行已登录券商账户的 miniQMT 客户端。",
 
   "scheduler.title": "调度器",
   "scheduler.credits": "额度",

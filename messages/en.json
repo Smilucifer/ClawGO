@@ -2291,6 +2291,8 @@
   "settings_fee_min_commission": "Min Commission",
   "settings_fee_stamp_duty_rate": "Stamp Duty Rate",
   "settings_fee_transfer_fee_rate": "Transfer Fee Rate",
+  "settings_invest_miniqmt_enabled": "Enable miniQMT as priority market data source",
+  "settings_invest_miniqmt_hint": "When on, quote data (K-line, real-time) is fetched from miniQMT first, falling back to Tushare then Tencent. Requires a running miniQMT client logged into a broker account.",
 
   "scheduler.title": "Scheduler",
   "scheduler.credits": "Credits",
