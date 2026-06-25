@@ -352,7 +352,11 @@ async fn fetch_international() -> MacroResult {
     ];
 
     let mut entries = Vec::new();
-    for (yahoo_sym, indicator) in symbols.iter() {
+    for (i, (yahoo_sym, indicator)) in symbols.iter().enumerate() {
+        // 500ms spacing between requests to avoid Yahoo rate limiter (429).
+        if i > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
         match client.fetch_yahoo_quote(yahoo_sym).await {
             Ok(quote) => entries.push((
                 indicator.to_string(),
