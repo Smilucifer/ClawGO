@@ -1,5 +1,69 @@
 # Changelog / 更新日志
 
+## v5.6.0 (2026-06-25)
+
+### 数据源编排层 + miniQMT 接入
+
+openInvest 取数子系统重构：新增统一的数据源编排层 `invest/data_source/`，集中管理"源链优先级 + 判空降级 + 命中源记录"，取代此前各 `fetch_*` 函数直连单一源的散乱模式。
+
+**编排层架构（三文件）：**
+
+1. **`data_source/mod.rs`** — `SourceId` 枚举（MiniQmt/Tushare/Akshare/Tencent/Yahoo）、`Fetched<T>` 带命中源的结果类型、`fetch_with_chain` 核心编排器（按源链依次尝试→判空→降级→记录命中源）。
+2. **`data_source/registry.rs`** — `Category` 枚举（Quote/Capital/Macro/TushareOnly/Overseas）、`chain_for(category, miniqmt_on)` 源链登记表——**唯一**决定取数源优先级的地方。
+3. **`data_source/validity.rs`** — `is_valid_number` 判空函数：None / 0.0 / NaN / Inf 视为无效→触发降级。
+
+**默认优先级：** tushare 优先；取不到或返回 0/NaN → 降级 AkShare（Capital/Macro 类）或 Tencent（Quote 类）。miniQMT 开关开启时，行情类源链变为 `MiniQmt → Tushare → Tencent`。
+
+**miniQMT 接入：**
+
+- 新增 `python-runtime/scripts/providers/xtdata.py`：miniQMT 行情 provider，提供 `kline`（历史K线）、`realtime_quote`（实时快照）、`health`（客户端健康探测）三个函数。
+- **软依赖设计：** `import xtquant.xtdata` 用 lazy import + try/except 包裹。未安装 xtquant 或客户端未启动时，`health()` 返回 `{"available": false, ...}`，不崩溃；编排层据此跳过该源，无缝降级到链中下一个源。
+- K线字段归一化为 tushare 风格（`trade_date/open/high/low/close/vol`），上层无感知。
+- `InternationalClient` 新增 `fetch_xtdata_health` / `fetch_xtdata_kline` RPC 包装。
+
+**设置项：** 新增 `invest_miniqmt_enabled: bool`（默认 `false`），user 作用域。设置面板新增 miniQMT 开关控件 + i18n 文案。
+
+**macro_refresh 改造：**
+
+- `MacroEntry` 从三元组扩展为四元组 `(indicator, value, extra, source)`，`macro_cache.source` 列记录真实命中源（此前写死 `"scheduler"`）。
+- `fetch_northbound` / `fetch_cgb_10y` 率先接入编排层（分别走 Capital / Macro 链）；`fetch_sh_composite` 接入 Quote 链（支持 miniQMT → Tushare → Tencent 降级）。
+- 其余指标保持各自原有单一源，source 字符串与 `SourceId::as_str()` 一致。
+
+### 北向资金修复
+
+**根因：** tushare `moneyflow_hsgt` 的 `net_money` 字段自 2024-08 交易所停更后已废弃，代码取该字段 `.unwrap_or_default()` → 永远 `0.0`。
+
+**修复：**
+
+1. `client.rs` 解析层：`net_money` 字段缺失时回退到 `north_money`（= `hgt` + `sgt`，实测自洽），保留向后兼容。
+2. `macro_refresh.rs::fetch_northbound`：改用 `north_money`，单位从百万元换算到亿元（÷ 100）。
+3. 口径统一标注为"北向资金净流入"（单位：亿元），写入 `northbound_net`。
+
+### 当日盈亏盯市口径 + 手续费配置
+
+**当日盈亏公式重写：** 采用现金流调整盯市法（per-symbol），天然覆盖纯持有 / 新买 / 加仓 / 减仓 / 清仓，无需特例分支：
+
+```
+shares_open = shares_now − today_buy_shares + today_sell_shares
+当日盈亏 = close×shares_now + 卖出回款 − pre_close×shares_open − 买入支出
+```
+
+- 佣金通过 `buyCost`（含佣金）/ `sellProceeds`（扣佣金）计入现金流视角；印花税不计入当日盈亏。
+- 收益率分母 = `pre_close × shares_open`（昨收开盘市值）；纯新买（无开盘持仓）退化为以买入支出为分母。
+
+**手续费方案（FeeProfile）：** 新增可配置的手续费方案，支持佣金（买卖双边，max(费率, 最低佣金) + 过户费）、印花税（仅卖出单边）。`invest-fees.ts` 提供 `computeCommission` / `computeStampDuty` / `computeDailyPnl` 三个工具函数。`TradeDialog` 新增手续费方案选择。
+
+**涉及文件：**
+
+- `src/lib/utils/invest-fees.ts` — 新建：手续费计算 + 当日盈亏公式
+- `src/lib/utils/invest-fees.test.ts` — 新建：8 个盯市场景 + 手续费单测
+- `src/lib/types.ts` — 新增 `FeeProfile` 接口
+- `src/lib/stores/invest-store.svelte.ts` — `dailyPnl`/`dailyPnlPct` 改用 `computeDailyPnl`；`holdingsMarketValue`/`totalCostBasis` 排除清仓当日条目
+- `src/lib/components/invest/HoldingsTable.svelte` — `dailyPnlAmount` 使用开盘持仓 + `computeDailyPnl`
+- `src/lib/components/invest/TradeDialog.svelte` — 新增手续费方案选择
+- `src-tauri/src/storage/invest/portfolio.rs` — `process_sell`/`process_buy` 记录手续费到 trades 表
+- `src-tauri/src/commands/invest.rs` — 新增手续费方案 CRUD 命令
+
 ## v5.5.11 (2026-06-24)
 
 ### 涨跌家数数据源 API 格式适配

@@ -1132,6 +1132,34 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
     // Check international data sources (AkShare + Jin10)
     let intl_client = crate::invest::international::InternationalClient::from_settings();
 
+    // miniQMT (xtdata) — depends on Python runtime + QMT client
+    match intl_client.fetch_xtdata_health().await {
+        Ok(health) => {
+            let sample = if health.available {
+                "QMT 客户端在线".into()
+            } else if health.reason.is_empty() {
+                "QMT 客户端离线".into()
+            } else {
+                health.reason
+            };
+            sources.push(DataSourceStatus {
+                name: "miniQMT 行情".into(),
+                ok: health.available,
+                last_success: if health.available { Some(now_str.clone()) } else { None },
+                sample_value: Some(sample),
+            });
+        }
+        Err(e) => {
+            log::warn!("[datasource] miniQMT health probe failed: {}", e);
+            sources.push(DataSourceStatus {
+                name: "miniQMT 行情".into(),
+                ok: false,
+                last_success: None,
+                sample_value: Some(format!("{e}")),
+            });
+        }
+    }
+
     async fn probe_news(
         name: &str,
         now: &str,

@@ -12,7 +12,7 @@ Core product model:
 - `AiCharacter` — a reusable persona template (role_type, role_instruction, default provider/model), stored in UserSettings.
 - The provider shown in the UI is not always the execution agent under the hood (see architecture §5).
 
-**Current version:** v5.5.11 (Phase 10+). Full per-version history lives in `docs/changelog.md` — consult it instead of duplicating release notes here.
+**Current version:** v5.6.0 (Phase 10+). Full per-version history lives in `docs/changelog.md` — consult it instead of duplicating release notes here.
 
 ## Standard workflow
 
@@ -127,7 +127,7 @@ Without it, `cargo build`/`test` and `npm run tauri build` fail at the link step
 ### 12. openInvest subsystem (`invest/`)
 A self-contained quant/portfolio assistant under `src-tauri/src/invest/`, surfaced at `/invest`. Largely independent of the chat/group-chat core; persists to `storage/invest/` (`invest.db`, SQLite). Frontend state: `invest-store.svelte.ts`, `invest-committee-store.svelte.ts`. The committee role count and pipeline shape have changed across versions — read the source rather than trusting a number here.
 - **Committee** (`invest/committee/`) — a multi-role LLM debate that emits a per-symbol verdict. Active roles in `roles.rs` (Macro, Quant, Risk, CIO) across two rounds (R1/R2). `orchestrator.rs` drives the pipeline; `cli_executor.rs` runs each role through the Claude CLI (committee runs CLI-only — the legacy `OpenAiCompatClient`/`llm_config.json` path was removed in v5.5.4; provider/model now come from `CommitteeTuning` + `platform_credentials`); `parser.rs` + `analysis.rs` extract structured fields; `tools.rs` exposes role-scoped data tools; `queue.rs` persists the run queue with CancellationToken-based abort; `archive.rs` writes verdict reports.
-- **Data** — `tushare/` (HTTP client, custom proxy), `tencent_quotes.rs` (realtime), Python AkShare via the `python/` bridge, `international.rs` (global indices). `indicators.rs` is shared TA (RSI/MA/percentiles); `regime.rs` computes market regime; `macro_refresh.rs` caches macro indicators.
+- **Data** — `tushare/` (HTTP client, custom proxy), `tencent_quotes.rs` (realtime), Python AkShare via the `python/` bridge, `international.rs` (global indices). `indicators.rs` is shared TA (RSI/MA/percentiles); `regime.rs` computes market regime; `macro_refresh.rs` caches macro indicators. **Data source orchestration** (`invest/data_source/`): unified source chain with priority/fallback per indicator category (Quote/Capital/Macro/TushareOnly/Overseas); optional miniQMT local market data source via `invest_miniqmt_enabled` setting; `fetch_with_chain` orchestrator with validity-based fallback; source tracking in `macro_cache.source`.
 - **Scheduler** (`invest/scheduler/`) — cron jobs: PnL snapshots, event scan, daily report (`daily_report.rs`), dreaming.
 - **Events** — `jin10_collector.rs` (high-frequency Jin10 feed), `event_analyzer.rs` (LLM normalization), `event_scanner.rs`.
 - **Dreaming** (`invest/dreaming/`) — periodic reflection producing domain insights.
