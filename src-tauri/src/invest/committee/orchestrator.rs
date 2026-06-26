@@ -188,6 +188,8 @@ pub struct CommitteeResult {
     pub converged: bool,
     pub sentinel_override: Option<SentinelOverride>,
     pub sanity_check: SanityCheckResult,
+    /// 宏观指标快照（从 macro_cache 直接注入，非 LLM 解析）
+    pub macro_snapshot: Option<super::parser::MacroSnapshot>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1710,6 +1712,7 @@ pub(crate) async fn run_committee(
         converged,
         sentinel_override: sentinel,
         sanity_check: sanity,
+        macro_snapshot: super::parser::build_macro_snapshot(),
     };
 
     // Archive full report (markdown + events.jsonl) — fire-and-forget

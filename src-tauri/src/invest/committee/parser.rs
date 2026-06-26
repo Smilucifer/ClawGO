@@ -109,6 +109,60 @@ pub struct ParsedFields {
 }
 
 // ---------------------------------------------------------------------------
+// Macro snapshot — direct cache injection (not LLM-parsed)
+// ---------------------------------------------------------------------------
+
+/// 宏观指标快照（从 macro_cache 直接注入，非 LLM 解析）。
+/// 10 个核心指标，用于前端直接展示精确数值。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacroSnapshot {
+    /// 上证指数
+    pub sh_composite_close: Option<f64>,
+    /// 上证指数 20 日波动率 (%)
+    pub sh_composite_vol20: Option<f64>,
+    /// 北向资金净流入 (亿)
+    pub northbound_net: Option<f64>,
+    /// VIX 恐慌指数
+    pub vix: Option<f64>,
+    /// 国际金价 (USD)
+    pub gold: Option<f64>,
+    /// 上涨家数
+    pub advance_count: Option<f64>,
+    /// 下跌家数
+    pub decline_count: Option<f64>,
+    /// 两市成交额 (亿)
+    pub two_market_volume: Option<f64>,
+    /// 涨停家数
+    pub limit_up_count: Option<f64>,
+    /// 跌停家数
+    pub limit_down_count: Option<f64>,
+}
+
+/// 从 macro_cache 表读取 10 个宏观指标，填入 MacroSnapshot。
+/// 无过期判定——macro_cache 的刷新策略已保证时效性。
+pub fn build_macro_snapshot() -> Option<MacroSnapshot> {
+    let entries = crate::storage::invest::macro_cache::load_all_macro_cache().ok()?;
+    let map: std::collections::HashMap<String, Option<f64>> = entries
+        .into_iter()
+        .map(|e| (e.indicator, e.value))
+        .collect();
+    let get = |key: &str| map.get(key).copied().flatten();
+    Some(MacroSnapshot {
+        sh_composite_close: get("sh_composite_close"),
+        sh_composite_vol20: get("sh_composite_vol20"),
+        northbound_net: get("northbound_net"),
+        vix: get("vix"),
+        gold: get("gold"),
+        advance_count: get("advance_count"),
+        decline_count: get("decline_count"),
+        two_market_volume: get("two_market_volume"),
+        limit_up_count: get("limit_up_count"),
+        limit_down_count: get("limit_down_count"),
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Parser functions
 // ---------------------------------------------------------------------------
 
