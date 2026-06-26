@@ -58,10 +58,15 @@
       class="flex items-center gap-1.5 px-2 py-0.5 rounded text-xs hover:bg-accent transition-colors"
       onclick={() => (open = !open)}
       title="Claude usage"
+      aria-expanded={open}
+      aria-haspopup="true"
     >
       <span class={tone(fiveHour)}>{t("claudeUsage_5h")} {pct(fiveHour)}</span>
       <span class="text-muted-foreground/40">·</span>
       <span class={tone(weekly)}>{t("claudeUsage_weekly")} {pct(weekly)}</span>
+      {#if claudeUsageStore.stale}
+        <span class="text-muted-foreground/60 text-[10px] italic">{t("claudeUsage_stale")}</span>
+      {/if}
     </button>
 
     {#if open}

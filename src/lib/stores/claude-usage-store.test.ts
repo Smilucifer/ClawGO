@@ -37,5 +37,6 @@ describe("ClaudeUsageStore", () => {
     (getClaudeSubscriptionUsage as any).mockRejectedValue(new Error("boom"));
     await store.refresh();
     expect(store.data?.five_hour?.utilization).toBe(0.5); // 保留上次
+    expect(store.stale).toBe(true); // 硬失败标记 stale
   });
 });
