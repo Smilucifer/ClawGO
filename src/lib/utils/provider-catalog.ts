@@ -133,18 +133,27 @@ export function providerIdForRun(agent: string, platformId?: string | null): Pha
   return "claude";
 }
 
-/** Static model → context window mapping (tokens). */
+/**
+ * Static model → context window mapping (tokens).
+ *
+ * These are conservative *fallbacks only*. The live value reported by the Claude
+ * CLI (`modelUsage.contextWindow`) is authoritative and takes precedence in
+ * session-store's `contextWindow` getter. Third-party windows are intentionally
+ * conservative (rather than an optimistic 1M) so that when no CLI value is
+ * available we don't inflate the denominator and under-report context usage.
+ */
 export const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+  "claude-opus-4-8": 1_000_000,
   "claude-opus-4-7": 1_000_000,
   "claude-sonnet-4-6": 1_000_000,
   "claude-haiku-4-5": 200_000,
-  "deepseek-v4-pro": 1_000_000,
-  "deepseek-v4-flash": 1_000_000,
-  "qwen3.5-plus": 1_000_000,
-  "qwen3.6-plus": 1_000_000,
-  "qwen3.7-max": 1_000_000,
-  "qwen-long": 10_000_000,
-  "mimo-v2.5-pro": 1_000_000,
+  "deepseek-v4-pro": 128_000,
+  "deepseek-v4-flash": 128_000,
+  "qwen3.5-plus": 131_072,
+  "qwen3.6-plus": 131_072,
+  "qwen3.7-max": 131_072,
+  "qwen-long": 1_000_000,
+  "mimo-v2.5-pro": 200_000,
   "kimi-k2.5": 256_000,
   "glm-5": 200_000,
   "glm-4.7": 200_000,
