@@ -62,6 +62,7 @@
     onStatusClick,
     onExportHtml,
     msvcInjected = null,
+    showClaudeUsage = false,
   }: {
     run?: TaskRun | null;
     agent?: string;
@@ -114,6 +115,7 @@
     onStatusClick?: () => void;
     onExportHtml?: () => void;
     msvcInjected?: boolean | null;
+    showClaudeUsage?: boolean;
   } = $props();
 
   $effect(() => {
@@ -547,6 +549,11 @@
             >
           {/if}
         </span>
+      {/if}
+
+      {#if showClaudeUsage}
+        <span class="text-foreground/30">&middot;</span>
+        <ClaudeUsageBadge />
       {/if}
 
       {#if activeTaskCount && activeTaskCount > 0}

@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Claude 用量徽标 · 顶栏集成 Demo</title>
+<style>
+  /* ── 真实主题 token(src/app.css 暖色暗色) ── */
+  :root {
+    --background: 24 6% 10%;        /* #1a1918 */
+    --foreground: 36 23% 90%;       /* #ebe8e4 */
+    --primary: 38 46% 62%;          /* #c9a96e 金棕 */
+    --secondary: 20 6% 14%;         /* #272422 顶栏底 */
+    --muted: 20 6% 14%;
+    --muted-foreground: 24 7% 60%;  /* #9e9a96 */
+    --accent: 20 7% 16%;            /* #2a2827 */
+    --border: 20 6% 18%;            /* #2e2c2a */
+    --popover: 20 6% 14%;
+
+    /* 语义色:与真实 context bar 一致的 Tailwind 色 */
+    --emerald: #10b981;
+    --amber:   #f59e0b;
+    --orange:  #f97316;
+    --red:     #ef4444;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; min-height: 100vh;
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: ui-sans-serif, system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+  .page { max-width: 1100px; margin: 0 auto; padding: 36px 24px 80px; }
+  h1 { font-size: 19px; font-weight: 600; }
+  .sub { color: hsl(var(--muted-foreground)); font-size: 13px; margin-top: 4px; }
+  .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: .09em;
+    color: hsl(var(--muted-foreground)); margin: 40px 0 14px; display: flex; align-items: center; gap: 10px; }
+  .section-title::after { content:""; flex:1; height:1px; background: hsl(var(--border)); }
+  .note { color: hsl(var(--muted-foreground)); font-size: 12.5px; margin-top: 12px; }
+  .tag { display:inline-block; font-size:11px; padding:1px 7px; border-radius:999px;
+    background: hsl(var(--primary) / .14); color: hsl(var(--primary)); margin-left:8px; vertical-align:middle; }
+
+  /* ── 真实顶栏 Tier1 复刻 (h-9, text-xs, bg-secondary) ── */
+  .statusbar {
+    height: 36px; display: flex; align-items: center; gap: 8px;
+    padding: 0 12px; font-size: 12px;
+    background: hsl(var(--secondary));
+    border: 1px solid hsl(var(--border));
+    border-radius: 8px;
+    color: hsl(var(--foreground) / .7);
+  }
+  .sb-icon { color: hsl(var(--foreground) / .4); display:inline-flex; }
+  .dot { width:7px; height:7px; border-radius:50%; background: var(--emerald); box-shadow: 0 0 4px #22c55e80; }
+  .ready-pill { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.05em;
+    padding:1px 7px; border-radius:999px; background:#22c55e26; color:#4ade80; }
+  .sb-name { color: hsl(var(--foreground)); font-weight:500; }
+  .mode-badge { font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:.05em;
+    padding:1px 6px; border-radius:4px; background:#3b82f61a; color:#60a5fa; }
+  .model-btn { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border-radius:5px;
+    border:1px solid transparent; color: hsl(var(--foreground) / .8); cursor:pointer; }
+  .model-btn:hover { background: hsl(var(--accent)); border-color: hsl(var(--border)); }
+  .model-btn svg { color: hsl(var(--foreground) / .4); }
+  .mid { color: hsl(var(--foreground) / .3); }
+
+  /* context bar(真实) */
+  .ctx { display:inline-flex; align-items:center; gap:6px; }
+  .ctx-track { width:48px; height:6px; border-radius:999px; background: hsl(var(--foreground) / .1); overflow:hidden; }
+  .ctx-fill { height:100%; border-radius:999px; background: var(--emerald); }
+  .ctx-label { color: hsl(var(--foreground) / .6); }
+
+  .spacer { flex:1; }
+  .sb-right { display:inline-flex; align-items:center; gap:8px; color: hsl(var(--foreground) / .4); }
+  .sb-right .act { display:inline-flex; align-items:center; gap:4px; cursor:pointer; padding:2px 6px; border-radius:5px; }
+  .sb-right .act:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
+
+  /* ── 新徽标:融入版(与 context bar 同语言) ── */
+  .usage {
+    display:inline-flex; align-items:center; gap:9px;
+    padding:2px 7px; border-radius:6px; cursor:pointer; user-select:none;
+    transition: background .15s ease;
+  }
+  .usage:hover { background: hsl(var(--accent)); }
+  .usage.pill { border:1px solid hsl(var(--border)); background: hsl(var(--accent) / .4); padding:3px 9px; border-radius:999px; }
+  .usage .seg { display:inline-flex; align-items:center; gap:5px; }
+  .usage .seg .lbl { color: hsl(var(--muted-foreground)); }
+  .usage .seg .val { font-weight:600; font-variant-numeric: tabular-nums; }
+  .usage .vsep { width:1px; height:12px; background: hsl(var(--border)); }
+  .usage .stale { font-size:10px; font-style:italic; color: hsl(var(--muted-foreground) / .7); }
+
+  .ring { display:block; transform: rotate(-90deg); }
+  .ring .track { stroke: hsl(var(--foreground) / .12); }
+  .ring .fill { stroke-linecap:round; transition: stroke-dashoffset .6s cubic-bezier(.3,.8,.3,1); }
+
+  .t-ok{color:var(--emerald)} .s-ok{stroke:var(--emerald)} .b-ok{background:linear-gradient(90deg,#0d9466,var(--emerald))}
+  .t-warn{color:var(--amber)} .s-warn{stroke:var(--amber)} .b-warn{background:linear-gradient(90deg,#d97706,var(--amber))}
+  .t-crit{color:var(--red)}   .s-crit{stroke:var(--red)}   .b-crit{background:linear-gradient(90deg,#dc2626,var(--red))}
+
+  /* ── 展开面板(暖色 popover) ── */
+  .live-wrap { position:relative; display:inline-block; }
+  .live-panel { position:absolute; top:calc(100% + 7px); right:0; z-index:20;
+    opacity:0; transform:translateY(-6px) scale(.98); pointer-events:none;
+    transition:opacity .16s ease, transform .16s ease; }
+  .live-panel.open { opacity:1; transform:none; pointer-events:auto; }
+  .panel {
+    width:286px; border-radius:10px; padding:13px;
+    background: hsl(var(--popover)); border:1px solid hsl(var(--border));
+    box-shadow: 0 18px 44px -14px rgba(0,0,0,.7);
+    font-family: ui-sans-serif, system-ui, sans-serif; font-size:12px;
+  }
+  .panel .head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .panel .head .title { font-size:12.5px; font-weight:600; display:flex; align-items:center; gap:7px; color: hsl(var(--foreground)); }
+  .panel .head .title svg { color: hsl(var(--muted-foreground)); }
+  .plan-chip { font-size:10px; font-weight:600; padding:2px 8px; border-radius:999px;
+    background: hsl(var(--primary) / .15); border:1px solid hsl(var(--primary) / .25); color: hsl(var(--primary)); }
+  .row { padding:8px 0; }
+  .row + .row { border-top:1px solid hsl(var(--border) / .7); }
+  .row .line { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:6px; }
+  .row .name { color: hsl(var(--foreground) / .85); font-weight:500; display:flex; align-items:center; gap:6px; }
+  .row .name .ico { color: hsl(var(--muted-foreground)); display:inline-flex; }
+  .row .pct { font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .tb { position:relative; height:6px; border-radius:999px; background: hsl(var(--foreground) / .1); overflow:hidden; }
+  .tb .bar { position:absolute; inset:0 auto 0 0; height:100%; border-radius:999px; width:0;
+    transition: width .7s cubic-bezier(.3,.85,.25,1); }
+  .row .meta { margin-top:5px; font-size:10.5px; color: hsl(var(--muted-foreground)); display:flex; align-items:center; gap:5px; }
+  .foot { margin-top:11px; padding-top:10px; border-top:1px solid hsl(var(--border));
+    display:flex; align-items:center; justify-content:space-between; font-size:10.5px; color: hsl(var(--muted-foreground)); }
+  .foot b { color: hsl(var(--foreground) / .7); font-weight:600; }
+
+  .cmp { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .cmp .lbl2 { font-size:11px; color:hsl(var(--muted-foreground)); margin-bottom:8px; }
+  .demo-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:22px; align-items:start; margin-top:6px; }
+  .case-label { font-size:11px; color:hsl(var(--muted-foreground)); margin:0 0 10px 2px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Claude 用量徽标 · 顶栏集成预览 <span class="tag">高保真 · 真实主题</span></h1>
+  <div class="sub">还原 SessionStatusBar 真实顶栏(暖色 / font-mono / context bar),徽标紧跟在 context 使用率右边。</div>
+
+  <!-- ① 真实顶栏内、context bar 右边、可点击 -->
+  <div class="section-title">① 顶栏实景 — 徽标在 context 使用率右边(点击展开)</div>
+  <div class="statusbar mono">
+    <span class="sb-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></svg></span>
+    <span class="dot"></span>
+    <span class="ready-pill">Running</span>
+    <span class="sb-name">claude</span>
+    <span class="mode-badge">Stream</span>
+    <span class="mid">·</span>
+    <button class="model-btn">Opus 4.8 <span style="color:hsl(var(--foreground)/.6);font-size:10px">high</span>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+    <span class="mid">·</span>
+    <!-- 真实 context bar -->
+    <span class="ctx"><span class="ctx-track"><span class="ctx-fill" style="width:34%"></span></span><span class="ctx-label">Ctx 34%</span></span>
+    <span class="mid">·</span>
+    <!-- 新徽标(融入版) -->
+    <div class="live-wrap">
+      <div class="usage" id="liveBadge" onclick="document.getElementById('livePanel').classList.toggle('open')"></div>
+      <div class="live-panel" id="livePanel"><div class="panel" id="panelTpl"></div></div>
+    </div>
+    <span class="spacer"></span>
+    <span class="sb-right">
+      <span class="act">Export</span><span class="act">Preview</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+    </span>
+  </div>
+  <div class="note">↑ context bar 与新徽标用同一套视觉语言(迷你图形 + 文字),并排不打架。点徽标展开详情面板。</div>
+
+  <!-- ② 两种融入风格对比 -->
+  <div class="section-title">② 徽标融入风格对比</div>
+  <div class="cmp">
+    <div>
+      <div class="lbl2">A · 扁平融入(推荐,跟 context bar 统一)</div>
+      <div class="statusbar mono">
+        <span class="ctx"><span class="ctx-track"><span class="ctx-fill" style="width:34%"></span></span><span class="ctx-label">Ctx 34%</span></span>
+        <span class="mid">·</span>
+        <div class="usage" id="flatBadge"></div>
+        <span class="spacer"></span>
+      </div>
+    </div>
+    <div>
+      <div class="lbl2">B · 胶囊模块(轻边框,更独立)</div>
+      <div class="statusbar mono">
+        <span class="ctx"><span class="ctx-track"><span class="ctx-fill" style="width:34%"></span></span><span class="ctx-label">Ctx 34%</span></span>
+        <span class="mid">·</span>
+        <div class="usage pill" id="pillBadge"></div>
+        <span class="spacer"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ③ 三种用量状态 -->
+  <div class="section-title">③ 三种用量状态(徽标 + 展开面板)</div>
+  <div class="demo-grid" id="grid"></div>
+</div>
+
+<script>
+  function tone(u){ return u<0.7?'ok':u<0.9?'warn':'crit'; }
+  const C = 2*Math.PI*15;
+  function ring(u,size){ const tn=tone(u), off=C*(1-u);
+    return `<svg class="ring" width="${size}" height="${size}" viewBox="0 0 36 36">
+      <circle class="track" cx="18" cy="18" r="15" fill="none" stroke-width="5"></circle>
+      <circle class="fill s-${tn}" cx="18" cy="18" r="15" fill="none" stroke-width="5"
+        stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"></circle></svg>`; }
+
+  function badgeInner(d){ const t5=tone(d.fiveHour), tw=tone(d.weekly);
+    return `<span class="seg">${ring(d.fiveHour,14)}<span class="lbl">5h</span><span class="val t-${t5}">${Math.round(d.fiveHour*100)}%</span></span>
+      <span class="vsep"></span>
+      <span class="seg">${ring(d.weekly,14)}<span class="lbl">周</span><span class="val t-${tw}">${Math.round(d.weekly*100)}%</span></span>
+      ${d.stale?'<span class="stale">可能过期</span>':''}`; }
+
+  const clk=`<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`;
+  const bolt=`<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>`;
+  const cal=`<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>`;
+  const gauge=`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 13l4-3"/><path d="M3.5 18a9 9 0 1 1 17 0"/></svg>`;
+
+  function wrow(name,ico,u,reset){ const tn=tone(u);
+    return `<div class="row"><div class="line"><span class="name"><span class="ico">${ico}</span>${name}</span>
+      <span class="pct t-${tn}">${Math.round(u*100)}%</span></div>
+      <div class="tb"><div class="bar b-${tn}" style="width:${Math.min(100,Math.round(u*100))}%"></div></div>
+      ${reset?`<div class="meta">${clk}<span>${reset} 重置</span></div>`:''}</div>`; }
+
+  function panel(d){
+    return `<div class="head"><span class="title">${gauge} Claude 用量</span><span class="plan-chip">${d.plan}</span></div>
+      ${wrow('5 小时',bolt,d.fiveHour,d.reset5)}
+      ${wrow('本周',cal,d.weekly,d.resetW)}
+      ${d.opus!=null?wrow('Opus 周',cal,d.opus,d.resetO):''}
+      <div class="foot"><span>套餐 <b>${d.plan}</b></span><span>速率档 <b>${d.tier}</b></span></div>`; }
+
+  const cases=[
+    {case:'健康',fiveHour:.23,weekly:.45,opus:.18,plan:'Max 20x',tier:'高',reset5:'今天 18:40',resetW:'周一 09:00',resetO:'周一 09:00'},
+    {case:'偏高',fiveHour:.74,weekly:.62,opus:.55,plan:'Max 5x',tier:'标准',reset5:'今天 21:10',resetW:'周三 14:00',resetO:'周三 14:00',stale:true},
+    {case:'告警',fiveHour:.96,weekly:.91,opus:.88,plan:'Pro',tier:'标准',reset5:'今天 23:30',resetW:'周五 12:00',resetO:'周五 12:00'},
+  ];
+
+  const d0=cases[0];
+  document.getElementById('liveBadge').innerHTML=badgeInner(d0);
+  document.getElementById('flatBadge').innerHTML=badgeInner(d0);
+  document.getElementById('pillBadge').innerHTML=badgeInner(d0);
+  document.getElementById('panelTpl').innerHTML=panel(d0);
+
+  document.getElementById('grid').innerHTML=cases.map(d=>`
+    <div><div class="case-label">${d.case}</div>
+      <div class="statusbar mono" style="margin-bottom:14px"><div class="usage">${badgeInner(d)}</div><span class="spacer"></span></div>
+      <div class="panel">${panel(d)}</div></div>`).join('');
+</script>
+</body>
+</html>

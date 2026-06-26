@@ -102,7 +102,6 @@
   import PreviewResizer from "$lib/components/preview/PreviewResizer.svelte";
   import type { ElementSelection } from "$lib/types";
   import { isElementSelection } from "$lib/types";
-  import ClaudeUsageBadge from "$lib/components/ClaudeUsageBadge.svelte";
   import { claudeUsageStore } from "$lib/stores/claude-usage-store.svelte";
 
   // ── Helpers ──
@@ -1178,6 +1177,8 @@
   });
 
   // Claude usage badge: refresh baseline on entering a usable session, then after each turn end.
+  // The trigger lives here (not in ClaudeUsageBadge) because it depends on isOfficialClaudeSub,
+  // which is chat-page business logic; the badge itself is a stateless store-driven display.
   let _usagePrevPhase: string = $state("empty");
   $effect(() => {
     const phase = store.phase;
@@ -4078,6 +4079,7 @@
       authSourceCategory={store.authSourceCategory}
       apiKeySource={store.apiKeySource}
       msvcInjected={store.msvcInjected}
+      showClaudeUsage={isOfficialClaudeSub}
       {previewOpen}
       onPreviewToggle={() => {
         if (previewOpen && !previewUrlBarOpen) {
@@ -4100,12 +4102,6 @@
       }}
       onExportHtml={store.run ? () => void handleExportHtml() : undefined}
     />
-
-    {#if isOfficialClaudeSub}
-      <div class="relative">
-        <ClaudeUsageBadge />
-      </div>
-    {/if}
 
     <!-- MCP panel (floating below status bar) -->
     {#if mcpPanelOpen && store.mcpServers.length > 0}

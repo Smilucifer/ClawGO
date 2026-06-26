@@ -1,5 +1,11 @@
 # Changelog / 更新日志
 
+## v5.6.3 (2026-06-26)
+
+### 优化
+
+- **Claude 订阅用量徽标重设计：** 重做 v5.6.2 引入的聊天页订阅用量徽标。**渲染位置**从 chat 页的游离元素移入 `SessionStatusBar`，紧跟 context 使用率指示器右侧（新增 `showClaudeUsage` prop 门控，刷新触发逻辑仍留在 chat 页，因其依赖 `isOfficialClaudeSub` 业务判断）。**视觉**改为迷你环形进度（SVG donut）+ `5h`/`周` 两段,扁平融入顶栏、与 context bar 同一套视觉语言;语义色对齐 context bar(emerald/amber/red 三档)。**popover 面板**重做:套餐 chip + 每窗口「图标 + 名称 + 大号百分比 + 渐变进度条 + reset 时间」+ 底部 plan/tier，改用暖色 `bg-popover`。**reset 时间**从原先直接显示的原始 ISO UTC 串(`2026-06-26T06:40:00+00:00`)格式化为本地友好显示(`今天/明天 HH:mm`、近 7 天 `周X HH:mm`、更远 `M月D日 HH:mm`),跟随当前 locale,解析失败回退原串;新增 i18n key `claudeUsage_today` / `claudeUsage_tomorrow`。
+
 ## v5.6.2 (2026-06-26)
 
 ### 修复

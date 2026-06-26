@@ -2381,5 +2381,7 @@
   "claudeUsage_tier": "等级",
   "claudeUsage_plan": "套餐",
   "claudeUsage_stale": "可能已过期",
-  "claudeUsage_title": "Claude 用量"
+  "claudeUsage_title": "Claude 用量",
+  "claudeUsage_today": "今天",
+  "claudeUsage_tomorrow": "明天"
 }

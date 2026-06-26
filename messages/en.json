@@ -2381,5 +2381,7 @@
   "claudeUsage_tier": "Tier",
   "claudeUsage_plan": "Plan",
   "claudeUsage_stale": "may be stale",
-  "claudeUsage_title": "Claude usage"
+  "claudeUsage_title": "Claude usage",
+  "claudeUsage_today": "today",
+  "claudeUsage_tomorrow": "tomorrow"
 }

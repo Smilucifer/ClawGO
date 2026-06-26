@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Claude 用量徽标 · 重设计 Demo</title>
+<style>
+  /* ── shadcn 暗色 token 还原 ── */
+  :root {
+    --background: 240 10% 3.9%;
+    --card: 240 6% 8%;
+    --foreground: 0 0% 98%;
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 64.9%;
+    --border: 240 4% 18%;
+    --accent: 240 4% 14%;
+    --secondary: 240 4% 14%;
+    --radius: 10px;
+
+    /* 柔和语义色:降低饱和、提高高级感 */
+    --ok: 152 56% 52%;
+    --ok-soft: 152 46% 42%;
+    --warn: 38 88% 58%;
+    --warn-soft: 38 80% 50%;
+    --crit: 0 72% 60%;
+    --crit-soft: 0 65% 52%;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, hsl(240 30% 12% / .5), transparent 60%),
+      hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC",
+      "Microsoft YaHei", sans-serif;
+    font-feature-settings: "tnum" 1, "cv01" 1;
+    min-height: 100vh;
+  }
+
+  .page { max-width: 1080px; margin: 0 auto; padding: 40px 28px 80px; }
+  h1 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
+  .sub { color: hsl(var(--muted-foreground)); font-size: 13px; margin-top: 4px; }
+  .section-title {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+    color: hsl(var(--muted-foreground)); margin: 44px 0 16px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .section-title::after { content: ""; flex: 1; height: 1px; background: hsl(var(--border)); }
+
+  /* ── 模拟顶栏 ── */
+  .topbar {
+    height: 44px; border-radius: 12px;
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    display: flex; align-items: center; padding: 0 8px 0 16px; gap: 12px;
+    box-shadow: 0 1px 0 hsl(0 0% 100% / .03) inset;
+  }
+  .topbar .brand { font-size: 13px; font-weight: 600; color: hsl(var(--foreground) / .9); }
+  .topbar .spacer { flex: 1; }
+  .topbar .dot-sep { width: 4px; height: 4px; border-radius: 50%; background: hsl(var(--muted-foreground) / .3); }
+
+  /* ── 徽标 ── */
+  .badge {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 5px 10px; border-radius: 999px;
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--accent) / .5);
+    cursor: pointer; user-select: none;
+    transition: background .15s ease, border-color .15s ease, transform .1s ease;
+  }
+  .badge:hover { background: hsl(var(--accent)); border-color: hsl(var(--border)); }
+  .badge:active { transform: scale(.985); }
+  .badge .seg { display: inline-flex; align-items: center; gap: 6px; }
+  .badge .seg .lbl { font-size: 11px; color: hsl(var(--muted-foreground)); font-weight: 500; }
+  .badge .seg .val { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .badge .divider { width: 1px; height: 14px; background: hsl(var(--border)); }
+  .badge .stale {
+    font-size: 10px; font-style: italic; color: hsl(var(--muted-foreground) / .7);
+    margin-left: 2px;
+  }
+
+  /* 迷你环形 */
+  .ring { display: block; transform: rotate(-90deg); }
+  .ring .track { stroke: hsl(var(--muted) / 1); }
+  .ring .fill { stroke-linecap: round; transition: stroke-dashoffset .6s cubic-bezier(.3,.8,.3,1); }
+
+  /* tone 工具类 */
+  .t-ok   { color: hsl(var(--ok)); }   .s-ok   { stroke: hsl(var(--ok)); }   .b-ok   { background: linear-gradient(90deg, hsl(var(--ok-soft)), hsl(var(--ok))); }
+  .t-warn { color: hsl(var(--warn)); } .s-warn { stroke: hsl(var(--warn)); } .b-warn { background: linear-gradient(90deg, hsl(var(--warn-soft)), hsl(var(--warn))); }
+  .t-crit { color: hsl(var(--crit)); } .s-crit { stroke: hsl(var(--crit)); } .b-crit { background: linear-gradient(90deg, hsl(var(--crit-soft)), hsl(var(--crit))); }
+
+  /* ── 展开面板 ── */
+  .panel {
+    width: 288px; border-radius: var(--radius);
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    box-shadow: 0 16px 40px -12px hsl(0 0% 0% / .6), 0 0 0 1px hsl(0 0% 100% / .02) inset;
+    padding: 14px; overflow: hidden;
+  }
+  .panel .head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .panel .head .title { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 7px; }
+  .panel .head .title svg { color: hsl(var(--muted-foreground)); }
+  .plan-chip {
+    font-size: 10px; font-weight: 600; letter-spacing: .02em;
+    padding: 3px 8px; border-radius: 999px;
+    background: hsl(var(--accent)); border: 1px solid hsl(var(--border));
+    color: hsl(var(--foreground) / .8);
+  }
+
+  .row { padding: 9px 0; }
+  .row + .row { border-top: 1px solid hsl(var(--border) / .6); }
+  .row .line { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 7px; }
+  .row .line .name { font-size: 12px; color: hsl(var(--foreground) / .85); font-weight: 500; display: flex; align-items: center; gap: 6px; }
+  .row .line .name .ico { color: hsl(var(--muted-foreground)); display: inline-flex; }
+  .row .line .pct { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .track-bar {
+    position: relative; height: 6px; border-radius: 999px;
+    background: hsl(var(--muted) / .9); overflow: hidden;
+  }
+  .track-bar .bar {
+    position: absolute; inset: 0 auto 0 0; height: 100%;
+    border-radius: 999px; width: 0;
+    transition: width .7s cubic-bezier(.3,.85,.25,1);
+  }
+  .row .meta { margin-top: 6px; font-size: 10.5px; color: hsl(var(--muted-foreground)); display: flex; align-items: center; gap: 5px; }
+  .row .meta svg { opacity: .7; }
+
+  .foot {
+    margin-top: 12px; padding-top: 11px; border-top: 1px solid hsl(var(--border));
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 10.5px; color: hsl(var(--muted-foreground));
+  }
+  .foot .kv b { color: hsl(var(--foreground) / .7); font-weight: 600; }
+
+  /* 布局 */
+  .demo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; align-items: start; }
+  .case { }
+  .case .case-label { font-size: 11px; color: hsl(var(--muted-foreground)); margin: 0 0 12px 2px; }
+  .badge-row { margin-bottom: 16px; }
+  .interactive-note { color: hsl(var(--muted-foreground)); font-size: 12px; margin-top: 14px; }
+
+  .live-wrap { position: relative; display: inline-block; }
+  .live-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 10;
+    opacity: 0; transform: translateY(-6px) scale(.98); pointer-events: none;
+    transition: opacity .16s ease, transform .16s ease; }
+  .live-panel.open { opacity: 1; transform: none; pointer-events: auto; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Claude 用量徽标 · 重设计预览</h1>
+  <div class="sub">方向:精致紧凑 · 顶栏常驻 5h + 周 · shadcn 暗色风格。下方为静态对比 + 可交互示例。</div>
+
+  <!-- 可交互:模拟顶栏 -->
+  <div class="section-title">① 顶栏内的实际效果(点击徽标展开)</div>
+  <div class="topbar">
+    <span class="brand">ClawGO</span>
+    <span class="spacer"></span>
+    <div class="live-wrap">
+      <div class="badge" id="liveBadge" onclick="document.getElementById('livePanel').classList.toggle('open')">
+        <span class="seg">
+          <svg class="ring" width="15" height="15" viewBox="0 0 36 36">
+            <circle class="track" cx="18" cy="18" r="15" fill="none" stroke-width="5"></circle>
+            <circle class="fill s-ok" cx="18" cy="18" r="15" fill="none" stroke-width="5"
+              stroke-dasharray="94.2" stroke-dashoffset="72.5"></circle>
+          </svg>
+          <span class="lbl">5h</span><span class="val t-ok">23%</span>
+        </span>
+        <span class="divider"></span>
+        <span class="seg">
+          <svg class="ring" width="15" height="15" viewBox="0 0 36 36">
+            <circle class="track" cx="18" cy="18" r="15" fill="none" stroke-width="5"></circle>
+            <circle class="fill s-warn" cx="18" cy="18" r="15" fill="none" stroke-width="5"
+              stroke-dasharray="94.2" stroke-dashoffset="51.8"></circle>
+          </svg>
+          <span class="lbl">周</span><span class="val t-warn">45%</span>
+        </span>
+      </div>
+      <div class="live-panel" id="livePanel">
+        <div class="panel" id="panelTpl"></div>
+      </div>
+    </div>
+  </div>
+  <div class="interactive-note">↑ 点击徽标试试展开/收起。下面是不同用量状态的并排对比。</div>
+
+  <!-- 静态对比 -->
+  <div class="section-title">② 三种用量状态对比</div>
+  <div class="demo-grid" id="grid"></div>
+
+</div>
+
+<script>
+  // ── 工具:根据 utilization 选 tone ──
+  function tone(u) { return u < 0.7 ? 'ok' : u < 0.9 ? 'warn' : 'crit'; }
+  const C = 2 * Math.PI * 15; // 周长 ≈ 94.2
+
+  function ring(u, size) {
+    const tn = tone(u);
+    const off = C * (1 - u);
+    return `<svg class="ring" width="${size}" height="${size}" viewBox="0 0 36 36">
+      <circle class="track" cx="18" cy="18" r="15" fill="none" stroke-width="5"></circle>
+      <circle class="fill s-${tn}" cx="18" cy="18" r="15" fill="none" stroke-width="5"
+        stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"></circle>
+    </svg>`;
+  }
+
+  function badge(d) {
+    const t5 = tone(d.fiveHour), tw = tone(d.weekly);
+    return `<div class="badge">
+      <span class="seg">${ring(d.fiveHour,15)}<span class="lbl">5h</span><span class="val t-${t5}">${Math.round(d.fiveHour*100)}%</span></span>
+      <span class="divider"></span>
+      <span class="seg">${ring(d.weekly,15)}<span class="lbl">周</span><span class="val t-${tw}">${Math.round(d.weekly*100)}%</span></span>
+      ${d.stale ? '<span class="stale">可能过期</span>' : ''}
+    </div>`;
+  }
+
+  const clockIco = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`;
+  const boltIco  = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>`;
+  const calIco   = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>`;
+  const gaugeIco = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 13l4-3"/><path d="M3.5 18a9 9 0 1 1 17 0"/></svg>`;
+
+  function windowRow(name, ico, w) {
+    if (!w) return '';
+    const tn = tone(w.u);
+    return `<div class="row">
+      <div class="line">
+        <span class="name"><span class="ico">${ico}</span>${name}</span>
+        <span class="pct t-${tn}">${Math.round(w.u*100)}%</span>
+      </div>
+      <div class="track-bar"><div class="bar b-${tn}" style="width:${Math.min(100,Math.round(w.u*100))}%"></div></div>
+      ${w.reset ? `<div class="meta">${clockIco}<span>${w.reset} 重置</span></div>` : ''}
+    </div>`;
+  }
+
+  function panel(d) {
+    return `<div class="head">
+        <span class="title">${gaugeIco} Claude 用量</span>
+        <span class="plan-chip">${d.plan}</span>
+      </div>
+      ${windowRow('5 小时', boltIco, {u:d.fiveHour, reset:d.reset5})}
+      ${windowRow('本周',  calIco,  {u:d.weekly,   reset:d.resetW})}
+      ${d.opus!=null ? windowRow('Opus 周', calIco, {u:d.opus, reset:d.resetO}) : ''}
+      <div class="foot">
+        <span class="kv">套餐 <b>${d.plan}</b></span>
+        <span class="kv">速率档 <b>${d.tier}</b></span>
+      </div>`;
+  }
+
+  const cases = [
+    { case:'健康', fiveHour:.23, weekly:.45, opus:.18, plan:'Max 20x', tier:'高',
+      reset5:'今天 18:40', resetW:'周一 09:00', resetO:'周一 09:00' },
+    { case:'偏高', fiveHour:.74, weekly:.62, opus:.55, plan:'Max 5x', tier:'标准',
+      reset5:'今天 21:10', resetW:'周三 14:00', resetO:'周三 14:00', stale:true },
+    { case:'告警', fiveHour:.96, weekly:.91, opus:.88, plan:'Pro', tier:'标准',
+      reset5:'今天 23:30', resetW:'周五 12:00', resetO:'周五 12:00' },
+  ];
+
+  document.getElementById('grid').innerHTML = cases.map(d => `
+    <div class="case">
+      <div class="case-label">${d.case}</div>
+      <div class="badge-row">${badge(d)}</div>
+      <div class="panel">${panel(d)}</div>
+    </div>`).join('');
+
+  // live panel 用"健康"案例
+  document.getElementById('panelTpl').innerHTML = panel(cases[0]);
+</script>
+</body>
+</html>
