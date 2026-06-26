@@ -1,12 +1,18 @@
 # MacroSnapshot Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status: ✅ DONE** — 后端 + 前端全部完成，已合并到 master。
 
 **Goal:** 在投资委员会分析结果中注入 10 个宏观指标的精确数值，前端可直接展示。
 
-**Architecture:** 新增 `MacroSnapshot` struct 持有 10 个 `Option<f64>` 字段，通过 `build_macro_snapshot()` 从 `macro_cache` 表读取。挂到 `CommitteeResult` 顶层字段，`run_committee` 中 Macro phase 完成后注入。
+**Architecture:** 新增 `MacroSnapshot` struct 持有 10 个 `Option<f64>` 字段，通过 `build_macro_snapshot()` 从 `macro_cache` 表读取。挂到 `CommitteeResult` 顶层字段，`run_committee` 尾部注入。
 
 **Tech Stack:** Rust, serde, rusqlite (已有依赖)
+
+**Post-implementation notes:**
+- `MacroSnapshot` + `build_macro_snapshot()` 已从 `parser.rs` 移到 `macro_cache.rs`（/simplify review 建议）
+- HashMap 中间层改为 linear scan（与 `tools.rs:format_macro_entries` 一致）
+- 前端新增 `MacroSnapshotCard.svelte` 组件，5 列网格展示
+- i18n keys 已添加到 `messages/en.json` 和 `messages/zh-CN.json`
 
 ## Global Constraints
 
@@ -28,7 +34,7 @@
 - Produces: `pub struct MacroSnapshot` (10 个 Option<f64> 字段)
 - Produces: `pub fn build_macro_snapshot() -> Option<MacroSnapshot>`
 
-- [ ] **Step 1: Add MacroSnapshot struct after ParsedFields (line 109)**
+- [x] **Step 1: Add MacroSnapshot struct after ParsedFields (line 109)**
 
 在 `parser.rs` 的 `ParsedFields` struct 结束（line 109 `}`）之后、`// Parser functions` 注释之前，插入：
 
@@ -61,7 +67,7 @@ pub struct MacroSnapshot {
 }
 ```
 
-- [ ] **Step 2: Add build_macro_snapshot() function**
+- [x] **Step 2: Add build_macro_snapshot() function**
 
 在 `MacroSnapshot` struct 之后、`// Parser functions` 注释之前，插入：
 
@@ -90,17 +96,17 @@ pub fn build_macro_snapshot() -> Option<MacroSnapshot> {
 }
 ```
 
-- [ ] **Step 3: Verify compilation**
+- [x] **Step 3: Verify compilation**
 
 Run: `cargo check --manifest-path src-tauri/Cargo.toml`
 Expected: compiles without errors
 
-- [ ] **Step 4: Run clippy**
+- [x] **Step 4: Run clippy**
 
 Run: `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings`
 Expected: no warnings
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src-tauri/src/invest/committee/parser.rs
@@ -119,7 +125,7 @@ git commit -m "feat(invest): add MacroSnapshot struct and build_macro_snapshot()
 - Consumes: `super::parser::MacroSnapshot`, `super::parser::build_macro_snapshot()`
 - Produces: `CommitteeResult.macro_snapshot: Option<MacroSnapshot>` — 序列化后前端可通过 `result.macroSnapshot` 访问
 
-- [ ] **Step 1: Add macro_snapshot field to CommitteeResult (line 190)**
+- [x] **Step 1: Add macro_snapshot field to CommitteeResult (line 190)**
 
 在 `orchestrator.rs` 的 `CommitteeResult` struct 中，`sanity_check` 字段之后添加：
 
@@ -144,7 +150,7 @@ pub struct CommitteeResult {
 }
 ```
 
-- [ ] **Step 2: Inject snapshot in run_committee result construction (line 1700)**
+- [x] **Step 2: Inject snapshot in run_committee result construction (line 1700)**
 
 在 `run_committee` 中构建 `CommitteeResult` 的位置（约 line 1700），在 `sanity_check: sanity,` 之后添加 `macro_snapshot` 字段：
 
@@ -166,17 +172,17 @@ pub struct CommitteeResult {
     };
 ```
 
-- [ ] **Step 3: Verify compilation**
+- [x] **Step 3: Verify compilation**
 
 Run: `cargo check --manifest-path src-tauri/Cargo.toml`
 Expected: compiles without errors
 
-- [ ] **Step 4: Run clippy**
+- [x] **Step 4: Run clippy**
 
 Run: `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings`
 Expected: no warnings
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src-tauri/src/invest/committee/orchestrator.rs
