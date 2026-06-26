@@ -1,6 +1,6 @@
 # resume 误判修复 + Claude 订阅 usage 显示 — 实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status: ✅ DONE** — 后端 + 前端全部完成，已合并到 master。
 
 **Goal:** 修复 resume 时把 `0x40010004`（外部 TerminateProcess）误判为 `failed` 的 bug；并在聊天页 top-bar 仅对官方 Claude 订阅会话显示 5h/周额度用量。
 
@@ -45,7 +45,7 @@
 **Interfaces:**
 - Produces: `is_windows_termination_code`、`classify_eof_state`（签名见上）
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `session_actor.rs` 末尾的测试模块（若无则新建 `#[cfg(test)] mod eof_classify_tests { use super::*; ... }`）加入：
 
@@ -90,12 +90,12 @@ mod eof_classify_tests {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cargo check --manifest-path src-tauri/Cargo.toml`
 Expected: 编译失败 —「cannot find function `classify_eof_state`/`is_windows_termination_code`」。
 
-- [ ] **Step 3: 实现两个纯函数**
+- [x] **Step 3: 实现两个纯函数**
 
 在 `session_actor.rs` 的 `impl SessionActor` **之外**（模块级自由函数，紧邻 `map_state_to_run_status` 附近）加入：
 
@@ -130,12 +130,12 @@ fn classify_eof_state(
 }
 ```
 
-- [ ] **Step 4: 运行测试**
+- [x] **Step 4: 运行测试**
 
 Run: `cargo check --manifest-path src-tauri/Cargo.toml`（编译通过即视为本步通过；§11 运行期问题下不强求 `cargo test` 跑通，但若环境允许可 `cargo test --manifest-path src-tauri/Cargo.toml eof_classify_tests`）
 Expected: 编译通过；clippy 无警告。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src-tauri/src/agent/session_actor.rs
@@ -152,7 +152,7 @@ git commit -m "feat(agent): add classify_eof_state + Windows termination code he
 **Interfaces:**
 - Consumes: `classify_eof_state`（A1）
 
-- [ ] **Step 1: 给 actor 结构体加 `stopping` 字段**
+- [x] **Step 1: 给 actor 结构体加 `stopping` 字段**
 
 在 `SessionActor`（或对应结构体）字段定义处，紧邻 `state: String` 之类的运行态字段，加入：
 
@@ -168,7 +168,7 @@ git commit -m "feat(agent): add classify_eof_state + Windows termination code he
             stopping: false,
 ```
 
-- [ ] **Step 2: `handle_stop` 开头置标志**
+- [x] **Step 2: `handle_stop` 开头置标志**
 
 把 `handle_stop`（约 1287 行）改为在最开头置 `stopping`：
 
@@ -190,7 +190,7 @@ git commit -m "feat(agent): add classify_eof_state + Windows termination code he
     }
 ```
 
-- [ ] **Step 3: `handle_eof` 改用 `classify_eof_state` + 诊断日志**
+- [x] **Step 3: `handle_eof` 改用 `classify_eof_state` + 诊断日志**
 
 把 `handle_eof`（约 2201-2215 行）的 `if !self.protocol.got_result_event { ... }` 分支替换为：
 
@@ -229,12 +229,12 @@ git commit -m "feat(agent): add classify_eof_state + Windows termination code he
         }
 ```
 
-- [ ] **Step 4: 校验编译与 lint**
+- [x] **Step 4: 校验编译与 lint**
 
 Run: `cargo check --manifest-path src-tauri/Cargo.toml && cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings`
 Expected: 通过，无警告。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src-tauri/src/agent/session_actor.rs
@@ -266,7 +266,7 @@ git commit -m "fix(agent): treat external TerminateProcess (0x40010004) on resum
 
 **目的**：固化 parser 前先拿到真实 JSON 形状，消除 spec 里「实现期核对」。**不写入仓库、不提交任何 token。**
 
-- [ ] **Step 1: 用本机 OAuth token 抓一次响应**
+- [x] **Step 1: 用本机 OAuth token 抓一次响应**
 
 Run（PowerShell；token 只在内存，不落盘）：
 ```powershell
@@ -276,11 +276,11 @@ curl.exe -s -H "Authorization: Bearer $tok" https://api.anthropic.com/api/oauth/
 ```
 Expected: 返回 JSON，含 `five_hour` / `seven_day` 等键。
 
-- [ ] **Step 2: 记录字段形状**
+- [x] **Step 2: 记录字段形状**
 
 把响应的**键结构**（不含任何敏感值）记到本任务笔记：确认 `five_hour`/`seven_day` 下的利用率字段名（是 `utilization` 还是 `used`/`limit`）、`resets_at` 时间格式、`rate_limit_tier` 是否在顶层、是否需要额外 header。若实际字段名与下文 struct 不符，则在 B2 据实调整字段名。
 
-- [ ] **Step 3: 无需提交**（spike，不产生仓库改动）
+- [x] **Step 3: 无需提交**（spike，不产生仓库改动）
 
 ---
 
@@ -295,7 +295,7 @@ Expected: 返回 JSON，含 `five_hour` / `seven_day` 等键。
 - Consumes: B1 确认的真实字段名；`crate::storage::teams::claude_home_dir() -> PathBuf`
 - Produces: `#[tauri::command] pub async fn get_claude_subscription_usage() -> Result<ClaudeSubscriptionUsage, String>`
 
-- [ ] **Step 1: 写失败测试（凭据解析纯函数）**
+- [x] **Step 1: 写失败测试（凭据解析纯函数）**
 
 新建 `src-tauri/src/commands/claude_usage.rs`，先放纯函数 + 测试（HTTP 不便单测，只测本地解析）：
 
@@ -368,13 +368,13 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 先把模块挂上：在 `src-tauri/src/commands/mod.rs` 加 `pub mod claude_usage;`。
 Run: `cargo check --manifest-path src-tauri/Cargo.toml`
 Expected: 编译通过但测试未跑（或 `cargo test ... claude_usage` 在可运行时通过）。本步主要确认模块挂载与解析函数可编译。
 
-- [ ] **Step 3: 实现命令本体（读凭据 → 调 endpoint → 组装）**
+- [x] **Step 3: 实现命令本体（读凭据 → 调 endpoint → 组装）**
 
 在 `claude_usage.rs` 追加：
 
@@ -464,7 +464,7 @@ fn empty_with_error(fetched_at: String, error: String) -> ClaudeSubscriptionUsag
 ```
 > 若 B1 实测响应里 `rate_limit_tier`/字段名不同，按实测改 `json_window` 与顶层取值；逻辑骨架不变。
 
-- [ ] **Step 4: 注册命令**
+- [x] **Step 4: 注册命令**
 
 在 `src-tauri/src/lib.rs` 的 `tauri::generate_handler![ ... ]`（约 302 行 `commands::balance::refresh_balance_status` 旁）加入一行：
 
@@ -472,12 +472,12 @@ fn empty_with_error(fetched_at: String, error: String) -> ClaudeSubscriptionUsag
             commands::claude_usage::get_claude_subscription_usage,
 ```
 
-- [ ] **Step 5: 校验编译与 lint**
+- [x] **Step 5: 校验编译与 lint**
 
 Run: `cargo check --manifest-path src-tauri/Cargo.toml && cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings`
 Expected: 通过。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add src-tauri/src/commands/claude_usage.rs src-tauri/src/commands/mod.rs src-tauri/src/lib.rs
@@ -495,7 +495,7 @@ git commit -m "feat(usage): backend command to fetch Claude subscription usage v
 **Interfaces:**
 - Produces: `ClaudeSubscriptionUsage` 类型；`getClaudeSubscriptionUsage()`
 
-- [ ] **Step 1: 加类型**
+- [x] **Step 1: 加类型**
 
 在 `src/lib/types.ts` 末尾追加（字段与后端 serde 对齐，serde 默认 snake_case）：
 
@@ -516,7 +516,7 @@ export interface ClaudeSubscriptionUsage {
 }
 ```
 
-- [ ] **Step 2: 加 api 封装**
+- [x] **Step 2: 加 api 封装**
 
 在 `src/lib/api.ts` 现有 balance/usage 封装附近追加：
 
@@ -530,12 +530,12 @@ export async function getClaudeSubscriptionUsage(): Promise<ClaudeSubscriptionUs
 ```
 > 若 `ClaudeSubscriptionUsage` 已在文件顶部统一 import，则只补函数体，勿重复 import。
 
-- [ ] **Step 3: 校验类型**
+- [x] **Step 3: 校验类型**
 
 Run: `npm run check`
 Expected: 无类型错误。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add src/lib/types.ts src/lib/api.ts
@@ -554,7 +554,7 @@ git commit -m "feat(usage): frontend type + api wrapper for claude subscription 
 - Consumes: `getClaudeSubscriptionUsage`（B3）
 - Produces: `ClaudeUsageStore`（`data`、`loading`、`refresh()`）
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新建 `src/lib/stores/claude-usage-store.test.ts`：
 
@@ -602,12 +602,12 @@ describe("ClaudeUsageStore", () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npm test -- src/lib/stores/claude-usage-store.test.ts`
 Expected: FAIL —「Cannot find module './claude-usage-store.svelte'」。
 
-- [ ] **Step 3: 实现 store**
+- [x] **Step 3: 实现 store**
 
 新建 `src/lib/stores/claude-usage-store.svelte.ts`：
 
@@ -637,12 +637,12 @@ export class ClaudeUsageStore {
 export const claudeUsageStore = new ClaudeUsageStore();
 ```
 
-- [ ] **Step 4: 运行测试**
+- [x] **Step 4: 运行测试**
 
 Run: `npm test -- src/lib/stores/claude-usage-store.test.ts`
 Expected: PASS（2 passed）。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src/lib/stores/claude-usage-store.svelte.ts src/lib/stores/claude-usage-store.test.ts
@@ -661,7 +661,7 @@ git commit -m "feat(usage): claude usage store with stale-on-error"
 - Consumes: `claudeUsageStore`（B4）、`t`（`$lib/i18n/index.svelte`）
 - Produces: `<ClaudeUsageBadge />`（无 props，自取单例 store）
 
-- [ ] **Step 1: 加 i18n 文案**
+- [x] **Step 1: 加 i18n 文案**
 
 在 `messages/en.json` 加：
 ```json
@@ -684,7 +684,7 @@ git commit -m "feat(usage): claude usage store with stale-on-error"
   "claudeUsage_stale": "可能已过期",
 ```
 
-- [ ] **Step 2: 实现徽标组件**
+- [x] **Step 2: 实现徽标组件**
 
 新建 `src/lib/components/ClaudeUsageBadge.svelte`（紧凑徽标 + hover/click popover）：
 
@@ -743,12 +743,12 @@ git commit -m "feat(usage): claude usage store with stale-on-error"
 ```
 > 样式跟随项目现有 Tailwind 约定；如项目用不同色板，套用邻近组件的类名即可。
 
-- [ ] **Step 3: 校验 i18n + 类型**
+- [x] **Step 3: 校验 i18n + 类型**
 
 Run: `npm run i18n:check && npm run check`
 Expected: i18n 无缺失键；类型通过。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add src/lib/components/ClaudeUsageBadge.svelte messages/en.json messages/zh-CN.json
@@ -765,7 +765,7 @@ git commit -m "feat(usage): ClaudeUsageBadge top-bar component + i18n"
 **Interfaces:**
 - Consumes: `ClaudeUsageBadge`（B5）、`claudeUsageStore`（B4）、`store.agent`/`store.platformId`/`store.connectionProfileId`/`store.phase`
 
-- [ ] **Step 1: import 组件与 store**
+- [x] **Step 1: import 组件与 store**
 
 在 `+page.svelte` 顶部 script 的 import 区加：
 
@@ -774,7 +774,7 @@ git commit -m "feat(usage): ClaudeUsageBadge top-bar component + i18n"
   import { claudeUsageStore } from "$lib/stores/claude-usage-store.svelte";
 ```
 
-- [ ] **Step 2: 官方 Claude 订阅门控 + 渲染徽标**
+- [x] **Step 2: 官方 Claude 订阅门控 + 渲染徽标**
 
 在 script 内加派生判定（官方订阅 = claude 执行体 + 无 platform + 无 custom 连接档）：
 
@@ -796,7 +796,7 @@ git commit -m "feat(usage): ClaudeUsageBadge top-bar component + i18n"
 ```
 > 具体放进 top-bar 的哪个 flex 容器，对齐 `SessionStatusBar` 内现有右侧操作区的排版；若 `SessionStatusBar` 自身是独立组件，则把上面这段放进 `SessionStatusBar.svelte` 的右侧操作区，并把 `isOfficialClaudeSub` 作为 prop 传入。
 
-- [ ] **Step 3: 进入 claude 会话拉一次 + 回合结束刷新**
+- [x] **Step 3: 进入 claude 会话拉一次 + 回合结束刷新**
 
 在 script 内加一个 `$effect`（参考现有 phase 监听写法）：
 
@@ -820,12 +820,12 @@ git commit -m "feat(usage): ClaudeUsageBadge top-bar component + i18n"
   });
 ```
 
-- [ ] **Step 4: 校验类型 + 构建**
+- [x] **Step 4: 校验类型 + 构建**
 
 Run: `npm run check && npm run build`
 Expected: 通过。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src/routes/chat/+page.svelte
@@ -836,19 +836,19 @@ git commit -m "feat(usage): gate ClaudeUsageBadge to official Claude sub + refre
 
 ### Task B7: 全量验证
 
-- [ ] **Step 1: 全量验证**
+- [x] **Step 1: 全量验证**
 
 Run: `npm run verify`
 Expected: lint + fmt + i18n + tests + build + Rust checks 全通过（§11：Rust 单测运行期问题以 `cargo check`/`clippy` 通过为准）。
 
-- [ ] **Step 2: 手动验收**
+- [x] **Step 2: 手动验收**
 
 - 官方 Claude 订阅会话：top-bar 出现徽标，显示 5h/周百分比；点开有进度条 + reset + 套餐/tier。
 - 切到 deepseek/glm/custom/codex 会话：徽标**不显示**。
 - 发一条消息、回合结束后：数字刷新；空闲时不再打接口。
 - token 过期（可临时改坏 `.credentials.json` 测试后还原）：徽标隐藏或保留旧值不报错、不打断聊天。
 
-- [ ] **Step 3: 更新 changelog**
+- [x] **Step 3: 更新 changelog**
 
 在 `docs/changelog.md` 加一条（版本号按 release 流程定）：
 ```
@@ -856,7 +856,7 @@ Expected: lint + fmt + i18n + tests + build + Rust checks 全通过（§11：Rus
 - feat(usage): 聊天页 top-bar 显示官方 Claude 订阅 5h/周额度
 ```
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add docs/changelog.md
