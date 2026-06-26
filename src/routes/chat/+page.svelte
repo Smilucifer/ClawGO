@@ -967,12 +967,14 @@
     store.timeline.length === 0 && !store.streamingText && !store.run && store.phase !== "loading",
   );
   let activeProviderId = $derived(providerIdForRun(store.agent, store.platformId));
-  // Gate: only official Claude subscription (claude executor, Anthropic platform, CLI auth, no custom connection)
+  // Gate: only official Claude subscription (claude executor, CLI auth, no platform/custom connection).
+  // platformId is null for official subscription; API-mode anthropic sets platformId="anthropic"
+  // (session-store startSession only assigns platformId when auth_mode==="api").
   const isOfficialClaudeSub = $derived(
     store.agent === "claude" &&
-      store.platformId === "anthropic" &&
-      !store.isApiMode &&
-      !store.connectionProfileId,
+      !store.platformId &&
+      !store.connectionProfileId &&
+      !store.isApiMode,
   );
   let activeProvider = $derived.by(() => {
     if (store.platformId?.startsWith("custom-")) {
