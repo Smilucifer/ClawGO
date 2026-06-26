@@ -2,6 +2,7 @@ pub mod agents;
 pub mod avatar;
 pub mod artifacts;
 pub mod balance;
+pub mod claude_usage;
 pub mod characters;
 pub mod chat;
 pub mod cli_config;
