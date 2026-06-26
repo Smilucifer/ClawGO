@@ -55,6 +55,11 @@ fn credentials_path() -> PathBuf {
 
 fn json_window(v: &serde_json::Value, key: &str) -> Option<UsageWindow> {
     let w = v.get(key)?;
+    // Value::get returns Some(&Value::Null) for present-but-null keys; B1 showed
+    // seven_day_opus can be null, which must map to None (frontend hides the window).
+    if w.is_null() {
+        return None;
+    }
     // B1 correction: utilization is 0-100 (percent); divide by 100 so frontend receives 0..1.
     Some(UsageWindow {
         utilization: w.get("utilization").and_then(|x| x.as_f64()).unwrap_or(0.0) / 100.0,
@@ -92,10 +97,13 @@ pub async fn get_claude_subscription_usage() -> Result<ClaudeSubscriptionUsage, 
         Err(e) => return Ok(empty_with_error(fetched_at, e)),
     };
 
-    let client = reqwest::Client::builder()
+    let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
-        .map_err(|e| e.to_string())?;
+    {
+        Ok(c) => c,
+        Err(e) => return Ok(empty_with_error(fetched_at, format!("client build: {e}"))),
+    };
     let resp = client
         .get("https://api.anthropic.com/api/oauth/usage")
         .bearer_auth(&token)
@@ -145,6 +153,7 @@ mod tests {
 
     #[test]
     fn parse_credentials_errors_when_missing() {
+        assert!(parse_credentials("not json").is_err());
         assert!(parse_credentials(r#"{}"#).is_err());
         assert!(parse_credentials(r#"{"claudeAiOauth":{"accessToken":""}}"#).is_err());
     }
