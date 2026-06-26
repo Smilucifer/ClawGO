@@ -184,6 +184,9 @@ struct SessionActor {
     protocol: ProtocolState,
     /// Current RunState string — identity dedup: skip emit if unchanged.
     state: String,
+    /// 是否正在"有意终止"（handle_stop 进行中）。用于让竞争的 handle_eof
+    /// 把这次终止判为 stopped 而非 failed。
+    stopping: bool,
     stdin: Option<ChildStdin>,
     child: Option<Child>,
     cancel: CancellationToken,
@@ -300,6 +303,7 @@ pub fn spawn_actor(
         tag: tag.clone(),
         protocol: ProtocolState::new(is_resume),
         state: String::new(),
+        stopping: false,
         stdin: Some(stdin),
         child: Some(child),
         cancel,
@@ -1286,6 +1290,7 @@ impl SessionActor {
 
     async fn handle_stop(&mut self) -> Result<(), String> {
         log::debug!("[actor] handle_stop: run_id={}", self.run_id);
+        self.stopping = true; // 标记有意终止，供竞争的 handle_eof 判定
 
         // Drop stdin to signal EOF to CLI
         self.stdin.take();
@@ -2199,14 +2204,28 @@ impl SessionActor {
         self.quarantine_until_result = false;
 
         if !self.protocol.got_result_event {
-            let state_str = if self.cancel.is_cancelled() {
-                "stopped"
-            } else {
-                match exit_code {
-                    Some(0) => "completed",
-                    _ => "failed",
-                }
-            };
+            let cancelled = self.cancel.is_cancelled();
+            let state_str = classify_eof_state(
+                self.protocol.got_result_event,
+                cancelled,
+                self.stopping,
+                exit_code,
+            );
+
+            // 诊断日志：外部终止来源尚未坐实，复现时据此定位
+            if state_str != "completed" {
+                log::warn!(
+                    "[actor] EOF terminal classify: run_id={} state={} exit_code={:?} \
+                     stopping={} cancelled={} is_resume={}",
+                    self.run_id,
+                    state_str,
+                    exit_code,
+                    self.stopping,
+                    cancelled,
+                    self.protocol.is_resume()
+                );
+            }
+
             let error_msg = if state_str == "failed" {
                 Some(format!("Process exited with code {:?}", exit_code))
             } else {
@@ -2454,7 +2473,6 @@ fn map_state_to_run_status(state: &str) -> Option<RunStatus> {
 
 /// 已知的 Windows「强制终止」退出码（非崩溃、非业务失败）。
 /// 注意：我们自身的 kill 用退出码 1/127，不会落进这里。
-#[allow(dead_code)] // will be wired in Task A2
 fn is_windows_termination_code(code: i32) -> bool {
     matches!(
         code as u32,
@@ -2466,7 +2484,6 @@ fn is_windows_termination_code(code: i32) -> bool {
 
 /// 在未收到 result 事件的 EOF 路径下，决定终态字符串。
 /// 返回 "completed" / "stopped" / "failed"。
-#[allow(dead_code)] // will be wired in Task A2
 fn classify_eof_state(
     _got_result: bool,
     cancelled: bool,
