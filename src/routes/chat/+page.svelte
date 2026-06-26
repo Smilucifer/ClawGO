@@ -102,6 +102,8 @@
   import PreviewResizer from "$lib/components/preview/PreviewResizer.svelte";
   import type { ElementSelection } from "$lib/types";
   import { isElementSelection } from "$lib/types";
+  import ClaudeUsageBadge from "$lib/components/ClaudeUsageBadge.svelte";
+  import { claudeUsageStore } from "$lib/stores/claude-usage-store.svelte";
 
   // ── Helpers ──
 
@@ -965,6 +967,15 @@
     store.timeline.length === 0 && !store.streamingText && !store.run && store.phase !== "loading",
   );
   let activeProviderId = $derived(providerIdForRun(store.agent, store.platformId));
+  // Gate: only official Claude subscription. Keyed on auth mode, NOT platformId —
+  // platformId is unreliable across paths (onMount coerces it to "anthropic" in CLI mode,
+  // but loadRun on resume sets it from run.platform_id ?? null). The robust invariant:
+  // claude executor + CLI auth (!isApiMode) + no custom connection profile. Claude-compatible
+  // providers (deepseek/glm/qwen/kimi) and anthropic API run in API mode (isApiMode=true) → excluded;
+  // codex is excluded by agent !== "claude".
+  const isOfficialClaudeSub = $derived(
+    store.agent === "claude" && !store.isApiMode && !store.connectionProfileId,
+  );
   let activeProvider = $derived.by(() => {
     if (store.platformId?.startsWith("custom-")) {
       const cred = findCredential(settings?.platform_credentials ?? [], store.platformId);
@@ -1164,6 +1175,25 @@
     if ((phase === "failed" || phase === "stopped") && !forkOverlay.error) {
       forkOverlay = { ...forkOverlay, error: store.error || t("chat_forkFailedFallback") };
     }
+  });
+
+  // Claude usage badge: refresh baseline on entering a usable session, then after each turn end.
+  let _usagePrevPhase: string = $state("empty");
+  $effect(() => {
+    const phase = store.phase;
+    if (!isOfficialClaudeSub) {
+      _usagePrevPhase = phase;
+      return;
+    }
+    // Turn-end refresh: running → idle. Checked first so the first turn's end doesn't
+    // also trigger the baseline branch (mutually exclusive — avoids double-firing).
+    if (_usagePrevPhase === "running" && phase === "idle") {
+      void claudeUsageStore.refresh();
+    } else if (claudeUsageStore.data == null && (phase === "idle" || phase === "ready")) {
+      // Baseline fetch: first time we reach idle/ready with no data loaded yet
+      void claudeUsageStore.refresh();
+    }
+    _usagePrevPhase = phase;
   });
 
   // Task notification: auto-show and dismiss after 5s
@@ -4070,6 +4100,12 @@
       }}
       onExportHtml={store.run ? () => void handleExportHtml() : undefined}
     />
+
+    {#if isOfficialClaudeSub}
+      <div class="relative">
+        <ClaudeUsageBadge />
+      </div>
+    {/if}
 
     <!-- MCP panel (floating below status bar) -->
     {#if mcpPanelOpen && store.mcpServers.length > 0}

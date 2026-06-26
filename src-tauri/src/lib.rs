@@ -300,6 +300,7 @@ pub fn run() {
             commands::events::get_run_events,
             commands::artifacts::get_run_artifacts,
             commands::balance::refresh_balance_status,
+            commands::claude_usage::get_claude_subscription_usage,
             commands::settings::get_user_settings,
             commands::settings::update_user_settings,
             commands::settings::validate_platform_credentials,
