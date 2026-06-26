@@ -2452,6 +2452,37 @@ fn map_state_to_run_status(state: &str) -> Option<RunStatus> {
     }
 }
 
+/// 已知的 Windows「强制终止」退出码（非崩溃、非业务失败）。
+/// 注意：我们自身的 kill 用退出码 1/127，不会落进这里。
+#[allow(dead_code)] // will be wired in Task A2
+fn is_windows_termination_code(code: i32) -> bool {
+    matches!(
+        code as u32,
+        0x4001_0004 // DBG_TERMINATE_PROCESS（外部 TerminateProcess）
+            | 0x4001_0005 // DBG_CONTROL_C
+            | 0xC000_013A // STATUS_CONTROL_C_EXIT（Ctrl-C）
+    )
+}
+
+/// 在未收到 result 事件的 EOF 路径下，决定终态字符串。
+/// 返回 "completed" / "stopped" / "failed"。
+#[allow(dead_code)] // will be wired in Task A2
+fn classify_eof_state(
+    _got_result: bool,
+    cancelled: bool,
+    stopping: bool,
+    exit_code: Option<i32>,
+) -> &'static str {
+    if cancelled || stopping {
+        return "stopped";
+    }
+    match exit_code {
+        Some(0) => "completed",
+        Some(code) if is_windows_termination_code(code) => "stopped",
+        _ => "failed",
+    }
+}
+
 /// Sanitize a filename: keep only safe characters, truncate to 120 chars.
 fn att_safe_filename(name: &str) -> String {
     let cleaned: String = name
@@ -2714,5 +2745,44 @@ mod tests {
         assert_eq!(payload["type"], "user");
         assert_eq!(payload["uuid"], uuid);
         assert!(uuid::Uuid::parse_str(&uuid).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod eof_classify_tests {
+    use super::{classify_eof_state, is_windows_termination_code};
+
+    #[test]
+    fn windows_termination_codes_recognized() {
+        assert!(is_windows_termination_code(0x4001_0004u32 as i32)); // DBG_TERMINATE_PROCESS
+        assert!(is_windows_termination_code(0xC000_013Au32 as i32)); // STATUS_CONTROL_C_EXIT
+        assert!(!is_windows_termination_code(0));
+        assert!(!is_windows_termination_code(1));
+    }
+
+    #[test]
+    fn got_result_event_takes_no_override() {
+        // got_result==true 时本函数不应被调用；这里只测 false 分支语义
+        assert_eq!(classify_eof_state(false, false, false, Some(0)), "completed");
+    }
+
+    #[test]
+    fn explicit_stop_is_stopped() {
+        assert_eq!(classify_eof_state(false, true, false, Some(1)), "stopped"); // cancel
+        assert_eq!(classify_eof_state(false, false, true, Some(1)), "stopped"); // stopping flag
+    }
+
+    #[test]
+    fn external_termination_code_is_stopped_not_failed() {
+        assert_eq!(
+            classify_eof_state(false, false, false, Some(0x4001_0004u32 as i32)),
+            "stopped"
+        );
+    }
+
+    #[test]
+    fn genuine_nonzero_exit_is_failed() {
+        assert_eq!(classify_eof_state(false, false, false, Some(1)), "failed");
+        assert_eq!(classify_eof_state(false, false, false, None), "failed");
     }
 }
