@@ -35,24 +35,27 @@ Process exited with code Some(1073807364)
 - 正常停止走 cmd 分支：`handle_stop` 后立即 `break`，不会触发 `handle_eof`。但 `tokio::select!` 的 cmd 分支与 stdout-EOF 分支是竞争关系；当 EOF 因外部终止先就绪时，`handle_eof` 先执行，此时无从判断这次终止是不是“我们自己/teardown 引起的”，于是误判 `failed`。
 - resume 必然先 `stop_actor`（`commands/session.rs:826`）拆掉旧进程，所以该误判在 resume 时高发。
 
-**确定性边界（诚实交代）：**
-- **可确定修复的**：上述「无法区分有意终止 vs 真崩溃」的**误分类**。
-- **未 100% 坐实的**：`0x40010004` 这个具体退出码的**外部终止来源**。它不是 tokio 自身 `kill()` 的码（tokio `kill()` 用退出码 1），说明有别的机制（疑似 Windows Job Object / 进程组清理）在 teardown 前后终止了该进程。精确来源需一次复现日志坐实，故本设计加入诊断日志以备捕获。
+**确定性边界（诚实交代，已实证修正）：**
+- **已实证**：我们自身所有 kill 路径用的退出码是 `1`（tokio process / portable-pty）或 `127`，**绝不会是 `0x40010004`**。
+- **由此推论**：用户看到的 `Some(1073807364)` 进程**不是我们 stop 掉的那个**——它是被**外部**机制 `TerminateProcess` 强杀的（DBG_TERMINATE_PROCESS）。可疑来源（Windows Job Object / 进程组 / 调试对象清理 / 安全软件）**尚未坐实**，需一次复现日志确认。
+- **因此本修复的性质**：真正消除用户症状的是「识别终止码」这一层，它本质是**压制症状 + 保持会话可用**；那个外部凶手仍未知，所以**诊断日志是定位真凶的必要手段，不是可选项**。这是一次「先止血、同时钓鱼」的有意取舍。
 
-### 修复方案（两层防御 + 诊断）
+### 修复方案（主修复 + 次要防御 + 诊断）
 
-**1. 有意终止标志（消除误判，确定有效）**
+**1. 识别 Windows 强制终止码（主修复，针对用户报的症状）**
+- 新增 helper `is_windows_termination_code(code: i32) -> bool`，覆盖已知强制终止码：`0x40010004`（DBG_TERMINATE_PROCESS）、`0xC000013A`（STATUS_CONTROL_C_EXIT）等。
+- `handle_eof()` 中，若退出码命中该 helper，则归为 `stopped/terminated`（携带更友好的说明），而非 `failed` + 裸码。
+- 这一步直接消除 resume 时的 `Process exited with code Some(1073807364)` 与误标 failed。
+
+**2. 有意终止标志（次要防御，防 kill-race 边角）**
 - 在 actor 结构体增加字段 `stopping: bool`（默认 `false`）。
 - `handle_stop()` 在**最开头**（`child.kill()` 之前）置 `self.stopping = true`。
-- `handle_eof()` 把“有意终止”判定从 `self.cancel.is_cancelled()` 扩展为 `self.cancel.is_cancelled() || self.stopping`：满足则状态归为 `stopped`，不再产生 `failed` 与裸退出码报错。
+- `handle_eof()` 把“有意终止”判定从 `self.cancel.is_cancelled()` 扩展为 `self.cancel.is_cancelled() || self.stopping`：满足则归为 `stopped`。
+- 注意：我们自己的 kill 退出码为 1，正常停止又走 `break` 不触发 `handle_eof`，故此标志只覆盖「停止与 EOF 竞争」的边角，**不是用户当前症状的主因**——保留它是为正确性，不夸大其作用。
 
-**2. 防御性识别 Windows 强制终止码**
-- 新增 helper `is_windows_termination_code(code: i32) -> bool`，覆盖已知强制终止码：`0x40010004`（DBG_TERMINATE_PROCESS）、`0xC000013A`（STATUS_CONTROL_C_EXIT）等。
-- `handle_eof` 中，即使未命中 `stopping` 标志，若退出码命中该 helper，则归为 `stopped/terminated`（携带一条更友好的说明），而非 `failed` + 裸码。
-
-**3. 诊断日志**
+**3. 诊断日志（定位外部凶手的必要手段）**
 - `handle_eof` 命中“非 result 事件终止”路径时打印一条结构化日志：`run_id`、`stopping`、`cancel.is_cancelled()`、`is_resume`、`exit_code`、最近一行 stderr。
-- 目的：若底层确有“进程被异常终止”的更深问题，下次复现可直接定位来源。
+- 目的：外部终止来源尚未坐实，下次复现据此定位（是否每次都 `0x40010004`、是否伴随特定 stderr、是否仅 resume 路径）。
 
 ### 受影响文件
 - `src-tauri/src/agent/session_actor.rs`（字段、`handle_stop`、`handle_eof`、helper）。
@@ -69,16 +72,18 @@ Process exited with code Some(1073807364)
 ### 目标
 在聊天页 top-bar 显示官方 Claude 订阅额度：5h 窗口利用率 + 周窗口利用率 + 各自 reset 时间 + 订阅类型（`subscriptionType`）+ `rateLimitTier`。**仅当当前会话 provider 为官方 Claude 订阅时显示**。
 
-### 数据来源（后端）
-- 读 `~/.claude/.credentials.json` 的 `claudeAiOauth.accessToken`，以 `Authorization: Bearer <token>` 调 Anthropic 的 OAuth usage 接口（即 `claude /usage` 背后调用的 endpoint）。
-- **该 endpoint 路径与响应结构为非公开**：实现期先抓取一次真实响应核对后再固化 parser；本设计中 parser 字段标注「实现期核对」。
+### 数据来源（后端，endpoint 已实证）
+- **endpoint 已确认存在**（在 claude 二进制中实证）：`GET https://api.anthropic.com/api/oauth/usage`，以 `Authorization: Bearer <accessToken>` 调用。可独立查询，不依赖请求响应头。
+- 读 `~/.claude/.credentials.json` 的 `claudeAiOauth.accessToken` 作为 Bearer；`subscriptionType` 直接来自同文件。
+- **响应结构（实证字段，细节实现期核对）**：含 `five_hour`、`seven_day` 两个主窗口对象，各带 `utilization` 与 `resets_at`；`seven_day` 另有 `seven_day_opus` / `seven_day_sonnet` / `seven_day_overage_included` 等子项（Max 套餐对 Opus 有单独周限）；顶层有 `rate_limit_tier`。是否需要额外 header（如 `anthropic-beta`/oauth scope）实现期抓真实响应核对。
 - **token 过期处理**：`accessToken` 带 `expiresAt`。过期或返回 401 时**不自行用 `refreshToken` 刷新**（避免破坏 CLI 登录态），而是优雅降级：返回带 `error`/`expired` 标记的结果。CLI 正常使用时会自行刷新 token，下个回合重新读文件即可恢复。
 - 新增后端命令（建议 `src-tauri/src/commands/claude_usage.rs` 或并入 `balance.rs`），返回结构示意：
 
 ```
 ClaudeSubscriptionUsage {
-  five_hour:   { utilization: f64, resets_at: Option<String> },   // 字段名实现期核对
-  weekly:      { utilization: f64, resets_at: Option<String> },
+  five_hour:  { utilization: f64, resets_at: Option<String> },
+  seven_day:  { utilization: f64, resets_at: Option<String> },
+  seven_day_opus:   Option<{ utilization: f64, resets_at: Option<String> }>,  // Max 套餐才有
   subscription_type: Option<String>,
   rate_limit_tier:   Option<String>,
   fetched_at: String,
@@ -111,6 +116,11 @@ ClaudeSubscriptionUsage {
 - **usage**：后端 parser 对真实响应样本做单测；前端 store 状态机（加载/成功/失败/过期）单测；手动验证仅 claude 会话显示、回合结束刷新、过期降级。
 - 全量 `npm run verify`（lint + fmt + i18n + tests + build + Rust checks）。
 
+## 实现期需坐实的两个未知
+- usage：调用所需的额外 header / scope（抓一次真实响应即可定）。
+- usage：「当前会话 provider 为官方 Claude」的精确判定字段（session-store 中 provider/platform 标识）。
+- usage：回合结束（turn-idle）可挂钩的事件源（session-store 的相位机/事件）。
+
 ## 风险
-- OAuth usage endpoint 非公开，可能随 CLI 升级变更——parser 做容错，失败时降级不影响聊天。
-- bug 修复属防御性分类，理论上不会掩盖真实失败（error result 路径与普通非 0 码不变）；诊断日志确保深层问题可追踪。
+- OAuth usage endpoint 已实证存在但**未公开文档**，可能随 CLI 升级变更——parser 做容错，失败时降级不影响聊天。
+- bug 主修复（识别终止码 → stopped）是**症状压制**：会把所有 `0x40010004` 外部终止当作正常停止，可能掩盖真实的「进程被异常杀」问题。缓解：诊断日志保留全部上下文，且 error result 路径与普通非 0 退出码的 `failed` 分类不变，真实业务失败不受影响。
