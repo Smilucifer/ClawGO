@@ -967,14 +967,14 @@
     store.timeline.length === 0 && !store.streamingText && !store.run && store.phase !== "loading",
   );
   let activeProviderId = $derived(providerIdForRun(store.agent, store.platformId));
-  // Gate: only official Claude subscription (claude executor, CLI auth, no platform/custom connection).
-  // platformId is null for official subscription; API-mode anthropic sets platformId="anthropic"
-  // (session-store startSession only assigns platformId when auth_mode==="api").
+  // Gate: only official Claude subscription. Keyed on auth mode, NOT platformId —
+  // platformId is unreliable across paths (onMount coerces it to "anthropic" in CLI mode,
+  // but loadRun on resume sets it from run.platform_id ?? null). The robust invariant:
+  // claude executor + CLI auth (!isApiMode) + no custom connection profile. Claude-compatible
+  // providers (deepseek/glm/qwen/kimi) and anthropic API run in API mode (isApiMode=true) → excluded;
+  // codex is excluded by agent !== "claude".
   const isOfficialClaudeSub = $derived(
-    store.agent === "claude" &&
-      !store.platformId &&
-      !store.connectionProfileId &&
-      !store.isApiMode,
+    store.agent === "claude" && !store.isApiMode && !store.connectionProfileId,
   );
   let activeProvider = $derived.by(() => {
     if (store.platformId?.startsWith("custom-")) {
@@ -1185,12 +1185,12 @@
       _usagePrevPhase = phase;
       return;
     }
-    // Baseline fetch: first time we reach idle/ready with no data loaded yet
-    if (claudeUsageStore.data == null && (phase === "idle" || phase === "ready")) {
-      void claudeUsageStore.refresh();
-    }
-    // Turn-end refresh: running → idle
+    // Turn-end refresh: running → idle. Checked first so the first turn's end doesn't
+    // also trigger the baseline branch (mutually exclusive — avoids double-firing).
     if (_usagePrevPhase === "running" && phase === "idle") {
+      void claudeUsageStore.refresh();
+    } else if (claudeUsageStore.data == null && (phase === "idle" || phase === "ready")) {
+      // Baseline fetch: first time we reach idle/ready with no data loaded yet
       void claudeUsageStore.refresh();
     }
     _usagePrevPhase = phase;
