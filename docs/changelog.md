@@ -8,6 +8,8 @@
 
 ### 新功能
 
+- **委员会宏观指标快照：** 委员会裁决结果新增 10 个核心宏观指标的精确数值展示（上证指数、20日波动率、北向资金、VIX、金价、上涨/下跌家数、两市成交额、涨停/跌停家数），从 `macro_cache` 直接注入 `CommitteeResult.macroSnapshot`，不经过 LLM 解析。前端在 Live 和 Replay 两个标签页的裁决区块中以 5 列网格展示。后端 `MacroSnapshot` 结构体与 `build_macro_snapshot()` 放在 `storage/invest/macro_cache.rs`（与数据源共处），通过 serde `camelCase` 自动转为前端 TypeScript 接口。
+
 - **聊天页 Claude 订阅额度徽标：** 聊天页 top-bar 新增紧凑徽标，显示官方 Claude 订阅的 5 小时窗口与周窗口利用率（颜色随利用率分档），点开 popover 展示进度条、reset 时间、套餐类型与 rate limit tier。数据来自 `~/.claude/.credentials.json` 的 OAuth token 调用 `GET /api/oauth/usage`；token 仅在内存使用，过期/失败优雅降级（不自刷 refreshToken、不打断聊天，保留旧值并标记 stale）。**仅当当前会话为官方 Claude 订阅时显示**（claude 执行体 + 非 API 模式 + 非 custom 连接档；deepseek/glm/qwen/kimi、anthropic API 直连、custom-*、codex 均不显示）；进入会话打底拉取一次、之后每个回合结束刷新，空闲不轮询。
 
 ## v5.6.1 (2026-06-25)
