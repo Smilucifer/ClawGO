@@ -8,6 +8,7 @@
     type RoundOutputSummary,
   } from '$lib/stores/invest-committee-store.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
+  import MacroSnapshotCard from './MacroSnapshotCard.svelte';
   import { STEP_DEFS, getStepState, getRoundForStep } from './pipeline-config';
   import { getVerdictBadgeStyle, normalizeConfidencePct } from '$lib/utils/invest-verdict';
   import { onMount } from 'svelte';
@@ -481,6 +482,7 @@
                     <span class="meta-item">✅ {t('invest_committee_converged')}</span>
                   {/if}
                 </div>
+                <MacroSnapshotCard snapshot={result.macroSnapshot} />
                 {#if result.sanityCheck.notes.length > 0}
                   <ul class="verdict-notes">
                     {#each result.sanityCheck.notes as note}

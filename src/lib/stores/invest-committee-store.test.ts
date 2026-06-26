@@ -35,6 +35,7 @@ function makeResult(symbol: string): CommitteeResult {
     converged: true,
     totalLatencyMs: 0,
     totalTokens: 0,
+    macroSnapshot: null,
   };
 }
 

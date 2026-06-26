@@ -8,6 +8,7 @@
   import { STEP_DEFS, getStepState, getRoundForStep } from './pipeline-config';
   import { getVerdictBadgeStyle, buildVerdictMap } from '$lib/utils/invest-verdict';
   import MarkdownContent from '$lib/components/MarkdownContent.svelte';
+  import MacroSnapshotCard from './MacroSnapshotCard.svelte';
 
   // ── Mode ───────────────────────────────────────────────────────────────────
   type ReplayMode = 'replay' | 'simulate';
@@ -440,6 +441,8 @@
                 <MarkdownContent text={result.reasoning} class="replay-reasoning" />
               </div>
             {/if}
+
+            <MacroSnapshotCard snapshot={result.macroSnapshot} />
 
             {#if result.sanityCheck.notes.length > 0}
               <div class="mt-2 space-y-0.5 text-[11px] text-[var(--text-tertiary)]">

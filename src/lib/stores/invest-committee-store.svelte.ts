@@ -79,6 +79,19 @@ export interface SanityCheckResult {
   notes: string[];
 }
 
+export interface MacroSnapshot {
+  shCompositeClose: number | null;
+  shCompositeVol20: number | null;
+  northboundNet: number | null;
+  vix: number | null;
+  gold: number | null;
+  advanceCount: number | null;
+  declineCount: number | null;
+  twoMarketVolume: number | null;
+  limitUpCount: number | null;
+  limitDownCount: number | null;
+}
+
 export interface CommitteeResult {
   symbol: string;
   finalVerdict: string;
@@ -96,6 +109,7 @@ export interface CommitteeResult {
   converged: boolean;
   totalLatencyMs: number;
   totalTokens: number;
+  macroSnapshot: MacroSnapshot | null;
 }
 
 export type RolePrompts = Record<string, string>;
