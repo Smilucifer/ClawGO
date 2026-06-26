@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## Unreleased
+
+### 修复
+
+- **resume 会话不再误判 failed：** 继续/恢复历史会话时偶发 `Process exited with code Some(1073807364)`（`0x40010004` = `DBG_TERMINATE_PROCESS`，子进程被外部 `TerminateProcess` 强杀，非崩溃），会话被错标 `failed`。actor 的 EOF 终态分类抽成纯函数 `classify_eof_state` + `is_windows_termination_code`：命中 Windows 强制终止码（`0x40010004` 等）归为 `stopped` 而非 `failed`；新增 `stopping` 标志覆盖「停止与 EOF 竞争」边角；并加结构化诊断日志（`run_id`/`stopping`/`cancelled`/`is_resume`/`exit_code`）以便定位外部终止来源。真实 error result 与普通非 0 退出码仍正常标 `failed`。
+
+### 新功能
+
+- **聊天页 Claude 订阅额度徽标：** 聊天页 top-bar 新增紧凑徽标，显示官方 Claude 订阅的 5 小时窗口与周窗口利用率（颜色随利用率分档），点开 popover 展示进度条、reset 时间、套餐类型与 rate limit tier。数据来自 `~/.claude/.credentials.json` 的 OAuth token 调用 `GET /api/oauth/usage`；token 仅在内存使用，过期/失败优雅降级（不自刷 refreshToken、不打断聊天，保留旧值并标记 stale）。**仅当当前会话为官方 Claude 订阅时显示**（claude 执行体 + 非 API 模式 + 非 custom 连接档；deepseek/glm/qwen/kimi、anthropic API 直连、custom-*、codex 均不显示）；进入会话打底拉取一次、之后每个回合结束刷新，空闲不轮询。
+
 ## v5.6.1 (2026-06-25)
 
 ### 修复
