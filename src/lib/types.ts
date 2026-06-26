@@ -1949,3 +1949,20 @@ export interface DailyReportRecord {
   summary: string | null;
   filePath: string | null;
 }
+
+// ── Claude Subscription Usage ──
+
+export interface UsageWindow {
+  utilization: number;
+  resets_at: string | null;
+}
+
+export interface ClaudeSubscriptionUsage {
+  five_hour: UsageWindow | null;
+  seven_day: UsageWindow | null;
+  seven_day_opus: UsageWindow | null;
+  subscription_type: string | null;
+  rate_limit_tier: string | null;
+  fetched_at: string;
+  error: string | null;
+}

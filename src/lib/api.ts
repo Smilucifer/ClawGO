@@ -54,6 +54,7 @@ import type {
   MemoryConfig,
   MemoryExtractionConfig,
   MemoryNode,
+  ClaudeSubscriptionUsage,
 } from "./types";
 
 // Runs
@@ -1663,4 +1664,11 @@ export async function approveMemory(characterId: string, memoryId: string): Prom
 export async function rejectMemory(characterId: string, memoryId: string): Promise<MemoryNode> {
   dbg("api", "rejectMemory", { characterId, memoryId });
   return invoke<MemoryNode>("reject_memory", { characterId, memoryId });
+}
+
+// ── Claude Subscription Usage ──
+
+export async function getClaudeSubscriptionUsage(): Promise<ClaudeSubscriptionUsage> {
+  dbg("api", "getClaudeSubscriptionUsage");
+  return invoke<ClaudeSubscriptionUsage>("get_claude_subscription_usage");
 }
