@@ -24,7 +24,7 @@ pub async fn cli_complete(
 ) -> Result<String, String> {
     let exec = crate::invest::committee::cli_executor::CliCommitteeExecutor::global()
         .ok_or("claude CLI not available")?;
-    exec.run_role(system_prompt, user_message, 0, None).await
+    exec.run_role(system_prompt, user_message, 0, None, None).await
 }
 
 /// Result of an analysis run.

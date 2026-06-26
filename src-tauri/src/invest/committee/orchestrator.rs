@@ -1117,6 +1117,7 @@ async fn run_macro_phase(
     _emitter: &Option<EventEmitter>,
     asset_context: &AssetContext,
     verdicts: &str,
+    cancel: Option<&CancellationToken>,
 ) -> Result<(RoundOutput, u32), String> {
     let role = CommitteeRole::Macro;
     let cli = match super::cli_executor::CliCommitteeExecutor::global() {
@@ -1155,7 +1156,7 @@ async fn run_macro_phase(
     // (run_committee), not here. Emitting them here would cause duplicates.
     let cli_start = std::time::Instant::now();
 
-    let raw_text = cli.run_role(&system_prompt, &user_msg, config.timeout_secs, config.settings_path.as_deref()).await?;
+    let raw_text = cli.run_role(&system_prompt, &user_msg, config.timeout_secs, config.settings_path.as_deref(), cancel).await?;
     let mut parsed = parse_role_output(role, &raw_text, false);
     parsed.fallback_reason = detect_fallback_reason(role, 1, &parsed);
 
@@ -1197,6 +1198,7 @@ async fn run_role_phase(
     asset_context: &AssetContext,
     shared: &SharedPromptContext,
     mode: Mode,
+    cancel: Option<&CancellationToken>,
 ) -> Result<RoundOutput, String> {
     // mode 由 Task 11 起用于 Risk R1 prompt 透传(成本来源切换 + Gate2 语义)。
     let cli = match super::cli_executor::CliCommitteeExecutor::global() {
@@ -1271,7 +1273,7 @@ async fn run_role_phase(
     log::info!("run_role_phase: using CLI executor for {:?} R{} {}", role, round, symbol);
     let start = std::time::Instant::now();
 
-    match cli.run_role(&system_prompt, user_msg, config.timeout_secs, config.settings_path.as_deref()).await {
+    match cli.run_role(&system_prompt, user_msg, config.timeout_secs, config.settings_path.as_deref(), cancel).await {
         Ok(raw_text) => {
             let mut parsed = parse_role_output(role, &raw_text, false);
             parsed.fallback_reason = detect_fallback_reason(role, round, &parsed);
@@ -1286,7 +1288,7 @@ async fn run_role_phase(
                     "{}\n\n你的上一次输出缺少关键字段或格式不正确。请严格按照 KEY: value 格式重新输出，确保包含所有必需字段。",
                     system_prompt
                 );
-                if let Ok(retry_text) = cli.run_role(&retry_prompt, user_msg, config.timeout_secs, config.settings_path.as_deref()).await {
+                if let Ok(retry_text) = cli.run_role(&retry_prompt, user_msg, config.timeout_secs, config.settings_path.as_deref(), cancel).await {
                     let retry_parsed = parse_role_output(role, &retry_text, false);
                     let retry_fallback = detect_fallback_reason(role, round, &retry_parsed);
                     if retry_fallback.is_none() {
@@ -1355,6 +1357,9 @@ async fn run_debate_rounds(
         let roles = vec![CommitteeRole::Quant, CommitteeRole::Risk];
 
         for role in roles {
+            // H2: check cancellation at the per-role granularity, not just per-round,
+            // so an abort between Quant and Risk (or before a retry) takes effect now.
+            check_cancellation(cancel, emitter, symbol)?;
             let si = step_index_for_role(role, round);
             if let Some(ref emit) = emitter {
                 emit(CommitteeEvent::RoleStart {
@@ -1377,6 +1382,7 @@ async fn run_debate_rounds(
                 asset_context,
                 shared,
                 mode,
+                cancel,
             )
             .await?;
             *total_tokens += output.tokens_used;
@@ -1495,7 +1501,7 @@ pub(crate) async fn run_committee(
 
         check_cancellation(cancel.as_ref(), &emitter, symbol)?;
         let (macro_output, macro_tokens) =
-            run_macro_phase(symbol, config, &portfolio_summary, &emitter, &asset_context, &shared.verdicts).await?;
+            run_macro_phase(symbol, config, &portfolio_summary, &emitter, &asset_context, &shared.verdicts, cancel.as_ref()).await?;
         total_tokens += macro_tokens;
 
         if let Some(ref emit) = emitter {
@@ -1615,6 +1621,7 @@ pub(crate) async fn run_committee(
             &asset_context,
             &shared,
             mode,
+            cancel.as_ref(),
         )
         .await?;
         total_tokens += cio_output.tokens_used;

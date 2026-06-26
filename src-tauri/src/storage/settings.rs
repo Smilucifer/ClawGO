@@ -25,15 +25,36 @@ pub fn load() -> AllSettings {
                     return settings;
                 }
                 Err(e) => {
-                    log::warn!("[storage/settings] failed to parse settings: {}", e);
+                    // DO NOT overwrite the on-disk file with defaults here: it contains all
+                    // credentials (api_key / anthropic_api_key / tushare_token / MCP / hooks).
+                    // A transient parse failure (partial/corrupt write, disk hiccup) would
+                    // otherwise silently wipe every secret. Return in-memory defaults and keep
+                    // the file intact so the user can recover it.
+                    log::error!(
+                        "[storage/settings] failed to parse {} ({}); using in-memory defaults \
+                         WITHOUT overwriting the file to avoid wiping credentials. \
+                         Inspect/repair the file manually.",
+                        path.display(),
+                        e
+                    );
+                    return AllSettings::default();
                 }
             },
             Err(e) => {
-                log::warn!("[storage/settings] failed to read settings: {}", e);
+                // Likewise, a read error (e.g. locked file) must not trigger a default save
+                // that clobbers the existing settings.
+                log::error!(
+                    "[storage/settings] failed to read {} ({}); using in-memory defaults \
+                     WITHOUT overwriting the file.",
+                    path.display(),
+                    e
+                );
+                return AllSettings::default();
             }
         }
     }
-    log::debug!("[storage/settings] using default settings");
+    // File genuinely does not exist (first launch) — safe to write defaults.
+    log::debug!("[storage/settings] no settings file, writing defaults");
     let defaults = AllSettings::default();
     let _ = save(&defaults);
     defaults
@@ -436,21 +457,51 @@ pub fn save(settings: &AllSettings) -> Result<(), String> {
     let path = settings_path();
     super::ensure_dir(path.parent().unwrap()).map_err(|e| e.to_string())?;
     let json = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
-    fs::write(&path, &json).map_err(|e| e.to_string())?;
 
-    // Restrict file permissions — settings may contain API keys
+    // Atomic write: write to a unique tmp file then rename over the target, so a
+    // crash/power-loss mid-write can never leave a half-written settings.json that
+    // would fail to parse on next launch (see load() — a parse failure must not wipe
+    // credentials). Mirrors storage/runs.rs::save_meta.
+    let tmp = path.with_file_name(format!(
+        "settings.json.{}.{}.tmp",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    fs::write(&tmp, &json).map_err(|e| format!("write tmp: {e}"))?;
+
+    // Restrict file permissions before rename — settings may contain API keys.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Err(e) = fs::set_permissions(&path, fs::Permissions::from_mode(0o600)) {
+        if let Err(e) = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600)) {
             log::warn!(
-                "[storage/settings] failed to set permissions on settings.json: {}",
+                "[storage/settings] failed to set permissions on settings.json tmp: {}",
                 e
             );
         }
     }
 
-    Ok(())
+    for attempt in 0..3u8 {
+        match fs::rename(&tmp, &path) {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && attempt < 2 => {
+                log::debug!(
+                    "[storage/settings] save rename PermissionDenied, retry {}",
+                    attempt + 1
+                );
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(e) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(format!("rename: {e}"));
+            }
+        }
+    }
+    let _ = fs::remove_file(&tmp);
+    Err("rename: PermissionDenied after 3 retries".to_string())
 }
 
 pub fn get_user_settings() -> UserSettings {
@@ -577,6 +628,10 @@ pub fn update_user_settings(patch: serde_json::Value) -> Result<UserSettings, St
     apply_optional_string_empty_as_none(&mut all.user.invest_default_fee_profile_id, &patch, "invest_default_fee_profile_id");
     apply_embedding_config(&mut all.user.embedding_config, &patch)?;
     apply_bool_field(&mut all.user.memory_dream_enabled, &patch, "memory_dream_enabled");
+    apply_bool_field(&mut all.user.memory_extraction_enabled, &patch, "memory_extraction_enabled");
+    if let Some(v) = patch.get("memory_extraction_min_confidence").and_then(|v| v.as_u64()) {
+        all.user.memory_extraction_min_confidence = v.min(100) as u8;
+    }
     all.user.updated_at = crate::models::now_iso();
     save(&all)?;
     Ok(all.user)

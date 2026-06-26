@@ -228,9 +228,26 @@ pub fn detach_group_chat_run(room_id: &str, run_id: &str) -> Result<GroupChat, S
     }
     room.updated_at = now_iso();
     save_group_chat(&room)?;
-    // Clean up orphaned participant meta file.
-    let meta_path = group_chat_dir(room_id).join("participants").join(format!("{}.meta.json", run_id));
-    let _ = std::fs::remove_file(meta_path);
+    // Clean up orphaned participant meta file. Validate run_id before joining it into
+    // a path (it comes from the frontend) so a crafted id can't delete an arbitrary
+    // *.meta.json outside this group chat. Don't silently swallow the delete error —
+    // a missing file is fine (NotFound), but anything else is worth a log line.
+    if super::validate_run_id(run_id).is_ok() {
+        let meta_path = group_chat_dir(room_id)
+            .join("participants")
+            .join(format!("{}.meta.json", run_id));
+        if let Err(e) = std::fs::remove_file(&meta_path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                log::warn!(
+                    "[storage/group_chats] detach: failed to remove participant meta {}: {}",
+                    meta_path.display(),
+                    e
+                );
+            }
+        }
+    } else {
+        log::warn!("[storage/group_chats] detach: skipped meta cleanup for invalid run_id");
+    }
     Ok(room)
 }
 

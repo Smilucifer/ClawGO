@@ -9,6 +9,7 @@
   import type { MessageKey } from "$lib/i18n/types";
   import { fmtNumber } from "$lib/i18n/format";
   import { truncate, formatTokenCount, formatDuration, formatCostDisplay } from "$lib/utils/format";
+  import ClaudeUsageBadge from "$lib/components/ClaudeUsageBadge.svelte";
 
   let {
     run = null,

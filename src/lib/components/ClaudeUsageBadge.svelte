@@ -1,7 +1,8 @@
 <script lang="ts">
   import { claudeUsageStore } from "$lib/stores/claude-usage-store.svelte";
   import { t, currentLocale } from "$lib/i18n/index.svelte";
-  import { onMount } from "svelte";
+  import { onMount, type Snippet } from "svelte";
+  import type { UsageWindow } from "$lib/types";
 
   let open = $state(false);
   let wrapperEl: HTMLDivElement | undefined = $state();
@@ -73,7 +74,7 @@
 </script>
 
 <!-- Mini ring: fill inherits the segment's tone via currentColor. -->
-{#snippet ring(u)}
+{#snippet ring(u: number | null)}
   <svg class="block -rotate-90" width="14" height="14" viewBox="0 0 36 36" aria-hidden="true">
     <circle cx="18" cy="18" r="15" fill="none" stroke-width="5" style="stroke: hsl(var(--foreground) / 0.12)"></circle>
     <circle
@@ -98,7 +99,7 @@
   <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 9h18M8 3v4M16 3v4" /></svg>
 {/snippet}
 
-{#snippet windowRow(icon, label, w)}
+{#snippet windowRow(icon: Snippet, label: string, w: UsageWindow | null)}
   {#if w}
     {@const reset = formatReset(w.resets_at)}
     <div class="py-2">

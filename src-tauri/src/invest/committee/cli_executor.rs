@@ -67,15 +67,26 @@ impl CliCommitteeExecutor {
     /// - `user_message`: the analysis request
     /// - `timeout_secs`: per-call timeout (0 = use default)
     /// - `settings_path`: optional path to a `--settings` JSON for third-party provider routing
+    /// - `cancel`: optional cancellation token; when triggered the spawned CLI child is
+    ///   killed immediately and the semaphore permit is released, instead of waiting out
+    ///   the full timeout (the old `timeout().wait_with_output()` held the `Child` inside
+    ///   a future the canceller couldn't drop, so `kill_on_drop` only fired after timeout
+    ///   and a cancelled role kept starving the concurrency pool).
     ///
-    /// Returns the CLI's stdout text, or `Err` on timeout/failure.
+    /// Returns the CLI's stdout text, or `Err` on timeout/failure/cancellation.
     pub async fn run_role(
         &self,
         system_prompt: &str,
         user_message: &str,
         timeout_secs: u64,
         settings_path: Option<&std::path::Path>,
+        cancel: Option<&tokio_util::sync::CancellationToken>,
     ) -> Result<String, String> {
+        // Bail out before acquiring a permit if we're already cancelled.
+        if cancel.is_some_and(|c| c.is_cancelled()) {
+            return Err("claude CLI cancelled".to_string());
+        }
+
         let _permit = self
             .semaphore
             .acquire()
@@ -121,10 +132,28 @@ impl CliCommitteeExecutor {
             }
         })?;
 
-        let output = tokio::time::timeout(timeout, child.wait_with_output())
-            .await
-            .map_err(|_| format!("claude CLI timeout after {}s", timeout.as_secs()))?
-            .map_err(|e| format!("claude CLI wait: {e}"))?;
+        // Race the CLI against both the timeout and the cancellation token. On either
+        // interruption we return early; `child` (owned by the `wait` future) is dropped
+        // as the function unwinds, and `kill_on_drop(true)` reaps the OS process now —
+        // not 180s later — so the semaphore permit is freed for the rest of the pool.
+        let wait = child.wait_with_output();
+        tokio::pin!(wait);
+        let output = tokio::select! {
+            biased;
+            _ = async {
+                match cancel {
+                    Some(c) => c.cancelled().await,
+                    // No token → never resolves, so select! falls through to the timeout.
+                    None => std::future::pending::<()>().await,
+                }
+            } => {
+                return Err("claude CLI cancelled".to_string());
+            }
+            res = tokio::time::timeout(timeout, &mut wait) => {
+                res.map_err(|_| format!("claude CLI timeout after {}s", timeout.as_secs()))?
+                    .map_err(|e| format!("claude CLI wait: {e}"))?
+            }
+        };
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);

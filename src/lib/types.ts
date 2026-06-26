@@ -258,6 +258,10 @@ export interface UserSettings {
   /** 默认手续费方案 id（买入弹窗预选）。 */
   invest_default_fee_profile_id?: string;
   memory_dream_enabled?: boolean;
+  /** Independent master switch for automatic memory extraction. */
+  memory_extraction_enabled?: boolean;
+  /** Minimum confidence (0-100) an extracted memory must reach to be persisted. */
+  memory_extraction_min_confidence?: number;
   embedding_config?: EmbeddingConfig;
   updated_at: string;
 }

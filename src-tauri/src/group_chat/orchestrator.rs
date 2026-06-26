@@ -511,6 +511,8 @@ pub async fn run_group_chat_turn_with_runtime(
 
             // ── Auto-extraction: fire-and-forget memory extraction ──
             // Single extraction per group chat turn (user-centric, not per-character).
+            // Skip private (/dm) turns entirely: DM content must never be sent to an
+            // external LLM or written into the shared global user memory (privacy leak).
             let gc_id = room_id.to_string();
             let turn_texts: Vec<String> = turn
                 .responses
@@ -524,17 +526,19 @@ pub async fn run_group_chat_turn_with_runtime(
                     Some(format!("[{}]: {}", speaker, text))
                 })
                 .collect();
-            tokio::spawn(async move {
-                if !can_extract(&gc_id) {
-                    return;
-                }
-                let memories = auto_extract_memories(&turn_texts).await;
-                log_to_file(&format!("[memory-extraction] RETURN gc={} count={}", gc_id, memories.len()));
-                if !memories.is_empty() {
-                    record_extraction(&gc_id);
-                    log_to_file(&format!("[memory-extraction] PERSIST_DONE gc={} count={}", gc_id, memories.len()));
-                }
-            });
+            if !is_private {
+                tokio::spawn(async move {
+                    if !can_extract(&gc_id) {
+                        return;
+                    }
+                    let memories = auto_extract_memories(&turn_texts).await;
+                    log_to_file(&format!("[memory-extraction] RETURN gc={} count={}", gc_id, memories.len()));
+                    if !memories.is_empty() {
+                        record_extraction(&gc_id);
+                        log_to_file(&format!("[memory-extraction] PERSIST_DONE gc={} count={}", gc_id, memories.len()));
+                    }
+                });
+            }
 
             Ok(turn)
         }
@@ -953,7 +957,11 @@ pub fn parse_group_chat_command(input: &str) -> GroupChatCommand {
 
     // /dm @Name msg → Private turn (written to private.json)
     if let Some(rest) = strip_command_word(trimmed, "/dm") {
-        if let Some(at_rest) = rest.strip_prefix('@') {
+        // strip_command_word does not consume the separator whitespace, so `rest`
+        // still has a leading space (e.g. " @Alice msg"). Trim it before matching the
+        // '@' — otherwise strip_prefix('@') always fails and /dm silently degrades to
+        // a public Fanout broadcast (privacy leak).
+        if let Some(at_rest) = rest.trim_start().strip_prefix('@') {
             let mut parts = at_rest.splitn(2, char::is_whitespace);
             let target = parts.next().unwrap_or_default().to_string();
             let message = parts.next().unwrap_or_default().trim().to_string();

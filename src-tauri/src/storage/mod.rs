@@ -44,6 +44,33 @@ pub fn run_dir(run_id: &str) -> PathBuf {
     runs_dir().join(run_id)
 }
 
+/// Validate a run id before it is joined into a filesystem path.
+///
+/// Run ids are UUIDs (or imported CC session ids, also UUID-shaped). Anything that
+/// could escape the data directory — path separators, `..`, drive/UNC prefixes,
+/// NUL — must be rejected so a malicious or buggy frontend can't traverse the FS
+/// via `runs_dir().join(id)`. We allow only a conservative id-safe charset.
+pub fn validate_run_id(id: &str) -> Result<(), String> {
+    if id.is_empty() {
+        return Err("Invalid run id: empty".to_string());
+    }
+    if id.len() > 128 {
+        return Err("Invalid run id: too long".to_string());
+    }
+    if id == "." || id == ".." {
+        return Err(format!("Invalid run id: {id}"));
+    }
+    // Only ASCII alphanumerics plus '-' and '_'. This excludes '/', '\\', ':', '.',
+    // whitespace, NUL and every other path-significant character in one shot.
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(format!("Invalid run id: {id}"));
+    }
+    Ok(())
+}
+
 /// Resolve the user's home directory reliably.
 /// Primary: `getpwuid()` system call (works even when `$HOME` is unset,
 /// e.g. GUI apps launched from Finder/Dock on macOS 26+).

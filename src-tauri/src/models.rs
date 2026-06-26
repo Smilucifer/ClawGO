@@ -288,6 +288,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_extraction_min_confidence() -> u8 {
+    60
+}
+
 fn default_cc_agent() -> String {
     "claude".to_string()
 }
@@ -389,6 +393,15 @@ pub struct UserSettings {
     /// Enable background memory dream cycle (decay, merge, archive).
     #[serde(default = "default_true")]
     pub memory_dream_enabled: bool,
+    /// Enable automatic memory extraction from chat / group-chat turns.
+    /// Independent of `embedding_config.enabled` so the user can turn off extraction
+    /// without disabling embeddings. Defaults to true to preserve existing behavior.
+    #[serde(default = "default_true")]
+    pub memory_extraction_enabled: bool,
+    /// Minimum confidence (0-100) an extracted memory must reach to be persisted.
+    /// Filters out low-value, speculative extractions. Defaults to 60.
+    #[serde(default = "default_extraction_min_confidence")]
+    pub memory_extraction_min_confidence: u8,
     pub updated_at: String,
 }
 
@@ -600,6 +613,8 @@ impl Default for UserSettings {
             invest_fee_profiles: Vec::new(),
             invest_default_fee_profile_id: None,
             memory_dream_enabled: true,
+            memory_extraction_enabled: true,
+            memory_extraction_min_confidence: 60,
             updated_at: now_iso(),
         }
     }

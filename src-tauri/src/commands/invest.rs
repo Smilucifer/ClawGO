@@ -63,6 +63,12 @@ pub fn record_trade(
 ) -> Result<(), String> {
     let trade_id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    // Normalize trade_date to YYYY-MM-DD: if the caller didn't supply one (e.g. sells
+    // and system actions), derive it from created_at so the column is never NULL and
+    // the UI never has to fall back to a locale-formatted (slash) date.
+    let trade_date = trade_date
+        .filter(|d| !d.trim().is_empty())
+        .or_else(|| now.get(..10).map(|s| s.to_string()));
     let t = Trade {
         id: trade_id,
         symbol,
@@ -584,18 +590,33 @@ pub async fn run_committee_stream(
         })
     };
 
-    // Register a fresh cancellation token per symbol.
+    // Register a fresh cancellation token per symbol. If a symbol is already in flight
+    // (registry has a live token for it), skip it rather than overwriting — overwriting
+    // would orphan the in-flight run's token (making it un-cancellable) and the later
+    // remove() would also clobber the wrong batch's entry.
     let mut tokens: HashMap<String, CancellationToken> = HashMap::new();
+    let mut skipped: Vec<String> = Vec::new();
     {
         let mut reg = cancel_registry
             .lock()
             .map_err(|e| format!("cancel registry poisoned: {e}"))?;
         for s in &symbols {
+            if reg.contains_key(s) {
+                log::warn!("[invest] committee run for {} already in flight, skipping duplicate", s);
+                skipped.push(s.clone());
+                continue;
+            }
             let tok = CancellationToken::new();
             reg.insert(s.clone(), tok.clone());
             tokens.insert(s.clone(), tok);
         }
     }
+
+    // Only run the symbols we actually registered (drop duplicates already in flight).
+    let symbols: Vec<String> = symbols
+        .into_iter()
+        .filter(|s| !skipped.contains(s))
+        .collect();
 
     let mode_map = parse_mode_map(modes);
     let results = crate::invest::committee::orchestrator::run_committee_batch_stream(
@@ -608,7 +629,7 @@ pub async fn run_committee_stream(
     )
     .await;
 
-    // Clean up registry entries for this batch.
+    // Clean up registry entries for this batch — only those we registered.
     {
         let mut reg = cancel_registry
             .lock()

@@ -47,6 +47,13 @@ static DAILY_EXTRACTION_COUNT: Lazy<Mutex<HashMap<String, (String, u32)>>> =
 const DAILY_CAP_PER_SOURCE: u32 = 50;
 
 pub fn can_extract(source_key: &str) -> bool {
+    // Independent master switch: the user can disable auto-extraction entirely
+    // without touching embedding_config. Checked first so a disabled toggle
+    // short-circuits before any debounce/cap bookkeeping.
+    if !settings::load().user.memory_extraction_enabled {
+        return false;
+    }
+
     // Debounce: 5 min per source
     {
         let map = LAST_EXTRACTION.lock().unwrap_or_else(|e| e.into_inner());
@@ -157,18 +164,32 @@ pub async fn auto_extract_memories(turns: &[String]) -> Vec<MemoryNode> {
 
     let truncated_conv: String = conversation.chars().take(4000).collect();
     let prompt = format!(
-        r#"分析以下群聊对话，提取关于用户的信息（身份、偏好、技能、规则）。
-每条对话前标注了 [说话人]，请提取用户本人表达的内容或从对话中可以推断出的关于用户的事实。
+        r#"分析以下群聊对话，提取关于用户本人的、稳定且可长期复用的事实。
+
+每条对话前标注了 [说话人]。只提取用户本人表达或可靠推断出的关于用户的信息。
+
+只提取以下这类有长期价值的信息：
+- 身份/背景（职业、角色、技术栈、所在领域）
+- 稳定的偏好与习惯（长期适用，而非一次性的临时选择）
+- 技能与专长
+- 对协作方式的明确要求或反馈（希望今后如何被对待）
+
+务必忽略：
+- 一次性的闲聊、寒暄、情绪表达
+- 仅在当前任务中成立的临时信息（具体某个 bug、某次操作的细节）
+- 泛泛而谈、无法落地复用的空洞描述
+- 关于他人（非用户本人）或助手的信息
 
 返回一个 JSON 数组。每个对象包含：
-- "content"：提取的信息（简洁，一句话）
+- "content"：提取的信息（简洁、具体、一句话，至少包含一个可识别的事实）
 - "type"：以下之一 "fact"、"preference"、"skill"、"feedback"
 - "tags"：相关关键词数组
-- "confidence"：0-100 的整数，表示这条信息的置信度
+- "confidence"：0-100 的整数。只有你确信这是关于用户的稳定事实时才给高分；不确定或推断成分大时给低分
 
 要求：
 - 内容必须使用与对话相同的语言
-- 只返回 JSON 数组，不要其他文本。如果没有值得提取的内容，返回 []
+- 宁缺毋滥：没有真正值得长期记住的内容时，返回 []
+- 只返回 JSON 数组，不要其他文本
 
 对话：
 {text}"#,
@@ -280,11 +301,34 @@ pub async fn auto_extract_memories(turns: &[String]) -> Vec<MemoryNode> {
     let now = crate::models::now_iso();
     let mut results = Vec::new();
 
+    // Quality gate: minimum confidence the user configured (default 60). Anything
+    // below this is treated as too speculative to be worth keeping.
+    let min_confidence = settings::load().user.memory_extraction_min_confidence as f64;
+    // Minimum content length (in chars) — filters out empty/one-word fragments that
+    // carry no reusable signal.
+    const MIN_CONTENT_CHARS: usize = 6;
+
     for item in &items {
         let content_text = match item["content"].as_str() {
             Some(c) if !c.trim().is_empty() => c.trim().to_string(),
             _ => continue,
         };
+
+        // Quality filter: drop too-short / vacuous content.
+        let char_count = content_text.chars().count();
+        if char_count < MIN_CONTENT_CHARS {
+            log_to_file(&format!(
+                "[memory-extraction] SKIP too short ({} chars) preview={}",
+                char_count, content_text
+            ));
+            continue;
+        }
+        // Drop content that is only punctuation/whitespace (no alphanumeric or CJK).
+        let has_substance = content_text.chars().any(char::is_alphanumeric);
+        if !has_substance {
+            log_to_file("[memory-extraction] SKIP no substance (punctuation only)");
+            continue;
+        }
 
         let raw_type = item["type"].as_str().unwrap_or("fact");
         let memory_type = match raw_type {
@@ -296,6 +340,17 @@ pub async fn auto_extract_memories(turns: &[String]) -> Vec<MemoryNode> {
             .as_f64()
             .unwrap_or(70.0)
             .clamp(0.0, 100.0);
+
+        // Quality filter: drop low-confidence extractions below the configured threshold.
+        if confidence < min_confidence {
+            log_to_file(&format!(
+                "[memory-extraction] SKIP low confidence {:.0} < {:.0} preview={}",
+                confidence,
+                min_confidence,
+                content_text.chars().take(50).collect::<String>()
+            ));
+            continue;
+        }
 
         let tags: Vec<String> = item["tags"]
             .as_array()

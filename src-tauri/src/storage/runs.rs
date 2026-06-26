@@ -24,6 +24,7 @@ pub fn with_meta<F>(id: &str, f: F) -> Result<(), String>
 where
     F: FnOnce(&mut RunMeta) -> Result<(), String>,
 {
+    super::validate_run_id(id)?;
     let lock = meta_lock(id);
     let _guard = lock.lock().map_err(|e| format!("meta lock: {e}"))?;
     let mut meta = get_run(id).ok_or_else(|| format!("Run {} not found", id))?;
@@ -167,6 +168,7 @@ pub fn create_run_with_connection_profile(
 }
 
 pub fn save_meta(meta: &RunMeta) -> Result<(), String> {
+    super::validate_run_id(&meta.id)?;
     let dir = super::run_dir(&meta.id);
     super::ensure_dir(&dir).map_err(|e| e.to_string())?;
     let path = dir.join("meta.json");
@@ -208,6 +210,11 @@ pub fn save_meta(meta: &RunMeta) -> Result<(), String> {
 
 /// Read meta.json without deleted_at filtering (internal use).
 fn get_run_raw(id: &str) -> Option<RunMeta> {
+    // Reject path-traversal ids before joining into the runs directory.
+    if super::validate_run_id(id).is_err() {
+        log::warn!("[storage/runs] get_run_raw: rejected invalid run id");
+        return None;
+    }
     let path = super::run_dir(id).join("meta.json");
     if !path.exists() {
         return None;

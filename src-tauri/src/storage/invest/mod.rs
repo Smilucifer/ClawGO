@@ -321,6 +321,18 @@ fn init_db_inner(db_path: &Path) -> Result<Connection, String> {
     // missing columns get NULL defaults. This prevents data loss on schema mismatch.
     migrate_trades_table(&mut conn)?;
 
+    // Migration: backfill NULL/empty trade_date from created_at's local date.
+    // Historically sells and system actions stored trade_date=NULL, which made the UI
+    // fall back to a locale-formatted (slash) date. Normalize all rows to YYYY-MM-DD.
+    // Idempotent: only touches rows still missing a trade_date.
+    conn.execute_batch(
+        "UPDATE trades \
+         SET trade_date = date(created_at, 'localtime') \
+         WHERE (trade_date IS NULL OR trade_date = '') \
+           AND created_at IS NOT NULL AND created_at <> '';"
+    )
+    .map_err(|e| format!("Failed to backfill trades.trade_date: {}", e))?;
+
     // Migration: create verdict_reviews table (use local conn, DB not yet in static)
     verdict_reviews::create_table(&conn)?;
 

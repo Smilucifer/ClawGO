@@ -76,7 +76,10 @@
   }
 
   function tradeDate(tr: Trade): string {
-    return tr.tradeDate ?? new Date(tr.createdAt).toLocaleDateString();
+    // Fall back to created_at's date portion (YYYY-MM-DD), matching the backend's
+    // Trade::effective_date(). Avoid toLocaleDateString() — under zh-CN locale it
+    // renders slashes (2026/6/26), which is the source of the inconsistent display.
+    return tr.tradeDate ?? tr.createdAt?.slice(0, 10) ?? '';
   }
 </script>
 

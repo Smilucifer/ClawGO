@@ -37,6 +37,12 @@
   let memoryExtractionShowKey = $state(false);
   let memoryExtractionSaveDebounce: ReturnType<typeof setTimeout> | null = null;
   let memoryDreamEnabled = $state(true);
+  // Independent master switch for auto-extraction (separate from the embedding/LLM
+  // config's `enabled`). Lets the user turn extraction off without losing LLM settings.
+  let memoryExtractionMasterEnabled = $state(true);
+  let memoryExtractionMinConfidence = $state(60);
+  let extractionConfigSaving = $state(false);
+  let extractionConfigSavedAt = $state<number | null>(null);
   let settings = $state<UserSettings | null>(null);
 
   function loadExtractionConfigFromSettings(s: UserSettings) {
@@ -78,10 +84,45 @@
     memoryExtractionSaveDebounce = setTimeout(() => saveExtractionConfigToSettings(), 500);
   }
 
+  /** Explicit "save config" — persists the master toggle, confidence threshold, and
+   * the LLM extraction config together in one call, with visible saving/saved state. */
+  async function saveExtractionConfigExplicit() {
+    if (!settings) return;
+    extractionConfigSaving = true;
+    try {
+      const ep = memoryExtractionChatEndpoint.trim();
+      const mdl = memoryExtractionChatModel.trim();
+      const key = memoryExtractionChatApiKey.trim();
+      const ec: EmbeddingConfig | undefined = memoryExtractionEnabled
+        ? {
+            enabled: true,
+            endpoint: ep || "http://localhost:8080/v1",
+            model: mdl || "gpt-4o-mini",
+            api_key: key || undefined,
+            chat_endpoint: ep || undefined,
+            chat_model: mdl || undefined,
+            chat_api_key: key || undefined,
+          }
+        : undefined;
+      settings = await api.updateUserSettings({
+        memory_extraction_enabled: memoryExtractionMasterEnabled,
+        memory_extraction_min_confidence: memoryExtractionMinConfidence,
+        embedding_config: ec,
+      } as Partial<UserSettings>);
+      extractionConfigSavedAt = Date.now();
+    } catch (err) {
+      dbgWarn("memory-mgmt", "save extraction config failed", err);
+    } finally {
+      extractionConfigSaving = false;
+    }
+  }
+
   onMount(async () => {
     try {
       settings = await api.getUserSettings();
       memoryDreamEnabled = settings.memory_dream_enabled ?? true;
+      memoryExtractionMasterEnabled = settings.memory_extraction_enabled ?? true;
+      memoryExtractionMinConfidence = settings.memory_extraction_min_confidence ?? 60;
       loadExtractionConfigFromSettings(settings);
     } catch (e) {
       dbgWarn("memory-mgmt", "load settings failed", e);
@@ -390,6 +431,40 @@
           配置从群聊对话中自动提取用户记忆的 LLM。使用 SQLite FTS5 全文检索，无需 Embedding API。
         </p>
 
+        <!-- Master switch: independent of the LLM config below -->
+        <label class="flex items-center gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            bind:checked={memoryExtractionMasterEnabled}
+            class="h-4 w-4 rounded border-input"
+          />
+          <span class="text-sm">自动提取用户记忆（总开关）</span>
+        </label>
+        <p class="text-xs text-muted-foreground">
+          关闭后，聊天与群聊都不会再自动提取记忆。此开关独立于下方的提取 LLM 配置。
+        </p>
+
+        <!-- Quality threshold -->
+        <div class="space-y-1">
+          <label class="text-sm" for="extraction-min-confidence">
+            记忆置信度阈值：{memoryExtractionMinConfidence}
+          </label>
+          <input
+            id="extraction-min-confidence"
+            type="range"
+            min="0"
+            max="100"
+            step="5"
+            bind:value={memoryExtractionMinConfidence}
+            class="w-full accent-[var(--accent)]"
+          />
+          <p class="text-xs text-muted-foreground">
+            只有置信度不低于该阈值的提取结果才会入库。调高可减少无价值记忆（建议 60 以上）。
+          </p>
+        </div>
+
+        <hr class="border-border" />
+
         <!-- Enable/Disable -->
         <label class="flex items-center gap-3 cursor-pointer">
           <input
@@ -465,6 +540,22 @@
             />
             <span class="text-sm">启用记忆衰减与归档</span>
           </label>
+        </div>
+
+        <hr class="border-border" />
+
+        <!-- Explicit save -->
+        <div class="flex items-center gap-3">
+          <button
+            class="rounded-md bg-[var(--accent)] px-4 py-1.5 text-sm font-medium text-[var(--bg-base)] transition-colors hover:opacity-90 disabled:opacity-50"
+            disabled={extractionConfigSaving}
+            onclick={saveExtractionConfigExplicit}
+          >
+            {extractionConfigSaving ? "保存中…" : "保存配置"}
+          </button>
+          {#if extractionConfigSavedAt}
+            <span class="text-xs text-[var(--color-success)]">已保存</span>
+          {/if}
         </div>
       </div>
     {/if}
