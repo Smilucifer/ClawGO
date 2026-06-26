@@ -1951,6 +1951,8 @@ export interface DailyReportRecord {
 }
 
 // ── Claude Subscription Usage ──
+// 字段用 snake_case 是刻意的：直接对齐 Rust 后端 serde 默认线格式
+// (get_claude_subscription_usage)，勿改成 camelCase 否则反序列化会断。
 
 export interface UsageWindow {
   utilization: number;

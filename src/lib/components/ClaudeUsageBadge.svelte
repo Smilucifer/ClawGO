@@ -57,7 +57,7 @@
     <button
       class="flex items-center gap-1.5 px-2 py-0.5 rounded text-xs hover:bg-accent transition-colors"
       onclick={() => (open = !open)}
-      title="Claude usage"
+      title={t("claudeUsage_title")}
       aria-expanded={open}
       aria-haspopup="true"
     >

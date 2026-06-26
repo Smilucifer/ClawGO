@@ -2370,5 +2370,6 @@
   "claudeUsage_resetsAt": "{time} 重置",
   "claudeUsage_tier": "等级",
   "claudeUsage_plan": "套餐",
-  "claudeUsage_stale": "可能已过期"
+  "claudeUsage_stale": "可能已过期",
+  "claudeUsage_title": "Claude 用量"
 }

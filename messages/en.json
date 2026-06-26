@@ -2370,5 +2370,6 @@
   "claudeUsage_resetsAt": "resets {time}",
   "claudeUsage_tier": "Tier",
   "claudeUsage_plan": "Plan",
-  "claudeUsage_stale": "may be stale"
+  "claudeUsage_stale": "may be stale",
+  "claudeUsage_title": "Claude usage"
 }
