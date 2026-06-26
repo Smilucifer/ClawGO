@@ -368,6 +368,7 @@ mod tests {
                 final_confidence: 0.75,
                 notes: vec!["G2: 三重恶化触发".to_string()],
             },
+            macro_snapshot: None,
         }
     }
 
