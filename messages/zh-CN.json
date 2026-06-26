@@ -2362,5 +2362,13 @@
   "invest_fallback_missing_critical_fields": "{role} 输出缺少关键字段，可能需要重新分析",
   "invest_fallback_unknown": "{role} 分析异常: {reason}",
   "invest_retry": "重试",
-  "invest_transfer_out_exceeds_cash": "转出金额超过可用现金余额"
+  "invest_transfer_out_exceeds_cash": "转出金额超过可用现金余额",
+
+  "claudeUsage_5h": "5 小时",
+  "claudeUsage_weekly": "本周",
+  "claudeUsage_opus": "Opus 周额",
+  "claudeUsage_resetsAt": "{time} 重置",
+  "claudeUsage_tier": "等级",
+  "claudeUsage_plan": "套餐",
+  "claudeUsage_stale": "可能已过期"
 }

@@ -2362,5 +2362,13 @@
   "invest_fallback_missing_critical_fields": "{role} output missing critical fields, may need re-analysis",
   "invest_fallback_unknown": "{role} analysis error: {reason}",
   "invest_retry": "Retry",
-  "invest_transfer_out_exceeds_cash": "Transfer amount exceeds available cash balance"
+  "invest_transfer_out_exceeds_cash": "Transfer amount exceeds available cash balance",
+
+  "claudeUsage_5h": "5h",
+  "claudeUsage_weekly": "Weekly",
+  "claudeUsage_opus": "Opus weekly",
+  "claudeUsage_resetsAt": "resets {time}",
+  "claudeUsage_tier": "Tier",
+  "claudeUsage_plan": "Plan",
+  "claudeUsage_stale": "may be stale"
 }
