@@ -343,34 +343,51 @@ pub fn list_runs() -> Vec<TaskRun> {
             if !meta_path.exists() {
                 continue;
             }
-            if let Ok(content) = fs::read_to_string(&meta_path) {
-                if let Ok(meta) = serde_json::from_str::<RunMeta>(&content) {
-                    if meta.deleted_at.is_some() {
-                        continue;
-                    }
-                    // Compute summary from events
-                    let events_path = entry.path().join("events.jsonl");
-                    let (last_activity, msg_count, last_preview) = summarize_events(&events_path);
+            match fs::read_to_string(&meta_path) {
+                Ok(content) => match serde_json::from_str::<RunMeta>(&content) {
+                    Ok(meta) => {
+                        if meta.deleted_at.is_some() {
+                            continue;
+                        }
+                        // Compute summary from events
+                        let events_path = entry.path().join("events.jsonl");
+                        let (last_activity, msg_count, last_preview) =
+                            summarize_events(&events_path);
 
-                    // Skip runs with no events that aren't active (running/pending/idle)
-                    if msg_count == 0
-                        && !matches!(
-                            meta.status,
-                            RunStatus::Running | RunStatus::Pending | RunStatus::Idle
-                        )
-                    {
-                        // Still include if recent (within last hour)
-                        if let Ok(started) = chrono::DateTime::parse_from_rfc3339(&meta.started_at)
+                        // Skip runs with no events that aren't active (running/pending/idle)
+                        if msg_count == 0
+                            && !matches!(
+                                meta.status,
+                                RunStatus::Running | RunStatus::Pending | RunStatus::Idle
+                            )
                         {
-                            let age = chrono::Utc::now().signed_duration_since(started);
-                            if age.num_hours() > 1 {
-                                continue;
+                            // Still include if recent (within last hour)
+                            if let Ok(started) =
+                                chrono::DateTime::parse_from_rfc3339(&meta.started_at)
+                            {
+                                let age = chrono::Utc::now().signed_duration_since(started);
+                                if age.num_hours() > 1 {
+                                    continue;
+                                }
                             }
                         }
-                    }
 
-                    runs.push(meta.to_task_run(last_activity, Some(msg_count), last_preview));
-                }
+                        runs.push(meta.to_task_run(last_activity, Some(msg_count), last_preview));
+                    }
+                    // Don't silently drop a run whose meta failed to parse — a single
+                    // corrupt/outdated meta.json would make that run vanish from the UI
+                    // with no trace. Log it so the cause is diagnosable.
+                    Err(e) => log::warn!(
+                        "[storage/runs] list_runs: skipping unparseable {}: {}",
+                        meta_path.display(),
+                        e
+                    ),
+                },
+                Err(e) => log::warn!(
+                    "[storage/runs] list_runs: cannot read {}: {}",
+                    meta_path.display(),
+                    e
+                ),
             }
         }
     }
@@ -489,13 +506,25 @@ pub fn list_all_run_metas() -> Vec<RunMeta> {
             if !meta_path.exists() {
                 continue;
             }
-            if let Ok(content) = fs::read_to_string(&meta_path) {
-                if let Ok(meta) = serde_json::from_str::<RunMeta>(&content) {
-                    if meta.deleted_at.is_some() {
-                        continue;
+            match fs::read_to_string(&meta_path) {
+                Ok(content) => match serde_json::from_str::<RunMeta>(&content) {
+                    Ok(meta) => {
+                        if meta.deleted_at.is_some() {
+                            continue;
+                        }
+                        metas.push(meta);
                     }
-                    metas.push(meta);
-                }
+                    Err(e) => log::warn!(
+                        "[storage/runs] list_all_run_metas: skipping unparseable {}: {}",
+                        meta_path.display(),
+                        e
+                    ),
+                },
+                Err(e) => log::warn!(
+                    "[storage/runs] list_all_run_metas: cannot read {}: {}",
+                    meta_path.display(),
+                    e
+                ),
             }
         }
     }

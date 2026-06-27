@@ -2,9 +2,17 @@ use crate::models::{
     AgentSettings, AllSettings, BalanceHelperSettings, ConnectionProfile, EmbeddingConfig,
     UserSettings, WindowsMsvcEnvMode,
 };
+use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Mutex;
+
+/// Serializes every load→mutate→save cycle on settings.json. Without this, two
+/// concurrent writers (dual frontends, debounced UI save + background sync) each
+/// load, mutate a different field, and the later save silently drops the earlier
+/// patch — potentially losing credentials. All mutating helpers take this lock.
+static SETTINGS_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 fn settings_path() -> PathBuf {
     super::data_dir().join("settings.json")
@@ -513,6 +521,7 @@ pub fn get_embedding_config() -> Option<EmbeddingConfig> {
 }
 
 pub fn update_embedding_config(config: EmbeddingConfig) -> Result<EmbeddingConfig, String> {
+    let _guard = SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut all = load();
     all.user.embedding_config = Some(config.clone());
     all.user.updated_at = crate::models::now_iso();
@@ -528,6 +537,7 @@ pub fn save_web_server_config(
     allowed_origins: &Option<Vec<String>>,
     tunnel_url: &Option<String>,
 ) -> Result<(), String> {
+    let _guard = SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut all = load();
     all.user.web_server_enabled = Some(enabled);
     all.user.web_server_port = Some(port);
@@ -548,6 +558,7 @@ pub fn save_web_server_config(
 
 /// Set only web_server_enabled, preserving all other web server fields.
 pub fn set_web_server_enabled(enabled: bool) -> Result<(), String> {
+    let _guard = SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut all = load();
     all.user.web_server_enabled = Some(enabled);
     all.user.updated_at = crate::models::now_iso();
@@ -559,6 +570,7 @@ pub fn set_web_server_enabled(enabled: bool) -> Result<(), String> {
 /// Partial disable: only set enabled=false, never touch other web server fields.
 /// Used by the disable path to ensure disable always succeeds regardless of form state.
 pub fn save_web_server_partial_disable() -> Result<(), String> {
+    let _guard = SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut all = load();
     all.user.web_server_enabled = Some(false);
     all.user.updated_at = crate::models::now_iso();
@@ -593,6 +605,7 @@ fn validate_balance_helper(
 }
 
 pub fn update_user_settings(patch: serde_json::Value) -> Result<UserSettings, String> {
+    let _guard = SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut all = load();
     apply_string_field(&mut all.user.default_agent, &patch, "default_agent");
     apply_optional_string_field(&mut all.user.default_model, &patch, "default_model");
@@ -960,6 +973,7 @@ pub fn update_agent_settings(
     agent: &str,
     patch: serde_json::Value,
 ) -> Result<AgentSettings, String> {
+    let _guard = SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut all = load();
     let mut settings = all
         .agents

@@ -627,6 +627,25 @@ fn codex_config_path() -> Result<std::path::PathBuf, String> {
     Ok(home.join(".codex").join("config.toml"))
 }
 
+/// Serializes read-modify-write on the shared CLI config files (~/.claude.json,
+/// ~/.codex/config.toml). These are written by Claude/Codex CLIs and ClawGO
+/// concurrently; without a lock + atomic write, an interleaved or crashed write can
+/// truncate or corrupt the whole file.
+static CONFIG_WRITE_LOCK: LazyLock<std::sync::Mutex<()>> =
+    LazyLock::new(|| std::sync::Mutex::new(()));
+
+/// Atomic write: serialize to a tmp sibling then rename over the target, so a partial
+/// write can never leave the shared config truncated.
+fn write_config_atomic(path: &std::path::Path, contents: &str) -> Result<(), String> {
+    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
+    std::fs::write(&tmp, contents)
+        .map_err(|e| format!("Failed to write {}: {}", tmp.display(), e))?;
+    std::fs::rename(&tmp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("Failed to rename {} -> {}: {}", tmp.display(), path.display(), e)
+    })
+}
+
 fn read_codex_doc(path: &std::path::Path) -> Result<toml_edit::DocumentMut, String> {
     let content = match std::fs::read_to_string(path) {
         Ok(content) => content,
@@ -643,6 +662,7 @@ fn read_codex_doc(path: &std::path::Path) -> Result<toml_edit::DocumentMut, Stri
 }
 
 fn write_codex_mcp_server(name: &str, spec: &serde_json::Value) -> Result<(), String> {
+    let _guard = CONFIG_WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = codex_config_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
@@ -653,11 +673,11 @@ fn write_codex_mcp_server(name: &str, spec: &serde_json::Value) -> Result<(), St
         doc["mcp_servers"] = toml_edit::table();
     }
     doc["mcp_servers"][name] = toml_edit::Item::Table(json_to_codex_table(spec)?);
-    std::fs::write(&path, doc.to_string())
-        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))
+    write_config_atomic(&path, &doc.to_string())
 }
 
 fn remove_codex_mcp_server(name: &str) -> Result<(), String> {
+    let _guard = CONFIG_WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = codex_config_path()?;
     if !path.exists() {
         return Ok(());
@@ -669,11 +689,11 @@ fn remove_codex_mcp_server(name: &str) -> Result<(), String> {
     {
         table.remove(name);
     }
-    std::fs::write(&path, doc.to_string())
-        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))
+    write_config_atomic(&path, &doc.to_string())
 }
 
 fn toggle_codex_server(name: &str, enabled: bool) -> Result<(), String> {
+    let _guard = CONFIG_WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = codex_config_path()?;
     let mut doc = read_codex_doc(&path)?;
     let server = doc
@@ -687,8 +707,7 @@ fn toggle_codex_server(name: &str, enabled: bool) -> Result<(), String> {
     } else {
         server["disabled"] = toml_edit::value(true);
     }
-    std::fs::write(&path, doc.to_string())
-        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))
+    write_config_atomic(&path, &doc.to_string())
 }
 
 /// Add an MCP server via Claude CLI.
@@ -1094,6 +1113,8 @@ pub fn toggle_server_config_for_app(
         });
     }
 
+    // Claude branch: read-modify-write ~/.claude.json under the shared config lock.
+    let _guard = CONFIG_WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let home = crate::storage::dirs_next()
         .ok_or_else(|| "Could not determine home directory".to_string())?;
 
@@ -1156,8 +1177,7 @@ pub fn toggle_server_config_for_app(
 
     let output = serde_json::to_string_pretty(&root)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
-    std::fs::write(&config_path, output)
-        .map_err(|e| format!("Failed to write {}: {}", config_path.display(), e))?;
+    write_config_atomic(&config_path, &output)?;
 
     let action = if enabled { "Enabled" } else { "Disabled" };
     log::debug!(
