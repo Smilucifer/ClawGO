@@ -2072,7 +2072,13 @@ async fn spawn_cli_process(
             }
             // Inject extra env vars directly — this is the primary path for
             // provider Claude config variables (base URL, auth token, model, etc.).
+            // Drop code-injection vectors (LD_PRELOAD/NODE_OPTIONS/PYTHONPATH/…) so a
+            // malicious credential payload can't run arbitrary code in the CLI (H-sec-1).
             for (key, value) in extra {
+                if crate::agent::provider_claude_config::is_dangerous_spawn_env_key(key) {
+                    log::warn!("[session] dropping dangerous extra_env key from spawn: {}", key);
+                    continue;
+                }
                 cmd.env(key, value);
             }
             // Also merge into the spawn env plan so MSVC and PATH augmentations

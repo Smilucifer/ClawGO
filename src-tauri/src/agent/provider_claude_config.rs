@@ -28,6 +28,27 @@ fn provider_claude_config_temp_path(run_id: &str) -> PathBuf {
         .join(format!("session-{run_id}.json"))
 }
 
+/// Remove the provider session's temp config files (settings + MCP). These contain
+/// ANTHROPIC_AUTH_TOKEN / API keys in plaintext and were previously never cleaned up,
+/// accumulating one credential-bearing file per run (H-sec-5). Call on session teardown.
+/// Best-effort: missing files are ignored.
+pub fn cleanup_provider_session_configs(run_id: &str) {
+    for path in [
+        provider_claude_config_temp_path(run_id),
+        mcp_config_temp_path(run_id),
+    ] {
+        if let Err(e) = std::fs::remove_file(&path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                log::warn!(
+                    "[provider_claude_config] failed to remove temp config {}: {}",
+                    path.display(),
+                    e
+                );
+            }
+        }
+    }
+}
+
 use std::sync::Mutex;
 
 /// Returns true if `platform_id` is a user-created custom endpoint.
@@ -421,17 +442,42 @@ const ALLOWED_EXTRA_ENV_KEYS: &[&str] = &[
     "CLAUDE_CODE_EFFORT_LEVEL",
 ];
 
+/// Env keys that are code-injection / library-preload vectors. `extra_env` reaches
+/// the spawn env directly (it carries legitimate provider config like
+/// ANTHROPIC_AUTH_TOKEN, so a model-name whitelist can't gate it), but these keys must
+/// NEVER be passed through to a child process — they let an attacker run arbitrary code
+/// in the CLI's address space (H-sec-1). Compared case-insensitively. PATH is handled
+/// separately via merge_path_like (append, not replace), so it is not listed here.
+const DANGEROUS_SPAWN_ENV_KEYS: &[&str] = &[
+    "LD_PRELOAD",
+    "LD_LIBRARY_PATH",
+    "LD_AUDIT",
+    "DYLD_INSERT_LIBRARIES",
+    "DYLD_LIBRARY_PATH",
+    "NODE_OPTIONS",
+    "PYTHONPATH",
+    "PYTHONSTARTUP",
+    "BASH_ENV",
+    "ENV",
+];
+
+/// True if `key` is a code-injection vector that must not be forwarded to a child
+/// process. Case-insensitive so `ld_preload`/`Node_Options` are caught too.
+pub fn is_dangerous_spawn_env_key(key: &str) -> bool {
+    DANGEROUS_SPAWN_ENV_KEYS
+        .iter()
+        .any(|k| k.eq_ignore_ascii_case(key))
+}
+
 /// Merge filtered extra_env into the env map. Only whitelisted keys are applied.
 /// Called after stability_env_vars() so user values take precedence.
 fn merge_extra_env(env: &mut HashMap<String, String>, extra_env: &Option<HashMap<String, String>>) {
     let Some(extra) = extra_env else { return };
     for (key, value) in extra {
         if ALLOWED_EXTRA_ENV_KEYS.contains(&key.as_str()) && !value.trim().is_empty() {
-            log::debug!(
-                "[provider_claude_config] extra_env override: {}={}",
-                key,
-                value
-            );
+            // Log the key only — never the value. The whitelist is model-name-only today,
+            // but logging values would leak credentials if it ever widens.
+            log::debug!("[provider_claude_config] extra_env override: {}", key);
             env.insert(key.clone(), value.clone());
         }
     }
@@ -631,6 +677,12 @@ fn provider_config_json_from_env(
         .and_then(|v| v.as_object())
         .cloned()
         .unwrap_or_default();
+    // Strip the user's native credentials from the env sub-object before overlaying
+    // the provider's auth — otherwise a native ANTHROPIC_API_KEY would survive next to
+    // the injected ANTHROPIC_AUTH_TOKEN and reach the third-party endpoint (H-sec-6).
+    for &key in crate::storage::cli_config::SENSITIVE_ENV_KEYS {
+        env_obj.remove(key);
+    }
     for (key, value) in env {
         env_obj.insert(key.clone(), Value::String(value.clone()));
     }

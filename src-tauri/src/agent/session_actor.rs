@@ -2410,6 +2410,11 @@ impl SessionActor {
             }
         }
 
+        // Remove the provider session's temp config files (settings + MCP). They hold
+        // ANTHROPIC_AUTH_TOKEN / API keys in plaintext; cleaning them here prevents
+        // per-run credential file accumulation (H-sec-5). Best-effort.
+        crate::agent::provider_claude_config::cleanup_provider_session_configs(&self.run_id);
+
         // Fire shutdown signal
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(());

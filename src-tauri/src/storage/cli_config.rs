@@ -6,6 +6,20 @@ use std::path::PathBuf;
 /// Must stay in sync with `session.rs:AUTH_KEYS` and `provider_claude_config.rs`.
 pub const SENSITIVE_KEYS: &[&str] = &["apiKey", "primaryApiKey"];
 
+/// Keys inside the `env` sub-object of `~/.claude/settings.json` that carry
+/// credentials/endpoints. These must be stripped from the native base before a
+/// provider session overlays its own auth — otherwise the user's native
+/// `ANTHROPIC_API_KEY` would survive alongside the injected `ANTHROPIC_AUTH_TOKEN`,
+/// handing a third-party endpoint two sets of credentials (H-sec-6).
+pub const SENSITIVE_ENV_KEYS: &[&str] = &[
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "CLAUDE_CODE_API_KEY",
+];
+
 /// Path to the user-level CLI settings file: ~/.claude/settings.json
 fn cli_config_path() -> PathBuf {
     claude_home_dir().join("settings.json")

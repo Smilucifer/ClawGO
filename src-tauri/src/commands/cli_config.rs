@@ -15,6 +15,12 @@ pub fn get_project_cli_config(cwd: String) -> Result<Value, String> {
 
 #[tauri::command]
 pub fn update_cli_config(patch: Value) -> Result<Value, String> {
-    log::debug!("[cli_config] update_cli_config patch={}", patch);
+    // Log only the patched key names, never values — the patch may carry apiKey /
+    // primaryApiKey and other credentials that must not land in debug logs.
+    let keys: Vec<&String> = patch
+        .as_object()
+        .map(|o| o.keys().collect())
+        .unwrap_or_default();
+    log::debug!("[cli_config] update_cli_config keys={:?}", keys);
     cli_config::update_cli_config(patch)
 }

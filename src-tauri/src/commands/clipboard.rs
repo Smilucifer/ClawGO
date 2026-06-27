@@ -3,14 +3,15 @@ use serde::Serialize;
 use std::path::PathBuf;
 
 /// Allowed file extensions for clipboard paste (whitelist).
+/// Deliberately excludes credential/config extensions (env/cfg/ini/conf) and
+/// dotfiles — clipboard paste of source is a legitimate need, leaking secrets is not.
 const ALLOWED_CLIPBOARD_EXTENSIONS: &[&str] = &[
     // Images
     "png", "jpg", "jpeg", "webp", "gif", // Documents
     "pdf", // Text (aligned with frontend TEXT_EXTENSIONS)
     "txt", "md", "json", "ts", "tsx", "js", "jsx", "py", "rs", "svelte", "html", "css", "scss",
     "yaml", "yml", "toml", "xml", "sh", "bash", "sql", "go", "java", "c", "cpp", "h", "hpp", "rb",
-    "php", "swift", "kt", "csv", "log", "env", "cfg", "ini", "conf", "vue", "astro", "prisma",
-    "graphql",
+    "php", "swift", "kt", "csv", "log", "vue", "astro", "prisma", "graphql",
 ];
 
 #[derive(Debug, Clone, Serialize)]
@@ -35,6 +36,15 @@ fn validate_clipboard_path(path: &str) -> Result<PathBuf, String> {
     }
     if !p.is_file() {
         return Err("not a regular file".into());
+    }
+    // Reject dotfiles (.env, .npmrc, .git-credentials, …): they commonly hold
+    // credentials and a malicious webview could pass an arbitrary path here (H-sec-3).
+    let file_name = p
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default();
+    if file_name.starts_with('.') {
+        return Err("hidden/config files are not allowed".into());
     }
     let meta = std::fs::metadata(&p).map_err(|e| format!("metadata error: {}", e))?;
     let ext = p

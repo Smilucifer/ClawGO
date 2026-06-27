@@ -540,6 +540,12 @@ pub fn merge_extra_env_into_spawn_env_plan(
     extra_env: &HashMap<String, String>,
 ) {
     for (key, value) in extra_env {
+        if crate::agent::provider_claude_config::is_dangerous_spawn_env_key(key) {
+            // Code-injection vectors (LD_PRELOAD/NODE_OPTIONS/PYTHONPATH/…) must never
+            // reach the spawn env, regardless of how extra_env was populated (H-sec-1).
+            log::warn!("[spawn-env] dropping dangerous extra_env key: {key}");
+            continue;
+        }
         if key.eq_ignore_ascii_case("PATH") {
             let planned_path = plan.path_override.take().unwrap_or_default();
             let result = merge_path_like(&planned_path, value);
