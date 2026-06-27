@@ -678,7 +678,7 @@ pub fn create_skill_for_app(
         .map_err(|e| format!("Failed to create skill directory: {}", e))?;
 
     let skill_md = skill_dir.join("SKILL.md");
-    std::fs::write(&skill_md, &full_content)
+    super::write_atomic_string(&skill_md, &full_content)
         .map_err(|e| format!("Failed to write SKILL.md: {}", e))?;
 
     log::debug!(
@@ -715,7 +715,8 @@ pub fn update_skill_content_for_app(
         return Err("Can only update SKILL.md files".to_string());
     }
 
-    std::fs::write(&canonical, content).map_err(|e| format!("Failed to write skill: {}", e))?;
+    super::write_atomic_string(&canonical, content)
+        .map_err(|e| format!("Failed to write skill: {}", e))?;
 
     log::debug!(
         "[plugins] update_skill_content: path={}, content_len={}",

@@ -133,6 +133,18 @@ pub fn ensure_dir(path: &std::path::Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Atomically write a string to `path`: write to a unique tmp sibling, then rename over
+/// the target. A truncate-write crash can never leave the file half-written. Use for any
+/// config/state file that a reader might load concurrently.
+pub fn write_atomic_string(path: &std::path::Path, contents: &str) -> Result<(), String> {
+    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
+    std::fs::write(&tmp, contents).map_err(|e| format!("write tmp {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("rename {} -> {}: {e}", tmp.display(), path.display())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

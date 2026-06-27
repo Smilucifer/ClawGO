@@ -4,9 +4,15 @@
 //! Each favorite stores the prompt text redundantly so it survives run deletion.
 
 use crate::models::PromptFavorite;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use std::sync::Mutex;
+
+/// Serializes load→mutate→save on the favorites file so concurrent add/remove/update
+/// don't lose each other's changes (the save itself is already atomic).
+static FAVORITES_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 #[derive(Serialize, Deserialize)]
 struct FavoritesFile {
@@ -71,6 +77,7 @@ pub fn add_favorite(run_id: &str, seq: u64, text: &str) -> Result<PromptFavorite
         run_id,
         seq
     );
+    let _guard = FAVORITES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut file = load();
 
     // Check for duplicate
@@ -104,6 +111,7 @@ pub fn remove_favorite(run_id: &str, seq: u64) -> Result<(), String> {
         run_id,
         seq
     );
+    let _guard = FAVORITES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut file = load();
     let before = file.items.len();
     file.items.retain(|f| !(f.run_id == run_id && f.seq == seq));
@@ -121,6 +129,7 @@ pub fn update_favorite_tags(run_id: &str, seq: u64, tags: Vec<String>) -> Result
         seq,
         tags
     );
+    let _guard = FAVORITES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut file = load();
     let fav = file
         .items
@@ -133,6 +142,7 @@ pub fn update_favorite_tags(run_id: &str, seq: u64, tags: Vec<String>) -> Result
 
 pub fn update_favorite_note(run_id: &str, seq: u64, note: &str) -> Result<(), String> {
     log::debug!("[favorites] updating note: run_id={}, seq={}", run_id, seq);
+    let _guard = FAVORITES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut file = load();
     let fav = file
         .items

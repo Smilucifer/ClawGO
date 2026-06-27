@@ -29,5 +29,5 @@ pub fn save_artifact(artifact: &RunArtifact) -> Result<(), String> {
     super::ensure_dir(&dir).map_err(|e| e.to_string())?;
     let path = artifacts_path(&artifact.task_id);
     let json = serde_json::to_string_pretty(artifact).map_err(|e| e.to_string())?;
-    fs::write(&path, json).map_err(|e| e.to_string())
+    super::write_atomic_string(&path, &json)
 }
