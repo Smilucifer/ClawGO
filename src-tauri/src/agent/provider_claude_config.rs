@@ -249,8 +249,7 @@ pub fn write_provider_claude_config(
 
     let serialized = serde_json::to_string_pretty(&json_value)
         .map_err(|e| format!("serialize provider config json: {e}"))?;
-    fs::write(&path, serialized)
-        .map_err(|e| format!("write provider config {}: {e}", path.display()))?;
+    write_secure_config(&path, &serialized)?;
 
     log::info!(
         "[provider_claude_config] wrote temp config for run {}: {} (provider={}, keys={})",
@@ -268,6 +267,28 @@ pub fn write_provider_claude_config(
         provider_id: provider_id.to_string(),
         json_path: path,
         env,
+    })
+}
+
+/// Atomically write a provider session config file with 0o600 perms (Unix). These
+/// files carry ANTHROPIC_AUTH_TOKEN / API keys in plaintext, so they must not be
+/// world-readable, and a half-written file (truncate-write crash) must not be loaded
+/// by the CLI. tmp+rename gives atomicity; perms are set on the tmp before rename so
+/// there is no readable window at the final path.
+fn write_secure_config(path: &std::path::Path, contents: &str) -> Result<(), String> {
+    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
+    fs::write(&tmp, contents).map_err(|e| format!("write temp config {}: {e}", tmp.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(e) = fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)) {
+            let _ = fs::remove_file(&tmp);
+            return Err(format!("set perms on {}: {e}", tmp.display()));
+        }
+    }
+    fs::rename(&tmp, path).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        format!("rename {} -> {}: {e}", tmp.display(), path.display())
     })
 }
 
@@ -297,8 +318,7 @@ pub fn write_mcp_config(
 
     let serialized =
         serde_json::to_string_pretty(&config).map_err(|e| format!("serialize mcp config: {e}"))?;
-    fs::write(&path, serialized)
-        .map_err(|e| format!("write mcp config {}: {e}", path.display()))?;
+    write_secure_config(&path, &serialized)?;
 
     log::info!(
         "[provider_claude_config] wrote standalone MCP config for run {}: {} ({} servers)",
@@ -328,8 +348,7 @@ pub fn write_managed_settings(
 
     let serialized =
         serde_json::to_string_pretty(&config).map_err(|e| format!("serialize managed settings: {e}"))?;
-    fs::write(&path, serialized)
-        .map_err(|e| format!("write managed settings {}: {e}", path.display()))?;
+    write_secure_config(&path, &serialized)?;
 
     log::info!(
         "[provider_claude_config] wrote managed settings for run {}: {} (hooks={}, plugins={})",

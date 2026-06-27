@@ -1,6 +1,12 @@
 use crate::storage::teams::claude_home_dir;
+use once_cell::sync::Lazy;
 use serde_json::Value;
 use std::path::PathBuf;
+use std::sync::Mutex;
+
+/// Serializes the load→mutate→write cycle on ~/.claude/settings.json so concurrent
+/// callers (dual frontends, debounced saves) don't clobber each other's patches.
+static CLI_CONFIG_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 /// Top-level keys in `~/.claude/settings.json` that contain secrets.
 /// Must stay in sync with `session.rs:AUTH_KEYS` and `provider_claude_config.rs`.
@@ -88,6 +94,9 @@ pub fn update_cli_config(patch: Value) -> Result<Value, String> {
         .as_object()
         .ok_or_else(|| "patch must be a JSON object".to_string())?;
 
+    // Hold the lock across load→mutate→write so a concurrent update can't lose this patch.
+    let _guard = CLI_CONFIG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
     let mut config = load_cli_config();
     let map = config
         .as_object_mut()
@@ -101,7 +110,7 @@ pub fn update_cli_config(patch: Value) -> Result<Value, String> {
             if SENSITIVE_KEYS.contains(&key.as_str()) {
                 log::debug!("[cli_config] setting key: {} = ***", key);
             } else {
-                log::debug!("[cli_config] setting key: {} = {}", key, value);
+                log::debug!("[cli_config] setting key: {}", key);
             }
             map.insert(key.clone(), value.clone());
         }
@@ -118,14 +127,24 @@ pub fn update_cli_config(patch: Value) -> Result<Value, String> {
 
     let content =
         serde_json::to_string_pretty(&config).map_err(|e| format!("Failed to serialize: {}", e))?;
-    std::fs::write(&path, &content).map_err(|e| format!("Failed to write: {}", e))?;
 
-    // Set file permissions to 0600 (user read/write only)
+    // Atomic write: tmp + (perms BEFORE rename) + rename. settings.json is shared with the
+    // Anthropic CLI; a truncate-write crash would corrupt it, and setting 0o600 only after
+    // the final write left a world-readable window over apiKey/primaryApiKey.
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, &content).map_err(|e| format!("Failed to write temp: {}", e))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        if let Err(e) = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(format!("Failed to set perms: {}", e));
+        }
     }
+    std::fs::rename(&tmp, &path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("Failed to rename: {}", e)
+    })?;
 
     log::debug!(
         "[cli_config] updated {} keys total",

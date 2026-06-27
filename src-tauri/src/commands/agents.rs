@@ -151,14 +151,29 @@ fn safe_resolve_agent_path(
     // Construct target path: base / {file_name}.md
     let target = base.join(format!("{}.md", file_name));
 
-    // String-level prefix safety check
-    let target_str = target.to_string_lossy();
-    let parent_str = parent_to_check.to_string_lossy();
-    if !target_str.starts_with(parent_str.as_ref()) {
+    // Path-escape safety check. The file_name is already validated to contain no
+    // traversal (validate_agent_name_*), so the real concern is that `base` resolves
+    // under the allowed parent. Compare canonicalized paths at the COMPONENT level,
+    // not as strings: on Windows canonicalize() yields a `\\?\` verbatim prefix, and a
+    // string starts_with against a non-canonicalized target is ALWAYS false — which
+    // silently broke all project/user-scope agent CRUD on Windows. We canonicalize the
+    // agents dir's nearest existing ancestor and require it to sit under parent_to_check.
+    let mut probe = base.clone();
+    let canonical_ancestor = loop {
+        match std::fs::canonicalize(&probe) {
+            Ok(c) => break c,
+            Err(_) => match probe.parent() {
+                Some(p) => probe = p.to_path_buf(),
+                None => break probe.clone(),
+            },
+        }
+    };
+    if !canonical_ancestor.starts_with(&parent_to_check) {
         log::warn!(
-            "[agents] path escape rejected: target={}, parent={}",
-            target_str,
-            parent_str
+            "[agents] path escape rejected: base={:?}, canonical_ancestor={:?}, parent={:?}",
+            base,
+            canonical_ancestor,
+            parent_to_check
         );
         return Err("Path outside allowed directory".to_string());
     }
