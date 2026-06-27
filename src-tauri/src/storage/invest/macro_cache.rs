@@ -181,8 +181,13 @@ pub fn build_macro_snapshot() -> Option<MacroSnapshot> {
 ///
 /// Compares `fetched_at` (stored as UTC datetime string) against the current time.
 /// Returns `true` if the entry is stale or if the timestamp cannot be parsed.
+///
+/// Weekend exception: markets are closed Sat/Sun, so no fresher macro data can exist.
+/// If it is currently the weekend and the entry was fetched on or after the most recent
+/// Friday, it is NOT stale regardless of wall-clock age — otherwise every Monday-morning
+/// (and all weekend) read would wrongly flag the last trading day's data as stale.
 pub fn is_stale(entry: &MacroCacheEntry, max_age_minutes: u32) -> bool {
-    use chrono::{NaiveDateTime, Utc};
+    use chrono::{Datelike, NaiveDateTime, Utc, Weekday};
 
     let Ok(fetched) = NaiveDateTime::parse_from_str(&entry.fetched_at, "%Y-%m-%d %H:%M:%S") else {
         // Unparseable timestamp => treat as stale
@@ -190,6 +195,24 @@ pub fn is_stale(entry: &MacroCacheEntry, max_age_minutes: u32) -> bool {
     };
     let fetched_utc = fetched.and_utc();
     let now = Utc::now();
+
+    // Weekend freshness in Beijing time (A-share market timezone). If it is Sat/Sun in
+    // CST and the data was fetched on or after the most recent Friday (CST), accept it.
+    let cst = chrono::FixedOffset::east_opt(8 * 3600).unwrap();
+    let now_cst = now.with_timezone(&cst);
+    let today = now_cst.weekday();
+    if matches!(today, Weekday::Sat | Weekday::Sun) {
+        let days_since_friday = match today {
+            Weekday::Sat => 1,
+            Weekday::Sun => 2,
+            _ => 0,
+        };
+        let last_friday = (now_cst - chrono::Duration::days(days_since_friday)).date_naive();
+        if fetched_utc.with_timezone(&cst).date_naive() >= last_friday {
+            return false;
+        }
+    }
+
     let age = now.signed_duration_since(fetched_utc);
     age.num_minutes() > max_age_minutes as i64
 }

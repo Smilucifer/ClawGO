@@ -1302,7 +1302,18 @@ impl SessionActor {
         // Kill process
         if let Some(ref mut child) = self.child {
             let _ = child.kill().await;
-            let _ = child.wait().await;
+            // Bound the wait: on Windows a failed TerminateProcess can leave wait()
+            // hanging forever, which would deadlock the actor's select loop. After the
+            // timeout we abandon the handle (kill_on_drop reaps it later).
+            if tokio::time::timeout(std::time::Duration::from_secs(5), child.wait())
+                .await
+                .is_err()
+            {
+                log::warn!(
+                    "[actor] child.wait timed out after kill (run={}), abandoning handle",
+                    self.run_id
+                );
+            }
         }
 
         Ok(())
@@ -2204,9 +2215,15 @@ impl SessionActor {
     /// Handle stdout EOF — determine terminal state.
     async fn handle_eof(&mut self) {
         let exit_code = if let Some(ref mut child) = self.child {
-            match child.wait().await {
-                Ok(s) => s.code(),
-                Err(_) => Some(1),
+            // Stdout already hit EOF, so the process is normally exiting; still bound the
+            // wait so a stuck child can't hang the actor indefinitely (Windows).
+            match tokio::time::timeout(std::time::Duration::from_secs(5), child.wait()).await {
+                Ok(Ok(s)) => s.code(),
+                Ok(Err(_)) => Some(1),
+                Err(_) => {
+                    log::warn!("[actor] child.wait timed out at EOF (run={})", self.run_id);
+                    Some(1)
+                }
             }
         } else {
             None
