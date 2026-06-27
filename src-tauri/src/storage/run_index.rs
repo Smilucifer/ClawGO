@@ -407,7 +407,7 @@ fn calc_duration_ms(started: &str, ended: Option<&str>) -> Option<u64> {
 pub fn build_or_update_index() -> Result<Vec<RunIndexEntry>, String> {
     // Fast path: check cache TTL
     {
-        let cache = CACHE.lock().unwrap();
+        let cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(ref cached) = *cache {
             if cached.computed_at.elapsed().as_secs() < CACHE_TTL_SECS {
                 log::debug!("[run_index] cache hit ({} entries)", cached.entries.len());
@@ -417,11 +417,11 @@ pub fn build_or_update_index() -> Result<Vec<RunIndexEntry>, String> {
     }
 
     // Acquire compute lock (prevents concurrent rebuilds)
-    let _lock = COMPUTE_LOCK.lock().unwrap();
+    let _lock = COMPUTE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
     // Double-check cache after acquiring lock
     {
-        let cache = CACHE.lock().unwrap();
+        let cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(ref cached) = *cache {
             if cached.computed_at.elapsed().as_secs() < CACHE_TTL_SECS {
                 return Ok(cached.entries.clone());
@@ -549,7 +549,7 @@ pub fn build_or_update_index() -> Result<Vec<RunIndexEntry>, String> {
 
 /// Invalidate the in-memory cache (e.g. after a run completes).
 pub fn invalidate_cache() {
-    let mut cache = CACHE.lock().unwrap();
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     *cache = None;
     log::debug!("[run_index] cache invalidated");
 }
@@ -606,7 +606,7 @@ fn load_index_file() -> Vec<RunIndexEntry> {
 }
 
 fn update_cache(entries: Vec<RunIndexEntry>) {
-    let mut cache = CACHE.lock().unwrap();
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     *cache = Some(CachedIndex {
         computed_at: Instant::now(),
         entries,

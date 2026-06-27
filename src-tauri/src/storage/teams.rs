@@ -3,10 +3,20 @@ use serde::de::DeserializeOwned;
 use std::path::{Path, PathBuf};
 
 /// Root of Claude Code data: ~/.claude/
+///
+/// Falls back gracefully instead of panicking when the home dir can't be resolved
+/// (sanitized env in CI / service contexts): tries dirs_next(), then USERPROFILE /
+/// HOME env vars, then the current dir. Panicking here took down the whole command
+/// thread for teams/agents/mcp.
 pub fn claude_home_dir() -> PathBuf {
-    crate::storage::dirs_next()
-        .expect("home dir")
-        .join(".claude")
+    let base = crate::storage::dirs_next()
+        .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
+        .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
+        .unwrap_or_else(|| {
+            log::error!("[teams] cannot resolve home dir; falling back to current directory");
+            PathBuf::from(".")
+        });
+    base.join(".claude")
 }
 
 /// ~/.claude/teams/

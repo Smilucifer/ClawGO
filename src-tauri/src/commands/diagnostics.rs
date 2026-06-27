@@ -260,8 +260,11 @@ async fn test_api_inner(
                     .map(String::from)
             })
             .map(|s| {
-                if s.len() > 50 {
-                    format!("{}…", &s[..50])
+                // Truncate on a char boundary, not a byte offset — &s[..50] panics if
+                // byte 50 lands inside a multi-byte char (common with CJK reply text).
+                if s.chars().count() > 50 {
+                    let truncated: String = s.chars().take(50).collect();
+                    format!("{}…", truncated)
                 } else {
                     s
                 }
@@ -771,8 +774,12 @@ async fn check_auth_inner() -> AuthDiagnostics {
     let (api_key, api_key_source) = super::onboarding::detect_cli_api_key(&cli_config);
     let has_api_key = api_key.is_some();
     let api_key_hint = api_key.as_ref().map(|k| {
-        if k.len() > 4 {
-            format!("...{}", &k[k.len() - 4..])
+        // Take the last 4 chars by char (not byte) to avoid slicing inside a multi-byte
+        // boundary if a key ever contains non-ASCII.
+        let chars: Vec<char> = k.chars().collect();
+        if chars.len() > 4 {
+            let suffix: String = chars[chars.len() - 4..].iter().collect();
+            format!("...{}", suffix)
         } else {
             "***".to_string()
         }

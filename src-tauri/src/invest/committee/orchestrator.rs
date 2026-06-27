@@ -1761,7 +1761,10 @@ pub async fn run_committee_batch(
         let sem = semaphore.clone();
         let mode = modes.get(&symbol).copied().unwrap_or_default();
         handles.push(tokio::spawn(async move {
-            let _permit = sem.acquire_owned().await.expect("semaphore closed unexpectedly");
+            let _permit = match sem.acquire_owned().await {
+                Ok(p) => p,
+                Err(e) => return Err(format!("acquire committee permit failed: {e}")),
+            };
             run_committee(&symbol, &config, None, dry_run, Some(portfolio), None, mode).await
         }));
     }
@@ -1811,10 +1814,10 @@ pub async fn run_committee_batch_stream(
         handles.push((
             symbol.clone(),
             tokio::spawn(async move {
-                let _permit = sem
-                    .acquire_owned()
-                    .await
-                    .expect("semaphore closed unexpectedly");
+                let _permit = match sem.acquire_owned().await {
+                    Ok(p) => p,
+                    Err(e) => return Err(format!("acquire committee permit failed: {e}")),
+                };
                 run_committee(&symbol, &config, Some(emitter), dry_run, Some(portfolio), token, mode).await
             }),
         ));
