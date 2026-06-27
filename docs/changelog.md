@@ -1,5 +1,59 @@
 # Changelog / 更新日志
 
+## v5.6.4 (2026-06-27)
+
+全项目 code review 修复批次（C1–C7 + 全部 High + Medium 绝大部分 + 清理重构）。完整清单见 `docs/superpowers/plans/2026-06-26-codereview-fixes-v564.md`。
+
+### 安全 / 隐私
+
+- **C1 `/dm` 私信不再被当公开广播：** `strip_command_word` 不消费命令词后的分隔空白，导致 `rest.strip_prefix('@')` 永远返回 `None`，`/dm @Name msg` 降级为 `Fanout` 公开广播（隐私泄漏）。改为 `rest.trim_start().strip_prefix('@')`。
+- **C5 私聊内容不再进全局记忆：** `orchestrator.rs` 自动记忆抽取在 spawn 前加 `if !is_private` 守卫，DM turn 完全跳过 `auto_extract_memories`，不再外送 LLM / 写入共享 user memory。
+- **H-sec-1 extra_env 代码注入防护：** 新增 `is_dangerous_spawn_env_key` denylist（`LD_PRELOAD`/`LD_*`/`DYLD_*`/`NODE_OPTIONS`/`PYTHONPATH`/`PYTHONSTARTUP`/`BASH_ENV`/`ENV`），在主 spawn 直接注入点 + `merge_extra_env_into_spawn_env_plan`（覆盖 BTW/claude_stream）统一丢弃。
+- **H-sec-2 凭证不再进 debug 日志：** `update_cli_config` 只 log 键名集合；`merge_extra_env` 日志去掉 value。
+- **H-sec-3 clipboard 不再可读 .env：** 白名单移除 `env`/`cfg`/`ini`/`conf`；`validate_clipboard_path` 拒绝 dotfile（`.env`/`.npmrc`/`.git-credentials`）。
+- **H-sec-4 SSH argv-flag 注入防护：** `test_remote_host` 拒绝 user/host 以 `-` 开头（挡 `-oProxyCommand=`），两处 ssh 命令在 target 前加 `--` 终止符。
+- **H-sec-5 provider 临时配置不再累积：** 新增 `cleanup_provider_session_configs`，`SessionActor::cleanup` 删除含 token 的 `session-{run_id}.json` / `-mcp.json`。
+- **H-sec-6 双凭证残留剥离：** 新增 `SENSITIVE_ENV_KEYS`，构造 provider env 时先剥离原生 `ANTHROPIC_API_KEY`/`AUTH_TOKEN`/`BASE_URL` 再 overlay，避免第三方 endpoint 拿到两套凭据。
+- **C3 启动不再可能清空凭证：** `settings::load()` 读/解析失败时不再静默 save 默认值（改为返回内存默认 + `log::error` + 保留原文件）；`save()` 改 tmp+rename 原子写。
+- **C4 路径遍历防护：** 新增 `storage::validate_run_id`，在 `get_run_raw`/`with_meta`/`save_meta` 三个根入口校验，覆盖 get/rename/update/delete 全部以 id 拼路径的命令。
+
+### 投资委员会 / invest 正确性
+
+- **C7 交易记录日期统一 `YYYY-MM-DD`：** 显示层兜底从 `toLocaleDateString()`（中文 locale 产出 `2026/6/26` 斜杠）改为 `createdAt.slice(0,10)`；历史 NULL `trade_date` 行迁移回填；`record_trade` 新写入也填充，杜绝未来 NULL。
+- **H-fin-1 ATR 前收盘取数修正：** `calc_atr_pct` 改用 `bars[i].pre_close`（Tushare 直接提供前收盘，与排序无关），修复 newest-first 下 `bars[i-1]` 取成「更新一天」的方向错误。
+- **H-fin-2 CIO VERDICT 方向判定：** 新增 `normalize_verdict`，只取首子句切断 prose 续行污染 + 否定守卫（`不买`/`DO NOT BUY` → HOLD）+ ACCUMULATE/SELL/TRIM 先于 BUY 判定，修复 `不要买入`/`HOLD WILL BUY` 被误判为 BUY。
+- **H-fin-3 confidence 归一：** 新增 `normalize_confidence`（>1 视百分比 ÷100，clamp [0,1]），修复 `75%` 裸切成 `75.0` 破坏 `apply_hard_rules(>=0.95)` 与 archive 渲染 `7500%`。
+- **H-fin-4 strength 量纲归一：** 新增 `normalize_strength`（≤1 ×10、>10 ÷10、clamp [0,10]），Macro/Quant/Risk/R2 四处统一调用。
+- **H-fin-5 macro SIGNAL 白名单扩展：** 新增 `normalize_macro_signal`，扩展 `bullish`/`看多`/`避险` 等映射；未识别值保留原文 + warn，不再静默吞成 `neutral`。
+- **H-data-1/2/3 数据校验：** 新增宽松判空 `is_present_finite`（0 合法，用于北向资金）；`sh_composite` validity 要求 vol20 存在以正确 fallback；`margin`/`shibor` 为 0 或非有限时返回 Err 不写垃圾数据。
+- **价格分位 tie-rank：** `compute_price_percentile` 改中点 tie-rank（`(lower+0.5*equal)/n`），平窗 → 50%、最高 → ~100%，修复旧 `position()` 把平窗塌成 0%、封顶 `(n-1)/n`。
+- **parser 解析健壮性：** `pnl_pct` 遇 亏/loss/前导 `-` 强制负号；`KEY_DATA` 终止条件改 `is_structured_key_line`（列表项可含冒号）；`parse_leading_f64` 扩展分隔符 + 英文逗号千分位剥离。
+- **C6 committee 取消生效：** `run_role` 接收 `CancellationToken`，`tokio::select!` 竞争 wait/cancel/timeout，取消即时 `kill` 子进程释放 semaphore permit（不再等满 180s）；token registry 拒绝覆盖同 symbol in-flight token。
+- **macro_cache 周末新鲜度：** `is_stale` 在周末（CST Sat/Sun）且数据在最近周五之后抓取时视为新鲜，不再纯墙钟把上一交易日数据误判 stale。
+
+### 记忆系统（C2 feature 调整）
+
+- **独立开关 + 质量门槛：** `UserSettings` 新增 `memory_extraction_enabled`（默认 true，总闸不再搭 `embedding_config.enabled`）与 `memory_extraction_min_confidence`（默认 60）。入库前过滤低置信度/过短/纯标点；收紧 prompt 为只提取稳定可复用事实。
+- **设置页 UI：** memory-mgmt 页新增记忆提取总开关 + 置信度阈值滑块 + 保存配置按钮。
+
+### 状态一致性 / 鲁棒性
+
+- **H-state-1/2/3：** `SessionInit` 持久化 session_id 重试 3 次（失败 `log::error` 提示不可 resume）；终态 `update_status` 紧密重试；`pending_interrupt` 改为 write 成功后才置位，避免写失败把真实 `failed` 改写成 `idle`。
+- **H-gc-1/2：** detach 按 `participant_id`（而非 `run_id`）删 meta，杜绝孤儿元数据；失败 turn 的空 responses 不再覆盖已落盘的部分响应（`list_turns_jsonl` dedup 保留非空 responses）。
+- **H-utf8：** `stream.rs` 用 `pending` 字节缓冲跨读取保留不完整多字节序列，解最长有效 UTF-8 前缀，修复 8KiB 边界把多字节字符截成 U+FFFD；`codex.rs` 循环显式区分 EOF/Err。
+- **child.wait 超时：** `handle_stop`/`handle_eof` 两处 `child.wait()` 加 5s timeout，Windows `TerminateProcess` 失败时不再 hang 死 actor。
+- **panic 硬化：** `run_index`/`events` 共 10 处 `lock().unwrap()` 改 `unwrap_or_else(|e| e.into_inner())`；`diagnostics` 两处按字节切 UTF-8 改 char 边界；`teams::claude_home_dir` 回退链替代 `expect`；committee `acquire_owned` 改 match 返回 Err。
+- **Windows agent CRUD 失效修复：** `safe_resolve_agent_path` 字符串前缀比较在 Windows 恒 false（canonicalize 的 `\\?\` 前缀），改组件级 `Path::starts_with`，project/user-scope agent CRUD 恢复。
+
+### 并发 / 原子写 / 前端
+
+- **并发锁：** 新增 `SETTINGS_LOCK`（6 函数）、`FAVORITES_LOCK`（4 函数）、`CLI_CONFIG_LOCK`、`CONFIG_WRITE_LOCK`，串行化各自的 load-mutate-save，避免并发覆盖。
+- **原子写整合：** 新增共享 `storage::write_atomic_string` / `write_atomic_string_secure`（tmp `{pid}.{nanos}` + 0o600），provider 配置 / `~/.claude.json` / `~/.codex/config.toml` / cli settings / artifacts / SKILL.md 统一使用。
+- **list_runs 不再静默丢失：** `list_runs`/`list_all_run_metas` 解析失败改 `log::warn` 带路径，单条损坏 meta 不再让 run 从历史消失。
+- **H-fe-race 前端竞态守卫：** `character-memory`/`user-memory`/`doctor`/`claude-usage` 四个 store 各加 `#loadSeq`/`#runSeq`/`#refreshSeq`，stale 响应不覆盖新数据。
+- **CodeEditor 分词器误判修复：** 注释里字面 `<style>` token 骗过 svelte 分词器使 `<script>` 提前闭合（explorer/memory 报 no default export），改文案后 `svelte-check` 0 error。
+- **进不去聊天页回归修复：** `SessionStatusBar` 补 `ClaudeUsageBadge` import + snippet 类型（v5.6.3 移动组件时漏补）。
+
 ## v5.6.3 (2026-06-26)
 
 ### 优化

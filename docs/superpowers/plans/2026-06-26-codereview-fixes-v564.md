@@ -1,6 +1,7 @@
 ---
-status: wip
+status: done
 date: 2026-06-26
+completed: 2026-06-27
 owner: Smilucifer
 related:
   - src/lib/components/SessionStatusBar.svelte
@@ -12,6 +13,8 @@ related:
 ---
 
 # 全项目 Code Review 修复计划（v5.6.4+）
+
+> **状态（2026-06-27 完成）：** C1–C7 + 全部 High + Medium 绝大部分已修复并随 v5.6.4 提交（见 `docs/changelog.md`）。条目标记：✅ 已修 / 🔶 部分修 / **暂留**。剩余暂留项（parser continuation 合并污染、scheduler `spawn_blocking`、只增不减全局 HashMap、session_actor 孤立 waiter GC / 抽取 JoinHandle / turn-index 延迟分配）均为性能优化或需较大改动的鲁棒性增强，非正确性 bug，留待单独评估。
 
 ## 背景
 
