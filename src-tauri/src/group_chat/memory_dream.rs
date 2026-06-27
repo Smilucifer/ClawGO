@@ -31,14 +31,27 @@ pub fn should_run_dream(data_dir: &Path) -> bool {
     }
 }
 
-/// Update the dream timestamp marker.
+/// Update the dream timestamp marker. Atomic (tmp+rename) so a crash mid-write can't
+/// leave a truncated marker, and logs on failure: a silently-dropped write would make
+/// `should_run_dream` return true every tick, re-running the full snapshot+merge+decay
+/// cycle continuously.
 fn mark_dream_time(data_dir: &Path) {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
     let marker = data_dir.join("memory_dream_last");
-    let _ = std::fs::write(&marker, now.to_string());
+    let tmp = marker.with_extension(format!("tmp.{}", std::process::id()));
+    let result = std::fs::write(&tmp, now.to_string())
+        .and_then(|_| std::fs::rename(&tmp, &marker));
+    if let Err(e) = result {
+        let _ = std::fs::remove_file(&tmp);
+        log::error!(
+            "[dream] failed to write marker {}: {} — dream may re-run every tick",
+            marker.display(),
+            e
+        );
+    }
 }
 
 /// List archived (low-confidence) memories for review.

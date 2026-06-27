@@ -367,16 +367,25 @@ fn extract_f64(text: &str, key: &str) -> Option<f64> {
 }
 
 /// 从值串中解析前导数字:支持 "6"、"6.5"、"6/10"(取分子)、"30.5%"(去尾符)。
-/// 同时容忍全角百分号 `％`、全角括号 `（` 等常见 LLM 输出后缀。
+/// 同时容忍全角百分号 `％`、全角括号 `（`、中英文逗号/句号/分号/顿号等常见 LLM 输出后缀。
+/// 英文逗号作千分位剥除（如 "50,000" → 50000）。
 fn parse_leading_f64(v: &str) -> Option<f64> {
     let v = v.trim();
-    // 在 / % ％ 空格 ( （ 等分隔符处截断,取首段作为数值候选
+    // 在 / % ％ 空格 ( （ , ， 。 ; ； 、 等分隔符处截断,取首段作为数值候选
     let head = v
-        .split(['/', '%', '％', ' ', '（', '('])
+        .split([
+            '/', '%', '％', ' ', '（', '(', '，', '。', ';', '；', '、',
+        ])
         .next()
         .unwrap_or(v)
         .trim();
-    head.parse::<f64>().ok()
+    // 直接尝试解析（覆盖含英文逗号尾标点如 "3.5," 的情况由下面的剥离兜底）
+    if let Ok(n) = head.parse::<f64>() {
+        return Some(n);
+    }
+    // 英文逗号：作千分位剥除后重试（"50,000" → "50000"，"3.5," → "3.5"）
+    let stripped: String = head.chars().filter(|c| *c != ',').collect();
+    stripped.parse::<f64>().ok()
 }
 
 /// Normalize a confidence value to the 0-1 range expected by downstream consumers
@@ -547,7 +556,11 @@ fn extract_list_field_any(text: &str, keys: &[&str]) -> Option<Vec<String>> {
                 if !item.is_empty() {
                     items.push(item);
                 }
-            } else if trimmed.is_empty() || trimmed.contains(':') || trimmed.contains('：') {
+            } else if trimmed.is_empty() || is_structured_key_line(trimmed) {
+                // Stop only at a blank line or a genuine next KEY: line. A bare
+                // `contains(':')` over-triggered — list items legitimately contain
+                // colons (e.g. "- PE: 13.5", "- 时段: 9:30-11:30"), which truncated
+                // the list and dropped the rest of KEY_DATA.
                 break;
             }
         }
@@ -605,7 +618,16 @@ fn parse_risk(text: &str, parsed: &mut ParsedFields) {
     // R1 fields — "风险信号" is the preferred key to avoid confusion with Quant/Macro signal
     parsed.signal = extract_field_any(text, &["SIGNAL", "信号", "风险信号"]);
     parsed.strength = extract_f64_any(text, &["STRENGTH", "强度"]).map(normalize_strength);
-    parsed.pnl_pct = extract_f64_any(text, &["PNL_PCT", "盈亏比"]);
+    // pnl_pct: parse the number, but force a negative sign when the raw value is framed
+    // as a loss ("亏"/"浮亏"/"loss"/leading '-') — parse_leading_f64 drops the sign on
+    // forms like "36% loss", which would record a 36% loss as a +36% gain.
+    parsed.pnl_pct = extract_field_any(text, &["PNL_PCT", "盈亏比"]).and_then(|raw| {
+        let v = parse_leading_f64(&raw)?;
+        let lower = raw.to_lowercase();
+        let is_loss =
+            lower.contains("loss") || raw.contains('亏') || raw.trim_start().starts_with('-');
+        Some(if is_loss { -v.abs() } else { v })
+    });
     parsed.worst_case_loss_pct = extract_f64_any(text, &["WORST_CASE_LOSS_PCT_AT_-20", "最大回撤"]);
     parsed.one_liner = extract_field_any(text, &["ONE_LINER", "一句话"]);
     parsed.concentration_pct = extract_f64_any(text, &["CONCENTRATION_PCT", "集中度"]);

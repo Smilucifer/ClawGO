@@ -100,15 +100,19 @@ pub fn compute_volatility(closes: &[f64]) -> f64 {
 
 /// Percentile rank of `value` within `data` (0.0–100.0).
 ///
-/// Returns `50.0` when `data` is empty.
+/// Returns `50.0` when `data` is empty. Uses tie-rank (midpoint of equal values):
+/// the previous `position(|v| v >= value)` returned the FIRST equal index, which
+/// collapsed a flat window (all equal) to 0% and capped the maximum at (n-1)/n. The
+/// midpoint formula `(lower + 0.5*equal)/n` maps a flat window to 50% and a true high
+/// to ~100%.
 pub fn compute_price_percentile(value: f64, data: &[f64]) -> f64 {
     if data.is_empty() {
         return 50.0;
     }
-    let mut sorted = data.to_vec();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let rank = sorted.iter().position(|&v| v >= value).unwrap_or(sorted.len());
-    rank as f64 / sorted.len() as f64 * 100.0
+    let n = data.len() as f64;
+    let lower = data.iter().filter(|&&v| v < value).count() as f64;
+    let equal = data.iter().filter(|&&v| v == value).count() as f64;
+    (lower + 0.5 * equal) / n * 100.0
 }
 
 /// Trend classification from MA5/MA20/MA60/MA120.
@@ -203,9 +207,25 @@ mod tests {
     fn percentile_basic() {
         let data = vec![10.0, 20.0, 30.0, 40.0, 50.0];
         let p = compute_price_percentile(30.0, &data);
-        // position(|&v| v >= 30.0) = index 2 → 2/5 * 100 = 40.0
-        // (percentage of values strictly below the given value)
-        assert!((p - 40.0).abs() < f64::EPSILON);
+        // tie-rank: lower=2 (10,20), equal=1 (30) → (2 + 0.5*1)/5 * 100 = 50.0
+        // 30 is the median of the window, so its percentile is 50%, not 40%.
+        assert!((p - 50.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn percentile_flat_window_is_mid() {
+        // A flat window (all equal) must map to 50%, not 0% (the old position()-based bug).
+        let data = vec![15.0, 15.0, 15.0, 15.0];
+        assert!((compute_price_percentile(15.0, &data) - 50.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn percentile_max_near_top() {
+        // The window maximum should be near 100% (old code capped at (n-1)/n).
+        let data = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        let p = compute_price_percentile(50.0, &data);
+        // lower=4, equal=1 → (4 + 0.5)/5 * 100 = 90.0
+        assert!((p - 90.0).abs() < f64::EPSILON);
     }
 
     #[test]

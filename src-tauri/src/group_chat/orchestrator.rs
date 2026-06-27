@@ -1392,11 +1392,21 @@ async fn active_target_for_participant(
     ))
 }
 
+/// Normalize an @mention target: strip the leading '@' and any trailing punctuation
+/// (so "@Alice," / "@Alice." / "@Alice：" all resolve to "alice"), lowercased.
+/// '.', '_', '-' are kept since labels may legitimately contain them.
+fn strip_mention(s: &str) -> String {
+    s.trim()
+        .trim_start_matches('@')
+        .trim_end_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '-' && c != '.')
+        .to_ascii_lowercase()
+}
+
 fn find_participant<'a>(
     participants: &'a [GroupChatParticipant],
     target: &str,
 ) -> Option<&'a GroupChatParticipant> {
-    let normalized = target.trim().trim_start_matches('@').to_ascii_lowercase();
+    let normalized = strip_mention(target);
     participants.iter().find(|participant| {
         participant.id.eq_ignore_ascii_case(&normalized)
             || participant.run_id.eq_ignore_ascii_case(&normalized)
@@ -1409,7 +1419,7 @@ fn find_participant_unique<'a>(
     participants: &'a [GroupChatParticipant],
     target: &str,
 ) -> Result<&'a GroupChatParticipant, String> {
-    let normalized = target.trim().trim_start_matches('@').to_ascii_lowercase();
+    let normalized = strip_mention(target);
     let matches: Vec<&GroupChatParticipant> = participants
         .iter()
         .filter(|participant| {
@@ -1435,16 +1445,21 @@ fn extract_first_mention(
     exclude_ids: &HashSet<String>,
 ) -> Option<String> {
     for response in &turn.responses {
-        let text = response.preview.as_deref()?;
+        // Skip responses with no preview — don't `?`-return, which would abort the whole
+        // scan on the first empty preview and miss mentions in later responses.
+        let Some(text) = response.preview.as_deref() else {
+            continue;
+        };
         for word in text.split_whitespace() {
-            let candidate = word.trim_start_matches('@');
-            if candidate == word || candidate.is_empty() {
+            if !word.starts_with('@') {
                 continue;
             }
-            let normalized = candidate.to_ascii_lowercase();
+            let normalized = strip_mention(word);
+            if normalized.is_empty() {
+                continue;
+            }
             let matched = participants.iter().find(|p| {
-                p.label.to_ascii_lowercase() == normalized
-                    && !exclude_ids.contains(&p.id)
+                p.label.to_ascii_lowercase() == normalized && !exclude_ids.contains(&p.id)
             });
             if let Some(participant) = matched {
                 return Some(participant.label.clone());
