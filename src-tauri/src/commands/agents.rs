@@ -158,16 +158,10 @@ fn safe_resolve_agent_path(
     // string starts_with against a non-canonicalized target is ALWAYS false — which
     // silently broke all project/user-scope agent CRUD on Windows. We canonicalize the
     // agents dir's nearest existing ancestor and require it to sit under parent_to_check.
-    let mut probe = base.clone();
-    let canonical_ancestor = loop {
-        match std::fs::canonicalize(&probe) {
-            Ok(c) => break c,
-            Err(_) => match probe.parent() {
-                Some(p) => probe = p.to_path_buf(),
-                None => break probe.clone(),
-            },
-        }
-    };
+    let canonical_ancestor = base
+        .ancestors()
+        .find_map(|p| std::fs::canonicalize(p).ok())
+        .unwrap_or_else(|| base.clone());
     if !canonical_ancestor.starts_with(&parent_to_check) {
         log::warn!(
             "[agents] path escape rejected: base={:?}, canonical_ancestor={:?}, parent={:?}",

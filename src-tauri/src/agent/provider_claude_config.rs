@@ -273,23 +273,9 @@ pub fn write_provider_claude_config(
 /// Atomically write a provider session config file with 0o600 perms (Unix). These
 /// files carry ANTHROPIC_AUTH_TOKEN / API keys in plaintext, so they must not be
 /// world-readable, and a half-written file (truncate-write crash) must not be loaded
-/// by the CLI. tmp+rename gives atomicity; perms are set on the tmp before rename so
-/// there is no readable window at the final path.
+/// by the CLI. Delegates to the shared secure atomic writer.
 fn write_secure_config(path: &std::path::Path, contents: &str) -> Result<(), String> {
-    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
-    fs::write(&tmp, contents).map_err(|e| format!("write temp config {}: {e}", tmp.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Err(e) = fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)) {
-            let _ = fs::remove_file(&tmp);
-            return Err(format!("set perms on {}: {e}", tmp.display()));
-        }
-    }
-    fs::rename(&tmp, path).map_err(|e| {
-        let _ = fs::remove_file(&tmp);
-        format!("rename {} -> {}: {e}", tmp.display(), path.display())
-    })
+    crate::storage::write_atomic_string_secure(path, contents)
 }
 
 fn mcp_config_temp_path(run_id: &str) -> PathBuf {

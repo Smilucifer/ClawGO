@@ -455,10 +455,12 @@ fn normalize_verdict(raw: &str) -> String {
     let upper = head.to_uppercase();
 
     // Negation guard: if the clause negates buying, it is at most a HOLD, never BUY.
-    let negated_buy = ["不买", "不要买", "暂不买", "避免买", "勿买", "别买"]
+    // Entries are minimal: substring matching means "不买" already covers "暂不买", and
+    // "NOT BUY"/"NOT_BUY" already cover the "DO NOT …" variants.
+    let negated_buy = ["不买", "不要买", "避免买", "勿买", "别买"]
         .iter()
         .any(|k| head.contains(k))
-        || ["DO NOT BUY", "DON'T BUY", "NOT BUY", "NO BUY", "DO NOT_BUY", "NOT_BUY"]
+        || ["DON'T BUY", "NOT BUY", "NO BUY", "NOT_BUY"]
             .iter()
             .any(|k| upper.contains(k));
 

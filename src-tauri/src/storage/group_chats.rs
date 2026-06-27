@@ -334,16 +334,15 @@ fn list_turns_jsonl(room_id: &str, path: PathBuf) -> Result<Vec<GroupChatTurn>, 
     let mut dedup: std::collections::HashMap<String, GroupChatTurn> = std::collections::HashMap::new();
     for line in content.lines().filter(|line| !line.trim().is_empty()) {
         if let Ok(turn) = serde_json::from_str::<GroupChatTurn>(line) {
-            match dedup.get(&turn.id) {
-                Some(existing) if turn.responses.is_empty() && !existing.responses.is_empty() => {
-                    let mut merged = existing.clone();
-                    merged.completed_at = turn.completed_at.clone();
-                    dedup.insert(turn.id.clone(), merged);
-                }
-                _ => {
-                    dedup.insert(turn.id.clone(), turn);
+            if let Some(existing) = dedup.get_mut(&turn.id) {
+                if turn.responses.is_empty() && !existing.responses.is_empty() {
+                    // Keep prior responses; adopt only the newer terminal field. Mutate in
+                    // place to avoid deep-cloning the whole turn on the hot replay path.
+                    existing.completed_at = turn.completed_at;
+                    continue;
                 }
             }
+            dedup.insert(turn.id.clone(), turn);
         }
     }
     let mut turns: Vec<GroupChatTurn> = dedup.into_values().collect();

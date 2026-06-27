@@ -107,11 +107,8 @@ pub fn update_cli_config(patch: Value) -> Result<Value, String> {
             log::debug!("[cli_config] deleting key: {}", key);
             map.remove(key);
         } else {
-            if SENSITIVE_KEYS.contains(&key.as_str()) {
-                log::debug!("[cli_config] setting key: {} = ***", key);
-            } else {
-                log::debug!("[cli_config] setting key: {}", key);
-            }
+            // Never log the value — it may be apiKey/primaryApiKey.
+            log::debug!("[cli_config] setting key: {}", key);
             map.insert(key.clone(), value.clone());
         }
     }
@@ -128,23 +125,10 @@ pub fn update_cli_config(patch: Value) -> Result<Value, String> {
     let content =
         serde_json::to_string_pretty(&config).map_err(|e| format!("Failed to serialize: {}", e))?;
 
-    // Atomic write: tmp + (perms BEFORE rename) + rename. settings.json is shared with the
-    // Anthropic CLI; a truncate-write crash would corrupt it, and setting 0o600 only after
-    // the final write left a world-readable window over apiKey/primaryApiKey.
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, &content).map_err(|e| format!("Failed to write temp: {}", e))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Err(e) = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)) {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(format!("Failed to set perms: {}", e));
-        }
-    }
-    std::fs::rename(&tmp, &path).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        format!("Failed to rename: {}", e)
-    })?;
+    // Atomic + 0o600 (perms set on tmp before rename). settings.json is shared with the
+    // Anthropic CLI, so the shared helper's {pid}.{nanos} tmp name also avoids cross-process
+    // tmp collisions, and 0o600-before-rename leaves no world-readable window over apiKey.
+    super::write_atomic_string_secure(&path, &content)?;
 
     log::debug!(
         "[cli_config] updated {} keys total",

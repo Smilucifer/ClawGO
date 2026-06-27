@@ -137,8 +137,35 @@ pub fn ensure_dir(path: &std::path::Path) -> std::io::Result<()> {
 /// the target. A truncate-write crash can never leave the file half-written. Use for any
 /// config/state file that a reader might load concurrently.
 pub fn write_atomic_string(path: &std::path::Path, contents: &str) -> Result<(), String> {
-    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
+    write_atomic_inner(path, contents, false)
+}
+
+/// Like [`write_atomic_string`] but sets 0o600 on the tmp file (Unix) BEFORE the rename,
+/// so the final path never has a world-readable window. Use for credential-bearing files
+/// (provider session configs, ~/.claude settings, etc.).
+pub fn write_atomic_string_secure(path: &std::path::Path, contents: &str) -> Result<(), String> {
+    write_atomic_inner(path, contents, true)
+}
+
+fn write_atomic_inner(path: &std::path::Path, contents: &str, secure: bool) -> Result<(), String> {
+    // {pid}.{nanos} tmp name so two writers (including external CLIs sharing the file)
+    // can't pick the same tmp path and stomp each other before the rename.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = path.with_extension(format!("tmp.{}.{}", std::process::id(), nanos));
     std::fs::write(&tmp, contents).map_err(|e| format!("write tmp {}: {e}", tmp.display()))?;
+    #[cfg(unix)]
+    if secure {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(e) = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(format!("set perms on {}: {e}", tmp.display()));
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = secure;
     std::fs::rename(&tmp, path).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
         format!("rename {} -> {}: {e}", tmp.display(), path.display())

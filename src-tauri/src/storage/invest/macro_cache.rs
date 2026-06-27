@@ -200,21 +200,25 @@ pub fn is_stale(entry: &MacroCacheEntry, max_age_minutes: u32) -> bool {
     // CST and the data was fetched on or after the most recent Friday (CST), accept it.
     let cst = chrono::FixedOffset::east_opt(8 * 3600).unwrap();
     let now_cst = now.with_timezone(&cst);
-    let today = now_cst.weekday();
-    if matches!(today, Weekday::Sat | Weekday::Sun) {
-        let days_since_friday = match today {
-            Weekday::Sat => 1,
-            Weekday::Sun => 2,
-            _ => 0,
-        };
-        let last_friday = (now_cst - chrono::Duration::days(days_since_friday)).date_naive();
-        if fetched_utc.with_timezone(&cst).date_naive() >= last_friday {
-            return false;
-        }
+    let days_since_friday = match now_cst.weekday() {
+        Weekday::Sat => 1,
+        Weekday::Sun => 2,
+        // Weekday — markets may have fresher data, fall through to the age check.
+        _ => return age_is_stale(now, fetched_utc, max_age_minutes),
+    };
+    let last_friday = (now_cst - chrono::Duration::days(days_since_friday)).date_naive();
+    if fetched_utc.with_timezone(&cst).date_naive() >= last_friday {
+        return false;
     }
+    age_is_stale(now, fetched_utc, max_age_minutes)
+}
 
-    let age = now.signed_duration_since(fetched_utc);
-    age.num_minutes() > max_age_minutes as i64
+fn age_is_stale(
+    now: chrono::DateTime<chrono::Utc>,
+    fetched_utc: chrono::DateTime<chrono::Utc>,
+    max_age_minutes: u32,
+) -> bool {
+    now.signed_duration_since(fetched_utc).num_minutes() > max_age_minutes as i64
 }
 
 #[cfg(test)]

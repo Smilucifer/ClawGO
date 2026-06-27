@@ -513,20 +513,21 @@ pub async fn run_group_chat_turn_with_runtime(
             // Single extraction per group chat turn (user-centric, not per-character).
             // Skip private (/dm) turns entirely: DM content must never be sent to an
             // external LLM or written into the shared global user memory (privacy leak).
-            let gc_id = room_id.to_string();
-            let turn_texts: Vec<String> = turn
-                .responses
-                .iter()
-                .filter_map(|r| {
-                    let text = r.preview.as_deref()?;
-                    let speaker = room.participants.iter()
-                        .find(|p| p.id == r.participant_id)
-                        .map(|p| p.label.as_str())
-                        .unwrap_or("?");
-                    Some(format!("[{}]: {}", speaker, text))
-                })
-                .collect();
+            // Build turn_texts only when extraction will actually run.
             if !is_private {
+                let gc_id = room_id.to_string();
+                let turn_texts: Vec<String> = turn
+                    .responses
+                    .iter()
+                    .filter_map(|r| {
+                        let text = r.preview.as_deref()?;
+                        let speaker = room.participants.iter()
+                            .find(|p| p.id == r.participant_id)
+                            .map(|p| p.label.as_str())
+                            .unwrap_or("?");
+                        Some(format!("[{}]: {}", speaker, text))
+                    })
+                    .collect();
                 tokio::spawn(async move {
                     if !can_extract(&gc_id) {
                         return;
