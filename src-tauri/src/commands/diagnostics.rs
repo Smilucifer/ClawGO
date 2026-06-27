@@ -401,6 +401,19 @@ pub async fn test_remote_host(
     }
 
     let port = port.unwrap_or(22);
+    // Reject user/host that start with '-': otherwise ssh parses "user@host" (or a
+    // leading-dash user/host) as an option, e.g. "-oProxyCommand=…", which is an
+    // argv-flag injection / RCE vector (H-sec-4). The '--' terminator below is a second
+    // line of defense, but ssh still treats a dashed value before '--' as a flag.
+    if user.starts_with('-') || host.starts_with('-') {
+        return Ok(RemoteTestResult {
+            ssh_ok: false,
+            cli_found: false,
+            cli_path: None,
+            cli_version: None,
+            error: Some("invalid user/host: must not start with '-'".to_string()),
+        });
+    }
     let target = format!("{}@{}", user, host);
     log::debug!(
         "[diagnostics] test_remote_host: target={}, port={}, key={:?}",
@@ -423,7 +436,7 @@ pub async fn test_remote_host(
     if let Some(ref key) = key_path {
         ssh_cmd.args(["-i", &expand_local_tilde(key)]);
     }
-    ssh_cmd.arg(&target).arg("echo ok");
+    ssh_cmd.arg("--").arg(&target).arg("echo ok");
     ssh_cmd
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -477,7 +490,7 @@ pub async fn test_remote_host(
     if let Some(ref key) = key_path {
         cli_cmd.args(["-i", &expand_local_tilde(key)]);
     }
-    cli_cmd.arg(&target).arg(&check_cmd_str);
+    cli_cmd.arg("--").arg(&target).arg(&check_cmd_str);
     cli_cmd
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
