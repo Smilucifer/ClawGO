@@ -207,11 +207,41 @@ pub async fn run_claude_pipe_or_session(
         // Claude: stdout is the response text
         let mut reader = BufReader::new(stdout);
         let mut buf = vec![0u8; 8192];
+        // Carry bytes of an incomplete multi-byte UTF-8 sequence across reads. A fixed
+        // 8KiB read can split a multi-byte char at the boundary; from_utf8_lossy would
+        // turn that into U+FFFD. Buffer the trailing incomplete bytes and prepend them
+        // to the next chunk so the char decodes intact (H-utf8).
+        let mut pending: Vec<u8> = Vec::new();
         loop {
             match reader.read(&mut buf).await {
                 Ok(0) => break,
                 Ok(n) => {
-                    let text = String::from_utf8_lossy(&buf[..n]).to_string();
+                    pending.extend_from_slice(&buf[..n]);
+                    // Decode the longest valid UTF-8 prefix; keep any trailing incomplete
+                    // sequence in `pending` for the next read.
+                    let text = match std::str::from_utf8(&pending) {
+                        Ok(s) => {
+                            let s = s.to_string();
+                            pending.clear();
+                            s
+                        }
+                        Err(e) => {
+                            let valid_up_to = e.valid_up_to();
+                            // A genuine invalid (not just incomplete) byte: if error_len is
+                            // Some, drop one bad byte to make progress; else it's a partial
+                            // tail to carry over.
+                            let s = String::from_utf8_lossy(&pending[..valid_up_to]).to_string();
+                            let drop_to = match e.error_len() {
+                                Some(bad) => valid_up_to + bad,
+                                None => valid_up_to,
+                            };
+                            pending.drain(..drop_to);
+                            s
+                        }
+                    };
+                    if text.is_empty() {
+                        continue;
+                    }
                     assistant_text.push_str(&text);
                     if let Err(e) = storage::events::append_event(
                         &run_id_out,
@@ -230,7 +260,10 @@ pub async fn run_claude_pipe_or_session(
                     );
                     let _ = app_out.emit("chat-delta", ChatDelta { text });
                 }
-                Err(_) => break,
+                Err(e) => {
+                    log::warn!("[stream] stdout read error: {}", e);
+                    break;
+                }
             }
         }
         assistant_text

@@ -103,7 +103,13 @@ async fn fetch_sh_composite(
 
     let fetched = fetch_with_chain(
         &chain,
-        |(close, _): &(f64, Option<f64>)| *close != 0.0 && close.is_finite(),
+        // Require BOTH close and vol20: a source that returns close but vol20=None
+        // (e.g. MiniQmt with insufficient bars) must NOT short-circuit the chain and
+        // block Tushare fallback, which leaves vol20 missing and drifts source/age
+        // between the two rows (H-data-2).
+        |(close, vol20): &(f64, Option<f64>)| {
+            *close != 0.0 && close.is_finite() && matches!(vol20, Some(v) if v.is_finite())
+        },
         |source| {
             let client = client.clone();
             let (sd, ed) = (start_date.clone(), end_date.clone());
@@ -235,6 +241,15 @@ async fn fetch_margin(
         .max_by_key(|d| &d.trade_date)
         .ok_or("margin: no data")?;
 
+    // Reject a zero/non-finite balance: margin balance is never legitimately 0, so a 0
+    // here means a missing/garbage field that must not be persisted as real data (H-data-3).
+    if latest.rzye == 0.0 || !latest.rzye.is_finite() {
+        return Err(format!(
+            "margin: invalid rzye {} for trade_date {}",
+            latest.rzye, latest.trade_date
+        ));
+    }
+
     Ok(vec![(
         "margin_balance".to_string(),
         Some(latest.rzye),
@@ -262,6 +277,15 @@ async fn fetch_shibor(
         .iter()
         .max_by_key(|s| &s.date)
         .ok_or("shibor: no data")?;
+
+    // Reject a zero/non-finite overnight rate: SHIBOR is never legitimately 0, so a 0
+    // means a missing/garbage field that must not be persisted as real data (H-data-3).
+    if latest.on == 0.0 || !latest.on.is_finite() {
+        return Err(format!(
+            "shibor: invalid overnight rate {} for date {}",
+            latest.on, latest.date
+        ));
+    }
 
     Ok(vec![(
         "shibor_on".to_string(),

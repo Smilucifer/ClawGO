@@ -61,7 +61,17 @@ impl Executor for CodexExecutor {
         let mut state = CodexProtocolState::new(run_id.clone());
         let reader = BufReader::new(stdout);
         let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
+        loop {
+            let line = match lines.next_line().await {
+                Ok(Some(line)) => line,
+                Ok(None) => break, // EOF
+                Err(e) => {
+                    // Don't silently treat a read error as EOF — log it so a truncated
+                    // codex stream is diagnosable rather than looking like a clean finish.
+                    log::warn!("[codex] stdout read error: {}", e);
+                    break;
+                }
+            };
             let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue;
