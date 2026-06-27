@@ -222,20 +222,32 @@ pub fn detach_group_chat_run(room_id: &str, run_id: &str) -> Result<GroupChat, S
         return Err("Cannot remove the last participant. Delete the group chat instead.".to_string());
     }
     let before = room.participants.len();
+    // Capture the participant_id(s) being removed BEFORE retain drops them — the meta
+    // file is named by participant_id (see group_chat/context.rs), NOT run_id. Using
+    // run_id here (the old bug) never matched, leaving an orphan meta whose stale cursor
+    // got read back on re-attach (H-gc-1).
+    let removed_participant_ids: Vec<String> = room
+        .participants
+        .iter()
+        .filter(|p| p.run_id == run_id)
+        .map(|p| p.id.clone())
+        .collect();
     room.participants.retain(|p| p.run_id != run_id);
     if room.participants.len() == before {
         return Err(format!("Run {} not found in group chat {}", run_id, room_id));
     }
     room.updated_at = now_iso();
     save_group_chat(&room)?;
-    // Clean up orphaned participant meta file. Validate run_id before joining it into
-    // a path (it comes from the frontend) so a crafted id can't delete an arbitrary
-    // *.meta.json outside this group chat. Don't silently swallow the delete error —
-    // a missing file is fine (NotFound), but anything else is worth a log line.
-    if super::validate_run_id(run_id).is_ok() {
+    // Clean up orphaned participant meta file(s), keyed by participant_id. Don't silently
+    // swallow the delete error — a missing file is fine (NotFound), anything else logs.
+    for participant_id in &removed_participant_ids {
+        if super::validate_run_id(participant_id).is_err() {
+            log::warn!("[storage/group_chats] detach: skipped meta cleanup for invalid participant_id");
+            continue;
+        }
         let meta_path = group_chat_dir(room_id)
             .join("participants")
-            .join(format!("{}.meta.json", run_id));
+            .join(format!("{}.meta.json", participant_id));
         if let Err(e) = std::fs::remove_file(&meta_path) {
             if e.kind() != std::io::ErrorKind::NotFound {
                 log::warn!(
@@ -245,8 +257,6 @@ pub fn detach_group_chat_run(room_id: &str, run_id: &str) -> Result<GroupChat, S
                 );
             }
         }
-    } else {
-        log::warn!("[storage/group_chats] detach: skipped meta cleanup for invalid run_id");
     }
     Ok(room)
 }
@@ -315,11 +325,25 @@ fn list_turns_jsonl(room_id: &str, path: PathBuf) -> Result<Vec<GroupChatTurn>, 
     }
     let content = fs::read_to_string(path).map_err(|e| format!("read group chat timeline: {e}"))?;
     // Dedup by turn_id — incremental snapshots from orchestrator share the
-    // same id; the last line for each id carries the completed turn state.
+    // same id; the last line for each id normally carries the completed turn state.
+    // Exception (H-gc-2): a terminal *failed* turn is written with empty responses and
+    // the same id; taking it verbatim would erase partial responses already persisted
+    // for that turn (UI shows "zero responses"). So when the newer line has no responses
+    // but the existing one does, keep the existing responses and only adopt the newer
+    // line's terminal fields (completed_at).
     let mut dedup: std::collections::HashMap<String, GroupChatTurn> = std::collections::HashMap::new();
     for line in content.lines().filter(|line| !line.trim().is_empty()) {
         if let Ok(turn) = serde_json::from_str::<GroupChatTurn>(line) {
-            dedup.insert(turn.id.clone(), turn);
+            match dedup.get(&turn.id) {
+                Some(existing) if turn.responses.is_empty() && !existing.responses.is_empty() => {
+                    let mut merged = existing.clone();
+                    merged.completed_at = turn.completed_at.clone();
+                    dedup.insert(turn.id.clone(), merged);
+                }
+                _ => {
+                    dedup.insert(turn.id.clone(), turn);
+                }
+            }
         }
     }
     let mut turns: Vec<GroupChatTurn> = dedup.into_values().collect();

@@ -1269,21 +1269,25 @@ impl SessionActor {
             request_id
         );
 
-        if subtype == "interrupt" {
-            self.pending_interrupt = true;
-            log::debug!("[actor] pending_interrupt set for run_id={}", self.run_id);
-        }
-
         let payload = serde_json::json!({
             "type": "control_request",
             "request_id": &request_id,
             "request": request,
         });
 
+        // Write FIRST, then record side effects only on success. If write_json_line fails
+        // and returns early, we must not leave pending_interrupt set (it would later
+        // rewrite a genuine CLI `failed` into `idle`, masking the failure — H-state-3) nor
+        // an orphan control waiter that never receives a response.
+        self.write_json_line(&payload, "control request").await?;
+
+        if subtype == "interrupt" {
+            self.pending_interrupt = true;
+            log::debug!("[actor] pending_interrupt set for run_id={}", self.run_id);
+        }
+
         let (tx, rx) = oneshot::channel();
         self.control_waiters.insert(request_id.clone(), tx);
-
-        self.write_json_line(&payload, "control request").await?;
 
         Ok((request_id, rx))
     }
@@ -1679,16 +1683,34 @@ impl SessionActor {
                     ..
                 } => {
                     log::debug!("[actor] captured session_id={}", sid);
-                    // Single with_meta write: session_id + conversation_ref (avoid double write + intermediate state)
+                    // Single with_meta write: session_id + conversation_ref (avoid double write + intermediate state).
+                    // Persisting this is resume-critical — without it, `claude --resume` after a
+                    // restart has no session id and cannot recover the conversation (H-state-1).
+                    // Retry a few times before giving up; on total failure emit a non-fatal warning
+                    // event so the user knows this session won't be resumable.
                     let sid_clone = sid.clone();
-                    if let Err(e) = storage::runs::with_meta(&self.run_id, |meta| {
-                        meta.session_id = Some(sid_clone.clone());
-                        meta.conversation_ref =
-                            Some(crate::models::ConversationRef::ClaudeSession(sid_clone));
-                        Ok(())
-                    }) {
+                    let mut persist_result = Ok(());
+                    for attempt in 0..3 {
+                        let sid_inner = sid_clone.clone();
+                        persist_result = storage::runs::with_meta(&self.run_id, |meta| {
+                            meta.session_id = Some(sid_inner.clone());
+                            meta.conversation_ref =
+                                Some(crate::models::ConversationRef::ClaudeSession(sid_inner));
+                            Ok(())
+                        });
+                        if persist_result.is_ok() {
+                            break;
+                        }
                         log::warn!(
-                            "[actor] failed to persist session_id + conversation_ref: {}",
+                            "[actor] persist session_id attempt {} failed: {:?}",
+                            attempt + 1,
+                            persist_result
+                        );
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    }
+                    if let Err(e) = persist_result {
+                        log::error!(
+                            "[actor] failed to persist session_id after retries; session will NOT be resumable: {}",
                             e
                         );
                     }
@@ -2284,9 +2306,32 @@ impl SessionActor {
                 } else {
                     None
                 };
-                if let Err(e) = runs::update_status(&self.run_id, status, exit_code, meta_error) {
+                // Retry the terminal-status write: if it fails, the on-disk meta stays
+                // "Running" while the UI/event stream shows the real terminal state, so a
+                // cold restart reads a stale status (H-state-2). emit_state is sync, so we
+                // retry tightly (no async sleep) and escalate to error! on total failure.
+                let mut update_result = Ok(());
+                for attempt in 0..3 {
+                    update_result = runs::update_status(
+                        &self.run_id,
+                        status.clone(),
+                        exit_code,
+                        meta_error.clone(),
+                    );
+                    if update_result.is_ok() {
+                        break;
+                    }
                     log::warn!(
-                        "[actor] meta update failed: run={} state={} err={}",
+                        "[actor] meta update attempt {} failed: run={} state={} err={:?}",
+                        attempt + 1,
+                        self.run_id,
+                        new_state,
+                        update_result
+                    );
+                }
+                if let Err(e) = update_result {
+                    log::error!(
+                        "[actor] meta update FAILED after retries; on-disk status stale: run={} state={} err={}",
                         self.run_id,
                         new_state,
                         e
