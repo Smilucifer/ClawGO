@@ -1163,11 +1163,11 @@ fn truncate_str(s: &str, max_chars: usize) -> String {
     if s.chars().count() <= max_chars {
         return s.to_string();
     }
-    let mut end = s.len();
-    for (i, _) in s.char_indices().skip(max_chars) {
-        end = i;
-        break;
-    }
+    let end = s
+        .char_indices()
+        .nth(max_chars)
+        .map(|(i, _)| i)
+        .unwrap_or(s.len());
     format!("{}...", &s[..end])
 }
 
