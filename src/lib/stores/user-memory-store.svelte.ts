@@ -8,14 +8,25 @@ export class UserMemoryStore {
   searchQuery = $state("");
   sortBy = $state<"newest" | "confidence">("newest");
 
+  // Guards against out-of-order responses when load() is called rapidly: a stale
+  // response from an earlier call must not overwrite a newer one (H-fe-race).
+  #loadSeq = 0;
+
   async load() {
+    const seq = ++this.#loadSeq;
     this.loading = true;
     try {
-      this.memories = await api.listCharacterMemories("");
+      const memories = await api.listCharacterMemories("");
+      if (seq !== this.#loadSeq) return;
+      this.memories = memories;
     } catch {
+      if (seq !== this.#loadSeq) return;
       this.memories = [];
+    } finally {
+      if (seq === this.#loadSeq) {
+        this.loading = false;
+      }
     }
-    this.loading = false;
   }
 
   get sortedMemories(): MemoryNode[] {

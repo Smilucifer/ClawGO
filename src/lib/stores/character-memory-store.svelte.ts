@@ -9,15 +9,26 @@ export class CharacterMemoryStore {
   searchQuery = $state("");
   sortBy = $state<"newest" | "confidence">("newest");
 
+  // Guards against out-of-order responses when switching characters rapidly: a stale
+  // response for a previous characterId must not overwrite the current one (H-fe-race).
+  #loadSeq = 0;
+
   async load(characterId: string) {
+    const seq = ++this.#loadSeq;
     this.characterId = characterId;
     this.loading = true;
     try {
-      this.memories = await api.listCharacterMemories(characterId);
+      const memories = await api.listCharacterMemories(characterId);
+      if (seq !== this.#loadSeq) return;
+      this.memories = memories;
     } catch {
+      if (seq !== this.#loadSeq) return;
       this.memories = [];
+    } finally {
+      if (seq === this.#loadSeq) {
+        this.loading = false;
+      }
     }
-    this.loading = false;
   }
 
   get sortedMemories(): MemoryNode[] {

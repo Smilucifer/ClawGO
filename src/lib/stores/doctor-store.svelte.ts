@@ -10,25 +10,37 @@ export class DoctorStore {
   rawReport = $state<DiagnosticsReport | null>(null);
   lastCwd = $state<string>("");
 
+  // Guards against out-of-order responses when run() is called rapidly for different
+  // cwds: a stale report must not overwrite a newer one (H-fe-race).
+  #runSeq = 0;
+
   async run(cwd: string, mcpServers?: import("$lib/types").McpServerInfo[]): Promise<void> {
+    const seq = ++this.#runSeq;
     this.loading = true;
     this.error = null;
     this.lastCwd = cwd;
     try {
       dbg("doctor-store", "run", { cwd });
-      this.rawReport = await runDiagnostics(cwd);
-      this.report = await buildDoctorReport(cwd, mcpServers);
+      const rawReport = await runDiagnostics(cwd);
+      const report = await buildDoctorReport(cwd, mcpServers);
+      if (seq !== this.#runSeq) return;
+      this.rawReport = rawReport;
+      this.report = report;
     } catch (e) {
+      if (seq !== this.#runSeq) return;
       this.error = String(e);
       this.report = null;
       this.rawReport = null;
       dbgWarn("doctor-store", "run error", e);
     } finally {
-      this.loading = false;
+      if (seq === this.#runSeq) {
+        this.loading = false;
+      }
     }
   }
 
   clear(): void {
+    this.#runSeq++;
     this.report = null;
     this.rawReport = null;
     this.error = null;
