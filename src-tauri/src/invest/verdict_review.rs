@@ -133,7 +133,10 @@ pub fn calc_atr_pct(bars: &[crate::tushare::client::DailyBar], price: f64) -> f6
     for i in start..n {
         let high = bars[i].high;
         let low = bars[i].low;
-        let prev_close = if i > 0 { bars[i - 1].close } else { bars[i].pre_close };
+        // Tushare `daily` bars are newest-first, so the previous trading day is bars[i+1],
+        // NOT bars[i-1] (which is a *newer* day). Use the bar's own `pre_close` field —
+        // Tushare provides the prior session's close directly, independent of sort order.
+        let prev_close = bars[i].pre_close;
 
         let tr = (high - low)
             .max((high - prev_close).abs())

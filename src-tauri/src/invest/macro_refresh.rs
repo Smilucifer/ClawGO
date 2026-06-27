@@ -174,7 +174,7 @@ async fn fetch_northbound(
     use crate::invest::data_source::{
         fetch_with_chain,
         registry::{chain_for, Category},
-        validity::is_valid_number,
+        validity::is_present_finite,
         SourceId,
     };
 
@@ -184,7 +184,8 @@ async fn fetch_northbound(
     let chain = chain_for(Category::Capital, false); // [Tushare, Akshare]
     let fetched = fetch_with_chain(
         &chain,
-        |v: &Option<f64>| is_valid_number(v),
+        // 北向资金净流入 0 是合法平盘态，用宽松判空避免误降级。
+        |v: &Option<f64>| is_present_finite(v),
         |source| {
             let client = client.clone();
             let (sd, ed) = (start_date.clone(), end_date.clone());

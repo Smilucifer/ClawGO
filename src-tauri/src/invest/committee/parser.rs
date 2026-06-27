@@ -379,6 +379,98 @@ fn parse_leading_f64(v: &str) -> Option<f64> {
     head.parse::<f64>().ok()
 }
 
+/// Normalize a confidence value to the 0-1 range expected by downstream consumers
+/// (`apply_hard_rules` compares `>= 0.95`, `archive.rs` renders `* 100`).
+/// LLMs emit either `0.75` or `75%`/`75`; `parse_leading_f64` strips the `%` and
+/// yields `75.0`, so any value > 1 is treated as a percentage and divided by 100.
+/// Result is clamped to [0, 1].
+fn normalize_confidence(v: f64) -> f64 {
+    let v = if v > 1.0 { v / 100.0 } else { v };
+    v.clamp(0.0, 1.0)
+}
+
+/// Normalize a strength value to the 1-10 scale expected by downstream consumers
+/// (`analysis.rs` compares `>= 6.0` / `>= 7.0`). LLMs mix `0.7` (0-1), `7` (1-10),
+/// and `70` (0-100). Heuristic: `<= 1.0` → ×10, `> 10.0` → ÷10, then clamp to [0, 10].
+fn normalize_strength(v: f64) -> f64 {
+    let v = if v <= 1.0 {
+        v * 10.0
+    } else if v > 10.0 {
+        v / 10.0
+    } else {
+        v
+    };
+    v.clamp(0.0, 10.0)
+}
+
+/// Map a macro SIGNAL value to {risk_on, risk_off, neutral}. Covers the common
+/// English/Chinese variants LLMs emit (bullish/看多, bearish/看空/避险, etc.).
+/// An unrecognized value is NOT silently coerced to `neutral` — that would swallow
+/// a genuine risk-off call and break the macro gate. Instead it is preserved
+/// verbatim with a warning so the downstream gate can still see it (or fall back).
+fn normalize_macro_signal(raw: &str) -> String {
+    let s = raw.to_lowercase();
+    let risk_on = ["risk_on", "risk on", "bullish", "bull", "看多", "偏多", "做多", "乐观"];
+    let risk_off = [
+        "risk_off", "risk off", "risk-off", "bearish", "bear", "看空", "偏空", "做空", "避险",
+        "谨慎", "恐慌", "减仓",
+    ];
+    if risk_on.iter().any(|k| s.contains(k)) {
+        "risk_on".to_string()
+    } else if risk_off.iter().any(|k| s.contains(k)) {
+        "risk_off".to_string()
+    } else if s.contains("neutral") || s.contains("中性") || s.contains("观望") {
+        "neutral".to_string()
+    } else {
+        log::warn!("[parser] unrecognized macro SIGNAL '{}', preserving verbatim", raw);
+        raw.trim().to_string()
+    }
+}
+
+/// Map a CIO VERDICT value to one of {BUY, ACCUMULATE, HOLD, TRIM, SELL}.
+/// Robust against two failure modes the naive `contains("BUY")` had:
+///   1. Negation — "不要买入" / "DO NOT BUY" / "暂不买入" must NOT become BUY.
+///   2. Prose contamination — a continuation line merged into the value
+///      ("HOLD WILL BUY") must resolve by the leading directive (HOLD), not BUY.
+/// Strategy: take only the first token/clause (cut at whitespace or punctuation),
+/// drop any negation prefix, then match the remaining keyword. Order is most-specific
+/// first so "ACCUMULATE/加仓" wins over the substring "BUY"/"买入".
+fn normalize_verdict(raw: &str) -> String {
+    // First clause only — cut at the first separator so a merged prose continuation
+    // ("HOLD, 近期不建议买入") cannot flip the directive.
+    let head = raw
+        .split([',', '，', '。', '\n', ';', '；', '/'])
+        .next()
+        .unwrap_or(raw)
+        .trim();
+    let upper = head.to_uppercase();
+
+    // Negation guard: if the clause negates buying, it is at most a HOLD, never BUY.
+    let negated_buy = ["不买", "不要买", "暂不买", "避免买", "勿买", "别买"]
+        .iter()
+        .any(|k| head.contains(k))
+        || ["DO NOT BUY", "DON'T BUY", "NOT BUY", "NO BUY", "DO NOT_BUY", "NOT_BUY"]
+            .iter()
+            .any(|k| upper.contains(k));
+
+    if upper.contains("ACCUMULATE") || head.contains("加仓") {
+        "ACCUMULATE".to_string()
+    } else if upper.contains("SELL") || head.contains("卖出") || head.contains("清仓") {
+        "SELL".to_string()
+    } else if upper.contains("TRIM") || head.contains("减仓") {
+        "TRIM".to_string()
+    } else if negated_buy {
+        // "不买" with no other directive → HOLD.
+        "HOLD".to_string()
+    } else if upper.contains("HOLD") || head.contains("持有") || head.contains("观望") {
+        "HOLD".to_string()
+    } else if upper.contains("BUY") || head.contains("买入") {
+        "BUY".to_string()
+    } else {
+        upper
+    }
+}
+
 /// Try extracting an f64 field by multiple keys.
 fn extract_f64_any(text: &str, keys: &[&str]) -> Option<f64> {
     for key in keys {
@@ -424,7 +516,7 @@ fn apply_r2_signal_override(parsed: &mut ParsedFields, text: &str) {
     }
     // R2 strength keys
     if let Some(strength) = extract_f64_any(text, &["ADJUSTED_STRENGTH", "调整强度"]) {
-        parsed.strength = Some(strength);
+        parsed.strength = Some(normalize_strength(strength));
     }
 }
 
@@ -465,18 +557,9 @@ fn extract_list_field_any(text: &str, keys: &[&str]) -> Option<Vec<String>> {
 
 fn parse_macro(text: &str, parsed: &mut ParsedFields) {
     // English: SIGNAL / 信号
-    parsed.signal = extract_field_any(text, &["SIGNAL", "信号"]).map(|s| {
-        let s = s.to_lowercase();
-        if s.contains("risk_on") || s.contains("risk on") {
-            "risk_on".to_string()
-        } else if s.contains("risk_off") || s.contains("risk off") {
-            "risk_off".to_string()
-        } else {
-            "neutral".to_string()
-        }
-    });
+    parsed.signal = extract_field_any(text, &["SIGNAL", "信号"]).map(|s| normalize_macro_signal(&s));
     // English: STRENGTH / 强度
-    parsed.strength = extract_f64_any(text, &["STRENGTH", "强度"]);
+    parsed.strength = extract_f64_any(text, &["STRENGTH", "强度"]).map(normalize_strength);
     // 市场阶段: "主升" | "分歧" | "退潮" | "冰点" | "混沌"
     parsed.market_phase = extract_field_any(text, &["MARKET_PHASE", "市场阶段"]);
     // 宏观敏感度: "positive" | "negative" | "neutral"
@@ -494,7 +577,7 @@ fn parse_quant(text: &str, parsed: &mut ParsedFields) {
     // R1 fields
     parsed.regime = extract_field_any(text, &["REGIME", "市场状态"]);
     parsed.signal = extract_field_any(text, &["SIGNAL", "信号"]);
-    parsed.strength = extract_f64_any(text, &["STRENGTH", "强度"]);
+    parsed.strength = extract_f64_any(text, &["STRENGTH", "强度"]).map(normalize_strength);
     parsed.key_data = extract_list_field_any(text, &["KEY_DATA", "关键数据"]);
     parsed.one_liner = extract_field_any(text, &["ONE_LINER", "一句话"]);
     // 资金流向原始文本
@@ -521,7 +604,7 @@ fn parse_quant(text: &str, parsed: &mut ParsedFields) {
 fn parse_risk(text: &str, parsed: &mut ParsedFields) {
     // R1 fields — "风险信号" is the preferred key to avoid confusion with Quant/Macro signal
     parsed.signal = extract_field_any(text, &["SIGNAL", "信号", "风险信号"]);
-    parsed.strength = extract_f64_any(text, &["STRENGTH", "强度"]);
+    parsed.strength = extract_f64_any(text, &["STRENGTH", "强度"]).map(normalize_strength);
     parsed.pnl_pct = extract_f64_any(text, &["PNL_PCT", "盈亏比"]);
     parsed.worst_case_loss_pct = extract_f64_any(text, &["WORST_CASE_LOSS_PCT_AT_-20", "最大回撤"]);
     parsed.one_liner = extract_field_any(text, &["ONE_LINER", "一句话"]);
@@ -537,25 +620,10 @@ fn parse_risk(text: &str, parsed: &mut ParsedFields) {
 }
 
 fn parse_cio(text: &str, parsed: &mut ParsedFields) {
-    // English: VERDICT / 裁决
-    parsed.verdict = extract_field_any(text, &["VERDICT", "裁决"]).map(|v| {
-        // Uppercase normalizes English variants; Chinese chars are unaffected by to_uppercase()
-        let v = v.to_uppercase();
-        if v.contains("BUY") || v.contains("买入") {
-            "BUY".to_string()
-        } else if v.contains("ACCUMULATE") || v.contains("加仓") {
-            "ACCUMULATE".to_string()
-        } else if v.contains("HOLD") || v.contains("持有") {
-            "HOLD".to_string()
-        } else if v.contains("TRIM") || v.contains("减仓") {
-            "TRIM".to_string()
-        } else if v.contains("SELL") || v.contains("卖出") {
-            "SELL".to_string()
-        } else {
-            v
-        }
-    });
-    parsed.confidence = extract_f64_any(text, &["CONFIDENCE", "置信度"]);
+    // VERDICT / 裁决 — normalized to one of {BUY, ACCUMULATE, HOLD, TRIM, SELL}.
+    parsed.verdict = extract_field_any(text, &["VERDICT", "裁决"]).map(|v| normalize_verdict(&v));
+    parsed.confidence =
+        extract_f64_any(text, &["CONFIDENCE", "置信度"]).map(normalize_confidence);
     parsed.concentration_pct = extract_f64_any(text, &["CONCENTRATION_PCT", "集中度"]);
     parsed.dry_powder_cny = extract_f64_any(text, &["DRY_POWDER_CNY", "可用子弹"]);
     parsed.dominant_view = extract_field_any(text, &["DOMINANT_VIEW", "主流观点"]);
