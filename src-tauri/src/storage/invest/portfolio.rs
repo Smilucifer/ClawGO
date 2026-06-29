@@ -708,6 +708,9 @@ fn process_buy(ctx: &mut RecalcContext, key: (String, String, String), t: &Trade
     }
     // 购入时清除清仓标记 — 重新持仓不再是清仓状态
     entry.cleared_date = None;
+    // 重新买入意味着覆盖了之前的 delete_watch 意图，
+    // 清除 watch_deleted 标记以允许后续清仓时正常转 Watch
+    ctx.watch_deleted.remove(&t.symbol);
 
     // Day-trading (做T) cost adjustment:
     // P&L from previous sells is amortized into new cost basis,
@@ -929,10 +932,9 @@ fn recalculate_holdings_inner_body(
         }
     }
     for hold_key in &stale_cleared {
-        // Skip symbols the user explicitly removed from the watchlist —
-        // converting them back to Watch would "resurrect" a deleted entry.
-        // Also remove the stale hold entry so it's not written to DB
-        // (the scheduled task would otherwise convert it to Watch).
+        // Skip symbols whose delete_watch was NOT overridden by a later buy.
+        // process_buy removes symbols from watch_deleted, so only truly
+        // "deleted and never re-bought" entries remain here.
         if watch_deleted.contains(&hold_key.0) {
             map.remove(hold_key);
             continue;
@@ -1053,35 +1055,37 @@ pub fn convert_stale_cleared_holdings() -> Result<u64, String> {
                 .map_err(|e| format!("check watch exists: {}", e))?
                 > 0;
 
-            // Check if user explicitly deleted this symbol from the watchlist.
-            // If so, skip conversion — creating a Watch entry would "resurrect"
-            // something the user intentionally removed.
+            // Check if user explicitly deleted this symbol from the watchlist
+            // AND did not subsequently buy it. A later buy overrides the
+            // delete_watch intent, so the symbol should be eligible for
+            // Watch conversion again.
             let watch_deleted: bool = conn
                 .query_row(
-                    "SELECT COUNT(*) FROM trades WHERE symbol = ?1 AND action = 'delete_watch'",
+                    "SELECT EXISTS( \
+                        SELECT 1 FROM trades t1 \
+                        WHERE t1.symbol = ?1 AND t1.action = 'delete_watch' \
+                        AND NOT EXISTS ( \
+                            SELECT 1 FROM trades t2 \
+                            WHERE t2.symbol = t1.symbol AND t2.action = 'buy' \
+                            AND t2.created_at > t1.created_at \
+                        ) \
+                    )",
                     params![h.symbol],
-                    |row| row.get::<_, i64>(0),
+                    |row| row.get::<_, bool>(0),
                 )
-                .map_err(|e| format!("check watch_deleted: {}", e))?
-                > 0;
+                .map_err(|e| format!("check watch_deleted: {}", e))?;
 
-            if watch_deleted {
-                // Remove the stale hold entry without creating a watch entry
-                conn.execute(
-                    "DELETE FROM holdings WHERE symbol = ?1 AND currency = ?2 AND kind = 'hold'",
-                    params![h.symbol, h.currency],
-                )
-                .map_err(|e| format!("delete stale hold: {}", e))?;
-                count += 1;
-                continue;
-            }
-
-            // Delete the stale Hold entry
+            // Delete the stale Hold entry (both paths need this)
             conn.execute(
                 "DELETE FROM holdings WHERE symbol = ?1 AND currency = ?2 AND kind = 'hold'",
                 params![h.symbol, h.currency],
             )
             .map_err(|e| format!("delete stale hold: {}", e))?;
+
+            if watch_deleted {
+                count += 1;
+                continue;
+            }
 
             // Create Watch entry if none exists
             if !watch_exists {

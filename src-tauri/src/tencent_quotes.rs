@@ -287,8 +287,8 @@ pub fn compute_vol20(closes: &[f64]) -> Option<f64> {
     let returns: Vec<f64> = closes[..21]
         .windows(2)
         .filter_map(|w| {
-            if w[1] > 0.0 {
-                Some(((w[0] - w[1]) / w[1]).ln())
+            if w[0] > 0.0 && w[1] > 0.0 {
+                Some((w[0] / w[1]).ln())
             } else {
                 None
             }
@@ -376,5 +376,17 @@ mod tests {
         // Too few closes should return None
         let short: Vec<f64> = vec![4500.0; 10];
         assert!(compute_vol20(&short).is_none());
+
+        // Realistic data with both up and down days must not produce NaN
+        let mixed: Vec<f64> = vec![
+            4152.0, 4145.0, 4093.0, 4098.0, 4068.0, 4090.0, 4110.0, 4085.0, 4120.0, 4055.0,
+            4070.0, 4095.0, 4030.0, 4060.0, 4080.0, 4050.0, 4075.0, 4100.0, 4085.0, 4120.0,
+            4027.0,
+        ];
+        let vol_mixed = compute_vol20(&mixed).unwrap();
+        assert!(
+            vol_mixed.is_finite() && vol_mixed > 0.0,
+            "mixed returns should yield finite positive vol, got {vol_mixed}"
+        );
     }
 }
