@@ -72,7 +72,7 @@
 
   async function saveConfig() {
     if (!config) return;
-    if (config.investCron) config.investCron = config.investCron.trim().replace(/[^0-9a-zA-Z\s\*\/\,\-]/g, '');
+    if (config.investCron) config.investCron = config.investCron.trim().replace(/[^0-9a-zA-Z\s*/,-]/g, '');
     saving = true;
     error = null;
     try {

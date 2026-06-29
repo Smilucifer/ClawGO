@@ -78,7 +78,9 @@
       try {
         const settings = await invoke<{ tushare_token?: string }>('get_user_settings');
         tushareToken = settings.tushare_token ?? '';
-      } catch {}
+      } catch {
+        // 读取设置失败时静默降级：tushareToken 保持空串，后续按未配置处理
+      }
 
       if (destroyed) return;
 
@@ -89,7 +91,9 @@
         if (result !== 'no_legacy') {
           console.log('[invest] legacy migration:', result);
         }
-      } catch {}
+      } catch {
+        // 历史数据迁移失败不阻塞页面加载：无 legacy 数据或迁移异常均静默跳过
+      }
 
       if (destroyed) return;
 

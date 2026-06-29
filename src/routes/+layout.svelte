@@ -69,7 +69,6 @@
   import { canResumeNow } from "$lib/stores";
   import type { PlatformCredential } from "$lib/types";
   import { KeybindingStore } from "$lib/stores/keybindings.svelte";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
   import { getTransport } from "$lib/transport";
   import {
     t,
@@ -1236,14 +1235,18 @@
 
   setContext("toggleSidebar", toggleSidebar);
 
-  // Window controls (Tauri custom title bar)
-  function windowMinimize() {
+  // Window controls (Tauri custom title bar) — desktop-only, so the Tauri API
+  // is dynamically imported to avoid breaking browser (WS) mode at module load.
+  async function windowMinimize() {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
     getCurrentWindow().minimize();
   }
-  function windowMaximize() {
+  async function windowMaximize() {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
     getCurrentWindow().toggleMaximize();
   }
-  function windowClose() {
+  async function windowClose() {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
     getCurrentWindow().close();
   }
 
