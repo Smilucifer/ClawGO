@@ -122,7 +122,10 @@ linker = "C:/Program Files (x86)/Microsoft Visual Studio/18/BuildTools/VC/Tools/
 ```
 Without it, `cargo build`/`test` and `npm run tauri build` fail at the link step. Update the path (forward slashes) if the Build Tools version changes.
 
-**Known issue:** Rust unit tests fail at runtime with `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)` — the BuildTools MSVC links a newer `VCRUNTIME140.dll` than the one in System32, and the loader picks the old one. Workaround: use `cargo check` to validate Rust code (catches compile errors without running the binary). Full test runs need a matching VC++ redist or a clean VM/CI.
+**Known issue:** Rust unit tests fail with `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)` when launched from Git Bash (MSYS2). The binary loads fine via `cmd.exe`. Workaround: use `cargo check` for quick validation, or run tests via cmd.exe:
+```bash
+cmd.exe /c "cd /d D:\ClaudeWorkspace\Code\ClawGO && cargo test --manifest-path src-tauri/Cargo.toml --lib -- <test_filter> --nocapture"
+```
 
 ### 12. openInvest subsystem (`invest/`)
 A self-contained quant/portfolio assistant under `src-tauri/src/invest/`, surfaced at `/invest`. Largely independent of the chat/group-chat core; persists to `storage/invest/` (`invest.db`, SQLite — on this machine at `C:\Users\InBlu\.claw-go\invest\invest.db`). Frontend state: `invest-store.svelte.ts`, `invest-committee-store.svelte.ts`. The committee role count and pipeline shape have changed across versions — read the source rather than trusting a number here.

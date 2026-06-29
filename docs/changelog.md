@@ -1,5 +1,13 @@
 # Changelog / 更新日志
 
+## v5.6.6 (2026-06-29)
+
+### Bug 修复
+
+- **`compute_vol20` 对数收益率公式修正：** `tencent_quotes.rs:291` 原公式 `((w[0] - w[1]) / w[1]).ln()` 在 `w[0] < w[1]`（价格上涨日）时参数为负，`f64::ln()` 返回 NaN，NaN 通过 `filter_map` 进入 returns 向量导致最终结果为 NaN。`is_finite()` 检查失败后链式降级，但所有源都用同一函数，最终 vol20 写入 NULL。修正为 `(w[0] / w[1]).ln()`（标准对数收益率），参数始终为正。新增包含涨跌混合的测试用例。
+- **CI 构建补装 akshare：** `release.yml` 和 `ci.yml` 的 Windows/macOS 两处 pip install 命令原只含 `yfinance orjson`，漏装 `akshare` 及其依赖（pandas/requests 等），导致 GitHub Release 安装包（~66MB）比本地构建（~80MB）小 14MB，安装到其他机器后 `market_stats`、`advance_decline`、`cgb_10y`（fallback）三组宏观指标全部失败。补加 `akshare`。
+- **清仓后重新买入的标的不再直接消失：** `portfolio.rs` 的 `watch_deleted` 集合收集所有历史 `delete_watch` 记录，但未考虑用户在删除关注后又重新买入的情况。当 `delete_watch → buy → sell`（全清）序列发生时，清仓跳过了 `cleared_date` 设置和次日转 Watch 流程，导致持仓直接从 holdings 表消失。修复：`process_buy` 中清除 `watch_deleted` 标记（买入覆盖删除意图）；`convert_stale_cleared_holdings` 定时任务的 SQL 改为检查最新 `delete_watch` 之后是否有 `buy`；post-pass 注释同步更新。
+
 ## v5.6.4 (2026-06-27)
 
 全项目 code review 修复批次（C1–C7 + 全部 High + Medium 绝大部分 + 清理重构）。完整清单见 `docs/superpowers/plans/2026-06-26-codereview-fixes-v564.md`。
