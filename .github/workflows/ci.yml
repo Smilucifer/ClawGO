@@ -158,8 +158,8 @@ jobs:
             }
           }
 
-          Write-Host "Installing yfinance + orjson..."
-          & "$pythonDir/python.exe" -m pip install --no-warn-script-location yfinance orjson
+          Write-Host "Installing yfinance + orjson + akshare..."
+          & "$pythonDir/python.exe" -m pip install --no-warn-script-location yfinance orjson akshare
           Write-Host "Python runtime ready."
 
       - name: Build Tauri app
@@ -235,8 +235,8 @@ jobs:
             fi
           fi
 
-          echo "Installing yfinance + orjson..."
-          "$PYTHON_DIR/bin/python3" -m pip install --no-warn-script-location yfinance orjson
+          echo "Installing yfinance + orjson + akshare..."
+          "$PYTHON_DIR/bin/python3" -m pip install --no-warn-script-location yfinance orjson akshare
           echo "Python runtime ready."
 
       - name: Build Tauri app
