@@ -7,7 +7,7 @@
     "frontendDist": "../build",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "node scripts/clean-runtime-probes.mjs && npm run build"
   },
   "app": {
     "windows": [
