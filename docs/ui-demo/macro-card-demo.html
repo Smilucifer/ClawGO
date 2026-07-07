@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>委员会实况页 — 完整改版 Demo</title>
+<style>
+  /* invest 模块真实 token（1:1 复刻 CommitteeLiveTab） */
+  :root {
+    --bg-base: #1a1918;
+    --bg-card: #242220;
+    --bg-input: #2e2c29;
+    --bg-hover: rgba(255,255,255,0.04);
+    --text-primary: #ebe8e4;
+    --text-secondary: hsl(24 8% 72%);
+    --text-tertiary: hsl(24 7% 58%);
+    --accent: #c9a96e;
+    --accent-muted: rgba(201,169,110,0.4);
+    --accent-subtle: rgba(201,169,110,0.08);
+    --border: #2e2c2a;
+    --color-success: #8a9a76;   /* 绿 = 通过/成功（状态语义，不反转） */
+    --color-error: #a87a7a;     /* 红 = 失败/危险（状态语义，不反转） */
+    --color-warning: #d0a850;
+    --color-quant: #3b82f6;
+    /* ↓↓ 红涨绿跌：方向/盈亏语义专用 ↓↓ */
+    --up: #c56f62;              /* 涨 / 盈利 / bullish = 红 */
+    --down: #7f9d6d;            /* 跌 / 亏损 / bearish = 绿 */
+    --flat: hsl(24 7% 58%);     /* 平 = 灰 */
+    --font-sans: "Inter","Microsoft YaHei","Noto Sans CJK SC",sans-serif;
+    --font-mono: "JetBrains Mono",Consolas,monospace;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0 auto; padding: 28px; max-width: 1040px;
+    background: var(--bg-base); color: var(--text-primary);
+    font-family: var(--font-sans);
+    display: flex; flex-direction: column; gap: var(--space-3);
+  }
+  h1 { font-size: 15px; font-weight: 600; margin: 0; }
+  .hint { font-size: 12px; color: var(--text-secondary); line-height: 1.7; margin: 0 0 4px;
+          padding: 10px 14px; background: var(--accent-subtle); border-radius: 8px; border: 1px solid var(--border); }
+  .hint b { color: var(--accent); }
+
+  /* ── Action bar ── */
+  .action-bar { display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-primary); font-size: 12px; font-weight: 500; cursor: pointer; }
+  .btn.primary { background: var(--accent); color: #111; border-color: var(--accent); }
+  .action-sep { width: 1px; height: 24px; background: var(--border); }
+  .checkbox-row, .conc-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+  .spacer { flex: 1; }
+  .conc-row select { border: 1px solid var(--border); background: var(--bg-input); color: var(--text-primary);
+    border-radius: var(--radius-sm); padding: 3px 6px; font-size: 12px; }
+  .progress-text { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+  .progress-text .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+  /* ── Portfolio summary ── */
+  .summary-card { padding: var(--space-4); border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--bg-card); }
+  .summary-title { margin-bottom: var(--space-3); font-size: 14px; font-weight: 600; }
+  .summary-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: var(--space-3); text-align: center; }
+  .summary-grid .lbl { font-size: 11px; color: var(--text-tertiary); }
+  .summary-grid .val { font-size: 18px; font-weight: 700; font-family: var(--font-mono); }
+
+  /* ── Macro snapshot (global, 复刻 .macro-snapshot) ── */
+  .macro-snapshot { padding: var(--space-3); border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--bg-card); }
+  .macro-title { margin-bottom: var(--space-2); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); }
+  .macro-sub { font-size: 10px; font-weight: 600; color: var(--text-tertiary); letter-spacing: 0.04em; margin: var(--space-3) 0 var(--space-1); }
+  .macro-sub:first-of-type { margin-top: 0; }
+  .macro-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: var(--space-2); text-align: center; }
+  .macro-cell { display: flex; flex-direction: column; gap: 2px; padding: var(--space-1) 0; }
+  .macro-label { font-size: 10px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .macro-value { font-size: 13px; font-weight: 600; font-family: var(--font-mono); color: var(--text-primary); }
+  .apd { display: inline-flex; gap: 2px; justify-content: center; font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+  .apd .u { color: var(--up); } .apd .p { color: var(--flat); } .apd .d { color: var(--down); }
+  .apd .sep { color: var(--text-tertiary); font-weight: 400; }
+  .money-divider { height: 1px; background: var(--border); margin: var(--space-3) 0; }
+  .money-strip { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm); background: var(--accent-subtle); border: 1px solid var(--border); }
+  .me-title { font-size: 10px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
+  .me-badge { font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: var(--radius-sm); white-space: nowrap; }
+  .me-badge.hot    { color: var(--up);    background: rgba(197,111,98,0.18); }
+  .me-badge.active { color: var(--accent); background: var(--accent-subtle); }
+  .me-badge.calm   { color: var(--flat);  background: rgba(158,154,150,0.14); }
+  .me-badge.cold   { color: var(--down);  background: rgba(127,157,109,0.18); }
+  .me-reason { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+
+  /* ── Symbol card ── */
+  .symbol-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+  .symbol-card.streaming { border-color: var(--accent); }
+  .card-header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
+  .card-id { display: flex; flex-direction: column; min-width: 84px; }
+  .card-name { font-size: 14px; font-weight: 600; }
+  .card-ticker { font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
+  .header-spacer { flex: 1 1 auto; }
+  .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: var(--radius-sm);
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
+  .badge.hold { background: rgba(138,154,118,0.15); color: var(--color-success); }
+  .mode-toggle { padding: 2px 9px; border-radius: var(--radius-sm); font-size: 10px; font-weight: 600;
+    text-transform: uppercase; border: 1px solid var(--border); background: var(--bg-input); color: var(--color-success); }
+  .regime-chip { --rg-color: #c084fc; display: flex; align-items: center; gap: 7px; padding: 3px 10px;
+    border-radius: var(--radius-sm); background: color-mix(in srgb, var(--rg-color) 13%, transparent);
+    border: 1px solid color-mix(in srgb, var(--rg-color) 30%, transparent); white-space: nowrap; }
+  .rg-tag { font-size: 11px; font-weight: 700; color: var(--rg-color); text-transform: uppercase; letter-spacing: 0.3px; }
+  .rg-metrics { display: flex; gap: 8px; font-size: 10.5px; font-family: var(--font-mono); color: var(--text-tertiary); }
+  .pipeline-bar { display: flex; height: 14px; width: 148px; border-radius: var(--radius-sm); overflow: hidden; background: var(--bg-input); gap: 2px; }
+  .seg { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; border-radius: 3px; }
+  .seg.done { background: color-mix(in srgb, var(--seg-color) 35%, transparent); color: var(--seg-color); }
+  .verdict-badge-sm { padding: 3px 10px; border-radius: var(--radius-sm); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .expand-arrow { width: 20px; color: var(--text-tertiary); font-size: 12px; }
+  .expand-arrow.open { transform: rotate(90deg); }
+  .card-body { border-top: 1px solid var(--border); padding: 20px; }
+
+  /* ── Flow grid + step cards ── */
+  .flow-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; max-width: 1000px; margin: 0 auto; align-items: start; }
+  .flow-grid .fw { grid-column: 1 / -1; width: 100%; }
+  .connector { grid-column: 1 / -1; display: flex; justify-content: center; height: 28px; }
+  .connector svg { width: 100%; height: 100%; }
+  .step-card { width: 100%; background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+  .step-card.done { border-color: color-mix(in srgb, var(--sc) 40%, transparent); }
+  .step-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    background: color-mix(in srgb, var(--sc) 6%, var(--bg-card)); border-bottom: 1px solid var(--border); }
+  .step-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--sc); }
+  .step-title { font-size: 13px; font-weight: 600; }
+  .step-round { font-size: 10px; color: var(--text-tertiary); padding: 1px 5px; border-radius: 3px; background: var(--bg-input); }
+  .step-meta { margin-left: auto; display: flex; gap: 10px; font-size: 10px; color: var(--text-tertiary); font-family: var(--font-mono); }
+  .step-body { padding: 14px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.7; }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px dashed var(--border); }
+  .chip { font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: var(--radius-sm); text-transform: uppercase; }
+  .chip.neutral { background: var(--bg-input); color: var(--text-secondary); font-weight: 600; text-transform: none; }
+  .chip.sig-risk_on, .chip.sig-buy, .chip.sig-bullish { background: rgba(197,111,98,0.15); color: var(--up); }
+  .chip.sig-hold, .chip.sig-neutral { background: rgba(196,169,110,0.15); color: var(--accent); }
+  .chip.sig-risk_off, .chip.sig-sell, .chip.sig-bearish { background: rgba(127,157,109,0.2); color: var(--down); }
+  .confidence-meter { height: 5px; border-radius: 3px; background: var(--bg-input); overflow: hidden; margin-bottom: 10px; }
+  .confidence-meter > i { display: block; height: 100%; background: var(--sc); }
+  .role-oneliner { font-size: 13px; font-weight: 500; color: var(--text-primary); padding: 8px 10px;
+    border-radius: var(--radius-sm); margin-bottom: 10px; background: color-mix(in srgb, var(--sc) 8%, transparent); }
+  .field-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+  .field { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: start; }
+  .field-k { font-size: 11px; color: var(--text-tertiary); }
+  .field-v { font-size: 12.5px; color: var(--text-primary); }
+  .role-reasoning { font-size: 12.5px; color: var(--text-secondary); line-height: 1.7; }
+
+  /* ── Verdict block ── */
+  .verdict-block { grid-column: 1 / -1; width: 100%; background: var(--bg-base); border: 1px solid var(--accent-muted);
+    border-radius: var(--radius-md); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .verdict-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .verdict-action { padding: 3px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 700; text-transform: uppercase; }
+  .verdict-confidence { font-size: 12px; color: var(--text-secondary); }
+  .gate-badge { font-size: 10px; padding: 2px 7px; border-radius: 3px; }
+  .gate-badge.pass { background: rgba(138,154,118,0.18); color: var(--color-success); }
+  .verdict-reasoning { font-size: 12.5px; color: var(--text-secondary); line-height: 1.8; margin: 0; }
+  .verdict-meta { display: flex; gap: 14px; font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
+  /* 行业敏感度小条 (per-symbol) */
+  .sens-strip { display: flex; align-items: center; gap: 10px; padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm); background: var(--bg-hover); border: 1px solid var(--border); }
+  .sens-title { font-size: 10px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
+  .sens-badge { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: var(--radius-sm); white-space: nowrap; }
+  .sens-badge.pos { color: var(--up);   background: rgba(197,111,98,0.18); }
+  .sens-badge.neg { color: var(--down); background: rgba(127,157,109,0.18); }
+  .sens-reason { font-size: 12px; color: var(--text-secondary); }
+</style>
+</head>
+<body>
+  <h1>委员会实况页 · 完整改版 Demo</h1>
+  <p class="hint">
+    1:1 复刻现有实况页全流程（工具栏→持仓摘要→<b>宏观快照(全局一次)</b>→symbol 卡片展开 macro/quant/risk/cio 全链→verdict）。
+    已应用 <b>红涨绿跌</b>（涨/盈利/bullish=红，跌/亏损/bearish=绿；Gate 通过、danger 按钮等状态语义不反转）。
+    宏观快照已撤 vol20、移到持仓摘要下方；每个 symbol 内新增行业敏感度小条。
+  </p>
+
+  <!-- Action bar -->
+  <div class="action-bar">
+    <button class="btn primary">⏵ 运行全部</button>
+    <div class="action-sep"></div>
+    <label class="checkbox-row"><input type="checkbox" checked /> 含自选</label>
+    <div class="spacer"></div>
+    <label class="conc-row">并发 <select><option>5</option></select></label>
+    <span class="progress-text"><span class="dot"></span> 2/3 完成 · 1 运行中</span>
+  </div>
+
+  <!-- Portfolio summary -->
+  <div class="summary-card">
+    <div class="summary-title">持仓摘要</div>
+    <div class="summary-grid">
+      <div><div class="lbl">持仓数</div><div class="val">8</div></div>
+      <div><div class="lbl">持仓市值</div><div class="val">¥42.6万</div></div>
+      <div><div class="lbl">现金</div><div class="val" style="color:var(--flat)">¥11.3万</div></div>
+      <div><div class="lbl">集中度</div><div class="val">白酒 28%</div></div>
+      <div><div class="lbl">总收益</div><div class="val" style="color:var(--up)">+12.4%</div></div>
+    </div>
+  </div>
+
+  <!-- Macro snapshot (global) -->
+  <div class="macro-snapshot">
+    <div class="macro-title">宏观快照 · risk_on · 强度 7.0</div>
+    <div class="macro-sub">宏观指标</div>
+    <div class="macro-grid">
+      <div class="macro-cell"><span class="macro-label">上证指数</span><span class="macro-value" style="color:var(--up)">3187.42</span></div>
+      <div class="macro-cell"><span class="macro-label">北向资金(亿)</span><span class="macro-value" style="color:var(--up)">+58.30</span></div>
+      <div class="macro-cell"><span class="macro-label">VIX恐慌指数</span><span class="macro-value">15.80</span></div>
+      <div class="macro-cell"><span class="macro-label">国际金价</span><span class="macro-value">2340.50</span></div>
+      <div class="macro-cell"><span class="macro-label">两市成交额(亿)</span><span class="macro-value">9820</span></div>
+    </div>
+    <div class="macro-sub">市场广度</div>
+    <div class="macro-grid">
+      <div class="macro-cell"><span class="macro-label">涨-平-跌</span>
+        <span class="apd"><span class="u">3120</span><span class="sep">-</span><span class="p">180</span><span class="sep">-</span><span class="d">1780</span></span></div>
+      <div class="macro-cell"><span class="macro-label">涨停家数</span><span class="macro-value" style="color:var(--up)">62</span></div>
+      <div class="macro-cell"><span class="macro-label">跌停家数</span><span class="macro-value" style="color:var(--down)">8</span></div>
+      <div class="macro-cell"><span class="macro-label">涨幅&gt;3%</span><span class="macro-value" style="color:var(--up)">512</span></div>
+      <div class="macro-cell"><span class="macro-label">大盘情绪</span><span class="macro-value" style="color:var(--up)">61.4%</span></div>
+    </div>
+    <div class="money-divider"></div>
+    <div class="money-strip">
+      <span class="me-title">赚钱效应</span>
+      <span class="me-badge hot">火热</span>
+      <span class="me-reason">涨幅&gt;3% 个股 512 家，涨停 62 家远超跌停，赚钱效应强，大盘走势明朗看好。</span>
+    </div>
+  </div>
+  <!-- Symbol card: expanded full pipeline -->
+  <div class="symbol-card streaming">
+    <div class="card-header">
+      <div class="card-id"><span class="card-name">贵州茅台</span><span class="card-ticker">600519.SH</span></div>
+      <span class="badge hold">HOLD</span>
+      <span class="mode-toggle holding">holding</span>
+      <div class="regime-chip"><span class="rg-tag">震荡</span>
+        <span class="rg-metrics"><span>RSI 54</span><span>MA20↑</span><span>62%</span></span></div>
+      <span class="header-spacer"></span>
+      <div class="pipeline-bar">
+        <div class="seg done" style="--seg-color:#8b5cf6">✓</div>
+        <div class="seg done" style="--seg-color:#a78bfa">✓</div>
+        <div class="seg done" style="--seg-color:#3b82f6">✓</div>
+        <div class="seg done" style="--seg-color:#f97316">✓</div>
+        <div class="seg done" style="--seg-color:#3b82f6">✓</div>
+        <div class="seg done" style="--seg-color:#f97316">✓</div>
+        <div class="seg done" style="--seg-color:#eab308">✓</div>
+      </div>
+      <span class="verdict-badge-sm" style="background:var(--accent-muted);color:var(--accent)">HOLD</span>
+      <span class="expand-arrow open">▶</span>
+    </div>
+    <div class="card-body">
+      <div class="flow-grid">
+        <!-- MACRO (full width) -->
+        <div class="fw">
+          <div class="step-card done" style="--sc:#8b5cf6">
+            <div class="step-head"><div class="step-dot done"></div>
+              <span class="step-title">🌐 宏观分析</span>
+              <div class="step-meta"><span>3.2s</span><span>0 tok</span></div></div>
+            <div class="step-body">
+              <div class="chip-row">
+                <span class="chip sig-risk_on">risk_on</span>
+                <span class="chip neutral">强度 7</span>
+              </div>
+              <div class="role-oneliner">全 A 赚钱效应火热，风险偏好抬升，利好顺周期与消费。</div>
+              <div class="field-list">
+                <div class="field"><span class="field-k">市场阶段</span><span class="field-v">主升</span></div>
+                <div class="field"><span class="field-k">赚钱效应</span><span class="field-v"><span class="me-badge hot" style="font-size:11px">火热</span> 涨幅&gt;3% 达 512 家</span></div>
+                <div class="field"><span class="field-k">阶段理由</span><span class="field-v">成交额破 9800 亿，北向净流入，涨停远超跌停。</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="connector"><svg viewBox="0 0 400 32"><line x1="200" y1="4" x2="130" y2="28" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,3"/><line x1="200" y1="4" x2="270" y2="28" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,3"/></svg></div>
+
+        <!-- QUANT R1 -->
+        <div>
+          <div class="step-card done" style="--sc:#3b82f6">
+            <div class="step-head"><div class="step-dot done"></div>
+              <span class="step-title">📊 量化分析<span class="step-round">R1</span></span>
+              <div class="step-meta"><span>4.1s</span><span>0 tok</span></div></div>
+            <div class="step-body">
+              <div class="chip-row"><span class="chip sig-risk_on">bullish</span><span class="chip neutral">强度 6</span></div>
+              <div class="role-oneliner">估值中枢下沿，量能温和放大，可低吸。</div>
+              <div class="field-list">
+                <div class="field"><span class="field-k">买点评估</span><span class="field-v">低吸</span></div>
+                <div class="field"><span class="field-k">估值评估</span><span class="field-v">PE 24x，近5年 32% 分位，偏低。</span></div>
+                <div class="field"><span class="field-k">资金流向</span><span class="field-v" style="color:var(--up)">主力净流入 +1.2亿</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- RISK R1 -->
+        <div>
+          <div class="step-card done" style="--sc:#f97316">
+            <div class="step-head"><div class="step-dot done"></div>
+              <span class="step-title">🛡 风控分析<span class="step-round">R1</span></span>
+              <div class="step-meta"><span>3.8s</span><span>0 tok</span></div></div>
+            <div class="step-body">
+              <div class="chip-row"><span class="chip sig-hold">neutral</span><span class="chip neutral">强度 5</span></div>
+              <div class="field-list">
+                <div class="field"><span class="field-k">当前集中度</span><span class="field-v">28%</span></div>
+                <div class="field"><span class="field-k">当期盈亏</span><span class="field-v" style="color:var(--up)">+18.6%</span></div>
+                <div class="field"><span class="field-k">极端亏损@-20%</span><span class="field-v" style="color:var(--down)">-14.2%</span></div>
+                <div class="field"><span class="field-k">标的风险</span><span class="field-v">单一持仓占比偏高，需控加仓幅度。</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="connector"><svg viewBox="0 0 400 32"><line x1="130" y1="0" x2="130" y2="28" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,3"/><line x1="270" y1="0" x2="270" y2="28" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,3"/></svg></div>
+
+        <!-- QUANT R2 -->
+        <div>
+          <div class="step-card done" style="--sc:#3b82f6">
+            <div class="step-head"><div class="step-dot done"></div>
+              <span class="step-title">📊 量化分析<span class="step-round">R2</span></span>
+              <div class="step-meta"><span>2.9s</span><span>0 tok</span></div></div>
+            <div class="step-body">
+              <div class="chip-row"><span class="chip sig-hold">neutral</span><span class="chip neutral">强度 5</span></div>
+              <div class="role-reasoning">风控提示集中度后，下调进攻性至中性，维持低吸区间不追高。</div>
+            </div>
+          </div>
+        </div>
+        <!-- RISK R2 -->
+        <div>
+          <div class="step-card done" style="--sc:#f97316">
+            <div class="step-head"><div class="step-dot done"></div>
+              <span class="step-title">🛡 风控分析<span class="step-round">R2</span></span>
+              <div class="step-meta"><span>3.0s</span><span>0 tok</span></div></div>
+            <div class="step-body">
+              <div class="chip-row"><span class="chip sig-hold">neutral</span><span class="chip neutral">强度 5</span></div>
+              <div class="field-list">
+                <div class="field"><span class="field-k">调整后止损</span><span class="field-v">1580（跌破 MA60）</span></div>
+              </div>
+              <div class="role-reasoning">与量化收敛于持有，止损设于结构位下方。</div>
+            </div>
+          </div>
+        </div>
+        <div class="connector"><svg viewBox="0 0 400 32"><line x1="130" y1="0" x2="200" y2="28" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,3"/><line x1="270" y1="0" x2="200" y2="28" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,3"/></svg></div>
+
+        <!-- CIO (full width) -->
+        <div class="fw">
+          <div class="step-card done" style="--sc:#eab308">
+            <div class="step-head"><div class="step-dot done"></div>
+              <span class="step-title">👔 首席决策</span>
+              <div class="step-meta"><span>5.4s</span><span>0 tok</span></div></div>
+            <div class="step-body">
+              <div class="chip-row">
+                <span class="chip" style="background:var(--accent-muted);color:var(--accent)">HOLD</span>
+                <span class="chip neutral">72%</span>
+              </div>
+              <div class="confidence-meter"><i style="width:72%"></i></div>
+              <div class="field-list">
+                <div class="field"><span class="field-k">主导观点</span><span class="field-v">量化与风控收敛于持有，宏观顺风但个股缺短催化。</span></div>
+                <div class="field"><span class="field-k">催化剂层级</span><span class="field-v">Tier2</span></div>
+                <div class="field"><span class="field-k">执行模式</span><span class="field-v">金字塔</span></div>
+                <div class="field"><span class="field-k">止损价</span><span class="field-v">¥1580</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Verdict block -->
+        <div class="verdict-block">
+          <div class="verdict-row">
+            <span class="verdict-action" style="background:var(--accent-muted);color:var(--accent)">HOLD</span>
+            <span class="verdict-confidence">置信度 72%</span>
+            <span class="gate-badge pass">✓ Gate 1</span>
+            <span class="gate-badge pass">✓ Gate 2</span>
+          </div>
+          <p class="verdict-reasoning">宏观 risk_on 顺风、赚钱效应火热，但个股短期缺乏催化且集中度偏高，维持持有，回踩结构位可小幅低吸。</p>
+          <div class="verdict-meta"><span>⏱ 22.4s</span><span>🔤 0 tok</span><span>✅ 已收敛</span></div>
+          <div class="sens-strip">
+            <span class="sens-title">行业敏感度</span>
+            <span class="sens-badge pos">正向</span>
+            <span class="sens-reason">白酒受益消费复苏预期，在当前 risk_on 大盘下顺风。</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Collapsed card example -->
+  <div class="symbol-card">
+    <div class="card-header">
+      <div class="card-id"><span class="card-name">宁德时代</span><span class="card-ticker">300750.SZ</span></div>
+      <span class="badge hold">HOLD</span>
+      <span class="mode-toggle holding">holding</span>
+      <div class="regime-chip"><span class="rg-tag">下行</span>
+        <span class="rg-metrics"><span>RSI 38</span><span>MA20↓</span><span>21%</span></span></div>
+      <span class="header-spacer"></span>
+      <div class="pipeline-bar">
+        <div class="seg done" style="--seg-color:#8b5cf6">✓</div><div class="seg done" style="--seg-color:#a78bfa">✓</div>
+        <div class="seg done" style="--seg-color:#3b82f6">✓</div><div class="seg done" style="--seg-color:#f97316">✓</div>
+        <div class="seg done" style="--seg-color:#3b82f6">✓</div><div class="seg done" style="--seg-color:#f97316">✓</div>
+        <div class="seg done" style="--seg-color:#eab308">✓</div>
+      </div>
+      <span class="verdict-badge-sm" style="background:rgba(127,157,109,0.2);color:var(--down)">SELL</span>
+      <span class="expand-arrow">▶</span>
+    </div>
+  </div>
+<!-- END -->
+</body>
+</html>
