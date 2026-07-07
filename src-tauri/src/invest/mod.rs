@@ -10,6 +10,7 @@ pub mod event_analyzer;
 pub mod international;
 pub mod jin10_collector;
 pub mod macro_refresh;
+pub mod macro_verdict;
 pub mod regime;
 pub mod scheduler;
 pub mod verdict_review;
