@@ -40,6 +40,8 @@ pub fn format_macro_entries(entries: &[macro_cache::MacroCacheEntry]) -> Result<
                 "two_market_volume" => "两市成交额(亿)",
                 "advance_count" => "上涨家数",
                 "decline_count" => "下跌家数",
+                "up_over_3pct_count" => "涨幅>3%家数",
+                "flat_count" => "平盘家数",
                 _ => indicator,
             };
             let stale_marker = if macro_cache::is_stale(entry, 30) {
