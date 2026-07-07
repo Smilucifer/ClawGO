@@ -45,10 +45,15 @@ fn fill_global_prompt(
         Some(_) => "平稳",
         None => "N/A",
     };
-    let ratio = if valid > 0.0 { up3 / valid * 100.0 } else { 0.0 };
-    let breadth = format!(
-        "涨{up:.0}/平{flat:.0}/跌{down:.0}，涨停{lu:.0}/跌停{ld:.0}，涨幅>3% {up3:.0}只(占比{ratio:.1}%)",
-    );
+    // 广度缺失(miniQMT 关/降级,valid==0)时显"数据不足",避免给 LLM"全盘0"的死盘假象。
+    let breadth = if valid > 0.0 {
+        let ratio = up3 / valid * 100.0;
+        format!(
+            "涨{up:.0}/平{flat:.0}/跌{down:.0}，涨停{lu:.0}/跌停{ld:.0}，涨幅>3% {up3:.0}只(占比{ratio:.1}%)",
+        )
+    } else {
+        "数据不足(miniQMT 未启用或离线,本次不含市场广度)".to_string()
+    };
     crate::invest::committee::roles::MACRO_GLOBAL_PROMPT
         .replace("{{ma20}}", &fmt(ma20))
         .replace("{{ma60}}", &fmt(ma60))
