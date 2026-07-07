@@ -1118,8 +1118,18 @@ async fn run_macro_phase(
             parsed.market_phase_reason = v.market_phase_reason.clone();
             parsed.signal_reason = v.signal_reason.clone();
             parsed.money_effect_reason = v.money_effect_reason.clone();
-            parsed.raw_text = format!("[全局宏观判断] signal={:?} strength={:?} phase={:?}",
-                v.signal, v.strength, v.market_phase);
+            // raw_text 会注入下游 Quant/Risk/CIO 的 prompt:写成干净中文摘要(含各理由),
+            // 不用 Debug 的 Some(...) 包装,避免污染 LLM 上下文并保留判断依据。
+            let na = "N/A";
+            parsed.raw_text = format!(
+                "【全局宏观判断】\n信号: {} (强度 {})\n信号理由: {}\n市场阶段: {}\n阶段理由: {}\n赚钱效应理由: {}",
+                v.signal.as_deref().unwrap_or(na),
+                v.strength.map(|s| format!("{s:.0}")).unwrap_or_else(|| na.to_string()),
+                v.signal_reason.as_deref().unwrap_or(na),
+                v.market_phase.as_deref().unwrap_or(na),
+                v.market_phase_reason.as_deref().unwrap_or(na),
+                v.money_effect_reason.as_deref().unwrap_or(na),
+            );
         }
         None => {
             parsed.signal = Some("neutral".into());
