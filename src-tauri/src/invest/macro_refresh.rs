@@ -74,8 +74,14 @@ pub async fn refresh_macro_cache(client: &TushareClient) -> Result<String, Strin
 
     // 批次戳：供全局宏观判断的 based_on_data_version 比对（§8.2-G）。
     // 广度与大盘数据同批刷新，两行 fetched_at 均为当刻。
-    let breadth_source = if miniqmt_on { "miniqmt" } else { "akshare" };
-    let _ = macro_cache::save_macro_cache("_breadth_batch", None, None, breadth_source);
+    // 广度真实源：回读 advance_count 本轮实际写入的 source（降级时为 akshare），
+    // 避免哨兵按配置意图误标（miniqmt_on=true 但运行时降级的情形）。
+    let breadth_source = macro_cache::load_macro_cache("advance_count")
+        .ok()
+        .flatten()
+        .map(|e| e.source)
+        .unwrap_or_else(|| "unknown".to_string());
+    let _ = macro_cache::save_macro_cache("_breadth_batch", None, None, &breadth_source);
     let _ = macro_cache::save_macro_cache("_macro_batch", None, None, "macro_refresh");
 
     Ok(format!(
