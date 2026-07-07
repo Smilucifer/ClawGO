@@ -1,4 +1,4 @@
-//! Scheduler job: refresh the 17 canonical macro indicators in macro_cache.
+//! Scheduler job: refresh the 19 canonical macro indicators in macro_cache.
 //!
 //! Runs on `*/15 8-22 * * 1-5` (every 15 minutes during 8-22 on weekdays).
 //! Partial failure strategy: failed indicators keep stale data, logged as warn.
@@ -16,7 +16,7 @@ type MacroEntry = (String, Option<f64>, Option<String>, &'static str);
 type MacroResult = Result<Vec<MacroEntry>, String>;
 type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
-/// Refresh all 17 macro indicators. Called from the scheduler runner.
+/// Refresh all 19 macro indicators. Called from the scheduler runner.
 ///
 /// Each indicator group is fetched independently. On failure, the existing cache
 /// entry is preserved and a warning is logged.
@@ -42,9 +42,8 @@ pub async fn refresh_macro_cache(client: &TushareClient) -> Result<String, Strin
         Box::pin(fetch_shibor(client.clone(), start_date.clone(), end_date.clone())),
         Box::pin(fetch_cgb_10y(client.clone(), start_date.clone(), end_date.clone())),
         Box::pin(fetch_international()),
-        Box::pin(fetch_market_stats()),
+        Box::pin(fetch_breadth(miniqmt_on)),
         Box::pin(fetch_two_market_volume()),
-        Box::pin(fetch_advance_decline()),
     ];
 
     let results = futures_util::future::join_all(tasks).await;
@@ -72,6 +71,12 @@ pub async fn refresh_macro_cache(client: &TushareClient) -> Result<String, Strin
             }
         }
     }
+
+    // 批次戳：供全局宏观判断的 based_on_data_version 比对（§8.2-G）。
+    // 广度与大盘数据同批刷新，两行 fetched_at 均为当刻。
+    let breadth_source = if miniqmt_on { "miniqmt" } else { "akshare" };
+    let _ = macro_cache::save_macro_cache("_breadth_batch", None, None, breadth_source);
+    let _ = macro_cache::save_macro_cache("_macro_batch", None, None, "macro_refresh");
 
     Ok(format!(
         "macro_refresh complete: {ok_count} saved, {fail_count} failed"
@@ -409,40 +414,40 @@ async fn fetch_international() -> MacroResult {
 }
 
 // ---------------------------------------------------------------------------
-// A-share market statistics (AkShare)
+// 市场广度（miniQMT 优先 + akshare 降级）
 // ---------------------------------------------------------------------------
 
-/// Fetch limit-up and limit-down stock counts from AkShare.
-///
-/// Uses Python RPC bridge to call `akshare_market.market_stats`.
-/// Returns limit_up_count and limit_down_count as two separate entries.
-async fn fetch_market_stats() -> MacroResult {
+/// 市场广度同源采集：miniQMT 开启且在线 → 一次取全(涨/平/跌/涨跌停/涨幅>3%)；
+/// 否则降级 akshare(仅涨跌家数 + 涨跌停，flat/up_over_3pct 缺失不写避免混源)。
+async fn fetch_breadth(miniqmt_on: bool) -> MacroResult {
     let client = crate::invest::international::InternationalClient::from_settings();
+    if miniqmt_on {
+        match client.fetch_xtdata_breadth().await {
+            Ok(b) if b.available && b.valid > 0 => {
+                return Ok(vec![
+                    ("advance_count".into(), Some(b.up as f64), None, "miniqmt"),
+                    ("decline_count".into(), Some(b.down as f64), None, "miniqmt"),
+                    ("flat_count".into(), Some(b.flat as f64), None, "miniqmt"),
+                    ("limit_up_count".into(), Some(b.limit_up as f64), None, "miniqmt"),
+                    ("limit_down_count".into(), Some(b.limit_down as f64), None, "miniqmt"),
+                    ("up_over_3pct_count".into(), Some(b.up_over_3pct as f64), None, "miniqmt"),
+                ]);
+            }
+            Ok(b) => log::warn!("breadth: miniqmt unavailable ({}), 降级 akshare", b.reason),
+            Err(e) => log::warn!("breadth: miniqmt error ({e}), 降级 akshare"),
+        }
+    }
+    // 降级：akshare 仅有涨跌家数 + 涨跌停；flat/up_over_3pct 不写（保留旧值/缺失）。
     let today = chrono::Local::now().format("%Y%m%d").to_string();
-
     let stats = client.fetch_akshare_market_stats(&today).await
         .map_err(|e| format!("market_stats: {e}"))?;
-
-    Ok(vec![
-        ("limit_up_count".to_string(), Some(stats.limit_up_count as f64), None, "akshare"),
-        ("limit_down_count".to_string(), Some(stats.limit_down_count as f64), None, "akshare"),
-    ])
-}
-
-/// Fetch market-wide advance/decline stock counts from AkShare.
-///
-/// Uses Python RPC bridge to call `akshare_market.market_advance_decline`.
-/// Returns advance_count and decline_count as two separate entries.
-async fn fetch_advance_decline() -> MacroResult {
-    let client = crate::invest::international::InternationalClient::from_settings();
-    let today = chrono::Local::now().format("%Y%m%d").to_string();
-
     let ad = client.fetch_akshare_advance_decline(&today).await
         .map_err(|e| format!("advance_decline: {e}"))?;
-
     Ok(vec![
-        ("advance_count".to_string(), Some(ad.advance_count as f64), None, "akshare"),
-        ("decline_count".to_string(), Some(ad.decline_count as f64), None, "akshare"),
+        ("advance_count".into(), Some(ad.advance_count as f64), None, "akshare"),
+        ("decline_count".into(), Some(ad.decline_count as f64), None, "akshare"),
+        ("limit_up_count".into(), Some(stats.limit_up_count as f64), None, "akshare"),
+        ("limit_down_count".into(), Some(stats.limit_down_count as f64), None, "akshare"),
     ])
 }
 
@@ -479,7 +484,7 @@ mod tests {
 
     #[test]
     fn test_all_indicators_count() {
-        // 15 original - 2 (csi300) + 2 (sh_composite) + 2 (advance/decline) = 17
-        assert_eq!(macro_cache::ALL_INDICATORS.len(), 17);
+        // 17 + up_over_3pct_count + flat_count = 19
+        assert_eq!(macro_cache::ALL_INDICATORS.len(), 19);
     }
 }
