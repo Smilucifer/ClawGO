@@ -444,7 +444,6 @@
     { path: "/invest", label: () => t("nav_invest"), icon: "trendingUp" },
     { path: "/explorer", label: () => t("nav_explorer"), icon: "folder" },
     { path: "/memory", label: () => t("nav_memory"), icon: "book" },
-    { path: "/memory-mgmt", label: () => t("nav_memoryMgmt"), icon: "database" },
     { path: "/plugins", label: () => t("nav_extend"), icon: "zap" },
     { path: "/history", label: () => t("nav_history"), icon: "clock" },
     { path: "/usage", label: () => t("nav_usage"), icon: "chart" },

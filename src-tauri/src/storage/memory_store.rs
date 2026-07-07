@@ -142,40 +142,6 @@ pub fn insert_memory(node: &MemoryNode) -> Result<(), String> {
     })
 }
 
-/// Convenience function: build a `MemoryNode` from individual fields and insert it.
-/// Returns the new memory's ID on success.
-pub fn save_memory(
-    content: &str,
-    memory_type: &str,
-    source_run_id: Option<&str>,
-    confidence: Option<f64>,
-    scope: Option<&str>,
-    project_id: Option<&str>,
-) -> Result<String, String> {
-    let id = uuid::Uuid::new_v4().to_string();
-    let now = Utc::now().to_rfc3339();
-    let node = MemoryNode {
-        id: id.clone(),
-        character_id: String::new(),
-        content: content.to_string(),
-        memory_type: memory_type.to_string(),
-        confidence: confidence.unwrap_or(0.8),
-        source: crate::models::MemorySource {
-            kind: "extraction".to_string(),
-            run_id: source_run_id.map(|s| s.to_string()),
-            group_chat_id: None,
-        },
-        tags: Vec::new(),
-        status: "approved".to_string(),
-        scope: scope.unwrap_or("global").to_string(),
-        project_id: project_id.map(|s| s.to_string()),
-        created_at: now.clone(),
-        updated_at: now,
-    };
-    insert_memory(&node)?;
-    Ok(id)
-}
-
 pub fn get_memory(id: &str) -> Result<Option<MemoryNode>, String> {
     with_conn(|conn| {
         conn.query_row(
@@ -284,26 +250,6 @@ pub fn delete_memory(id: &str) -> Result<(), String> {
             .map_err(|e| format!("delete memory: {}", e))?;
         Ok(())
     })
-}
-
-/// Archive a memory by setting its status to "archived".
-pub fn archive_memory(id: &str) -> Result<(), String> {
-    let mut node = get_memory(id)?.ok_or_else(|| format!("memory {} not found", id))?;
-    node.status = "archived".to_string();
-    node.updated_at = Utc::now().to_rfc3339();
-    update_memory(&node)
-}
-
-/// Restore an archived memory to approved status with moderate confidence.
-pub fn restore_memory(id: &str) -> Result<(), String> {
-    let mut node = get_memory(id)?.ok_or_else(|| format!("memory {} not found", id))?;
-    if node.status != "archived" {
-        return Err(format!("memory {} is not archived (status={})", id, node.status));
-    }
-    node.status = "approved".to_string();
-    node.confidence = 60.0;
-    node.updated_at = Utc::now().to_rfc3339();
-    update_memory(&node)
 }
 
 // ── Search ──

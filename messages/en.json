@@ -309,7 +309,6 @@
   "nav_groupChats": "Group Chats",
   "nav_usage": "Usage",
   "nav_settings": "Settings",
-  "nav_memoryMgmt": "Memory Management",
 
   "moreMenu_doctor": "Doctor Diagnostics",
   "moreMenu_releaseNotes": "Release Notes",
@@ -814,15 +813,6 @@
   "invest.eventWatch.scanComplete": "Scan complete",
   "invest.eventWatch.scanResult": "Fetched {fetched}, dropped {filtered}, saved {saved}",
   "invest.eventWatch.scanErrors": "Scan warnings",
-
-  "memoryMgmt_tab_userMemory": "User Memory",
-  "memoryMgmt_tab_extractionConfig": "Extraction Config",
-
-  "memory_mgmt_add": "Add Memory",
-  "memory_mgmt_add_content": "Content",
-  "memory_mgmt_add_type": "Type",
-  "memory_mgmt_add_scope": "Scope",
-  "memory_mgmt_add_submit": "Save",
 
   "python_restart_runtime": "Restart Python Runtime",
 

@@ -309,7 +309,6 @@
   "nav_groupChats": "群聊",
   "nav_usage": "用量",
   "nav_settings": "设置",
-  "nav_memoryMgmt": "记忆管理",
 
   "moreMenu_doctor": "Doctor 诊断",
   "moreMenu_releaseNotes": "版本更新日志",
@@ -814,15 +813,6 @@
   "invest.eventWatch.scanComplete": "扫描完成",
   "invest.eventWatch.scanResult": "抓取 {fetched} 条，丢弃 {filtered} 条，新增 {saved} 条",
   "invest.eventWatch.scanErrors": "扫描警告",
-
-  "memoryMgmt_tab_userMemory": "用户记忆",
-  "memoryMgmt_tab_extractionConfig": "提取配置",
-
-  "memory_mgmt_add": "新增记忆",
-  "memory_mgmt_add_content": "内容",
-  "memory_mgmt_add_type": "类型",
-  "memory_mgmt_add_scope": "范围",
-  "memory_mgmt_add_submit": "保存",
 
   "python_restart_runtime": "重启 Python 运行时",
 

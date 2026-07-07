@@ -61,14 +61,6 @@
       color: "#a87a7a",
     },
     {
-      icon: "📚",
-      name: "User Memory",
-      desc: "用户记忆管理、领域知识库",
-      route: "/memory-mgmt",
-      bg: "rgba(201, 169, 110, 0.08)",
-      color: "var(--text-secondary)",
-    },
-    {
       icon: "⚡",
       name: "Plugins",
       desc: "Skills、MCP、Hooks、插件管理",

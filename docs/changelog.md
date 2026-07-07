@@ -1,5 +1,12 @@
 # Changelog / 更新日志
 
+## v5.6.7 (2026-07-08)
+
+### 移除 / 调整
+
+- **移除 `/memory-mgmt` 路由：** 删除数据库版用户记忆管理页（`src/routes/memory-mgmt/+page.svelte`）及侧边栏导航项、首页仪表盘卡片。该页仅供手动查看/增删记忆与切换提取配置，实际收益有限。连带移除 `commands/memos.rs` 中仅供该页使用的 5 个 scope-aware memory command（`list_memories`/`save_memory`/`remove_memory`/`archive_memory`/`restore_memory`）及 `lib.rs` 注册，并清理 `memory_store` 中随之无调用者的 `save_memory`/`archive_memory`/`restore_memory`。`memory_store::list_memories`/`delete_memory`/`get_memory`/`insert_memory`/`update_memory` 仍被 `characters.rs`、`memory_dream.rs`、提取管线内部使用，保留。清理 en/zh-CN 各 8 个专属 i18n key。
+- **自动记忆系统默认关闭：** `UserSettings.memory_extraction_enabled` 与 `memory_dream_enabled` 的 serde 默认与 `Default` impl 从 `true` 改为 `false`。自动提取、做梦维护、注入的底层能力全部保留，可随时在配置中改回开启；老配置若已持久化 `true` 需手动改 `settings.json` 或删除该字段以取新默认。
+
 ## v5.6.6 (2026-06-29)
 
 ### Bug 修复

@@ -391,12 +391,12 @@ pub struct UserSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invest_default_fee_profile_id: Option<String>,
     /// Enable background memory dream cycle (decay, merge, archive).
-    #[serde(default = "default_true")]
+    /// Disabled by default — the auto-memory system was found to add little value.
+    #[serde(default)]
     pub memory_dream_enabled: bool,
     /// Enable automatic memory extraction from chat / group-chat turns.
-    /// Independent of `embedding_config.enabled` so the user can turn off extraction
-    /// without disabling embeddings. Defaults to true to preserve existing behavior.
-    #[serde(default = "default_true")]
+    /// Disabled by default — the auto-memory system was found to add little value.
+    #[serde(default)]
     pub memory_extraction_enabled: bool,
     /// Minimum confidence (0-100) an extracted memory must reach to be persisted.
     /// Filters out low-value, speculative extractions. Defaults to 60.
@@ -612,8 +612,8 @@ impl Default for UserSettings {
             invest_miniqmt_enabled: false,
             invest_fee_profiles: Vec::new(),
             invest_default_fee_profile_id: None,
-            memory_dream_enabled: true,
-            memory_extraction_enabled: true,
+            memory_dream_enabled: false,
+            memory_extraction_enabled: false,
             memory_extraction_min_confidence: 60,
             updated_at: now_iso(),
         }
