@@ -1315,3 +1315,30 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
 
     sources
 }
+
+// ─── 宏观判断命令 ───────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacroVerdictView {
+    pub verdict: Option<crate::storage::invest::macro_verdict::MacroVerdict>,
+    pub is_current: bool,
+}
+
+/// 读全局宏观判断 + 新鲜度(是否对应当前数据版本)。
+#[tauri::command]
+pub fn get_macro_verdict() -> Result<MacroVerdictView, String> {
+    use crate::storage::invest::{macro_cache, macro_verdict};
+    let verdict = macro_verdict::load_verdict()?;
+    let is_current = match &verdict {
+        Some(v) => macro_verdict::is_current(v, &macro_cache::current_data_version()?),
+        None => false,
+    };
+    Ok(MacroVerdictView { verdict, is_current })
+}
+
+/// 手动刷新全局宏观判断(非交易时段内部会跳过真跑,复用收盘定版)。
+#[tauri::command]
+pub async fn refresh_macro_verdict() -> Result<String, String> {
+    crate::invest::macro_verdict::run_macro_verdict(true).await
+}
