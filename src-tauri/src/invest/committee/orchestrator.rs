@@ -1093,90 +1093,50 @@ async fn refresh_asset_data(
 // Macro phase
 // ---------------------------------------------------------------------------
 
-/// Build the user message for Macro role analysis (shared by CLI and API paths).
-fn build_macro_user_msg(symbol: &str, portfolio_summary: &str) -> String {
-    if portfolio_summary.is_empty() {
-        format!("请分析 {} 的宏观环境和技术面，给出风险信号判断。", symbol)
-    } else {
-        format!(
-            "请分析 {} 的宏观环境和技术面，给出风险信号判断。\n\n{}",
-            symbol, portfolio_summary
-        )
-    }
-}
-
-/// Run the Macro analysis phase via CLI executor.
+/// Run the Macro analysis phase.
 ///
-/// **Note:** `tokens_used` is always 0 in CLI mode because `claude --print`
-/// does not report token counts. This is a known limitation — latency_ms
-/// serves as the primary cost proxy instead.
+/// B1 修复后不再 per-symbol 调 LLM;改读全局宏观判断 + per-symbol 敏感度。
 async fn run_macro_phase(
-    symbol: &str,
+    _symbol: &str,
     config: &CommitteeConfig,
-    portfolio_summary: &str,
+    _portfolio_summary: &str,
     _emitter: &Option<EventEmitter>,
     asset_context: &AssetContext,
-    verdicts: &str,
+    _verdicts: &str,
     cancel: Option<&CancellationToken>,
 ) -> Result<(RoundOutput, u32), String> {
     let role = CommitteeRole::Macro;
-    let cli = match super::cli_executor::CliCommitteeExecutor::global() {
-        Some(c) => c,
-        None => {
-            log::warn!("run_macro_phase: CLI executor not initialized, returning degraded output for {symbol}");
-            let mut p = super::parser::ParsedFields {
-                raw_text: "[WORKER_UNAVAILABLE] CLI executor not initialized; Macro analysis skipped.".to_string(),
-                ..Default::default()
-            };
-            p.fallback_reason = Some("cli_executor_none".to_string());
-            return Ok((
-                RoundOutput {
-                    role,
-                    round: 1,
-                    parsed: p,
-                    latency_ms: 0,
-                    tokens_used: 0,
-                },
-                0,
-            ));
+    // B1 修复:读全局宏观判断对象(不再 per-symbol 调 LLM 重算)。
+    let verdict = crate::storage::invest::macro_verdict::load_verdict().ok().flatten();
+
+    let mut parsed = super::parser::ParsedFields::default();
+    match &verdict {
+        Some(v) => {
+            parsed.signal = v.signal.clone();
+            parsed.strength = v.strength;
+            parsed.market_phase = v.market_phase.clone();
+            parsed.market_phase_reason = v.market_phase_reason.clone();
+            parsed.signal_reason = v.signal_reason.clone();
+            parsed.money_effect_reason = v.money_effect_reason.clone();
+            parsed.raw_text = format!("[全局宏观判断] signal={:?} strength={:?} phase={:?}",
+                v.signal, v.strength, v.market_phase);
         }
-    };
-
-    let asset_name = get_asset_name(symbol).unwrap_or_else(|| symbol.to_string());
-    let system_prompt = super::cli_executor::build_cli_macro_prompt(
-        &asset_name,
-        symbol,
-        asset_context,
-        verdicts,
-    );
-    let user_msg = build_macro_user_msg(symbol, portfolio_summary);
-
-    log::info!("run_macro_phase: using CLI executor for {}", symbol);
-    // Note: RoleStart/RoleComplete events are emitted by the CALLER
-    // (run_committee), not here. Emitting them here would cause duplicates.
-    let cli_start = std::time::Instant::now();
-
-    let raw_text = cli.run_role(&system_prompt, &user_msg, config.timeout_secs, config.settings_path.as_deref(), cancel).await?;
-    let mut parsed = parse_role_output(role, &raw_text, false);
-    parsed.fallback_reason = detect_fallback_reason(role, 1, &parsed);
-
-    if parsed.fallback_reason.is_some() {
-        log::warn!(
-            "run_macro_phase: CLI output has fallback reason for {}: {:?}",
-            symbol, parsed.fallback_reason
-        );
+        None => {
+            parsed.signal = Some("neutral".into());
+            parsed.raw_text = "[全局宏观判断未生成] 降级 neutral,请手动刷新宏观判断".into();
+            parsed.fallback_reason = Some("macro_verdict_missing".into());
+        }
     }
 
-    let latency_ms = cli_start.elapsed().as_millis() as u64;
+    // per-symbol 行业敏感度(带缓存,§8.2-K)。
+    let signal = parsed.signal.clone().unwrap_or_else(|| "neutral".into());
+    let industry = asset_context.industry.clone().unwrap_or_default();
+    let (sens, reason) = super::sensitivity::analyze(
+        &industry, &signal, config.settings_path.as_deref(), cancel).await;
+    parsed.sensitivity = sens;
+    parsed.sensitivity_reason = reason;
 
-    let round_output = RoundOutput {
-        role,
-        round: 1,
-        parsed,
-        latency_ms,
-        tokens_used: 0,
-    };
-    Ok((round_output, 0))
+    Ok((RoundOutput { role, round: 1, parsed, latency_ms: 0, tokens_used: 0 }, 0))
 }
 
 // ---------------------------------------------------------------------------
