@@ -17,7 +17,7 @@
 3. **明日主线排序** — 板块聚合，前因 × 资金 × 股票池
 4. **S/A/B/C 观察池 Top10** — 四因子加权打分分级
 
-**配色**：本报告使用**红涨绿跌**（涨/正=红 `#c0524a`，跌/负=绿 `#4e9a5f`）。注意：现有 invest 模块整体是绿涨红跌，全局翻色是独立议题，**不在本 spec 范围内**，仅本报告局部使用红涨绿跌。
+**配色**：本报告使用**红涨绿跌**（涨/正=红 `#c0524a`，跌/负=绿 `#4e9a5f`）。本期同时将**全 app 从绿涨红跌统一翻成红涨绿跌**（见第 10 节），使报告与其余 invest 页面配色一致。
 
 ---
 
@@ -233,7 +233,7 @@ pub struct SymbolScore {
 
 **触发**：
 
-- **定时**：`scheduler/mod.rs::default_jobs()` 加 `premarket_report` job，cron `0 15 8 * * 1-5`（盘前 8:15），`requires_trading_day: true`；`runner.rs::dispatch_job` 加分支调 `generate_premarket_report(&data_dir)`。
+- **定时**：`scheduler/mod.rs::default_jobs()` 加 `premarket_report` job，cron `0 0 9 * * 1-5`（盘前 9:00），`requires_trading_day: true`；`runner.rs::dispatch_job` 加分支调 `generate_premarket_report(&data_dir)`。
 - **手动**：前端「立即生成」按钮走现成 `trigger_cron_job("premarket_report")`，无需新命令。
 
 ---
@@ -271,10 +271,21 @@ Rust 测试在本机走 `cargo check` 或 cmd.exe（见 CLAUDE.md §11 已知运
 
 ---
 
-## 10. 明确排除（YAGNI / 留待二期）
+## 10. 全局红涨绿跌翻色（纳入本期范围）
 
-- 全 app 红涨绿跌翻色（独立议题，别的 session 处理）。
+现有 invest 模块整体是**绿涨红跌**，本期统一翻成**红涨绿跌**，全 app 一致。范围与风险：
+
+- **改动点**：
+  - `app.css` 的 `[data-invest-scope]` token —— 交换涨跌语义色（`--color-success`/`--color-error` 在涨跌语境的用法，或引入统一的 `--up`/`--down` 语义变量并全量替换）。
+  - 所有引用涨跌色的 invest 组件：`MacroSnapshotCard`、`KpiCard`、`HoldingsTable`、`PnlChart`、`TradeLogTab`、committee 相关组件、以及本报告组件。
+  - `macro-card-demo.html` 等 demo 里的"本 app 惯例"注释同步更正。
+- **策略**：优先**引入语义变量** `--up`（红）/ `--down`（绿），把散落的 `--color-success`/`--color-error` 在**涨跌语境**下的用法替换为 `--up`/`--down`；保留 `--color-success`/`--color-error` 用于**非涨跌**的通用成功/错误状态（如校验通过、连接失败），避免一刀切改错语义。
+- **风险**：涨跌色和"成功/错误状态色"在现有代码里可能混用同一变量，需逐处判断语境，不能全局替换字符串。改完需人工过一遍 invest 全部页面确认无语义错色（绿色的"成功"提示不能变成"跌"）。
+- **验证**：`npm run build` + 人工巡检 `/invest` 各 tab（dashboard/committee/strategy/trades/system）截图确认。
+
+## 11. 明确排除（YAGNI / 留待二期）
+
+- **NLP 情绪模型**（一期不做）。舆论情绪一期用脚本层**关键词词典**打粗分（`sentiment_hint`），够喂 SABC 打分；精细语境判断已由 AI 点评那一步覆盖。引入本地情绪模型（FinBERT 类）会给 Windows 桌面 app 增加 torch/模型文件重依赖，逐条调 LLM 判情绪则成本翻数十倍、收益有限，均不划算。若后续词典误判影响分级，优先"AI 聚合时顺带返回每板块情绪分"，而非引入本地模型。
 - 拥挤度雷达的「技术压力位」维度（二期）。
 - SABC 引入委员会 verdict 作为第五因子（二期）。
-- NLP 情绪模型（脚本层用词典粗分即可）。
 - 历史报告的富交互浏览（一期只做「最新报告 + 折叠历史入口」）。
