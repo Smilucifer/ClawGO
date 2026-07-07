@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>盘前观察报告 — UI Demo</title>
+<style>
+  /* invest 模块真实 token（app.css [data-invest-scope]） */
+  :root {
+    --bg-base: #1a1918;
+    --bg-card: #242220;
+    --bg-hover: rgba(255,255,255,0.04);
+    --text-primary: #ebe8e4;
+    --text-secondary: hsl(24 8% 72%);
+    --text-tertiary: hsl(24 7% 58%);
+    --accent: #c9a96e;
+    --accent-muted: rgba(201,169,110,0.15);
+    --accent-subtle: rgba(201,169,110,0.08);
+    --border: #2e2c2a;
+    --color-success: #8a9a76;   /* 通用「正常/成功」状态色 = 绿 */
+    --color-error: #a87a7a;     /* 通用「异常/错误」状态色 = 红 */
+    --up: #c0524a;              /* 涨 / 正 = 红（红涨绿跌） */
+    --down: #4e9a5f;            /* 跌 / 负 = 绿 */
+    --flat: hsl(24 7% 58%);     /* 平 = 灰 */
+    --grade-s: #c9a96e;         /* S 级 = 金 */
+    --grade-a: #8a9a76;         /* A 级 = 绿 */
+    --grade-b: #7c94a8;         /* B 级 = 青蓝 */
+    --grade-c: hsl(24 7% 58%);  /* C 级 = 灰 */
+    --font-sans: "Inter","Microsoft YaHei","Noto Sans CJK SC",sans-serif;
+    --font-mono: "JetBrains Mono",Consolas,monospace;
+    --radius-sm: 6px;
+    --radius-lg: 12px;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 20px;
+    background: #131211; color: var(--text-primary);
+    font-family: var(--font-sans);
+    display: flex; flex-direction: column; align-items: center; gap: 20px;
+  }
+  .page-note { font-size: 12px; color: var(--text-secondary); line-height: 1.7; max-width: 720px;
+               padding: 10px 14px; background: var(--accent-subtle); border-radius: 8px;
+               border: 1px solid var(--border); }
+  .page-note b { color: var(--accent); }
+
+  /* ── 可导出报告主体（截图那种长图，固定宽度便于 PNG/PDF 导出） ── */
+  #report-canvas {
+    width: 720px; padding: var(--space-4);
+    background: var(--bg-base); border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: var(--space-3);
+  }
+
+  /* 报告头 */
+  .report-head { display: flex; align-items: flex-start; gap: var(--space-3);
+                 padding: var(--space-4); border-radius: var(--radius-lg);
+                 border: 1px solid var(--border);
+                 background: linear-gradient(135deg, rgba(201,169,110,0.10), var(--bg-card)); }
+  .report-head .title { font-size: 20px; font-weight: 700; letter-spacing: 0.02em; }
+  .report-head .subtitle { font-size: 11px; color: var(--text-secondary); margin-top: 6px; line-height: 1.6; }
+  .head-spacer { flex: 1; }
+  .session-badge { font-size: 11px; font-weight: 600; color: var(--accent);
+                   background: var(--accent-muted); border: 1px solid var(--border);
+                   padding: 4px 12px; border-radius: 999px; white-space: nowrap; }
+  .head-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .next-day { font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
+
+  /* 分段容器 */
+  .section { padding: var(--space-4); border-radius: var(--radius-lg);
+             border: 1px solid var(--border); background: var(--bg-card); }
+  .section-head { display: flex; align-items: baseline; gap: var(--space-2); margin-bottom: var(--space-3); }
+  .section-no { font-size: 11px; font-weight: 700; color: var(--accent);
+                font-family: var(--font-mono); letter-spacing: 0.04em; }
+  .section-title { font-size: 14px; font-weight: 600; }
+  .section-tag { font-size: 10px; color: var(--text-tertiary); margin-left: auto; }
+
+  /* 01 舆论/新闻先验（板块标签墙：大量抓取 → AI 聚合成板块 + 评价标签） */
+  .theme-wall { display: grid; grid-template-columns: repeat(2,1fr); gap: var(--space-2); }
+  .theme-tag-card { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3);
+                    border-radius: var(--radius-sm); background: var(--bg-hover); border: 1px solid var(--border); }
+  .ttc-head { display: flex; align-items: center; gap: 6px; }
+  .ttc-name { font-size: 13px; font-weight: 600; }
+  .ttc-count { font-size: 9px; color: var(--text-tertiary); font-family: var(--font-mono); margin-left: auto; }
+  /* 评价标签：新闻强 / 催化强 / 情绪强 / 分歧大 */
+  .eval-tag { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; white-space: nowrap; }
+  .eval-tag.news   { color: var(--accent);   background: var(--accent-muted); }        /* 新闻强 = 金 */
+  .eval-tag.cata   { color: var(--up);       background: rgba(192,82,74,0.18); }       /* 催化强 = 红 */
+  .eval-tag.mood   { color: var(--grade-b);  background: rgba(124,148,168,0.16); }      /* 情绪强 = 青蓝 */
+  .eval-tag.split  { color: var(--down);     background: rgba(78,154,95,0.16); }        /* 分歧大 = 绿 */
+  .eval-tag.risk   { color: var(--text-primary); background: rgba(168,122,122,0.30);
+                     border: 1px solid var(--down); }                                     /* 风险预警 = 描边警示 */
+  .ttc-desc { font-size: 11px; color: var(--text-secondary); line-height: 1.5; }
+  .ttc-srcs { display: flex; align-items: center; gap: 4px; }
+  .src-chip { font-size: 9px; font-weight: 600; padding: 1px 6px; border-radius: 3px;
+              text-transform: uppercase; letter-spacing: 0.03em; }
+  .src-chip.em { color: var(--accent); background: var(--accent-muted); }
+  .src-chip.xq { color: var(--grade-b); background: rgba(124,148,168,0.16); }
+  .ai-note { margin-top: var(--space-3); padding: var(--space-2) var(--space-3);
+             border-radius: var(--radius-sm); background: var(--accent-subtle); border: 1px solid var(--border);
+             font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+  .ai-note .ai-tag { font-size: 9px; font-weight: 700; color: var(--accent);
+                     text-transform: uppercase; letter-spacing: 0.05em; margin-right: 6px; }
+
+  /* 02 资金与宏观确认（复刻 macro-snapshot 两区） */
+  .macro-sub { font-size: 10px; font-weight: 600; color: var(--text-tertiary);
+               letter-spacing: 0.04em; margin: var(--space-3) 0 var(--space-1); }
+  .macro-sub:first-of-type { margin-top: 0; }
+  .macro-grid { display: grid; grid-template-columns: repeat(5,1fr);
+                gap: var(--space-2); text-align: center; }
+  .macro-cell { display: flex; flex-direction: column; gap: 2px; padding: var(--space-1) 0; }
+  .macro-label { font-size: 10px; color: var(--text-tertiary);
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .macro-value { font-size: 13px; font-weight: 600; font-family: var(--font-mono); color: var(--text-primary); }
+  .macro-value.up { color: var(--up); }
+  .macro-value.down { color: var(--down); }
+  .apd { display: inline-flex; gap: 2px; justify-content: center;
+         font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+  .apd .u { color: var(--up); }
+  .apd .p { color: var(--flat); }
+  .apd .d { color: var(--down); }
+  .apd .sep { color: var(--text-tertiary); font-weight: 400; }
+  .money-divider { height: 1px; background: var(--border); margin: var(--space-3) 0; }
+  .money-strip { display: flex; align-items: center; gap: var(--space-3);
+                 padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm);
+                 background: var(--accent-subtle); border: 1px solid var(--border); }
+  .me-title { font-size: 10px; color: var(--text-tertiary);
+              text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
+  .me-badge { font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: var(--radius-sm); white-space: nowrap; }
+  .me-badge.hot    { color: var(--up); background: rgba(192,82,74,0.18); }
+  .me-badge.active { color: var(--accent);        background: var(--accent-muted); }
+  .money-strip .reason { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+
+  /* 02 板块资金流入榜 + 拥挤度雷达（瓶颈预警） */
+  .sector-flow { display: flex; flex-direction: column; gap: var(--space-1); }
+  .sector-row { display: flex; align-items: center; gap: var(--space-3); padding: 6px var(--space-3);
+                border-radius: var(--radius-sm); background: var(--bg-hover); border: 1px solid var(--border); }
+  .sf-name { font-size: 12px; font-weight: 500; min-width: 96px; }
+  .sf-flow { font-size: 12px; font-weight: 700; font-family: var(--font-mono); min-width: 72px; }
+  .sf-flow.in  { color: var(--up); }
+  .sf-flow.out { color: var(--down); }
+  .sf-bar-track { flex: 1; height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+  .sf-bar-fill { height: 100%; border-radius: 3px; }
+  .sf-bar-fill.in  { background: var(--up); }
+  .sf-bar-fill.out { background: var(--down); }
+  /* 拥挤度徽章：健康 / 偏热 / 过热(瓶颈预警) */
+  .crowd-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+                 white-space: nowrap; min-width: 58px; text-align: center; }
+  .crowd-badge.healthy { color: var(--down);  background: rgba(78,154,95,0.16); }   /* 健康 = 绿 */
+  .crowd-badge.warm    { color: var(--accent); background: var(--accent-muted); }    /* 偏热 = 金 */
+  .crowd-badge.hot     { color: var(--up);    background: rgba(192,82,74,0.18); }    /* 过热/瓶颈 = 红 */
+  .radar-hint { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-2);
+                font-size: 10px; color: var(--text-tertiary); }
+  .radar-hint .legend { display: inline-flex; align-items: center; gap: 4px; }
+  .radar-hint .dot { width: 8px; height: 8px; border-radius: 2px; }
+
+  /* 03 主线排序（板块聚合） */
+  .theme-row { display: flex; align-items: center; gap: var(--space-3); padding: 10px var(--space-3);
+               border-radius: var(--radius-sm); background: var(--bg-hover);
+               border: 1px solid var(--border); margin-bottom: var(--space-2); }
+  .theme-rank { font-size: 15px; font-weight: 700; font-family: var(--font-mono);
+                color: var(--accent); min-width: 22px; text-align: center; }
+  .theme-main { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+  .theme-name { font-size: 13px; font-weight: 600; }
+  .theme-reason { font-size: 11px; color: var(--text-secondary); line-height: 1.5; }
+  .theme-bars { display: flex; gap: var(--space-2); }
+  .mini-bar { display: flex; flex-direction: column; gap: 2px; align-items: center; min-width: 44px; }
+  .mini-bar .mb-label { font-size: 9px; color: var(--text-tertiary); }
+  .mini-bar .mb-track { width: 40px; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+  .mini-bar .mb-fill { height: 100%; background: var(--accent); border-radius: 2px; }
+  .theme-score { font-size: 15px; font-weight: 700; font-family: var(--font-mono); min-width: 40px; text-align: right; }
+
+  /* 04 SABC 观察池 Top10（2×2 分组，复刻截图布局） */
+  .pool-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: var(--space-3); }
+  .pool-box { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  .pool-head { display: flex; align-items: center; gap: var(--space-2);
+               padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); }
+  .grade-badge { font-size: 12px; font-weight: 800; width: 22px; height: 22px; border-radius: 5px;
+                 display: flex; align-items: center; justify-content: center; }
+  .grade-s .grade-badge { color: #1a1918; background: var(--grade-s); }
+  .grade-a .grade-badge { color: #1a1918; background: var(--grade-a); }
+  .grade-b .grade-badge { color: #1a1918; background: var(--grade-b); }
+  .grade-c .grade-badge { color: #1a1918; background: var(--grade-c); }
+  .pool-label { font-size: 12px; font-weight: 600; }
+  .pool-sub { font-size: 10px; color: var(--text-tertiary); margin-left: auto; }
+  .grade-s .pool-head { background: rgba(201,169,110,0.10); }
+  .grade-a .pool-head { background: rgba(138,154,118,0.10); }
+  .grade-b .pool-head { background: rgba(124,148,168,0.10); }
+  .grade-c .pool-head { background: rgba(158,154,150,0.08); }
+  .pool-body { padding: var(--space-1) var(--space-2); }
+  .stock-row { display: flex; align-items: center; gap: var(--space-2); padding: 5px var(--space-2);
+               border-radius: 4px; }
+  .stock-row + .stock-row { border-top: 1px solid var(--border); }
+  .stk-name { font-size: 12px; font-weight: 500; min-width: 60px; }
+  .stk-code { font-size: 10px; color: var(--text-tertiary); font-family: var(--font-mono); }
+  .stk-spacer { flex: 1; }
+  .stk-tags { display: flex; gap: 3px; }
+  .stk-tag { font-size: 9px; padding: 1px 5px; border-radius: 3px; background: var(--bg-hover);
+             color: var(--text-secondary); border: 1px solid var(--border); }
+  .stk-tag.money { color: var(--up); }
+  .stk-tag.mood { color: var(--accent); }
+  .stk-score { font-size: 12px; font-weight: 700; font-family: var(--font-mono);
+               min-width: 30px; text-align: right; color: var(--text-primary); }
+
+  /* footer */
+  .report-foot { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4);
+                 border-radius: var(--radius-lg); border: 1px solid var(--border);
+                 background: var(--bg-card); font-size: 11px; color: var(--text-tertiary); line-height: 1.6; }
+  .report-foot .disclaimer { flex: 1; }
+  .report-foot .brand { font-weight: 700; color: var(--accent); }
+
+  /* 工具栏（不导出） */
+  .toolbar { display: flex; gap: var(--space-2); width: 720px; }
+  .btn { flex: 1; font-size: 13px; font-weight: 600; padding: 9px var(--space-4); border-radius: var(--radius-sm);
+         border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary);
+         cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .btn.primary { background: var(--accent); color: #1a1918; border-color: var(--accent); }
+  .btn:hover { border-color: var(--accent); }
+</style>
+</head>
+<body>
+  <p class="page-note">
+    <b>盘前观察报告 · UI Demo</b> — 严格复刻 invest 模块真实 token（<b>绿涨红跌</b>、真实类名与尺寸）。
+    还原截图 4 段:①外部/舆论新闻先验 ②资金与宏观双重确认 ③明日主线排序（前因×资金×股票池）④S/A/B/C 观察池 Top10。
+    右上「本次会话预测下一交易日」<b>无日期选择</b>；顶部工具栏 <b>导出 PNG / PDF</b>（真实实现走 html2canvas / jspdf，对 #report-canvas 截图）。
+  </p>
+
+  <div class="toolbar">
+    <button class="btn">立即生成</button>
+    <button class="btn primary">导出 PNG</button>
+    <button class="btn">导出 PDF</button>
+  </div>
+
+  <!-- ══════════ 可导出报告主体 ══════════ -->
+  <div id="report-canvas">
+
+    <!-- 报告头 -->
+    <div class="report-head">
+      <div>
+        <div class="title">明日盘前观察</div>
+        <div class="subtitle">外部新闻先验 × 主力资金双重确认 × 明日主线预排序 × 观察池分级</div>
+      </div>
+      <div class="head-spacer"></div>
+      <div class="head-right">
+        <span class="session-badge">下一交易日 · 盘前</span>
+        <span class="next-day">预测交易日 2026-07-08</span>
+      </div>
+    </div>
+
+    <!-- 01 外部/舆论新闻先验 -->
+    <div class="section">
+      <div class="section-head">
+        <span class="section-no">01</span>
+        <span class="section-title">外部 / 舆论新闻先验</span>
+        <span class="section-tag">东财 · 雪球 · 金十</span>
+      </div>
+      <div class="theme-wall">
+        <div class="theme-tag-card">
+          <div class="ttc-head"><span class="ttc-name">机器人 / 具身智能</span><span class="eval-tag news">新闻强</span><span class="ttc-count">42 条</span></div>
+          <div class="ttc-desc">多家厂商发布人形机器人量产计划，媒体密集报道，舆论热度居首。</div>
+          <div class="ttc-srcs"><span class="src-chip em">东财 28</span><span class="src-chip xq">雪球 14</span></div>
+        </div>
+        <div class="theme-tag-card">
+          <div class="ttc-head"><span class="ttc-name">商业航天 / 低空经济</span><span class="eval-tag cata">催化强</span><span class="ttc-count">31 条</span></div>
+          <div class="ttc-desc">地方低空经济政策落地 + 卫星组网招标，明确事件催化驱动。</div>
+          <div class="ttc-srcs"><span class="src-chip em">东财 19</span><span class="src-chip xq">雪球 12</span></div>
+        </div>
+        <div class="theme-tag-card">
+          <div class="ttc-head"><span class="ttc-name">AI 算力 / 半导体</span><span class="eval-tag mood">情绪强</span><span class="ttc-count">55 条</span></div>
+          <div class="ttc-desc">龙头订单能见度延长，散户情绪一边倒看多，讨论量最大。</div>
+          <div class="ttc-srcs"><span class="src-chip em">东财 33</span><span class="src-chip xq">雪球 22</span></div>
+        </div>
+        <div class="theme-tag-card">
+          <div class="ttc-head"><span class="ttc-name">白酒 / 消费</span><span class="eval-tag split">分歧大</span><span class="ttc-count">18 条</span></div>
+          <div class="ttc-desc">经销商动销偏弱 vs 估值见底，多空争论激烈，方向不明。</div>
+          <div class="ttc-srcs"><span class="src-chip em">东财 11</span><span class="src-chip xq">雪球 7</span></div>
+        </div>
+        <div class="theme-tag-card" style="grid-column:1 / -1;">
+          <div class="ttc-head"><span class="ttc-name">政策 / 监管风险</span><span class="eval-tag risk">风险预警</span><span class="ttc-count">9 条</span></div>
+          <div class="ttc-desc">收纳会构成下行风险的先验：监管收紧、政策转向、处罚/退市、爆雷、地缘扰动。今日：某行业反垄断问询 + 海外出口管制传闻，盘前需规避相关标的。</div>
+          <div class="ttc-srcs"><span class="src-chip em">东财 6</span><span class="src-chip xq">雪球 3</span></div>
+        </div>
+      </div>
+      <div class="ai-note"><span class="ai-tag">AI 点评</span>盘前舆情主线集中在科技成长（机器人/具身智能 新闻强、AI 算力 情绪强），商业航天/低空有明确政策催化值得跟踪；消费板块分歧加大，宜观望。共抓取 146 条新闻，聚合为 4 个主题板块。</div>
+    </div>
+
+    <!-- 02 资金与宏观双重确认 -->
+    <div class="section">
+      <div class="section-head">
+        <span class="section-no">02</span>
+        <span class="section-title">资金与宏观双重确认</span>
+        <span class="section-tag">宏观快照 · 市场广度</span>
+      </div>
+
+      <div class="macro-sub">宏观指标</div>
+      <div class="macro-grid">
+        <div class="macro-cell"><span class="macro-label">上证指数</span><span class="macro-value up">3187.42</span></div>
+        <div class="macro-cell"><span class="macro-label">北向资金(亿)</span><span class="macro-value up">58.30</span></div>
+        <div class="macro-cell"><span class="macro-label">主力净流入(亿)</span><span class="macro-value up">126.40</span></div>
+        <div class="macro-cell"><span class="macro-label">两市成交额(亿)</span><span class="macro-value">9820</span></div>
+        <div class="macro-cell"><span class="macro-label">VIX恐慌指数</span><span class="macro-value down">15.80</span></div>
+      </div>
+
+      <div class="macro-sub">市场广度</div>
+      <div class="macro-grid">
+        <div class="macro-cell">
+          <span class="macro-label">涨-平-跌</span>
+          <span class="apd"><span class="u">3120</span><span class="sep">-</span><span class="p">180</span><span class="sep">-</span><span class="d">1780</span></span>
+        </div>
+        <div class="macro-cell"><span class="macro-label">涨停家数</span><span class="macro-value up">62</span></div>
+        <div class="macro-cell"><span class="macro-label">跌停家数</span><span class="macro-value down">8</span></div>
+        <div class="macro-cell"><span class="macro-label">涨幅&gt;3%</span><span class="macro-value">512</span></div>
+        <div class="macro-cell"><span class="macro-label">大盘情绪</span><span class="macro-value">61.4%</span></div>
+      </div>
+
+      <div class="money-divider"></div>
+      <div class="money-strip">
+        <span class="me-title">赚钱效应</span>
+        <span class="me-badge hot">火热</span>
+        <span class="reason">主力净流入 +126 亿，北向配合，涨停 62 家远超跌停，资金面与宏观共振向上。</span>
+      </div>
+
+      <div class="macro-sub">板块资金流入榜 · 拥挤度雷达</div>
+      <div class="sector-flow">
+        <div class="sector-row">
+          <span class="sf-name">AI 算力 / 半导体</span>
+          <span class="sf-flow in">+58.2亿</span>
+          <div class="sf-bar-track"><div class="sf-bar-fill in" style="width:92%"></div></div>
+          <span class="crowd-badge hot">过热</span>
+        </div>
+        <div class="sector-row">
+          <span class="sf-name">机器人 / 具身智能</span>
+          <span class="sf-flow in">+34.7亿</span>
+          <div class="sf-bar-track"><div class="sf-bar-fill in" style="width:64%"></div></div>
+          <span class="crowd-badge warm">偏热</span>
+        </div>
+        <div class="sector-row">
+          <span class="sf-name">商业航天 / 低空</span>
+          <span class="sf-flow in">+21.3亿</span>
+          <div class="sf-bar-track"><div class="sf-bar-fill in" style="width:42%"></div></div>
+          <span class="crowd-badge healthy">健康</span>
+        </div>
+        <div class="sector-row">
+          <span class="sf-name">白酒 / 消费</span>
+          <span class="sf-flow out">-27.6亿</span>
+          <div class="sf-bar-track"><div class="sf-bar-fill out" style="width:48%"></div></div>
+          <span class="crowd-badge healthy">健康</span>
+        </div>
+      </div>
+      <div class="radar-hint">
+        <span>拥挤度 = 换手率分位 + 成交占比 + 龙头/板块背离 →</span>
+        <span class="legend"><span class="dot" style="background:var(--down)"></span>健康</span>
+        <span class="legend"><span class="dot" style="background:var(--accent)"></span>偏热</span>
+        <span class="legend"><span class="dot" style="background:var(--up)"></span>过热·瓶颈预警</span>
+      </div>
+    </div>
+
+    <!-- 03 明日主线排序 -->
+    <div class="section">
+      <div class="section-head">
+        <span class="section-no">03</span>
+        <span class="section-title">明日主线排序</span>
+        <span class="section-tag">前因 × 资金 × 股票池</span>
+      </div>
+
+      <div class="theme-row">
+        <span class="theme-rank">1</span>
+        <div class="theme-main">
+          <span class="theme-name">AI 算力 / 半导体</span>
+          <span class="theme-reason">舆论焦点 + 北向增持 + 池内 3 只 S/A 级共振，订单能见度延长为核心前因。</span>
+        </div>
+        <div class="theme-bars">
+          <div class="mini-bar"><span class="mb-label">舆论</span><div class="mb-track"><div class="mb-fill" style="width:90%"></div></div></div>
+          <div class="mini-bar"><span class="mb-label">资金</span><div class="mb-track"><div class="mb-fill" style="width:85%"></div></div></div>
+          <div class="mini-bar"><span class="mb-label">催化</span><div class="mb-track"><div class="mb-fill" style="width:70%"></div></div></div>
+        </div>
+        <span class="theme-score" style="color:var(--grade-s)">88</span>
+      </div>
+
+      <div class="theme-row">
+        <span class="theme-rank">2</span>
+        <div class="theme-main">
+          <span class="theme-name">数据要素 / 信创</span>
+          <span class="theme-reason">政策面重申资本市场活跃，主力资金持续净流入，题材接力预期强。</span>
+        </div>
+        <div class="theme-bars">
+          <div class="mini-bar"><span class="mb-label">舆论</span><div class="mb-track"><div class="mb-fill" style="width:68%"></div></div></div>
+          <div class="mini-bar"><span class="mb-label">资金</span><div class="mb-track"><div class="mb-fill" style="width:74%"></div></div></div>
+          <div class="mini-bar"><span class="mb-label">催化</span><div class="mb-track"><div class="mb-fill" style="width:60%"></div></div></div>
+        </div>
+        <span class="theme-score" style="color:var(--grade-a)">71</span>
+      </div>
+
+      <div class="theme-row">
+        <span class="theme-rank">3</span>
+        <div class="theme-main">
+          <span class="theme-name">白酒 / 消费</span>
+          <span class="theme-reason">动销偏弱舆情压制，资金面中性，主线权重下调，观望为主。</span>
+        </div>
+        <div class="theme-bars">
+          <div class="mini-bar"><span class="mb-label">舆论</span><div class="mb-track"><div class="mb-fill" style="width:38%"></div></div></div>
+          <div class="mini-bar"><span class="mb-label">资金</span><div class="mb-track"><div class="mb-fill" style="width:45%"></div></div></div>
+          <div class="mini-bar"><span class="mb-label">催化</span><div class="mb-track"><div class="mb-fill" style="width:30%"></div></div></div>
+        </div>
+        <span class="theme-score" style="color:var(--grade-b)">52</span>
+      </div>
+    </div>
+
+    <!-- 04 SABC 观察池 Top10 -->
+    <div class="section">
+      <div class="section-head">
+        <span class="section-no">04</span>
+        <span class="section-title">S / A / B / C 观察池 Top10</span>
+        <span class="section-tag">四因子加权 · 舆论 + 资金 + 技术 + 催化</span>
+      </div>
+      <div class="pool-grid">
+
+        <div class="pool-box grade-s">
+          <div class="pool-head"><span class="grade-badge">S</span><span class="pool-label">重点关注</span><span class="pool-sub">强共振</span></div>
+          <div class="pool-body">
+            <div class="stock-row"><span class="stk-name">寒武纪</span><span class="stk-code">688256</span><span class="stk-spacer"></span><span class="stk-tags"><span class="stk-tag money">主力+</span><span class="stk-tag mood">舆论热</span></span><span class="stk-score">91</span></div>
+            <div class="stock-row"><span class="stk-name">中际旭创</span><span class="stk-code">300308</span><span class="stk-spacer"></span><span class="stk-tags"><span class="stk-tag money">主力+</span><span class="stk-tag">突破</span></span><span class="stk-score">86</span></div>
+            <div class="stock-row"><span class="stk-name">海光信息</span><span class="stk-code">688041</span><span class="stk-spacer"></span><span class="stk-tags"><span class="stk-tag mood">舆论热</span></span><span class="stk-score">82</span></div>
+          </div>
+        </div>
+
+        <div class="pool-box grade-a">
+          <div class="pool-head"><span class="grade-badge">A</span><span class="pool-label">机会跟踪</span><span class="pool-sub">资金流入</span></div>
+          <div class="pool-body">
+            <div class="stock-row"><span class="stk-name">拓维信息</span><span class="stk-code">002261</span><span class="stk-spacer"></span><span class="stk-tags"><span class="stk-tag money">主力+</span></span><span class="stk-score">74</span></div>
+            <div class="stock-row"><span class="stk-name">工业富联</span><span class="stk-code">601138</span><span class="stk-spacer"></span><span class="stk-tags"><span class="stk-tag">北向+</span></span><span class="stk-score">70</span></div>
+            <div class="stock-row"><span class="stk-name">深南电路</span><span class="stk-code">002916</span><span class="stk-spacer"></span><span class="stk-tags"><span class="stk-tag">量能</span></span><span class="stk-score">66</span></div>
+          </div>
+        </div>
+
+        <div class="pool-box grade-b">
+          <div class="pool-head"><span class="grade-badge">B</span><span class="pool-label">技术形态</span><span class="pool-sub">待确认</span></div>
+          <div class="pool-body">
+            <div class="stock-row"><span class="stk-name">紫光国微</span><span class="stk-code">002049</span><span class="stk-spacer"></span><span class="stk-tags"><span class="stk-tag">MA多头</span></span><span class="stk-score">58</span></div>
+            <div class="stock-row"><span class="stk-name">兆易创新</span><span class="stk-code">603986</span><span class="stk-spacer"></span><span class="stk-tags"><span class="stk-tag">缩量</span></span><span class="stk-score">54</span></div>
+          </div>
+        </div>
+
+        <div class="pool-box grade-c">
+          <div class="pool-head"><span class="grade-badge">C</span><span class="pool-label">观望候选</span><span class="pool-sub">信号弱</span></div>
+          <div class="pool-body">
+            <div class="stock-row"><span class="stk-name">贵州茅台</span><span class="stk-code">600519</span><span class="stk-spacer"></span><span class="stk-tags"><span class="stk-tag">舆论弱</span></span><span class="stk-score">44</span></div>
+            <div class="stock-row"><span class="stk-name">宁德时代</span><span class="stk-code">300750</span><span class="stk-spacer"></span><span class="stk-tags"><span class="stk-tag">资金流出</span></span><span class="stk-score">39</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- footer -->
+    <div class="report-foot">
+      <span class="disclaimer">本报告由 <span class="brand">openInvest</span> 数据打底 + AI 点评自动生成，观点仅供研究参考，不构成投资建议。分级与评分由确定性打分器产出，AI 仅负责排序解读。</span>
+    </div>
+
+  </div>
+</body>
+</html>
