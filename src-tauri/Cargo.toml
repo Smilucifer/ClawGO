@@ -52,6 +52,7 @@ toml_edit = "0.25"
 portable-pty = "0.9"
 rusqlite = { version = "0.31", features = ["bundled", "backup"] }
 cron = "0.15"
+keyring = { version = "4.1.4", features = ["v1"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
