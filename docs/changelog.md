@@ -30,6 +30,7 @@
 ### 重构（simplify 审查清理）
 
 - `sentiment.rs` 两处 `SentimentItem` 重复构造抽 `raw_to_item`/`store_raws`;`scoring::score` 与 `report::build_themes` 的 SABC 档位级联抽 `grade_of`;`event_analyzer`/`event_scanner` 的 `wrap_csv` 收敛为 event_scanner 的 `pub(crate)` 共享;删除 `SectorFlow` 从未被读的 `turnover_rate`/`main_inflow_pct` 死字段;删除 `analyze_pending_events` 死参数包装器;`summary_opt` 内联抽 `NormalizedEvent::summary_opt()`。
+- 宏观改版:`macro_verdict::resolve_settings_path` 手写 raw JSON 解析改复用 `get_committee_tuning()`(与委员会本体读同一份调参);`fetch_sh_ma` 手写 MA 改复用 `indicators::compute_ma` 并接收共享 `InternationalClient`(免二次 settings 解析);`run_macro_verdict` 广度取数与 MA 取数 `tokio::join!` 并行、`macro_refresh` 降级路径两个 akshare RPC `tokio::try_join!` 并行;`run_macro_phase` 砍 4 个死参 + `signal` clone 改 `as_deref`,删只喂它的 `portfolio_summary`;删除前端 store `GlobalMacroState.isCurrent` 死状态字段(组件无读,派生用 `view` 参数)。
 
 ## v5.6.7 (2026-07-08)
 
