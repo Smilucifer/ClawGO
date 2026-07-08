@@ -97,6 +97,7 @@ def main():
     register_provider("akshare", "akshare_news")
     register_provider("akshare_market", "akshare_market")
     register_provider("xtdata", "xtdata")
+    register_provider("sentiment", "sentiment")
 
     print("[server] ClawGO Python Data Server started", file=sys.stderr, flush=True)
 
