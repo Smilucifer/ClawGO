@@ -8,7 +8,7 @@
     type RoundOutputSummary,
   } from '$lib/stores/invest-committee-store.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
-  import MacroSnapshotCard from './MacroSnapshotCard.svelte';
+  import GlobalMacroCard from './GlobalMacroCard.svelte';
   import { STEP_DEFS, getStepState, getRoundForStep } from './pipeline-config';
   import { getVerdictBadgeStyle, normalizeConfidencePct } from '$lib/utils/invest-verdict';
   import { onMount } from 'svelte';
@@ -202,6 +202,7 @@
   onMount(() => {
     store.loadQueue();
     store.loadModeOverrides();
+    store.loadGlobalMacro();
   });
 </script>
 
@@ -364,6 +365,9 @@
     </div>
   {/if}
 
+  <!-- 全局宏观判断卡片 -->
+  <GlobalMacroCard macro={store.globalMacro} onRefresh={() => store.refreshGlobalMacro()} />
+
   <!-- Symbol cards -->
   {#each allAssets as asset (asset.symbol)}
     {@const p = store.perSymbolProgress.get(asset.symbol)}
@@ -482,7 +486,19 @@
                     <span class="meta-item">✅ {t('invest_committee_converged')}</span>
                   {/if}
                 </div>
-                <MacroSnapshotCard snapshot={result.macroSnapshot} />
+                {#if result?.rounds}
+                  {@const macroRound = result.rounds.find(r => r.role === 'macro')}
+                  {#if macroRound?.parsed?.sensitivity}
+                    {@const sens = macroRound.parsed.sensitivity}
+                    <div class="sens-strip">
+                      <span class="sens-title">{t('invest_sensitivity_title')}</span>
+                      <span class="sens-badge {sens === 'positive' ? 'pos' : sens === 'negative' ? 'neg' : 'neu'}">
+                        {sens === 'positive' ? t('invest_sensitivity_pos') : sens === 'negative' ? t('invest_sensitivity_neg') : t('invest_sensitivity_neutral')}
+                      </span>
+                      <span class="sens-reason">{macroRound.parsed.sensitivityReason ?? ''}</span>
+                    </div>
+                  {/if}
+                {/if}
                 {#if result.sanityCheck.notes.length > 0}
                   <ul class="verdict-notes">
                     {#each result.sanityCheck.notes as note}
@@ -822,4 +838,14 @@
   .sentinel-override { font-size: 12px; color: var(--color-warning); }
 
   .empty-hint { padding: 32px; text-align: center; color: var(--text-tertiary); font-size: 13px; }
+
+  /* 行业敏感度小条 */
+  .sens-strip { display: flex; align-items: center; gap: 10px; padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm); background: var(--bg-hover); border: 1px solid var(--border); margin-top: var(--space-2); }
+  .sens-title { font-size: 10px; color: var(--text-tertiary); text-transform: uppercase; }
+  .sens-reason { font-size: 12px; color: var(--text-secondary); }
+  .sens-badge { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: var(--radius-sm); }
+  .sens-badge.pos { color: var(--up); background: rgba(197,111,98,0.18); }
+  .sens-badge.neg { color: var(--down); background: rgba(127,157,109,0.18); }
+  .sens-badge.neu { color: var(--flat); background: rgba(158,154,150,0.14); }
 </style>
