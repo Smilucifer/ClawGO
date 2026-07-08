@@ -5,7 +5,7 @@
 
 use crate::invest::event_scanner::{
     NormalizedEvent, RawEvent, Severity, build_normalizer_prompt_with_sectors,
-    fallback_normalize_from, normalize_events, parse_normalized_response, short,
+    fallback_normalize_from, normalize_events, parse_normalized_response, short, wrap_csv,
 };
 use crate::storage::invest::events::{Event, list_unanalyzed_events, update_event_analysis};
 use crate::storage::invest::sentiment::{list_unanalyzed_sentiment, update_sentiment_analysis};
@@ -48,15 +48,6 @@ pub enum AnalyzeTable {
     Sentiment,
 }
 
-/// Wrap a comma-separated list with leading/trailing commas so that
-/// `LIKE '%,x,%'` matches whole tokens unambiguously.
-fn wrap_csv(v: &[String]) -> Option<String> {
-    if v.is_empty() {
-        None
-    } else {
-        Some(format!(",{},", v.join(",")))
-    }
-}
 
 /// Generic normalization entry point. Builds a closed-set sectors prompt
 /// from `stock_industry.all_industries()` and dispatches to the
@@ -108,13 +99,12 @@ async fn analyze_events_table(prompt: &str) -> Result<AnalyzerResult, String> {
                 event.severity
             );
             skipped += 1;
-            let summary_opt = if norm.summary.is_empty() { None } else { Some(norm.summary.as_str()) };
             let _ = update_event_analysis(
                 &event.id,
                 &event.severity,
                 &norm.stance,
                 None,
-                summary_opt,
+                norm.summary_opt(),
                 wrap_csv(&norm.sectors).as_deref(),
                 wrap_csv(&norm.topics).as_deref(),
             );
@@ -126,14 +116,12 @@ async fn analyze_events_table(prompt: &str) -> Result<AnalyzerResult, String> {
         } else {
             Some(norm.affected_symbols.join(","))
         };
-        let summary_opt = if norm.summary.is_empty() { None } else { Some(norm.summary.as_str()) };
-
         match update_event_analysis(
             &event.id,
             norm.severity.as_str(),
             &norm.stance,
             symbols_str.as_deref(),
-            summary_opt,
+            norm.summary_opt(),
             wrap_csv(&norm.sectors).as_deref(),
             wrap_csv(&norm.topics).as_deref(),
         ) {
@@ -204,10 +192,9 @@ async fn analyze_sentiment_table(prompt: &str) -> Result<AnalyzerResult, String>
     let mut analyzed = 0usize;
     let mut errors: Vec<String> = Vec::new();
     for (item, norm) in pending.iter().zip(normalized.iter()) {
-        let summary_opt = if norm.summary.is_empty() { None } else { Some(norm.summary.as_str()) };
         match update_sentiment_analysis(
             &item.id,
-            summary_opt,
+            norm.summary_opt(),
             norm.severity.as_str(),
             &norm.stance,
             wrap_csv(&norm.affected_symbols).as_deref(),
@@ -231,18 +218,6 @@ async fn analyze_sentiment_table(prompt: &str) -> Result<AnalyzerResult, String>
         skipped: 0,
         errors,
     })
-}
-
-/// Backward-compatible wrapper: analyze pending `events` rows.
-///
-/// The `normalizer_prompt` argument is ignored — the closed-set prompt is
-/// always built from the live `stock_industry` mapping inside `analyze_pending`.
-pub async fn analyze_pending_events(
-    normalizer_prompt: Option<&str>,
-    language: &str,
-) -> Result<AnalyzerResult, String> {
-    let _ = normalizer_prompt; // Closed-set prompt is built centrally in analyze_pending.
-    analyze_pending(AnalyzeTable::Events, language).await
 }
 
 /// Normalize a batch of events using the committee CLI executor.

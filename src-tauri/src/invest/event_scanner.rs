@@ -7,6 +7,17 @@ pub fn short(s: &str) -> &str {
     &s[..s.floor_char_boundary(40.min(s.len()))]
 }
 
+/// Wrap a comma-separated list with leading/trailing commas so that
+/// `LIKE '%,x,%'` matches whole tokens unambiguously. Empty → None.
+/// Shared by the event scanner (write path) and event analyzer (normalize path).
+pub(crate) fn wrap_csv(v: &[String]) -> Option<String> {
+    if v.is_empty() {
+        None
+    } else {
+        Some(format!(",{},", v.join(",")))
+    }
+}
+
 /// Convert Unix timestamp to local-time ISO 8601 string (UTC+8), with a fallback for zero/invalid timestamps.
 pub fn format_provider_timestamp(ts: i64, fallback: &str) -> String {
     if ts > 0 {
@@ -78,6 +89,17 @@ pub struct NormalizedEvent {
     /// Free-form theme tags (may be empty).
     #[serde(default)]
     pub topics: Vec<String>,
+}
+
+impl NormalizedEvent {
+    /// Refined summary as `Option`, mapping the empty string to `None`.
+    pub fn summary_opt(&self) -> Option<&str> {
+        if self.summary.is_empty() {
+            None
+        } else {
+            Some(self.summary.as_str())
+        }
+    }
 }
 
 /// Raw event before normalization.
@@ -426,12 +448,6 @@ pub async fn scan_events(
         } else {
             Some(norm.one_line_claim.clone())
         };
-        // Wrap comma-delimited lists with a leading/trailing comma so
-        // `LIKE '%,x,%'` can match a single token unambiguously.
-        let wrap_list = |v: &[String]| -> Option<String> {
-            if v.is_empty() { None } else { Some(format!(",{},", v.join(","))) }
-        };
-
         let event = crate::storage::invest::events::Event {
             id: uuid::Uuid::new_v4().to_string(),
             source: ev.source.clone(),
@@ -452,8 +468,8 @@ pub async fn scan_events(
             analyzed_at: Some(chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string()),
             channels: "[]".to_string(),
             summary: if norm.summary.is_empty() { None } else { Some(norm.summary.clone()) },
-            sectors: wrap_list(&norm.sectors),
-            topics: wrap_list(&norm.topics),
+            sectors: wrap_csv(&norm.sectors),
+            topics: wrap_csv(&norm.topics),
         };
         match crate::storage::invest::events::save_event(&event) {
             Ok(()) => saved += 1,

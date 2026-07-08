@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::invest::premarket::crowding::{crowd_levels_for, CrowdLevel};
 use crate::invest::premarket::scoring::{
-    get_premarket_config, score, FactorBreakdown, Grade, PremarketConfig, SymbolScore,
+    get_premarket_config, grade_of, score, FactorBreakdown, Grade, PremarketConfig, SymbolScore,
 };
 use crate::invest::premarket::sector_flow::{fetch_sector_flow, SectorFlow};
 use crate::storage::invest::macro_cache::{build_macro_snapshot, MacroSnapshot};
@@ -189,10 +189,8 @@ async fn compute_capital(symbol: &str) -> Option<f64> {
     // ── 北向资金（大盘层面）：昨日 north_money（亿元）─────────────────
     let hsgt_score: Option<f64> = match client.moneyflow_hsgt(&start, &end).await {
         Ok(rows) if !rows.is_empty() => {
-            let latest = rows.first().and_then(|r| {
-                // north_money 亿元；净流出为负
-                Some(r.north_money)
-            })?;
+            // north_money 亿元；净流出为负。守卫已保证非空。
+            let latest = rows[0].north_money;
             let normalized = (latest / 50.0).tanh(); // ±50 亿是较强
             Some((normalized + 1.0) / 2.0 * 100.0)
         }
@@ -562,18 +560,6 @@ pub struct ThemeEntry {
     pub reason: String,
 }
 
-fn grade_from_total(total: f64, cfg: &PremarketConfig) -> Grade {
-    if total >= cfg.threshold_s {
-        Grade::S
-    } else if total >= cfg.threshold_a {
-        Grade::A
-    } else if total >= cfg.threshold_b {
-        Grade::B
-    } else {
-        Grade::C
-    }
-}
-
 /// 观察池 scores 按 industry 聚合出 03 段主线排序。
 ///
 /// 组内因子取算数平均；板块总分 = 复用 cfg 权重加权。
@@ -582,23 +568,13 @@ fn build_themes(scores: &[SymbolScore], cfg: &PremarketConfig, top_n: usize) -> 
     use std::collections::HashMap;
 
     // industry_name → 该组的因子累加 + 计数
+    #[derive(Default)]
     struct Bucket {
         sent_sum: f64,
         cap_sum: f64,
         tech_sum: f64,
         cat_sum: f64,
         count: u32,
-    }
-    impl Bucket {
-        fn new() -> Self {
-            Self {
-                sent_sum: 0.0,
-                cap_sum: 0.0,
-                tech_sum: 0.0,
-                cat_sum: 0.0,
-                count: 0,
-            }
-        }
     }
 
     let mut buckets: HashMap<String, Bucket> = HashMap::new();
@@ -609,7 +585,7 @@ fn build_themes(scores: &[SymbolScore], cfg: &PremarketConfig, top_n: usize) -> 
             Ok(Some(name)) if !name.trim().is_empty() => name,
             _ => continue, // 无行业映射 → 跳过（不落入"其他"，避免噪声）
         };
-        let b = buckets.entry(industry).or_insert_with(Bucket::new);
+        let b = buckets.entry(industry).or_default();
         b.sent_sum += s.factors.sentiment;
         b.cap_sum += s.factors.capital;
         b.tech_sum += s.factors.technical;
@@ -629,7 +605,7 @@ fn build_themes(scores: &[SymbolScore], cfg: &PremarketConfig, top_n: usize) -> 
                 + capital * cfg.weight_capital
                 + technical * cfg.weight_technical
                 + catalyst * cfg.weight_catalyst;
-            let grade = grade_from_total(total, cfg);
+            let grade = grade_of(total, cfg);
             let reason = format!(
                 "舆论 {:.0} / 资金 {:.0} / 催化 {:.0}, 池内 {} 只",
                 sentiment, capital, catalyst, b.count

@@ -19,8 +19,6 @@ use serde::{Deserialize, Serialize};
 ///
 /// - `net_inflow`      : 主力净流入 (亿元, 正=流入)
 /// - `change_pct`      : 板块涨跌幅 (%)
-/// - `turnover_rate`   : 换手率 (%)。当前上游均不返回，保留字段供未来接入。
-/// - `main_inflow_pct` : 主力净占比 (%)。仅东财兜底通道有值。
 /// - `total_turnover`  : 板块当日总成交额 (亿元) —— 拥挤度成交占比分母。
 /// - `total_volume`    : 板块当日总成交量 (万手) —— 保留供未来指标使用。
 /// - `advance_count`   : 板块内上涨家数 —— 拥挤度龙头背离用。
@@ -33,8 +31,6 @@ pub struct SectorFlow {
     pub name: String,
     pub net_inflow: f64,
     pub change_pct: Option<f64>,
-    pub turnover_rate: Option<f64>,
-    pub main_inflow_pct: Option<f64>,
     #[serde(default)]
     pub total_turnover: Option<f64>,
     #[serde(default)]
@@ -74,8 +70,6 @@ mod tests {
             "name": "半导体",
             "net_inflow": 92.6,
             "change_pct": -0.66,
-            "turnover_rate": null,
-            "main_inflow_pct": null,
             "total_turnover": 4989.75,
             "total_volume": 5322.0,
             "advance_count": 67,
@@ -104,13 +98,10 @@ mod tests {
             "name": "半导体",
             "net_inflow": 12.34,
             "change_pct": 1.5,
-            "turnover_rate": null,
-            "main_inflow_pct": 3.21,
             "source": "eastmoney"
         }]);
         let v: Vec<SectorFlow> = serde_json::from_value(raw).unwrap();
         assert_eq!(v[0].source, "eastmoney");
-        assert_eq!(v[0].main_inflow_pct, Some(3.21));
         assert!(v[0].total_turnover.is_none());
         assert!(v[0].advance_count.is_none());
         assert!(v[0].lead_stock.is_none());
@@ -122,8 +113,6 @@ mod tests {
             "name": "半导体",
             "net_inflow": 66.62,
             "change_pct": -0.66,
-            "turnover_rate": null,
-            "main_inflow_pct": null,
             "source": "ths"
         }]);
         let v: Vec<SectorFlow> = serde_json::from_value(raw).unwrap();

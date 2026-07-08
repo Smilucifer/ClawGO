@@ -56,6 +56,19 @@ pub struct SymbolScore {
     pub missing_factors: Vec<String>,
 }
 
+/// 按 SABC 阈值把合成分映射到档位。`score()` 与板块聚合（report::build_themes）共用。
+pub fn grade_of(total: f64, cfg: &PremarketConfig) -> Grade {
+    if total >= cfg.threshold_s {
+        Grade::S
+    } else if total >= cfg.threshold_a {
+        Grade::A
+    } else if total >= cfg.threshold_b {
+        Grade::B
+    } else {
+        Grade::C
+    }
+}
+
 pub fn score(
     symbol: &str,
     name: &str,
@@ -67,15 +80,7 @@ pub fn score(
         + factors.capital * cfg.weight_capital
         + factors.technical * cfg.weight_technical
         + factors.catalyst * cfg.weight_catalyst;
-    let grade = if total >= cfg.threshold_s {
-        Grade::S
-    } else if total >= cfg.threshold_a {
-        Grade::A
-    } else if total >= cfg.threshold_b {
-        Grade::B
-    } else {
-        Grade::C
-    };
+    let grade = grade_of(total, cfg);
     SymbolScore {
         symbol: symbol.to_string(),
         name: name.to_string(),

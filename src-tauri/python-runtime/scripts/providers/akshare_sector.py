@@ -15,8 +15,6 @@ JSON-RPC 方法: "akshare_sector.sector_fund_flow"。
 单位约定（对齐 Rust `SectorFlow`）：
 - `net_inflow`          亿元
 - `change_pct`          %
-- `turnover_rate`       %（本接口不返回，保留为 None）
-- `main_inflow_pct`     %（本接口不返回，保留为 None）
 - `total_turnover`      亿元（板块当日总成交额）
 - `total_volume`        万手（板块当日总成交量）
 - `advance_count`       家（板块内上涨家数）
@@ -93,8 +91,6 @@ def _try_ths_summary() -> list[dict] | None:
                 "name":            name,
                 "net_inflow":      round(net, 4),                                      # 亿元
                 "change_pct":      _to_float(row.get("涨跌幅")),                        # %
-                "turnover_rate":   None,                                                # THS 概览不给
-                "main_inflow_pct": None,                                                # THS 概览不给
                 "total_turnover":  _round_opt(_to_float(row.get("总成交额")), 4),        # 亿元
                 "total_volume":    _round_opt(_to_float(row.get("总成交量")), 4),        # 万手
                 "advance_count":   _to_int(row.get("上涨家数")),                        # 家
@@ -165,7 +161,6 @@ def _try_em() -> list[dict] | None:
     col_name = find("名称") or find("行业")
     col_chg = find("今日", "涨跌幅") or find("涨跌幅")
     col_net = find("今日", "主力", "净额") or find("主力", "净额")
-    col_pct = find("今日", "主力", "净占比") or find("主力", "净占比")
 
     if not col_name or not col_net:
         _warn(f"EM rank missing key cols; got={cols}")
@@ -182,14 +177,11 @@ def _try_em() -> list[dict] | None:
                 continue
             net_yi = net_yuan / 1e8
             chg = _to_float(row[col_chg]) if col_chg else None
-            pct = _to_float(row[col_pct]) if col_pct else None
 
             out.append({
                 "name":            name,
                 "net_inflow":      round(net_yi, 4),
                 "change_pct":      chg,
-                "turnover_rate":   None,
-                "main_inflow_pct": pct,
                 **_empty_extras(),
                 "source":          "eastmoney",
             })
@@ -234,8 +226,6 @@ def _try_ths_flow() -> list[dict] | None:
                 "name":            name,
                 "net_inflow":      round(net_yi, 4),
                 "change_pct":      chg,
-                "turnover_rate":   None,
-                "main_inflow_pct": None,
                 **_empty_extras(),
                 "source":          "ths",
             })

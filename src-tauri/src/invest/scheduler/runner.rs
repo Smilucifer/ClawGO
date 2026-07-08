@@ -72,8 +72,8 @@ pub async fn dispatch_job(id: &str) -> Result<String, String> {
             ))
         }
         "event_analyzer" => {
-            let result = crate::invest::event_analyzer::analyze_pending_events(
-                None,
+            let result = crate::invest::event_analyzer::analyze_pending(
+                crate::invest::event_analyzer::AnalyzeTable::Events,
                 crate::invest::event_scanner::DEFAULT_LANGUAGE,
             )
             .await?;

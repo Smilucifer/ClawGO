@@ -35,6 +35,44 @@ pub fn make_sentiment_id(provider: &str, url: &str, title: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+/// Python 原始条目 → 未归一化的 `SentimentItem`（归一化字段留空，`event_analyzer` 后填）。
+fn raw_to_item(r: &RawSentimentItem) -> SentimentItem {
+    let url = r.url.clone().unwrap_or_default();
+    SentimentItem {
+        id: make_sentiment_id(&r.provider, &url, &r.title),
+        provider: r.provider.clone(),
+        symbol: r.symbol.clone(),
+        title: r.title.clone(),
+        summary: r.summary.clone(),
+        url: r.url.clone(),
+        published_at: r.published_at.clone(),
+        read_count: r.read_count,
+        comment_count: r.comment_count,
+        source_type: r.source_type.clone(),
+        sentiment_hint: r.sentiment_hint,
+        affected_symbols: None, // 归一化后填（Task 5）
+        sectors: None,
+        topics: None,
+        stance: "pending".to_string(),
+        severity: "pending".to_string(),
+        analyzed: false,
+        created_at: String::new(), // save 时 COALESCE 到 now
+    }
+}
+
+/// 批量落库：逐条 `save_sentiment_item`，单条失败仅告警。返回成功写入条数。
+fn store_raws(raws: &[RawSentimentItem]) -> usize {
+    let mut count = 0usize;
+    for r in raws {
+        let item = raw_to_item(r);
+        match save_sentiment_item(&item) {
+            Ok(()) => count += 1,
+            Err(e) => log::warn!("save sentiment_item {} failed: {}", item.id, e),
+        }
+    }
+    count
+}
+
 /// 抓取指定 provider 并写入 sentiment_items。返回写入（尝试）条数。
 /// 单点失败不抛——Python 层已保证单 provider 失败返回空列表。
 pub async fn fetch_and_store(
@@ -52,36 +90,7 @@ pub async fn fetch_and_store(
     let raws: Vec<RawSentimentItem> = serde_json::from_value(value)
         .map_err(|e| format!("parse sentiment.fetch: {e}"))?;
 
-    let mut count = 0usize;
-    for r in &raws {
-        let url = r.url.clone().unwrap_or_default();
-        let item = SentimentItem {
-            id: make_sentiment_id(&r.provider, &url, &r.title),
-            provider: r.provider.clone(),
-            symbol: r.symbol.clone(),
-            title: r.title.clone(),
-            summary: r.summary.clone(),
-            url: r.url.clone(),
-            published_at: r.published_at.clone(),
-            read_count: r.read_count,
-            comment_count: r.comment_count,
-            source_type: r.source_type.clone(),
-            sentiment_hint: r.sentiment_hint,
-            affected_symbols: None, // 归一化后填（Task 5）
-            sectors: None,
-            topics: None,
-            stance: "pending".to_string(),
-            severity: "pending".to_string(),
-            analyzed: false,
-            created_at: String::new(), // save 时 COALESCE 到 now
-        };
-        if let Err(e) = save_sentiment_item(&item) {
-            log::warn!("save sentiment_item {} failed: {}", item.id, e);
-        } else {
-            count += 1;
-        }
-    }
-    Ok(count)
+    Ok(store_raws(&raws))
 }
 
 /// 从 tushare `stock_basic` 拉全量个股行业，写入 `stock_industry` 表。
@@ -217,35 +226,7 @@ pub async fn fetch_xueqiu_market(limit: u32) -> Result<usize, String> {
         log::warn!("xueqiu 返回空（WAF/cookie 可能失效），报告将标注雪球缺失");
         return Ok(0);
     }
-    let mut count = 0usize;
-    for r in &raws {
-        let url = r.url.clone().unwrap_or_default();
-        let item = SentimentItem {
-            id: make_sentiment_id(&r.provider, &url, &r.title),
-            provider: r.provider.clone(),
-            symbol: r.symbol.clone(),
-            title: r.title.clone(),
-            summary: r.summary.clone(),
-            url: r.url.clone(),
-            published_at: r.published_at.clone(),
-            read_count: r.read_count,
-            comment_count: r.comment_count,
-            source_type: r.source_type.clone(),
-            sentiment_hint: r.sentiment_hint,
-            affected_symbols: None,
-            sectors: None,
-            topics: None,
-            stance: "pending".to_string(),
-            severity: "pending".to_string(),
-            analyzed: false,
-            created_at: String::new(),
-        };
-        match save_sentiment_item(&item) {
-            Ok(()) => count += 1,
-            Err(e) => log::warn!("save xueqiu item {} failed: {}", item.id, e),
-        }
-    }
-    Ok(count)
+    Ok(store_raws(&raws))
 }
 
 #[cfg(test)]
