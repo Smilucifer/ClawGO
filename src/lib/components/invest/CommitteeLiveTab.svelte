@@ -346,17 +346,17 @@
         </div>
         <div>
           <div class="text-[11px] text-[var(--text-tertiary)]">{t('invest_cash')}</div>
-          <div class="text-[18px] font-bold font-[var(--font-mono)] text-[#8a9a76]">{formatCash(portfolioStats.cash)}</div>
+          <div class="text-[18px] font-bold font-[var(--font-mono)] text-[var(--flat)]">{formatCash(portfolioStats.cash)}</div>
         </div>
         <div>
           <div class="text-[11px] text-[var(--text-tertiary)]">{t('invest_committee_concentration')}</div>
-          <div class="text-[18px] font-bold font-[var(--font-mono)] {portfolioStats.concentration.pct > 30 ? 'text-[#b89a6a]' : 'text-[var(--text-primary)]'}">
+          <div class="text-[18px] font-bold font-[var(--font-mono)] {portfolioStats.concentration.pct > 30 ? 'text-[var(--color-warning)]' : 'text-[var(--text-primary)]'}">
             {portfolioStats.concentration.pct > 0 ? `${portfolioStats.concentration.name} ${portfolioStats.concentration.pct.toFixed(0)}%` : '—'}
           </div>
         </div>
         <div>
           <div class="text-[11px] text-[var(--text-tertiary)]">{t('invest_total_return')}</div>
-          <div class="text-[18px] font-bold font-[var(--font-mono)] {portfolioStats.ret >= 0 ? 'text-[#8a9a76]' : 'text-[#a87a7a]'}">
+          <div class="text-[18px] font-bold font-[var(--font-mono)] {portfolioStats.ret >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]'}">
             {portfolioStats.ret >= 0 ? '+' : ''}{portfolioStats.ret.toFixed(1)}%
           </div>
         </div>
@@ -762,11 +762,11 @@
   .chip { font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: var(--radius-sm); text-transform: uppercase; }
   .chip.neutral { background: var(--bg-input); color: var(--text-secondary); font-weight: 600; text-transform: none; }
   .chip.warn { background: rgba(255,193,7,0.12); color: var(--color-warning); font-weight: 600; text-transform: none; }
-  .chip.sig-risk_on, .chip.sig-buy, .chip.sig-bullish { background: rgba(138,154,118,0.15); color: var(--color-success); }
-  .chip.sig-accumulate { background: rgba(59,130,246,0.15); color: var(--color-quant, #3b82f6); }
+  .chip.sig-risk_on, .chip.sig-buy, .chip.sig-bullish { background: rgba(197,111,98,0.15); color: var(--up); }
+  .chip.sig-accumulate { background: rgba(197,111,98,0.12); color: var(--up); }
   .chip.sig-hold, .chip.sig-neutral { background: rgba(196,169,110,0.15); color: var(--accent); }
-  .chip.sig-trim { background: rgba(255,193,7,0.15); color: var(--color-warning); }
-  .chip.sig-risk_off, .chip.sig-sell, .chip.sig-bearish, .chip.sig-high_risk { background: rgba(168,122,122,0.2); color: var(--color-error); }
+  .chip.sig-trim { background: rgba(127,157,109,0.15); color: var(--down); }
+  .chip.sig-risk_off, .chip.sig-sell, .chip.sig-bearish, .chip.sig-high_risk { background: rgba(127,157,109,0.2); color: var(--down); }
 
   /* Option A: structured field card */
   .confidence-meter { height: 5px; border-radius: 3px; background: var(--bg-input); overflow: hidden; margin-bottom: 10px; }
