@@ -64,10 +64,10 @@
               <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right text-[var(--text-primary)] font-[var(--font-mono)]">{formatYuan(snap.totalValue)}</td>
               <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right text-[var(--text-primary)] font-[var(--font-mono)]">{formatYuan(snap.cash)}</td>
               <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right text-[var(--text-primary)] font-[var(--font-mono)]">{formatYuan(snap.holdingsValue)}</td>
-              <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right font-[var(--font-mono)]" class:text-[var(--color-success)]={(snap.dailyPnl ?? 0) > 0} class:text-[var(--color-error)]={(snap.dailyPnl ?? 0) < 0}>
+              <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right font-[var(--font-mono)]" class:text-[var(--up)]={(snap.dailyPnl ?? 0) > 0} class:text-[var(--down)]={(snap.dailyPnl ?? 0) < 0}>
                 {fmtPnl(snap.dailyPnl)}
               </td>
-              <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right font-[var(--font-mono)]" class:text-[var(--color-success)]={(snap.dailyPnlPct ?? 0) > 0} class:text-[var(--color-error)]={(snap.dailyPnlPct ?? 0) < 0}>
+              <td class="py-[var(--space-2)] pr-[var(--space-3)] text-right font-[var(--font-mono)]" class:text-[var(--up)]={(snap.dailyPnlPct ?? 0) > 0} class:text-[var(--down)]={(snap.dailyPnlPct ?? 0) < 0}>
                 {fmtPct(snap.dailyPnlPct)}
               </td>
               <td class="py-[var(--space-2)]">
