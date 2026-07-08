@@ -46,7 +46,7 @@
   function hasParsedContent(pf: ParsedFields): boolean {
     return !!(pf.signal || pf.verdict || pf.oneLiner || pf.reasoning || pf.rawText
       || pf.strength != null || pf.confidence != null || pf.fallbackReason
-      || pf.marketPhase || pf.emotionTemperature || pf.buyPointAssessment
+      || pf.marketPhase || pf.moneyEffectReason || pf.buyPointAssessment
       || pf.valuationAssessment || pf.moneyFlow || pf.concentrationPct != null
       || pf.dryPowderCny != null || pf.pnlPct != null || pf.stockRiskSummary
       || pf.catalystTier || pf.catalystSummary || pf.executionMode || pf.firstTrancheCny != null);
@@ -63,7 +63,7 @@
       : stepKey;
     if (role === 'macro') {
       push(t('invest_field_market_phase'), pf.marketPhase);
-      push(t('invest_field_emotion'), pf.emotionTemperature);
+      push(t('invest_money_effect'), pf.moneyEffectReason);
       push(t('invest_field_phase_reason'), pf.marketPhaseReason);
     } else if (role === 'quant') {
       push(t('invest_field_buy_point'), pf.buyPointAssessment);

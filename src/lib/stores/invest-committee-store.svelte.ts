@@ -40,7 +40,11 @@ export interface RoundOutputSummary {
     fallbackReason?: string;
     // Macro
     marketPhase?: string;
-    emotionTemperature?: string;
+    signalReason?: string;
+    marketPhaseReason?: string;
+    sensitivity?: string;          // positive | negative | neutral（per-symbol 敏感度）
+    sensitivityReason?: string;
+    moneyEffectReason?: string;    // 原 emotionTemperature 语义替换
     // Quant
     buyPointAssessment?: string;
     valuationAssessment?: string;
@@ -64,8 +68,6 @@ export interface RoundOutputSummary {
     // Task 4 additions
     executionMode?: string;
     firstTrancheCny?: number;
-    signalReason?: string;
-    marketPhaseReason?: string;
   };
   latencyMs: number;
   tokensUsed: number;
@@ -90,6 +92,27 @@ export interface MacroSnapshot {
   twoMarketVolume: number | null;
   limitUpCount: number | null;
   limitDownCount: number | null;
+}
+
+export interface MacroVerdict {
+  signal: string | null;
+  strength: number | null;
+  marketPhase: string | null;
+  moneyEffect: string | null;
+  moneyEffectReason: string | null;
+  signalReason: string | null;
+  marketPhaseReason: string | null;
+  basedOnDataVersion: string;
+  updatedAt: string;
+}
+export interface MacroVerdictView { verdict: MacroVerdict | null; isCurrent: boolean; }
+export type GlobalMacroStatus = 'analyzing' | 'stale' | 'ready' | 'waiting' | 'empty';
+export interface GlobalMacroState {
+  snapshot: MacroSnapshot | null;
+  verdict: MacroVerdict | null;
+  isCurrent: boolean;
+  status: GlobalMacroStatus;
+  refreshing: boolean;
 }
 
 export interface CommitteeResult {
@@ -227,6 +250,42 @@ export class InvestCommitteeStore {
   showConfigPanel = $state(false);
 
   modeOverrides = $state<Map<string, 'research' | 'holding'>>(new Map());
+
+  // ── 全局宏观判断状态 ──────────────────────────────────────────
+  globalMacro = $state<GlobalMacroState>({
+    snapshot: null, verdict: null, isCurrent: false, status: 'empty', refreshing: false,
+  });
+
+  async loadGlobalMacro() {
+    const [snapshot, view] = await Promise.all([
+      invoke<MacroSnapshot | null>('get_macro_snapshot').catch(() => null),
+      invoke<MacroVerdictView>('get_macro_verdict').catch(() => ({ verdict: null, isCurrent: false })),
+    ]);
+    this.globalMacro.snapshot = snapshot;
+    this.globalMacro.verdict = view.verdict;
+    this.globalMacro.isCurrent = view.isCurrent;
+    this.globalMacro.status = this._deriveMacroStatus(snapshot, view);
+  }
+
+  private _deriveMacroStatus(snap: MacroSnapshot | null, view: MacroVerdictView): GlobalMacroStatus {
+    if (!snap && !view.verdict) return 'empty';        // 全新用户/无数据
+    if (!view.verdict) return 'analyzing';             // 有数据无判断 → 生成中
+    if (!view.isCurrent) return 'stale';               // 数据已更新,判断待刷新
+    return 'ready';
+  }
+
+  async refreshGlobalMacro() {
+    this.globalMacro.refreshing = true;
+    try {
+      const msg = await invoke<string>('refresh_macro_verdict');
+      if (typeof msg === 'string' && msg.startsWith('skipped')) {
+        this.globalMacro.status = 'waiting';           // 非交易时段
+      }
+      await this.loadGlobalMacro();
+    } finally {
+      this.globalMacro.refreshing = false;
+    }
+  }
 
   private _unlisten: (() => void) | null = null;
   /** loadQueue restores from disk only once per process — the singleton store
