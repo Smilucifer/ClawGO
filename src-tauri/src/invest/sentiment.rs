@@ -78,6 +78,42 @@ pub async fn fetch_and_store(
     Ok(count)
 }
 
+/// 从 tushare `stock_basic` 拉全量个股行业，写入 `stock_industry` 表。
+/// 返回成功写入条数。每周刷一次即可（供闭集词表 + 敏感度映射使用）。
+///
+/// 实现细节：
+/// - `TushareClient::from_settings()` 返回 `Result<Self, String>`，未配置 token 时 Err。
+/// - `client.stock_basic(None)` 拉全量上市股票（`StockBasic { ts_code, name, industry, ... }`）。
+/// - ts_code 形如 `600519.SH`，`split('.').next()` 取 6 位代码入库。
+/// - 单条 upsert 失败仅告警不中断（网络/DB 单点故障不应拖垮全量刷新）。
+pub async fn refresh_stock_industry() -> Result<usize, String> {
+    use crate::storage::invest::stock_industry::upsert_stock_industry;
+    let client = crate::tushare::client::TushareClient::from_settings()?;
+    let rows = client.stock_basic(None).await?;
+    let mut n = 0usize;
+    for sb in &rows {
+        let code = sb
+            .ts_code
+            .split('.')
+            .next()
+            .unwrap_or(&sb.ts_code)
+            .to_string();
+        if code.is_empty() {
+            continue;
+        }
+        match upsert_stock_industry(&code, &sb.name, &sb.industry) {
+            Ok(()) => n += 1,
+            Err(e) => log::warn!("upsert stock_industry {} failed: {}", code, e),
+        }
+    }
+    log::info!(
+        "refresh_stock_industry: fetched {} rows, upserted {}",
+        rows.len(),
+        n
+    );
+    Ok(n)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

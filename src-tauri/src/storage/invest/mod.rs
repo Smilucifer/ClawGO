@@ -7,6 +7,7 @@ pub mod macro_verdict;
 pub mod portfolio;
 pub mod scheduler;
 pub mod sentiment;
+pub mod stock_industry;
 pub mod strategy;
 pub mod stock_data_cache;
 pub mod user_profile;
@@ -356,6 +357,10 @@ fn init_db_inner(db_path: &Path) -> Result<Connection, String> {
     // Migration: create sentiment_items table (舆情采集)
     conn.execute_batch(sentiment::CREATE_SENTIMENT_TABLE)
         .map_err(|e| format!("create sentiment_items: {}", e))?;
+
+    // Migration: create stock_industry table (个股 → 行业映射，每周从 tushare stock_basic 刷新)
+    conn.execute_batch(stock_industry::CREATE_STOCK_INDUSTRY_TABLE)
+        .map_err(|e| format!("create stock_industry: {}", e))?;
 
     // FTS5 virtual table for domain_insights full-text search
     conn.execute_batch(
