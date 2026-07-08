@@ -13,4 +13,5 @@ pub mod macro_refresh;
 pub mod macro_verdict;
 pub mod regime;
 pub mod scheduler;
+pub mod sentiment;
 pub mod verdict_review;
