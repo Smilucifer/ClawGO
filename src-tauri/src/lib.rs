@@ -464,6 +464,7 @@ pub fn run() {
             commands::invest::trigger_cron_job,
             commands::invest::get_macro_verdict,
             commands::invest::refresh_macro_verdict,
+            commands::invest::get_macro_snapshot,
             commands::invest::run_verdict_review_cmd,
             commands::invest::get_verdict_review_summary,
             commands::invest::get_verdict_review_detail,

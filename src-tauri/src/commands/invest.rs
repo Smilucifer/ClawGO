@@ -1342,3 +1342,9 @@ pub fn get_macro_verdict() -> Result<MacroVerdictView, String> {
 pub async fn refresh_macro_verdict() -> Result<String, String> {
     crate::invest::macro_verdict::run_macro_verdict(true).await
 }
+
+/// 读 macro_cache 的宏观快照(纯数据,前端全局卡片用)。
+#[tauri::command]
+pub fn get_macro_snapshot() -> Result<Option<crate::storage::invest::macro_cache::MacroSnapshot>, String> {
+    Ok(crate::storage::invest::macro_cache::build_macro_snapshot())
+}
