@@ -342,7 +342,7 @@
       <div class="mb-3 flex gap-2">
         <button
           class="rounded-[var(--radius-md)] px-3 py-1 text-xs font-medium transition-colors"
-          class:bg-[var(--color-error)]={tradeAction === 'buy'}
+          class:bg-[var(--up)]={tradeAction === 'buy'}
           class:text-white={tradeAction === 'buy'}
           class:bg-[var(--bg-input)]={tradeAction !== 'buy'}
           class:text-[var(--text-secondary)]={tradeAction !== 'buy'}
@@ -350,7 +350,7 @@
         >{t('invest_trade_filter_buy')}</button>
         <button
           class="rounded-[var(--radius-md)] px-3 py-1 text-xs font-medium transition-colors"
-          class:bg-[var(--color-success)]={tradeAction === 'sell'}
+          class:bg-[var(--down)]={tradeAction === 'sell'}
           class:text-white={tradeAction === 'sell'}
           class:bg-[var(--bg-input)]={tradeAction !== 'sell'}
           class:text-[var(--text-secondary)]={tradeAction !== 'sell'}

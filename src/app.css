@@ -114,6 +114,12 @@
     --bg-card: #242220;
     --bg-elevated: #242220;
     --bg-sidebar: #1e1d1b;
+
+    /* SABC 观察池分级色 —— 与 docs/ui-demo/premarket-report-demo.html 对齐 */
+    --grade-s: #c9a96e; /* S = 金 */
+    --grade-a: #8a9a76; /* A = 绿 */
+    --grade-b: #7c94a8; /* B = 青蓝 */
+    --grade-c: hsl(24 7% 58%); /* C = 灰 */
   }
 }
 

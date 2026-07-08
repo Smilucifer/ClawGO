@@ -87,6 +87,9 @@ pub async fn collect_jin10_news() -> Result<CollectorResult, String> {
             analyzed: false,
             analyzed_at: None,
             channels: "[]".to_string(),
+            summary: None,
+            sectors: None,
+            topics: None,
         };
 
         match save_event(&event) {

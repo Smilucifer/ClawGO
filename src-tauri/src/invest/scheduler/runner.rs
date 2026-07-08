@@ -72,8 +72,8 @@ pub async fn dispatch_job(id: &str) -> Result<String, String> {
             ))
         }
         "event_analyzer" => {
-            let result = crate::invest::event_analyzer::analyze_pending_events(
-                None,
+            let result = crate::invest::event_analyzer::analyze_pending(
+                crate::invest::event_analyzer::AnalyzeTable::Events,
                 crate::invest::event_scanner::DEFAULT_LANGUAGE,
             )
             .await?;
@@ -121,6 +121,11 @@ pub async fn dispatch_job(id: &str) -> Result<String, String> {
         }
         "macro_verdict" => {
             crate::invest::macro_verdict::run_macro_verdict(false).await
+        }
+        "premarket_report" => {
+            let data_dir = crate::storage::data_dir();
+            let path = crate::invest::premarket::report::generate_premarket_report(&data_dir).await?;
+            Ok(format!("盘前报告生成: {}", path))
         }
         _ => Err(format!("Unknown job: {}", id)),
     }

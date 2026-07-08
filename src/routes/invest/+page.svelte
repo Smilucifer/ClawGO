@@ -17,6 +17,7 @@
   import CommitteeRolesTab from '$lib/components/invest/CommitteeRolesTab.svelte';
   import CommitteeAccuracyTab from '$lib/components/invest/CommitteeAccuracyTab.svelte';
   import EventWatchTab from '$lib/components/invest/EventWatchTab.svelte';
+  import PremarketReportTab from '$lib/components/invest/PremarketReportTab.svelte';
   import SchedulerTab from '$lib/components/invest/SchedulerTab.svelte';
   import InsightsFeed from '$lib/components/invest/InsightsFeed.svelte';
   import SystemDatasourceTab from '$lib/components/invest/SystemDatasourceTab.svelte';
@@ -27,7 +28,7 @@
 
   type InvestTab = 'dashboard' | 'committee' | 'strategy' | 'trades' | 'system';
   type CommitteeSubTab = 'live' | 'replay' | 'archive' | 'roles' | 'accuracy';
-  type SystemSubTab = 'cron' | 'events' | 'datasource' | 'pnl_history' | 'insights' | 'dreams' | 'profile' | 'cleanup';
+  type SystemSubTab = 'cron' | 'events' | 'reports' | 'datasource' | 'pnl_history' | 'insights' | 'dreams' | 'profile' | 'cleanup';
 
   let activeTab: InvestTab = $state('dashboard');
   let committeeSubTab: CommitteeSubTab = $state('live');
@@ -44,6 +45,7 @@
   const systemSubTabs: { id: SystemSubTab; label: string }[] = $derived([
     { id: 'cron', label: t('invest_system_sub_cron') },
     { id: 'events', label: t('invest_system_sub_events') },
+    { id: 'reports', label: t('invest_system_sub_reports') },
     { id: 'datasource', label: t('invest_system_sub_datasource') },
     { id: 'pnl_history', label: t('invest_system_sub_pnl_history') },
     { id: 'insights', label: t('invest_system_sub_insights') },
@@ -296,6 +298,8 @@
         <SchedulerTab />
       {:else if systemSubTab === 'events'}
         <EventWatchTab onNavigateToCommittee={() => { activeTab = 'committee'; committeeSubTab = 'live'; }} />
+      {:else if systemSubTab === 'reports'}
+        <PremarketReportTab />
       {:else if systemSubTab === 'datasource'}
         <SystemDatasourceTab />
       {:else if systemSubTab === 'pnl_history'}

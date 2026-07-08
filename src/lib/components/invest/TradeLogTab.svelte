@@ -145,7 +145,7 @@
                 {/if}
               </td>
               <td class="px-[var(--space-3)] py-[var(--space-2)]">
-                <span class={tr.action === 'buy' || tr.action === 'transfer_out' ? 'text-[var(--color-error)]' : 'text-[var(--color-success)]'}>
+                <span class={tr.action === 'buy' ? 'text-[var(--up)]' : tr.action === 'sell' ? 'text-[var(--down)]' : tr.action === 'transfer_out' ? 'text-[var(--color-error)]' : 'text-[var(--color-success)]'}>
                   {tr.action === 'transfer_in' ? t('invest_transfer_in') : tr.action === 'transfer_out' ? t('invest_transfer_out') : tr.action === 'cash_adjust' ? t('invest_fine_tune') : tr.action.toUpperCase()}
                 </span>
               </td>

@@ -95,6 +95,8 @@
     "dompurify": "^3.2.4",
     "exceljs": "^4.4.0",
     "highlight.js": "^11.11.1",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "mammoth": "^1.12.0",
     "marked": "^15.0.12",
     "monaco-editor": "^0.55.1",

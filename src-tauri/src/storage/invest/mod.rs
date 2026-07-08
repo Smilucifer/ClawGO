@@ -6,6 +6,8 @@ pub mod macro_cache;
 pub mod macro_verdict;
 pub mod portfolio;
 pub mod scheduler;
+pub mod sentiment;
+pub mod stock_industry;
 pub mod strategy;
 pub mod stock_data_cache;
 pub mod user_profile;
@@ -352,6 +354,20 @@ fn init_db_inner(db_path: &Path) -> Result<Connection, String> {
     // Migration: create stock_data_cache table (permanent per-symbol data cache)
     stock_data_cache::create_table(&conn)?;
 
+    // Migration: create sentiment_items table (舆情采集)
+    conn.execute_batch(sentiment::CREATE_SENTIMENT_TABLE)
+        .map_err(|e| format!("create sentiment_items: {}", e))?;
+
+    // Migration: add summary/sectors/topics columns to events table (Task 5).
+    // Aligns events schema with sentiment_items for the shared analyze_pending path.
+    sentiment::ensure_column(&conn, "events", "summary", "TEXT")?;
+    sentiment::ensure_column(&conn, "events", "sectors", "TEXT")?;
+    sentiment::ensure_column(&conn, "events", "topics", "TEXT")?;
+
+    // Migration: create stock_industry table (个股 → 行业映射，每周从 tushare stock_basic 刷新)
+    conn.execute_batch(stock_industry::CREATE_STOCK_INDUSTRY_TABLE)
+        .map_err(|e| format!("create stock_industry: {}", e))?;
+
     // FTS5 virtual table for domain_insights full-text search
     conn.execute_batch(
         "CREATE VIRTUAL TABLE IF NOT EXISTS domain_insights_fts USING fts5(content, symbol, tokenize='unicode61');"
@@ -620,3 +636,26 @@ CREATE TABLE IF NOT EXISTS daily_reports (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 ";
+
+#[cfg(test)]
+mod migration_tests {
+    use rusqlite::Connection;
+
+    #[test]
+    fn test_ensure_column_adds_missing() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute("CREATE TABLE t (id TEXT)", []).unwrap();
+        // 第一次：列不存在，应添加
+        crate::storage::invest::sentiment::ensure_column(&conn, "t", "extra", "TEXT").unwrap();
+        // 第二次：列已存在，应幂等不报错
+        crate::storage::invest::sentiment::ensure_column(&conn, "t", "extra", "TEXT").unwrap();
+        let cnt: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('t') WHERE name='extra'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cnt, 1);
+    }
+}

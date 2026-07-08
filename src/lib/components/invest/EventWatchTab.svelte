@@ -43,8 +43,8 @@
 
   function stanceColor(stance: string): string {
     switch (stance) {
-      case 'bullish': return 'text-[var(--color-success)]';
-      case 'bearish': return 'text-[var(--color-error)]';
+      case 'bullish': return 'text-[var(--up)]';
+      case 'bearish': return 'text-[var(--down)]';
       case 'pending': return 'text-[var(--text-tertiary)] animate-pulse';
       default: return 'text-[var(--text-tertiary)]';
     }
