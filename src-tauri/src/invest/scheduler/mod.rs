@@ -149,6 +149,19 @@ pub fn default_jobs() -> Vec<CronJob> {
             dedicated: false,
         },
         CronJob {
+            id: "premarket_report".into(),
+            name: "盘前观察报告".into(),
+            cron_expr: "0 0 9 * * 1-5".into(),
+            interval_min: None,
+            enabled: true,
+            requires_trading_day: true,
+            last_run: None,
+            next_run: None,
+            last_status: None,
+            description: "盘前生成观察报告（舆情+SABC+拥挤度+AI点评）".into(),
+            dedicated: false,
+        },
+        CronJob {
             id: "macro_verdict".into(),
             name: "全局宏观判断".into(),
             // 开盘→收盘约每 20-30 分钟(错峰 macro_refresh 的 */15),含 11:05 上午读数与 14:55 收盘定版。

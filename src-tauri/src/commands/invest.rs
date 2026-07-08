@@ -1377,3 +1377,88 @@ pub async fn collect_sentiment(
 ) -> Result<crate::invest::event_analyzer::AnalyzerResult, String> {
     crate::invest::sentiment::collect_all_sentiment(symbol.as_deref(), limit).await
 }
+
+// ─── 盘前观察报告命令 ───────────────────────────────────────────────────────
+
+/// 手动生成一次盘前观察报告，返回 md 文件绝对路径。
+///
+/// 内部会跑 Plan A 四源归一化 + 雪球独立通道 + 宏观快照 + 四因子 SABC 打分 + AI 点评。
+#[tauri::command]
+pub async fn generate_premarket_report_cmd() -> Result<String, String> {
+    let data_dir = crate::storage::data_dir();
+    crate::invest::premarket::report::generate_premarket_report(&data_dir).await
+}
+
+/// 列出最近 N 份盘前报告的日期（倒序）。扫描 `{data_dir}/invest/reports/premarket_*.md`。
+#[tauri::command]
+pub fn list_premarket_reports(limit: usize) -> Result<Vec<String>, String> {
+    let dir = crate::storage::data_dir()
+        .join("invest")
+        .join("reports");
+    if !dir.exists() {
+        return Ok(vec![]);
+    }
+    let mut dates: Vec<String> = std::fs::read_dir(&dir)
+        .map_err(|e| format!("read reports dir: {e}"))?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let name = entry.file_name().into_string().ok()?;
+            let stem = name.strip_suffix(".md")?;
+            let date = stem.strip_prefix("premarket_")?;
+            Some(date.to_string())
+        })
+        .collect();
+    dates.sort();
+    dates.reverse();
+    dates.truncate(limit);
+    Ok(dates)
+}
+
+/// 读取指定日期盘前报告的 md + json 内容。
+///
+/// 返回 `{ "date", "markdown", "json" }`；任一文件缺失字段为 null。
+#[tauri::command]
+pub fn read_premarket_report(date: String) -> Result<serde_json::Value, String> {
+    let dir = crate::storage::data_dir()
+        .join("invest")
+        .join("reports");
+    let md_path = dir.join(format!("premarket_{date}.md"));
+    let json_path = dir.join(format!("premarket_{date}.json"));
+    let markdown = std::fs::read_to_string(&md_path).ok();
+    let json_value: Option<serde_json::Value> = std::fs::read_to_string(&json_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok());
+    if markdown.is_none() && json_value.is_none() {
+        return Err(format!("report not found for {date}"));
+    }
+    Ok(serde_json::json!({
+        "date": date,
+        "markdown": markdown,
+        "json": json_value,
+    }))
+}
+
+/// 读取盘前四因子权重 + 阈值配置。缺失走 `PremarketConfig::default()`。
+#[tauri::command]
+pub fn get_premarket_config_cmd() -> Result<crate::invest::premarket::scoring::PremarketConfig, String>
+{
+    Ok(crate::invest::premarket::scoring::get_premarket_config())
+}
+
+/// 保存盘前配置。校验：4 个权重和 ≈ 1.0（±0.001），阈值 S > A > B。
+#[tauri::command]
+pub fn save_premarket_config_cmd(
+    config: crate::invest::premarket::scoring::PremarketConfig,
+) -> Result<(), String> {
+    let sum = config.weight_sentiment
+        + config.weight_capital
+        + config.weight_technical
+        + config.weight_catalyst;
+    if (sum - 1.0).abs() > 0.001 {
+        return Err(format!("权重和必须为1.0，当前{:.3}", sum));
+    }
+    if !(config.threshold_s > config.threshold_a && config.threshold_a > config.threshold_b) {
+        return Err("阈值须满足 S > A > B".to_string());
+    }
+    crate::invest::premarket::scoring::save_premarket_config(config)
+}

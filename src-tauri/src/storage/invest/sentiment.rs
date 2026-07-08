@@ -153,6 +153,25 @@ pub fn update_sentiment_analysis(
     })
 }
 
+/// 拉取近 `since` 起的最新舆情条目（不区分是否已分析），用于聚合展示 / AI 点评输入。
+pub fn list_recent_sentiment(since: &str, limit: i64) -> Result<Vec<SentimentItem>, String> {
+    with_conn(|conn| {
+        let sql = format!(
+            "SELECT {} FROM sentiment_items WHERE created_at >= ?1 ORDER BY created_at DESC LIMIT ?2",
+            COLS
+        );
+        let mut stmt = conn.prepare(&sql).map_err(|e| format!("prepare: {}", e))?;
+        let rows = stmt
+            .query_map(params![since, limit], row_to_item)
+            .map_err(|e| format!("query: {}", e))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| format!("row: {}", e))?);
+        }
+        Ok(out)
+    })
+}
+
 pub fn list_sentiment_by_symbol(
     code: &str,
     since: &str,
