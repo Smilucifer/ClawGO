@@ -65,6 +65,35 @@
     threshold_a: number;
     threshold_b: number;
   }
+  // 02 段：板块资金流入榜 + 拥挤度雷达 —— 与后端 SectorFlowEntry 对齐
+  type CrowdLevel = 'healthy' | 'warm' | 'hot';
+  interface SectorFlowEntry {
+    name: string;
+    netInflow: number; // 亿
+    changePct: number | null;
+    totalTurnover: number | null;
+    advanceCount: number | null;
+    declineCount: number | null;
+    leadStock: string | null;
+    leadChangePct: number | null;
+    crowdLevel: CrowdLevel;
+    crowdInputs: { turnoverPct: number; volumeShare: number; divergence: number };
+    barWidth: number; // 0-100，按 Top1 归一
+    source: string;
+  }
+  // 03 段：主线（行业主题）排序 —— 与后端 ThemeEntry 对齐
+  interface ThemeEntry {
+    rank: number;
+    name: string;
+    memberCount: number;
+    sentiment: number; // 0-100
+    capital: number; // 0-100
+    catalyst: number; // 0-100
+    technical: number; // 0-100
+    total: number; // 0-100
+    grade: Grade;
+    reason: string;
+  }
   interface ReportPayload {
     date: string;
     markdown: string | null;
@@ -74,6 +103,8 @@
       scores: SymbolScore[];
       config: PremarketConfig;
       aiCommentary: AiCommentary | null;
+      sectorFlows?: SectorFlowEntry[] | null;
+      themes?: ThemeEntry[] | null;
     } | null;
   }
 
@@ -133,6 +164,11 @@
 
   // Simple sector "main-lines" ordering from aiCommentary (fallback if empty).
   const mainLines = $derived<AiSector[]>(commentary?.sectors ?? []);
+
+  // 02 段真实数据（后端 Top10，按 net_inflow 降序）
+  const sectorFlows = $derived<SectorFlowEntry[]>(report?.json?.sectorFlows ?? []);
+  // 03 段真实数据（后端 Top5，按 total 降序，rank 已回填）
+  const themes = $derived<ThemeEntry[]>(report?.json?.themes ?? []);
 
   // ── Actions ───────────────────────────────────────────────────────
   async function loadConfig() {
@@ -512,6 +548,41 @@
             <span class="reason">{t('invest_premarket_macro_missing')}</span>
           </div>
         {/if}
+
+        <!-- 板块资金流入榜 · 拥挤度雷达 -->
+        <div class="macro-sub">{t('invest_premarket_sector_flow_title')}</div>
+        {#if sectorFlows.length > 0}
+          <div class="sector-flow">
+            {#each sectorFlows as sf}
+              {@const isIn = sf.netInflow >= 0}
+              {@const dir = isIn ? 'in' : 'out'}
+              <div class="sector-row">
+                <span class="sf-name">{sf.name}</span>
+                <span class="sf-flow {dir}">
+                  {isIn ? '+' : ''}{sf.netInflow.toFixed(1)}{t('invest_premarket_unit_yi')}
+                </span>
+                <div class="sf-bar-track">
+                  <div class="sf-bar-fill {dir}" style="width:{Math.max(2, sf.barWidth)}%"></div>
+                </div>
+                <span class="crowd-badge {sf.crowdLevel}">
+                  {sf.crowdLevel === 'hot'
+                    ? t('invest_premarket_crowd_hot')
+                    : sf.crowdLevel === 'warm'
+                      ? t('invest_premarket_crowd_warm')
+                      : t('invest_premarket_crowd_healthy')}
+                </span>
+              </div>
+            {/each}
+          </div>
+          <div class="radar-hint">
+            <span>{t('invest_premarket_radar_formula')}</span>
+            <span class="legend"><span class="dot dot-healthy"></span>{t('invest_premarket_crowd_healthy')}</span>
+            <span class="legend"><span class="dot dot-warm"></span>{t('invest_premarket_crowd_warm')}</span>
+            <span class="legend"><span class="dot dot-hot"></span>{t('invest_premarket_crowd_hot_full')}</span>
+          </div>
+        {:else}
+          <div class="empty-inline">{t('invest_premarket_sector_flow_missing')}</div>
+        {/if}
       </div>
 
       <!-- 03 主线排序 -->
@@ -522,32 +593,41 @@
           <span class="section-tag">{t('invest_premarket_sec3_tag')}</span>
         </div>
 
-        {#if mainLines.length > 0}
-          {#each mainLines.slice(0, 5) as line, i}
-            {@const rank = i + 1}
-            {@const scoreEst = Math.max(30, 90 - i * 12)}
-            {@const gradeColor = scoreEst >= 78 ? 'var(--grade-s)' : scoreEst >= 62 ? 'var(--grade-a)' : scoreEst >= 45 ? 'var(--grade-b)' : 'var(--grade-c)'}
+        {#if themes.length > 0}
+          {#each themes as th}
             <div class="theme-row">
-              <span class="theme-rank">{rank}</span>
+              <span class="theme-rank">{th.rank}</span>
               <div class="theme-main">
-                <span class="theme-name">{line.name}</span>
-                <span class="theme-reason">{line.note}</span>
+                <span class="theme-name">{th.name}</span>
+                <span class="theme-reason">{th.reason}</span>
               </div>
               <div class="theme-bars">
                 <div class="mini-bar">
                   <span class="mb-label">{t('invest_premarket_bar_news')}</span>
-                  <div class="mb-track"><div class="mb-fill" style="width:{Math.min(100, line.count * 2)}%"></div></div>
+                  <div class="mb-track"><div class="mb-fill" style="width:{factorPct(th.sentiment)}%"></div></div>
                 </div>
                 <div class="mini-bar">
                   <span class="mb-label">{t('invest_premarket_bar_capital')}</span>
-                  <div class="mb-track"><div class="mb-fill" style="width:{Math.max(30, scoreEst)}%"></div></div>
+                  <div class="mb-track"><div class="mb-fill" style="width:{factorPct(th.capital)}%"></div></div>
                 </div>
                 <div class="mini-bar">
                   <span class="mb-label">{t('invest_premarket_bar_catalyst')}</span>
-                  <div class="mb-track"><div class="mb-fill" style="width:{line.tag.includes('催化') ? 90 : line.tag.includes('风险') ? 20 : 55}%"></div></div>
+                  <div class="mb-track"><div class="mb-fill" style="width:{factorPct(th.catalyst)}%"></div></div>
                 </div>
               </div>
-              <span class="theme-score" style="color:{gradeColor}">{scoreEst}</span>
+              <span class="theme-score" style="color:{gradeVar(th.grade)}">{Math.round(th.total)}</span>
+            </div>
+          {/each}
+        {:else if mainLines.length > 0}
+          <!-- Fallback: 后端主线未产出（观察池无行业映射），用 AI 舆情板块占位 -->
+          {#each mainLines.slice(0, 5) as line, i}
+            <div class="theme-row">
+              <span class="theme-rank">{i + 1}</span>
+              <div class="theme-main">
+                <span class="theme-name">{line.name}</span>
+                <span class="theme-reason">{line.note}</span>
+              </div>
+              <span class="theme-score" style="color:var(--text-tertiary)">—</span>
             </div>
           {/each}
         {:else}
@@ -806,6 +886,43 @@
   .me-badge.hot    { color: var(--up); background: rgba(192, 82, 74, 0.18); }
   .me-badge.active { color: var(--accent); background: var(--accent-muted); }
   .money-strip .reason { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+
+  /* 02 板块资金流入榜 + 拥挤度雷达 */
+  .sector-flow { display: flex; flex-direction: column; gap: var(--space-1); }
+  .sector-row {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: 6px var(--space-3);
+    border-radius: var(--radius-sm);
+    background: var(--bg-hover);
+    border: 1px solid var(--border);
+  }
+  .sf-name { font-size: 12px; font-weight: 500; min-width: 96px; }
+  .sf-flow { font-size: 12px; font-weight: 700; font-family: var(--font-mono); min-width: 72px; }
+  .sf-flow.in  { color: var(--up); }
+  .sf-flow.out { color: var(--down); }
+  .sf-bar-track { flex: 1; height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+  .sf-bar-fill { height: 100%; border-radius: 3px; }
+  .sf-bar-fill.in  { background: var(--up); }
+  .sf-bar-fill.out { background: var(--down); }
+  .crowd-badge {
+    font-size: 10px; font-weight: 700;
+    padding: 2px 8px; border-radius: 4px;
+    white-space: nowrap; min-width: 58px; text-align: center;
+  }
+  .crowd-badge.healthy { color: var(--down);   background: rgba(78, 154, 95, 0.16); }
+  .crowd-badge.warm    { color: var(--accent); background: var(--accent-muted); }
+  .crowd-badge.hot     { color: var(--up);     background: rgba(192, 82, 74, 0.18); }
+  .radar-hint {
+    display: flex; align-items: center; gap: var(--space-2);
+    margin-top: var(--space-2);
+    font-size: 10px; color: var(--text-tertiary);
+    flex-wrap: wrap;
+  }
+  .radar-hint .legend { display: inline-flex; align-items: center; gap: 4px; }
+  .radar-hint .dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+  .radar-hint .dot-healthy { background: var(--down); }
+  .radar-hint .dot-warm    { background: var(--accent); }
+  .radar-hint .dot-hot     { background: var(--up); }
 
   /* 03 主线排序 */
   .theme-row {
