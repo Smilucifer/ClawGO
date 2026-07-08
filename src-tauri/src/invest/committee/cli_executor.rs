@@ -336,25 +336,99 @@ pub fn fmt_opt(v: Option<f64>, decimals: usize) -> String {
 // Additional data formatters for CLI prompt injection
 // ---------------------------------------------------------------------------
 
-/// Fetch and format company news for a symbol (AkShare source).
-/// This is async because it fetches from AkShare RPC.
+/// 格式化催化块：个股消息 + 行业催化。纯函数，可测。
+fn format_catalyst_block(
+    symbol: &str,
+    stock: &[(String, String, String)], // (summary, stance, severity)
+    sector: &[(String, String)],        // (summary, sector_name)
+) -> String {
+    let mut lines = vec![format!("【{} 近期新闻舆情】", symbol)];
+    if !stock.is_empty() {
+        lines.push("——个股消息——".to_string());
+        for (summary, stance, severity) in stock.iter().take(6) {
+            lines.push(format!("  · {} ({}/{})", summary, stance, severity));
+        }
+    }
+    if !sector.is_empty() {
+        lines.push("——行业催化——".to_string());
+        for (summary, sector_name) in sector.iter().take(4) {
+            lines.push(format!("  · [{}] {}", sector_name, summary));
+        }
+    }
+    if stock.is_empty() && sector.is_empty() {
+        lines.push("  暂无相关新闻舆情".to_string());
+    }
+    lines.join("\n")
+}
+
+/// 委员会催化：两路查 events + sentiment_items（个股 symbols 精确匹配 UNION 行业 sectors）。
+/// 零额外 LLM——复用 Plan A 已归一化的 summary/stance/severity。
+/// 两路均无命中时回退 akshare（补丁 D2 兜底），消除孤儿退化。
 pub async fn fetch_company_news_for_prompt(symbol: &str) -> String {
     let code = symbol.split('.').next().unwrap_or(symbol);
-    let client = crate::invest::international::InternationalClient::from_settings();
+    // 时间窗：最近 3 天
+    let since = (chrono::Local::now() - chrono::Duration::days(3))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
 
-    match client.fetch_akshare_stock_news(code, 5).await {
-        Ok(items) if !items.is_empty() => {
-            let mut lines = vec![format!("【{} 近期风险新闻】", symbol)];
-            for item in items.iter().take(5) {
-                let date = chrono::DateTime::from_timestamp(item.provider_publish_time, 0)
-                    .map(|dt| dt.format("%Y-%m-%d").to_string())
-                    .unwrap_or_else(|| "N/A".to_string());
-                lines.push(format!("  [{}] {} — {}", date, item.title, item.publisher));
-            }
-            lines.join("\n")
+    // 个股路：sentiment_items 精确匹配 ,{code},（内部已 LIKE '%,code,%'）
+    let mut stock: Vec<(String, String, String)> = Vec::new();
+    if let Ok(items) =
+        crate::storage::invest::sentiment::list_sentiment_by_symbol(code, &since, 10)
+    {
+        for it in items {
+            let summary = it.summary.unwrap_or(it.title);
+            stock.push((summary, it.stance, it.severity));
         }
-        _ => format!("{} 近期风险新闻: 暂无", symbol),
     }
+    // events 表个股新闻（jin10）——list_events 拉近期再过滤 symbols 含 ,{code},
+    if let Ok(events) = crate::storage::invest::events::list_events(None, Some(200)) {
+        let pat = format!(",{},", code);
+        for e in events {
+            let syms = e.symbols.clone().unwrap_or_default();
+            // symbols 存储可能无逗号包裹（旧数据），双重匹配
+            if syms.contains(&pat) || syms.split(',').any(|s| s.trim() == code) {
+                stock.push((e.title.clone(), e.stance.clone(), e.severity.clone()));
+            }
+        }
+    }
+
+    // 行业路：查该股所属行业的 sectors 命中
+    let mut sector: Vec<(String, String)> = Vec::new();
+    if let Ok(Some(industry)) = crate::storage::invest::stock_industry::industry_of(code) {
+        if let Ok(items) = crate::storage::invest::sentiment::list_sentiment_by_sectors(
+            &[industry.clone()],
+            &since,
+            8,
+        ) {
+            for it in items {
+                let summary = it.summary.unwrap_or(it.title);
+                sector.push((summary, industry.clone()));
+            }
+        }
+    }
+
+    // 兜底：两路都空 → 回退实时抓 akshare（补丁 D2）
+    if stock.is_empty() && sector.is_empty() {
+        let client = crate::invest::international::InternationalClient::from_settings();
+        if let Ok(items) = client.fetch_akshare_stock_news(code, 5).await {
+            for item in items.iter().take(5) {
+                stock.push((
+                    item.title.clone(),
+                    "neutral".to_string(),
+                    "medium".to_string(),
+                ));
+            }
+        }
+    }
+
+    log::debug!(
+        "catalyst[{}]: {} stock + {} sector items",
+        symbol,
+        stock.len(),
+        sector.len()
+    );
+    format_catalyst_block(symbol, &stock, &sector)
 }
 
 /// Format risk metrics context for Risk role CLI prompt injection.
@@ -924,6 +998,57 @@ mod tests {
         let prompt = "Simple prompt without tools.";
         let stripped = strip_tool_section(prompt);
         assert_eq!(stripped, "Simple prompt without tools.");
+    }
+
+    #[test]
+    fn test_format_catalyst_block() {
+        let stock = vec![(
+            "茅台大宗交易".to_string(),
+            "bullish".to_string(),
+            "high".to_string(),
+        )];
+        let sector = vec![(
+            "白酒板块政策利好".to_string(),
+            "饮料制造".to_string(),
+        )];
+        let out = format_catalyst_block("600519", &stock, &sector);
+        assert!(out.contains("【600519 近期新闻舆情】"));
+        assert!(out.contains("——个股消息——"));
+        assert!(out.contains("茅台大宗交易"));
+        assert!(out.contains("bullish/high"));
+        assert!(out.contains("——行业催化——"));
+        assert!(out.contains("[饮料制造] 白酒板块政策利好"));
+    }
+
+    #[test]
+    fn test_format_catalyst_block_empty() {
+        let out = format_catalyst_block("600519", &[], &[]);
+        assert!(out.contains("【600519 近期新闻舆情】"));
+        assert!(out.contains("暂无相关新闻舆情"));
+    }
+
+    #[test]
+    fn test_format_catalyst_block_truncates() {
+        // 个股取前 6 条，行业取前 4 条
+        let stock: Vec<(String, String, String)> = (0..10)
+            .map(|i| {
+                (
+                    format!("news-{}", i),
+                    "neutral".to_string(),
+                    "low".to_string(),
+                )
+            })
+            .collect();
+        let sector: Vec<(String, String)> = (0..10)
+            .map(|i| (format!("sector-{}", i), "行业".to_string()))
+            .collect();
+        let out = format_catalyst_block("000001", &stock, &sector);
+        assert!(out.contains("news-0"));
+        assert!(out.contains("news-5"));
+        assert!(!out.contains("news-6"));
+        assert!(out.contains("sector-0"));
+        assert!(out.contains("sector-3"));
+        assert!(!out.contains("sector-4"));
     }
 
     #[test]
