@@ -4,9 +4,7 @@
 
   let { macro, onRefresh }: { macro: GlobalMacroState; onRefresh: () => void } = $props();
 
-  // MacroSnapshot 接口尚未包含 flatCount/upOver3pctCount，后端已发送；用 Record 安全取值
-  type Snap = NonNullable<typeof macro.snapshot> & Record<string, number | null | undefined>;
-  const s = $derived(macro.snapshot as Snap | null);
+  const s = $derived(macro.snapshot);
   const v = $derived(macro.verdict);
   const meClass = $derived(v?.moneyEffect ?? '');            // hot|active|calm|cold|''
   const adv = $derived(s?.advanceCount ?? 0);

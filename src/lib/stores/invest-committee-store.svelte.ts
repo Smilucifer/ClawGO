@@ -92,6 +92,8 @@ export interface MacroSnapshot {
   twoMarketVolume: number | null;
   limitUpCount: number | null;
   limitDownCount: number | null;
+  upOver3pctCount: number | null;
+  flatCount: number | null;
 }
 
 export interface MacroVerdict {
