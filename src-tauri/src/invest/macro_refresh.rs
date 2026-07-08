@@ -444,11 +444,12 @@ async fn fetch_breadth(miniqmt_on: bool) -> MacroResult {
         }
     }
     // 降级：akshare 仅有涨跌家数 + 涨跌停；flat/up_over_3pct 不写（保留旧值/缺失）。
+    // 涨跌停统计与涨跌家数是两条独立 akshare RPC,并发拉(Python bridge 支持并发,见顶层 join_all)。
     let today = chrono::Local::now().format("%Y%m%d").to_string();
-    let stats = client.fetch_akshare_market_stats(&today).await
-        .map_err(|e| format!("market_stats: {e}"))?;
-    let ad = client.fetch_akshare_advance_decline(&today).await
-        .map_err(|e| format!("advance_decline: {e}"))?;
+    let (stats, ad) = tokio::try_join!(
+        async { client.fetch_akshare_market_stats(&today).await.map_err(|e| format!("market_stats: {e}")) },
+        async { client.fetch_akshare_advance_decline(&today).await.map_err(|e| format!("advance_decline: {e}")) },
+    )?;
     Ok(vec![
         ("advance_count".into(), Some(ad.advance_count as f64), None, "akshare"),
         ("decline_count".into(), Some(ad.decline_count as f64), None, "akshare"),

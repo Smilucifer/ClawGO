@@ -1097,12 +1097,8 @@ async fn refresh_asset_data(
 ///
 /// B1 修复后不再 per-symbol 调 LLM;改读全局宏观判断 + per-symbol 敏感度。
 async fn run_macro_phase(
-    _symbol: &str,
     config: &CommitteeConfig,
-    _portfolio_summary: &str,
-    _emitter: &Option<EventEmitter>,
     asset_context: &AssetContext,
-    _verdicts: &str,
     cancel: Option<&CancellationToken>,
 ) -> Result<(RoundOutput, u32), String> {
     let role = CommitteeRole::Macro;
@@ -1139,10 +1135,10 @@ async fn run_macro_phase(
     }
 
     // per-symbol 行业敏感度(带缓存,§8.2-K)。
-    let signal = parsed.signal.clone().unwrap_or_else(|| "neutral".into());
+    let signal = parsed.signal.as_deref().unwrap_or("neutral");
     let industry = asset_context.industry.clone().unwrap_or_default();
     let (sens, reason) = super::sensitivity::analyze(
-        &industry, &signal, config.settings_path.as_deref(), cancel).await;
+        &industry, signal, config.settings_path.as_deref(), cancel).await;
     parsed.sensitivity = sens;
     parsed.sensitivity_reason = reason;
 
@@ -1425,7 +1421,6 @@ pub(crate) async fn run_committee(
         Some(arc) => (*arc).clone(),
         None => PortfolioData::load_with_timeout(dry_run).await,
     };
-    let portfolio_summary = build_portfolio_summary(&portfolio_data);
 
     // 构建标的上下文数据（行业、估值、资金流向、评级等）
     let asset_context = {
@@ -1471,7 +1466,7 @@ pub(crate) async fn run_committee(
 
         check_cancellation(cancel.as_ref(), &emitter, symbol)?;
         let (macro_output, macro_tokens) =
-            run_macro_phase(symbol, config, &portfolio_summary, &emitter, &asset_context, &shared.verdicts, cancel.as_ref()).await?;
+            run_macro_phase(config, &asset_context, cancel.as_ref()).await?;
         total_tokens += macro_tokens;
 
         if let Some(ref emit) = emitter {

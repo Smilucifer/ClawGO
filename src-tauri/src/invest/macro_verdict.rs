@@ -63,38 +63,28 @@ fn fill_global_prompt(
 
 /// 读 committee_tuning.json → 生成 CLI --settings 路径(provider 路由)。
 fn resolve_settings_path() -> Option<std::path::PathBuf> {
-    let p = crate::storage::data_dir().join("invest").join("committee_tuning.json");
-    let (provider, model) = std::fs::read_to_string(&p).ok()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-        .map(|v| {
-            (
-                v["selectedProvider"].as_str().unwrap_or("default").to_string(),
-                v["model"].as_str().unwrap_or("").to_string(),
-            )
-        })
-        .unwrap_or_else(|| ("default".into(), String::new()));
-    let model_opt = if model.is_empty() { None } else { Some(model.as_str()) };
-    crate::invest::committee::cli_executor::write_committee_settings_json(&provider, model_opt)
+    // 复用委员会本体的 tuning 读取(类型化 + 默认值封装),与其 provider 路由保持一致。
+    let tuning = crate::commands::invest::get_committee_tuning().ok();
+    let provider = tuning.as_ref().map_or("default", |t| t.selected_provider.as_str());
+    let model = tuning.as_ref().map_or("", |t| t.model.as_str());
+    let model_opt = if model.is_empty() { None } else { Some(model) };
+    crate::invest::committee::cli_executor::write_committee_settings_json(provider, model_opt)
         .ok()
         .flatten()
 }
 
 /// 取上证 60 日线算 MA20/MA60(数据不足返回 None)。走 international kline(miniQMT 优先)。
-async fn fetch_sh_ma() -> (Option<f64>, Option<f64>) {
-    let client = crate::invest::international::InternationalClient::from_settings();
+async fn fetch_sh_ma(
+    client: &crate::invest::international::InternationalClient,
+) -> (Option<f64>, Option<f64>) {
     let bars = match client.fetch_xtdata_kline("000001.SH", "1d", 60).await {
         Ok(b) if b.len() >= 20 => b,
         _ => return (None, None),
     };
-    let closes: Vec<f64> = bars.iter().map(|b| b.close).collect();
-    let ma = |n: usize| {
-        if closes.len() >= n {
-            Some(closes.iter().rev().take(n).sum::<f64>() / n as f64)
-        } else {
-            None
-        }
-    };
-    (ma(20), ma(60))
+    // kline 为时间正序(旧→新);compute_ma 约定 newest-first,故反转。
+    let desc_closes: Vec<f64> = bars.iter().rev().map(|b| b.close).collect();
+    use crate::invest::indicators::compute_ma;
+    (compute_ma(&desc_closes, 20), compute_ma(&desc_closes, 60))
 }
 
 /// 全局宏观判断主流程。scheduler 与手动命令共用。
@@ -111,16 +101,21 @@ pub async fn run_macro_verdict(manual: bool) -> Result<String, String> {
     }
 
     // 取广度(同源)。miniQMT 关/离线 → 广度缺失,赚钱效应"数据不足"。
+    // 广度快照与 MA 取数彼此独立,并发跑(各走一次 RPC)。
     let client = crate::invest::international::InternationalClient::from_settings();
     let miniqmt_on = crate::storage::settings::load().user.invest_miniqmt_enabled;
-    let breadth = if miniqmt_on {
-        client.fetch_xtdata_breadth().await.ok()
-    } else {
-        None
-    };
+    let (breadth, (ma20, ma60)) = tokio::join!(
+        async {
+            if miniqmt_on {
+                client.fetch_xtdata_breadth().await.ok()
+            } else {
+                None
+            }
+        },
+        fetch_sh_ma(&client),
+    );
     let b = breadth.filter(|b| b.available && b.valid > 0);
 
-    let (ma20, ma60) = fetch_sh_ma().await;
     let vol20 = macro_cache::load_macro_cache("sh_composite_vol20")
         .ok()
         .flatten()

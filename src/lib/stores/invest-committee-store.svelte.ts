@@ -112,7 +112,6 @@ export type GlobalMacroStatus = 'analyzing' | 'stale' | 'ready' | 'waiting' | 'e
 export interface GlobalMacroState {
   snapshot: MacroSnapshot | null;
   verdict: MacroVerdict | null;
-  isCurrent: boolean;
   status: GlobalMacroStatus;
   refreshing: boolean;
 }
@@ -255,7 +254,7 @@ export class InvestCommitteeStore {
 
   // ── 全局宏观判断状态 ──────────────────────────────────────────
   globalMacro = $state<GlobalMacroState>({
-    snapshot: null, verdict: null, isCurrent: false, status: 'empty', refreshing: false,
+    snapshot: null, verdict: null, status: 'empty', refreshing: false,
   });
 
   async loadGlobalMacro() {
@@ -265,7 +264,6 @@ export class InvestCommitteeStore {
     ]);
     this.globalMacro.snapshot = snapshot;
     this.globalMacro.verdict = view.verdict;
-    this.globalMacro.isCurrent = view.isCurrent;
     this.globalMacro.status = this._deriveMacroStatus(snapshot, view);
   }
 
