@@ -18,6 +18,12 @@ pub struct Event {
     pub analyzed: bool,
     pub analyzed_at: Option<String>,
     pub channels: String,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub sectors: Option<String>,
+    #[serde(default)]
+    pub topics: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -31,6 +37,9 @@ pub struct EventSource {
     pub last_poll_at: Option<String>,
     pub created_at: String,
 }
+
+/// Canonical SELECT column list for the events table.
+const EVENT_COLS: &str = "id, source, event_type, title, body, symbols, severity, stance, triggered, trigger_verdict_id, created_at, analyzed, analyzed_at, channels, summary, sectors, topics";
 
 /// Map a SQLite row to an Event struct.
 fn row_to_event(row: &rusqlite::Row) -> rusqlite::Result<Event> {
@@ -49,15 +58,18 @@ fn row_to_event(row: &rusqlite::Row) -> rusqlite::Result<Event> {
         analyzed: row.get::<_, i32>(11)? != 0,
         analyzed_at: row.get(12)?,
         channels: row.get(13)?,
+        summary: row.get(14).ok().flatten(),
+        sectors: row.get(15).ok().flatten(),
+        topics: row.get(16).ok().flatten(),
     })
 }
 
 pub fn save_event(e: &Event) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute(
-            "INSERT OR IGNORE INTO events (id, source, event_type, title, body, symbols, severity, stance, triggered, trigger_verdict_id, created_at, analyzed, analyzed_at, channels)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
-            params![e.id, e.source, e.event_type, e.title, e.body, e.symbols, e.severity, e.stance, e.triggered as i32, e.trigger_verdict_id, e.created_at, e.analyzed as i32, e.analyzed_at, e.channels],
+            "INSERT OR IGNORE INTO events (id, source, event_type, title, body, symbols, severity, stance, triggered, trigger_verdict_id, created_at, analyzed, analyzed_at, channels, summary, sectors, topics)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+            params![e.id, e.source, e.event_type, e.title, e.body, e.symbols, e.severity, e.stance, e.triggered as i32, e.trigger_verdict_id, e.created_at, e.analyzed as i32, e.analyzed_at, e.channels, e.summary, e.sectors, e.topics],
         )
         .map_err(|e| format!("save event: {}", e))?;
         Ok(())
@@ -67,17 +79,17 @@ pub fn save_event(e: &Event) -> Result<(), String> {
 pub fn list_events(source: Option<&str>, limit: Option<i64>) -> Result<Vec<Event>, String> {
     with_conn(|conn| {
         let limit_val = limit.unwrap_or(100);
-        let (sql, query_params): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = match source {
+        let (sql, query_params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match source {
             Some(s) => (
-                "SELECT id, source, event_type, title, body, symbols, severity, stance, triggered, trigger_verdict_id, created_at, analyzed, analyzed_at, channels FROM events WHERE source = ?1 ORDER BY created_at DESC LIMIT ?2",
+                format!("SELECT {} FROM events WHERE source = ?1 ORDER BY created_at DESC LIMIT ?2", EVENT_COLS),
                 vec![Box::new(s.to_string()), Box::new(limit_val)],
             ),
             None => (
-                "SELECT id, source, event_type, title, body, symbols, severity, stance, triggered, trigger_verdict_id, created_at, analyzed, analyzed_at, channels FROM events ORDER BY created_at DESC LIMIT ?1",
+                format!("SELECT {} FROM events ORDER BY created_at DESC LIMIT ?1", EVENT_COLS),
                 vec![Box::new(limit_val)],
             ),
         };
-        let mut stmt = conn.prepare(sql).map_err(|e| format!("prepare: {}", e))?;
+        let mut stmt = conn.prepare(&sql).map_err(|e| format!("prepare: {}", e))?;
         let rows = stmt
             .query_map(rusqlite::params_from_iter(query_params.iter()), row_to_event)
             .map_err(|e| format!("query: {}", e))?;
@@ -141,11 +153,12 @@ pub fn get_event_stats() -> Result<(usize, usize, usize, Option<String>), String
 pub fn list_unanalyzed_events(limit: Option<i64>) -> Result<Vec<Event>, String> {
     with_conn(|conn| {
         let limit_val = limit.unwrap_or(100);
+        let sql = format!(
+            "SELECT {} FROM events WHERE analyzed = 0 ORDER BY created_at DESC LIMIT ?1",
+            EVENT_COLS
+        );
         let mut stmt = conn
-            .prepare(
-                "SELECT id, source, event_type, title, body, symbols, severity, stance, triggered, trigger_verdict_id, created_at, analyzed, analyzed_at, channels
-                 FROM events WHERE analyzed = 0 ORDER BY created_at DESC LIMIT ?1"
-            )
+            .prepare(&sql)
             .map_err(|e| format!("prepare: {}", e))?;
         let rows = stmt
             .query_map(params![limit_val], row_to_event)
@@ -158,19 +171,22 @@ pub fn list_unanalyzed_events(limit: Option<i64>) -> Result<Vec<Event>, String> 
     })
 }
 
-/// Update event analysis results (severity, stance, symbols, analyzed flag).
+/// Update event analysis results (severity, stance, symbols, summary, sectors, topics, analyzed flag).
 pub fn update_event_analysis(
     event_id: &str,
     severity: &str,
     stance: &str,
     symbols: Option<&str>,
+    summary: Option<&str>,
+    sectors: Option<&str>,
+    topics: Option<&str>,
 ) -> Result<(), String> {
     with_conn(|conn| {
         let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
         let changed = conn
             .execute(
-                "UPDATE events SET severity = ?1, stance = ?2, symbols = ?3, analyzed = 1, analyzed_at = ?4 WHERE id = ?5 AND analyzed = 0",
-                params![severity, stance, symbols, now, event_id],
+                "UPDATE events SET severity = ?1, stance = ?2, symbols = ?3, summary = ?4, sectors = ?5, topics = ?6, analyzed = 1, analyzed_at = ?7 WHERE id = ?8 AND analyzed = 0",
+                params![severity, stance, symbols, summary, sectors, topics, now, event_id],
             )
             .map_err(|e| format!("update analysis: {}", e))?;
         if changed == 0 {

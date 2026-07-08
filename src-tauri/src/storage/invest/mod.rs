@@ -358,6 +358,12 @@ fn init_db_inner(db_path: &Path) -> Result<Connection, String> {
     conn.execute_batch(sentiment::CREATE_SENTIMENT_TABLE)
         .map_err(|e| format!("create sentiment_items: {}", e))?;
 
+    // Migration: add summary/sectors/topics columns to events table (Task 5).
+    // Aligns events schema with sentiment_items for the shared analyze_pending path.
+    sentiment::ensure_column(&conn, "events", "summary", "TEXT")?;
+    sentiment::ensure_column(&conn, "events", "sectors", "TEXT")?;
+    sentiment::ensure_column(&conn, "events", "topics", "TEXT")?;
+
     // Migration: create stock_industry table (个股 → 行业映射，每周从 tushare stock_basic 刷新)
     conn.execute_batch(stock_industry::CREATE_STOCK_INDUSTRY_TABLE)
         .map_err(|e| format!("create stock_industry: {}", e))?;

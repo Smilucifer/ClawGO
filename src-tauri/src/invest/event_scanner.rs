@@ -69,6 +69,15 @@ pub struct NormalizedEvent {
     pub stance: String,
     pub severity: Severity,
     pub affected_symbols: Vec<String>,
+    /// Refined one-line summary (≤40 chars). Empty when the LLM omits it.
+    #[serde(default)]
+    pub summary: String,
+    /// Sectors chosen from the closed industry set (may be empty).
+    #[serde(default)]
+    pub sectors: Vec<String>,
+    /// Free-form theme tags (may be empty).
+    #[serde(default)]
+    pub topics: Vec<String>,
 }
 
 /// Raw event before normalization.
@@ -417,6 +426,12 @@ pub async fn scan_events(
         } else {
             Some(norm.one_line_claim.clone())
         };
+        // Wrap comma-delimited lists with a leading/trailing comma so
+        // `LIKE '%,x,%'` can match a single token unambiguously.
+        let wrap_list = |v: &[String]| -> Option<String> {
+            if v.is_empty() { None } else { Some(format!(",{},", v.join(","))) }
+        };
+
         let event = crate::storage::invest::events::Event {
             id: uuid::Uuid::new_v4().to_string(),
             source: ev.source.clone(),
@@ -436,6 +451,9 @@ pub async fn scan_events(
             analyzed: true,
             analyzed_at: Some(chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string()),
             channels: "[]".to_string(),
+            summary: if norm.summary.is_empty() { None } else { Some(norm.summary.clone()) },
+            sectors: wrap_list(&norm.sectors),
+            topics: wrap_list(&norm.topics),
         };
         match crate::storage::invest::events::save_event(&event) {
             Ok(()) => saved += 1,
@@ -512,6 +530,35 @@ pub fn fallback_normalize_from(title: &str, body: &str) -> NormalizedEvent {
         stance: "neutral".to_string(),
         severity,
         affected_symbols: vec![],
+        summary: String::new(),
+        sectors: vec![],
+        topics: vec![],
+    }
+}
+
+/// Build a normalizer prompt with an injected closed sectors vocabulary.
+/// `industries` is the `stock_industry.all_industries()` result (from Tushare
+/// classification). When empty the base prompt is returned unchanged.
+pub fn build_normalizer_prompt_with_sectors(language: &str, industries: &[String]) -> String {
+    let base = default_normalizer_prompt(language);
+    if industries.is_empty() {
+        return base.to_string();
+    }
+    let list = industries.join("、");
+    if language.starts_with("en") {
+        format!(
+            "{base}\n\nAdditional fields:\n\
+             - summary: one-line refined summary (<=40 chars)\n\
+             - sectors: MUST be chosen ONLY from this closed set (multi-select allowed, drop anything not in set): [{list}]\n\
+             - topics: free-form theme tags (e.g. robotics/low-altitude), for report grouping only"
+        )
+    } else {
+        format!(
+            "{base}\n\n额外字段：\n\
+             - summary: 一句话提炼摘要（≤40字）\n\
+             - sectors: **只能从以下封闭集合中选**（可多选，集合外的词一律丢弃）：[{list}]\n\
+             - topics: 自由主题标签（如 机器人/低空经济），仅供报告聚合"
+        )
     }
 }
 
@@ -552,6 +599,62 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].stance, "bullish");
         assert_eq!(result[0].affected_symbols, vec!["600519"]);
+    }
+
+    #[test]
+    fn test_normalized_with_sectors_topics() {
+        let json = r#"[{"one_line_claim":"文旅部十五五规划","stance":"bullish","severity":"high","affected_symbols":[],"summary":"文旅政策利好","sectors":["旅游综合"],"topics":["十五五"]}]"#;
+        let events = vec![RawEvent {
+            source: "t".into(),
+            event_type: "news".into(),
+            title: "文旅部十五五规划".into(),
+            body: "".into(),
+            url: None,
+            created_at: "2026-07-08".into(),
+        }];
+        let out = parse_normalized_response(json, &events, |ev| {
+            fallback_normalize_from(&ev.title, &ev.body)
+        });
+        assert_eq!(out[0].sectors, vec!["旅游综合".to_string()]);
+        assert_eq!(out[0].topics, vec!["十五五".to_string()]);
+        assert_eq!(out[0].summary, "文旅政策利好");
+    }
+
+    #[test]
+    fn test_normalized_backward_compat() {
+        // 旧格式无 summary/sectors/topics，应 default 空
+        let json = r#"[{"one_line_claim":"降准","stance":"bullish","severity":"high","affected_symbols":["600519"]}]"#;
+        let events = vec![RawEvent {
+            source: "t".into(),
+            event_type: "news".into(),
+            title: "降准".into(),
+            body: "".into(),
+            url: None,
+            created_at: "2026-07-08".into(),
+        }];
+        let out = parse_normalized_response(json, &events, |ev| {
+            fallback_normalize_from(&ev.title, &ev.body)
+        });
+        assert!(out[0].sectors.is_empty());
+        assert!(out[0].topics.is_empty());
+        assert_eq!(out[0].summary, "");
+        assert_eq!(out[0].affected_symbols, vec!["600519".to_string()]);
+    }
+
+    #[test]
+    fn test_build_normalizer_prompt_with_sectors_zh() {
+        let industries = vec!["旅游综合".to_string(), "白酒".to_string()];
+        let p = build_normalizer_prompt_with_sectors("zh-CN", &industries);
+        assert!(p.contains("旅游综合"));
+        assert!(p.contains("白酒"));
+        assert!(p.contains("封闭集合"));
+    }
+
+    #[test]
+    fn test_build_normalizer_prompt_with_sectors_empty() {
+        // 空词表 → 回退到 base prompt
+        let p = build_normalizer_prompt_with_sectors("zh-CN", &[]);
+        assert_eq!(p, default_normalizer_prompt("zh-CN"));
     }
 
     #[test]
