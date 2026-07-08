@@ -1,6 +1,7 @@
 //! 舆情采集接口层：调 Python 桥抓取多源 → 写入 sentiment_items 表。
 //! 通用接口，报告生成器 / 委员会催化 / 独立命令都能复用。
 
+use crate::invest::event_analyzer::{analyze_pending, AnalyzeTable, AnalyzerResult};
 use crate::storage::invest::sentiment::{save_sentiment_item, SentimentItem};
 use sha2::{Digest, Sha256};
 
@@ -112,6 +113,50 @@ pub async fn refresh_stock_industry() -> Result<usize, String> {
         n
     );
     Ok(n)
+}
+
+/// 盘前采集编排：抓取四源 → 立即归一化到清零。
+///
+/// 消除「event_analyzer 10 分钟批处理延迟导致委员会读到未归一化数据」的时序穿孔：
+/// 抓取完成后直接同步调用 `analyze_pending(Sentiment, _)`，循环到 `total_pending == 0`。
+///
+/// 循环设计：`analyze_pending` 单批 `MAX_BATCH_SIZE = 50`，四源爆量可能多批；
+/// 若某批 `analyzed + skipped == 0`（全部失败），认定无进展、跳出防死循环。
+pub async fn collect_all_sentiment(
+    symbol: Option<&str>,
+    limit: u32,
+) -> Result<AnalyzerResult, String> {
+    // 1. 抓取四源（`fetch_and_store("all", ...)` 由 Python 端聚合所有已注册 provider）
+    let stored = fetch_and_store("all", symbol, limit).await?;
+    log::info!("collect_all_sentiment: stored {} items", stored);
+
+    // 2. 同步归一化到清零
+    let mut agg = AnalyzerResult {
+        total_pending: 0,
+        analyzed: 0,
+        skipped: 0,
+        errors: vec![],
+    };
+    loop {
+        let r = analyze_pending(
+            AnalyzeTable::Sentiment,
+            crate::invest::event_scanner::DEFAULT_LANGUAGE,
+        )
+        .await?;
+        if r.total_pending == 0 {
+            break;
+        }
+        agg.total_pending += r.total_pending;
+        agg.analyzed += r.analyzed;
+        agg.skipped += r.skipped;
+        agg.errors.extend(r.errors);
+        // 若一批全部失败（analyzed + skipped == 0）防死循环
+        if r.analyzed == 0 && r.skipped == 0 {
+            log::warn!("collect_all_sentiment: batch made no progress, stopping");
+            break;
+        }
+    }
+    Ok(agg)
 }
 
 #[cfg(test)]

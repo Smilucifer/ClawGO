@@ -1348,3 +1348,32 @@ pub async fn refresh_macro_verdict() -> Result<String, String> {
 pub fn get_macro_snapshot() -> Result<Option<crate::storage::invest::macro_cache::MacroSnapshot>, String> {
     Ok(crate::storage::invest::macro_cache::build_macro_snapshot())
 }
+
+// ─── 舆情采集命令 ───────────────────────────────────────────────────────────
+
+/// 单源舆情抓取（写入 sentiment_items，不做归一化）。
+///
+/// `provider = "all"` 时 Python 端会聚合所有已注册 provider。返回写入条数。
+#[tauri::command]
+pub async fn fetch_sentiment(
+    provider: String,
+    symbol: Option<String>,
+    limit: u32,
+) -> Result<usize, String> {
+    crate::invest::sentiment::fetch_and_store(&provider, symbol.as_deref(), limit).await
+}
+
+/// 从 tushare `stock_basic` 全量刷新 `stock_industry` 表（每周一次即可）。
+#[tauri::command]
+pub async fn refresh_stock_industry_cmd() -> Result<usize, String> {
+    crate::invest::sentiment::refresh_stock_industry().await
+}
+
+/// 盘前采集编排：抓取四源 → 内联归一化到清零，一次返回归一化聚合结果。
+#[tauri::command]
+pub async fn collect_sentiment(
+    symbol: Option<String>,
+    limit: u32,
+) -> Result<crate::invest::event_analyzer::AnalyzerResult, String> {
+    crate::invest::sentiment::collect_all_sentiment(symbol.as_deref(), limit).await
+}
