@@ -1,5 +1,36 @@
 # Changelog / 更新日志
 
+## v5.6.8 (2026-07-08)
+
+### 新增：盘前观察报告 + 舆情采集基础设施
+
+完整设计见 `docs/superpowers/specs/2026-07-07-premarket-watch-report-design.md`,实施见 `docs/superpowers/plans/2026-07-08-premarket-plan-{a,b}-*.md`。
+
+**舆情采集基础设施(Plan A):**
+- 新建独立 `sentiment_items` 表(不污染 events 的 jin10 事件流),`storage/invest/sentiment.rs` 提供 CRUD + `ensure_column` 幂等迁移 helper。`affected_symbols`/`sectors`/`topics` 统一存 `,x,` 逗号包裹格式,配 `LIKE '%,code,%'` 精确匹配避免假阳性。
+- Python 前四源 provider `providers/sentiment.py`(ths/sina/cailianshe/eastmoney,纯 requests)+ `invest/sentiment.rs` 接口层(`fetch_and_store`,sha256 去重 id)。
+- `stock_industry` 个股行业映射表(tushare `stock_basic` 缓存),distinct industry 充当闭集 sectors 词表。
+- `event_analyzer` 抽出通用 `analyze_pending(AnalyzeTable::{Events,Sentiment})`,两表共用同一套 LLM 归一化(提炼 summary/stance/severity/affected_symbols/sectors,sectors 约束到 tushare 行业闭集,topics 自由生成)。`NormalizedEvent` 扩 summary/sectors/topics 三字段。
+- 盘前采集入口 `collect_all_sentiment` 抓取后**内联归一化到清零**,消除委员会读到未归一化数据的时序穿孔(CP2)。
+
+**消费者(Plan B):**
+- 委员会催化 `fetch_company_news_for_prompt` 从"实时抓 5 条 akshare"改为两路查两表(sentiment_items + events,个股 symbols 精确匹配 UNION 行业 sectors 命中),零额外 LLM;两路皆空回退 akshare 兜底。
+- 雪球独立通道 `providers/xueqiu.py`(scrapling StealthyFetcher 过阿里云 WAF + 注入登录 cookie,只抓市场级热帖榜);cookie 走 keyring/DPAPI 加密存储;cron 遇 cookie/引擎失败只降级跳过、绝不弹窗。
+- `invest/premarket/` 新模块:`scoring.rs`(SABC 四因子加权打分,纯函数 + PremarketConfig JSON 文件配置)、`crowding.rs`(拥挤度三指标合成 → 健康/偏热/过热)、`sector_flow.rs`(THS `stock_board_industry_summary_ths` 板块资金流 + 成交额/涨跌家数/领涨股)、`report.rs`(编排:采集→归一化→四因子真实计算→AI 点评结构化→组装 md+json 存盘)。
+- 四因子真实计算:舆论(sentiment_hint 均值)、催化(关联条数)、资金(moneyflow_dc 主力净流入 tanh 归一 + moneyflow_hsgt 北向)、技术(regime + RSI + 2 年分位)。缺数据时降级中性 50 + 记 missing。
+- AI 点评走结构化 JSON,补丁 M3:grade 只来自 `score()`,AI 输出仅进 aiCommentary 字段,不改档。
+- cron job `premarket_report`(`0 0 9 * * 1-5`,requires_trading_day),6 个 Tauri 命令(fetch_sentiment/generate/list/read/get_config/save_config)。
+- 前端 `PremarketReportTab.svelte`:720px `#report-canvas` 四段图文视图,html2canvas PNG + jspdf PDF 导出,可折叠权重/阈值设置面板(权重和=1.0 + 阈值 S>A>B 校验)。
+
+### 调整
+
+- **全局红涨绿跌翻色:** 引入 `--up`(红)/`--down`(绿)语义变量,把 invest 组件涨跌语境下的 `--color-success`/`--color-error` 替换为语义变量,保留非涨跌语境的通用状态色。
+- **委员会宏观改全局单卡:** 宏观解读从 per-symbol 重复展示改为全局 `GlobalMacroCard` + per-symbol 敏感度小条,`macro_verdict` 双上游版本戳判失效 + 手动刷新交易时段门禁。
+
+### 重构（simplify 审查清理）
+
+- `sentiment.rs` 两处 `SentimentItem` 重复构造抽 `raw_to_item`/`store_raws`;`scoring::score` 与 `report::build_themes` 的 SABC 档位级联抽 `grade_of`;`event_analyzer`/`event_scanner` 的 `wrap_csv` 收敛为 event_scanner 的 `pub(crate)` 共享;删除 `SectorFlow` 从未被读的 `turnover_rate`/`main_inflow_pct` 死字段;删除 `analyze_pending_events` 死参数包装器;`summary_opt` 内联抽 `NormalizedEvent::summary_opt()`。
+
 ## v5.6.7 (2026-07-08)
 
 ### 移除 / 调整
