@@ -73,3 +73,7 @@ review/
 
 # Superpowers brainstorm artifacts
 .superpowers/
+
+# Local credential / cookie files (never commit)
+xueqiu-cookies.csv
+*-cookies.csv
