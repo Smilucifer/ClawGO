@@ -60,6 +60,11 @@
     --color-warning: #b89a6a;
     --color-warning-bg: rgba(184, 154, 106, 0.12);
 
+    /* 红涨绿跌:方向/涨跌/盈亏语义专用(状态/危险语义仍用 --color-success/error) */
+    --up: #c56f62;
+    --down: #7f9d6d;
+    --flat: hsl(24 7% 58%);
+
     --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
       "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC",
       "WenQuanYi Micro Hei", sans-serif;

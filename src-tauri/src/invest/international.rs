@@ -97,6 +97,29 @@ struct XtdataKlineResp {
     items: Vec<XtdataKlineBar>,
 }
 
+/// miniQMT 全 A 市场广度快照。
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct MarketBreadth {
+    pub available: bool,
+    #[serde(default)]
+    pub reason: String,
+    #[serde(default)]
+    pub up: u32,
+    #[serde(default)]
+    pub flat: u32,
+    #[serde(default)]
+    pub down: u32,
+    #[serde(default)]
+    pub limit_up: u32,
+    #[serde(default)]
+    pub limit_down: u32,
+    #[serde(default)]
+    pub up_over_3pct: u32,
+    #[serde(default)]
+    pub valid: u32,
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -282,6 +305,11 @@ impl InternationalClient {
             )
             .await?;
         Ok(resp.items)
+    }
+
+    /// 获取 miniQMT 全 A 市场广度快照。QMT 离线时返回 available=false。
+    pub async fn fetch_xtdata_breadth(&self) -> Result<MarketBreadth, String> {
+        self.rpc_call("xtdata.market_breadth", serde_json::json!({})).await
     }
 }
 

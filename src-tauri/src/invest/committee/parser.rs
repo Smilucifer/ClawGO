@@ -44,8 +44,8 @@ pub struct ParsedFields {
     pub sensitivity: Option<String>,
     /// 敏感度原因
     pub sensitivity_reason: Option<String>,
-    /// 情绪温度: "乐观" | "中性" | "谨慎" | "恐慌"
-    pub emotion_temperature: Option<String>,
+    /// 赚钱效应理由(档位由规则算,此处仅 LLM 理由句)
+    pub money_effect_reason: Option<String>,
     /// Macro: 信号理由(一句话)
     pub signal_reason: Option<String>,
     /// Macro: 市场阶段理由(一句话)
@@ -581,9 +581,9 @@ fn parse_macro(text: &str, parsed: &mut ParsedFields) {
     parsed.sensitivity = extract_field_any(text, &["SENSITIVITY", "敏感度"]);
     // 敏感度原因
     parsed.sensitivity_reason = extract_field_any(text, &["SENSITIVITY_REASON", "敏感度原因"]);
-    // 情绪温度: "乐观" | "中性" | "谨慎" | "恐慌"
-    parsed.emotion_temperature =
-        extract_field_any(text, &["EMOTION_TEMPERATURE", "情绪温度"]);
+    // 赚钱效应理由(替代原情绪温度)
+    parsed.money_effect_reason =
+        extract_field_any(text, &["MONEY_EFFECT_REASON", "赚钱效应理由"]);
     parsed.signal_reason = extract_field_any(text, &["SIGNAL_REASON", "信号理由"]);
     parsed.market_phase_reason = extract_field_any(text, &["MARKET_PHASE_REASON", "市场阶段理由"]);
 }
@@ -918,22 +918,22 @@ mod tests {
 
     #[test]
     fn test_parse_macro_new_fields() {
-        let text = "SIGNAL: risk_on\nSTRENGTH: 7\n市场阶段: 主升\n敏感度: positive\n敏感度原因: 北向资金持续流入\n情绪温度: 乐观";
+        let text = "SIGNAL: risk_on\nSTRENGTH: 7\n市场阶段: 主升\n敏感度: positive\n敏感度原因: 北向资金持续流入\n赚钱效应理由: 涨幅超3%个股占比高";
         let parsed = parse_role_output(CommitteeRole::Macro, text, false);
         assert_eq!(parsed.market_phase.as_deref(), Some("主升"));
         assert_eq!(parsed.sensitivity.as_deref(), Some("positive"));
         assert_eq!(parsed.sensitivity_reason.as_deref(), Some("北向资金持续流入"));
-        assert_eq!(parsed.emotion_temperature.as_deref(), Some("乐观"));
+        assert_eq!(parsed.money_effect_reason.as_deref(), Some("涨幅超3%个股占比高"));
     }
 
     #[test]
     fn test_parse_macro_new_fields_english() {
-        let text = "SIGNAL: risk_off\nSTRENGTH: 3\nMARKET_PHASE: 退潮\nSENSITIVITY: negative\nSENSITIVITY_REASON: trade war\nEMOTION_TEMPERATURE: 恐慌";
+        let text = "SIGNAL: risk_off\nSTRENGTH: 3\nMARKET_PHASE: 退潮\nSENSITIVITY: negative\nSENSITIVITY_REASON: trade war\nMONEY_EFFECT_REASON: 跌停多于涨停";
         let parsed = parse_role_output(CommitteeRole::Macro, text, false);
         assert_eq!(parsed.market_phase.as_deref(), Some("退潮"));
         assert_eq!(parsed.sensitivity.as_deref(), Some("negative"));
         assert_eq!(parsed.sensitivity_reason.as_deref(), Some("trade war"));
-        assert_eq!(parsed.emotion_temperature.as_deref(), Some("恐慌"));
+        assert_eq!(parsed.money_effect_reason.as_deref(), Some("跌停多于涨停"));
     }
 
     #[test]

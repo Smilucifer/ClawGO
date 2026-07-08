@@ -6,4 +6,5 @@ pub mod orchestrator;
 pub mod parser;
 pub mod queue;
 pub mod roles;
+pub mod sensitivity;
 pub mod tools;

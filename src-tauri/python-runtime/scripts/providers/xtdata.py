@@ -81,6 +81,43 @@ def realtime_quote(symbols=None) -> dict:
     return out
 
 
+def market_breadth() -> dict:
+    """一次性全 A 市场广度快照。QMT 离线返回 available=false，不抛异常。"""
+    try:
+        xt = _get_xtdata()
+        codes = xt.get_stock_list_in_sector("沪深A股") or []
+        codes = [c for c in codes
+                 if c.partition(".")[0][:2] in ("60", "00", "30", "68")]
+        ticks = xt.get_full_tick(codes) or {}
+        up = flat = down = up3 = lu = ld = valid = 0
+        for _code, t in ticks.items():
+            last = float(t.get("lastPrice", 0.0) or 0.0)
+            prev = float(t.get("lastClose", 0.0) or 0.0)
+            if prev <= 0.0 or last <= 0.0:
+                continue
+            valid += 1
+            chg = (last - prev) / prev * 100.0
+            if chg > 0.01:
+                up += 1
+            elif chg < -0.01:
+                down += 1
+            else:
+                flat += 1
+            if chg > 3.0:
+                up3 += 1
+            if chg >= 9.9:
+                lu += 1
+            elif chg <= -9.9:
+                ld += 1
+        return {"available": True, "reason": "", "up": up, "flat": flat,
+                "down": down, "limit_up": lu, "limit_down": ld,
+                "up_over_3pct": up3, "valid": valid}
+    except Exception as e:  # noqa: BLE001
+        return {"available": False, "reason": str(e), "up": 0, "flat": 0,
+                "down": 0, "limit_up": 0, "limit_down": 0,
+                "up_over_3pct": 0, "valid": 0}
+
+
 def _to_yyyymmdd(t) -> str:
     """xtdata time 字段（ms 时间戳 / yyyymmdd / yyyymmddHHMMSS）→ yyyymmdd。"""
     s = str(int(t)) if not isinstance(t, str) else t

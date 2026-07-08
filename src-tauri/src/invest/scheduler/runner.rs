@@ -119,6 +119,9 @@ pub async fn dispatch_job(id: &str) -> Result<String, String> {
             crate::storage::invest::portfolio::convert_stale_cleared_holdings()?;
             Ok("Clearance convert complete".into())
         }
+        "macro_verdict" => {
+            crate::invest::macro_verdict::run_macro_verdict(false).await
+        }
         _ => Err(format!("Unknown job: {}", id)),
     }
 }

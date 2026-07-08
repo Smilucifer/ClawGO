@@ -8,7 +8,7 @@
     type RoundOutputSummary,
   } from '$lib/stores/invest-committee-store.svelte';
   import { investStore } from '$lib/stores/invest-store.svelte';
-  import MacroSnapshotCard from './MacroSnapshotCard.svelte';
+  import GlobalMacroCard from './GlobalMacroCard.svelte';
   import { STEP_DEFS, getStepState, getRoundForStep } from './pipeline-config';
   import { getVerdictBadgeStyle, normalizeConfidencePct } from '$lib/utils/invest-verdict';
   import { onMount } from 'svelte';
@@ -46,7 +46,7 @@
   function hasParsedContent(pf: ParsedFields): boolean {
     return !!(pf.signal || pf.verdict || pf.oneLiner || pf.reasoning || pf.rawText
       || pf.strength != null || pf.confidence != null || pf.fallbackReason
-      || pf.marketPhase || pf.emotionTemperature || pf.buyPointAssessment
+      || pf.marketPhase || pf.moneyEffectReason || pf.buyPointAssessment
       || pf.valuationAssessment || pf.moneyFlow || pf.concentrationPct != null
       || pf.dryPowderCny != null || pf.pnlPct != null || pf.stockRiskSummary
       || pf.catalystTier || pf.catalystSummary || pf.executionMode || pf.firstTrancheCny != null);
@@ -63,7 +63,7 @@
       : stepKey;
     if (role === 'macro') {
       push(t('invest_field_market_phase'), pf.marketPhase);
-      push(t('invest_field_emotion'), pf.emotionTemperature);
+      push(t('invest_money_effect'), pf.moneyEffectReason);
       push(t('invest_field_phase_reason'), pf.marketPhaseReason);
     } else if (role === 'quant') {
       push(t('invest_field_buy_point'), pf.buyPointAssessment);
@@ -202,6 +202,7 @@
   onMount(() => {
     store.loadQueue();
     store.loadModeOverrides();
+    store.loadGlobalMacro();
   });
 </script>
 
@@ -346,23 +347,26 @@
         </div>
         <div>
           <div class="text-[11px] text-[var(--text-tertiary)]">{t('invest_cash')}</div>
-          <div class="text-[18px] font-bold font-[var(--font-mono)] text-[#8a9a76]">{formatCash(portfolioStats.cash)}</div>
+          <div class="text-[18px] font-bold font-[var(--font-mono)] text-[var(--flat)]">{formatCash(portfolioStats.cash)}</div>
         </div>
         <div>
           <div class="text-[11px] text-[var(--text-tertiary)]">{t('invest_committee_concentration')}</div>
-          <div class="text-[18px] font-bold font-[var(--font-mono)] {portfolioStats.concentration.pct > 30 ? 'text-[#b89a6a]' : 'text-[var(--text-primary)]'}">
+          <div class="text-[18px] font-bold font-[var(--font-mono)] {portfolioStats.concentration.pct > 30 ? 'text-[var(--color-warning)]' : 'text-[var(--text-primary)]'}">
             {portfolioStats.concentration.pct > 0 ? `${portfolioStats.concentration.name} ${portfolioStats.concentration.pct.toFixed(0)}%` : '—'}
           </div>
         </div>
         <div>
           <div class="text-[11px] text-[var(--text-tertiary)]">{t('invest_total_return')}</div>
-          <div class="text-[18px] font-bold font-[var(--font-mono)] {portfolioStats.ret >= 0 ? 'text-[#8a9a76]' : 'text-[#a87a7a]'}">
+          <div class="text-[18px] font-bold font-[var(--font-mono)] {portfolioStats.ret >= 0 ? 'text-[var(--up)]' : 'text-[var(--down)]'}">
             {portfolioStats.ret >= 0 ? '+' : ''}{portfolioStats.ret.toFixed(1)}%
           </div>
         </div>
       </div>
     </div>
   {/if}
+
+  <!-- 全局宏观判断卡片 -->
+  <GlobalMacroCard macro={store.globalMacro} onRefresh={() => store.refreshGlobalMacro()} />
 
   <!-- Symbol cards -->
   {#each allAssets as asset (asset.symbol)}
@@ -482,7 +486,19 @@
                     <span class="meta-item">✅ {t('invest_committee_converged')}</span>
                   {/if}
                 </div>
-                <MacroSnapshotCard snapshot={result.macroSnapshot} />
+                {#if result?.rounds}
+                  {@const macroRound = result.rounds.find(r => r.role === 'macro')}
+                  {#if macroRound?.parsed?.sensitivity}
+                    {@const sens = macroRound.parsed.sensitivity}
+                    <div class="sens-strip">
+                      <span class="sens-title">{t('invest_sensitivity_title')}</span>
+                      <span class="sens-badge {sens === 'positive' ? 'pos' : sens === 'negative' ? 'neg' : 'neu'}">
+                        {sens === 'positive' ? t('invest_sensitivity_pos') : sens === 'negative' ? t('invest_sensitivity_neg') : t('invest_sensitivity_neutral')}
+                      </span>
+                      <span class="sens-reason">{macroRound.parsed.sensitivityReason ?? ''}</span>
+                    </div>
+                  {/if}
+                {/if}
                 {#if result.sanityCheck.notes.length > 0}
                   <ul class="verdict-notes">
                     {#each result.sanityCheck.notes as note}
@@ -762,11 +778,11 @@
   .chip { font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: var(--radius-sm); text-transform: uppercase; }
   .chip.neutral { background: var(--bg-input); color: var(--text-secondary); font-weight: 600; text-transform: none; }
   .chip.warn { background: rgba(255,193,7,0.12); color: var(--color-warning); font-weight: 600; text-transform: none; }
-  .chip.sig-risk_on, .chip.sig-buy, .chip.sig-bullish { background: rgba(138,154,118,0.15); color: var(--color-success); }
-  .chip.sig-accumulate { background: rgba(59,130,246,0.15); color: var(--color-quant, #3b82f6); }
+  .chip.sig-risk_on, .chip.sig-buy, .chip.sig-bullish { background: rgba(197,111,98,0.15); color: var(--up); }
+  .chip.sig-accumulate { background: rgba(197,111,98,0.12); color: var(--up); }
   .chip.sig-hold, .chip.sig-neutral { background: rgba(196,169,110,0.15); color: var(--accent); }
-  .chip.sig-trim { background: rgba(255,193,7,0.15); color: var(--color-warning); }
-  .chip.sig-risk_off, .chip.sig-sell, .chip.sig-bearish, .chip.sig-high_risk { background: rgba(168,122,122,0.2); color: var(--color-error); }
+  .chip.sig-trim { background: rgba(127,157,109,0.15); color: var(--down); }
+  .chip.sig-risk_off, .chip.sig-sell, .chip.sig-bearish, .chip.sig-high_risk { background: rgba(127,157,109,0.2); color: var(--down); }
 
   /* Option A: structured field card */
   .confidence-meter { height: 5px; border-radius: 3px; background: var(--bg-input); overflow: hidden; margin-bottom: 10px; }
@@ -822,4 +838,14 @@
   .sentinel-override { font-size: 12px; color: var(--color-warning); }
 
   .empty-hint { padding: 32px; text-align: center; color: var(--text-tertiary); font-size: 13px; }
+
+  /* 行业敏感度小条 */
+  .sens-strip { display: flex; align-items: center; gap: 10px; padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm); background: var(--bg-hover); border: 1px solid var(--border); margin-top: var(--space-2); }
+  .sens-title { font-size: 10px; color: var(--text-tertiary); text-transform: uppercase; }
+  .sens-reason { font-size: 12px; color: var(--text-secondary); }
+  .sens-badge { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: var(--radius-sm); }
+  .sens-badge.pos { color: var(--up); background: rgba(197,111,98,0.18); }
+  .sens-badge.neg { color: var(--down); background: rgba(127,157,109,0.18); }
+  .sens-badge.neu { color: var(--flat); background: rgba(158,154,150,0.14); }
 </style>

@@ -3,6 +3,7 @@ pub mod domain_insights;
 pub mod dream_snapshots;
 pub mod events;
 pub mod macro_cache;
+pub mod macro_verdict;
 pub mod portfolio;
 pub mod scheduler;
 pub mod strategy;
@@ -344,6 +345,9 @@ fn init_db_inner(db_path: &Path) -> Result<Connection, String> {
 
     // Migration: create macro_cache table (use local conn, DB not yet in static)
     macro_cache::create_table(&conn)?;
+
+    // Migration: create macro_verdict table (全局宏观判断单行存储)
+    macro_verdict::create_table(&conn)?;
 
     // Migration: create stock_data_cache table (permanent per-symbol data cache)
     stock_data_cache::create_table(&conn)?;

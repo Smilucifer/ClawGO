@@ -10,12 +10,12 @@ export type VerdictKind = 'BUY' | 'ACCUMULATE' | 'HOLD' | 'TRIM' | 'SELL' | 'WAT
  * 接受 null/undefined（归档解析未匹配时），返回中性灰底。
  */
 export function getVerdictBadgeStyle(verdict: string | null | undefined): string {
-  if (verdict === 'BUY') return 'background:rgba(138,154,118,0.2); color:#8a9a76;';
-  if (verdict === 'ACCUMULATE') return 'background:rgba(59,130,246,0.2); color:#3b82f6;';
+  if (verdict === 'BUY') return 'background:rgba(197,111,98,0.2); color:var(--up);';
+  if (verdict === 'ACCUMULATE') return 'background:rgba(197,111,98,0.14); color:var(--up);';
   if (verdict === 'HOLD' || verdict === 'WATCH')
     return 'background:var(--accent-muted); color:var(--accent);';
-  if (verdict === 'TRIM') return 'background:rgba(245,158,11,0.2); color:#f59e0b;';
-  if (verdict === 'SELL') return 'background:rgba(168,122,122,0.2); color:#a87a7a;';
+  if (verdict === 'TRIM') return 'background:rgba(127,157,109,0.16); color:var(--down);';
+  if (verdict === 'SELL') return 'background:rgba(127,157,109,0.2); color:var(--down);';
   return 'background:var(--bg-input); color:var(--text-tertiary);';
 }
 

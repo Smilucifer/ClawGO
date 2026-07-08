@@ -148,6 +148,21 @@ pub fn default_jobs() -> Vec<CronJob> {
             description: "每日 05:05 将昨日清仓的持仓转换为关注".into(),
             dedicated: false,
         },
+        CronJob {
+            id: "macro_verdict".into(),
+            name: "全局宏观判断".into(),
+            // 开盘→收盘约每 20-30 分钟(错峰 macro_refresh 的 */15),含 11:05 上午读数与 14:55 收盘定版。
+            // 门禁(is_trading_session 9:30-11:30/13:00-15:00)挡掉 9:05、11:35、11:55 的废触发。
+            cron_expr: "0 5,35,55 9,10,11,13,14 * * 1-5".into(),
+            interval_min: None,
+            enabled: true,
+            requires_trading_day: true,
+            last_run: None,
+            next_run: None,
+            last_status: None,
+            description: "开盘时段每30分钟产出全局宏观判断(赚钱效应/市场阶段/signal)".into(),
+            dedicated: false,
+        },
     ]
 }
 
@@ -166,5 +181,10 @@ mod tests {
         assert!(pnl.enabled);
         assert!(pnl.requires_trading_day);
         assert!(!pnl.dedicated);
+    }
+
+    #[test]
+    fn test_macro_verdict_job_registered() {
+        assert!(default_jobs().iter().any(|j| j.id == "macro_verdict" && j.requires_trading_day));
     }
 }

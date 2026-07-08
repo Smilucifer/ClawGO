@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS macro_cache (
     fetched_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );";
 
-/// The 17 canonical macro indicators stored in this table.
+/// The 19 canonical macro indicators stored in this table.
 pub const ALL_INDICATORS: &[&str] = &[
     "sh_composite_close",
     "sh_composite_vol20",
@@ -29,6 +29,8 @@ pub const ALL_INDICATORS: &[&str] = &[
     "two_market_volume",
     "advance_count",
     "decline_count",
+    "up_over_3pct_count",
+    "flat_count",
 ];
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -157,6 +159,10 @@ pub struct MacroSnapshot {
     pub limit_up_count: Option<f64>,
     /// 跌停家数
     pub limit_down_count: Option<f64>,
+    /// 涨幅 > 3% 家数（赚钱效应基础）
+    pub up_over_3pct_count: Option<f64>,
+    /// 平盘家数
+    pub flat_count: Option<f64>,
 }
 
 /// 从 macro_cache 读取 10 个核心指标，构建快照。
@@ -174,7 +180,21 @@ pub fn build_macro_snapshot() -> Option<MacroSnapshot> {
         two_market_volume: get("two_market_volume"),
         limit_up_count: get("limit_up_count"),
         limit_down_count: get("limit_down_count"),
+        up_over_3pct_count: get("up_over_3pct_count"),
+        flat_count: get("flat_count"),
     })
+}
+
+/// 拼接广度批次戳 + macro_refresh 批次戳为确定性版本串。
+pub fn compose_data_version(breadth: Option<&str>, macro_batch: Option<&str>) -> String {
+    format!("b:{}|m:{}", breadth.unwrap_or("none"), macro_batch.unwrap_or("none"))
+}
+
+/// 读两个批次标记行的 fetched_at，组合为当前数据版本串。
+pub fn current_data_version() -> Result<String, String> {
+    let b = load_macro_cache("_breadth_batch")?.map(|e| e.fetched_at);
+    let m = load_macro_cache("_macro_batch")?.map(|e| e.fetched_at);
+    Ok(compose_data_version(b.as_deref(), m.as_deref()))
 }
 
 /// Check whether a cache entry is older than `max_age_minutes`.
@@ -248,5 +268,16 @@ mod tests {
             fetched_at: "not-a-date".into(),
         };
         assert!(is_stale(&entry, 60));
+    }
+
+    #[test]
+    fn test_compose_data_version() {
+        assert_eq!(
+            compose_data_version(Some("2026-07-08 01:35:00"), Some("2026-07-08 01:30:00")),
+            "b:2026-07-08 01:35:00|m:2026-07-08 01:30:00"
+        );
+        // 任一缺失 → 该段为 none，整体仍确定性可比
+        assert_eq!(compose_data_version(None, Some("2026-07-08 01:30:00")), "b:none|m:2026-07-08 01:30:00");
+        assert_eq!(compose_data_version(None, None), "b:none|m:none");
     }
 }
