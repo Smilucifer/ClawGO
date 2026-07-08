@@ -278,10 +278,12 @@ export class InvestCommitteeStore {
     this.globalMacro.refreshing = true;
     try {
       const msg = await invoke<string>('refresh_macro_verdict');
-      if (typeof msg === 'string' && msg.startsWith('skipped')) {
-        this.globalMacro.status = 'waiting';           // 非交易时段
-      }
       await this.loadGlobalMacro();
+      // 非交易时段:refresh 返回 "skipped",在 loadGlobalMacro 重算 status 之后覆盖为 waiting,
+      // 否则 _deriveMacroStatus 会把 waiting 冲成 ready/stale,用户看不到"等待开盘"。
+      if (typeof msg === 'string' && msg.startsWith('skipped')) {
+        this.globalMacro.status = 'waiting';
+      }
     } finally {
       this.globalMacro.refreshing = false;
     }
