@@ -15,11 +15,14 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::invest::premarket::crowding::{crowd_levels_for, CrowdLevel};
 use crate::invest::premarket::scoring::{
-    get_premarket_config, score, FactorBreakdown, PremarketConfig, SymbolScore,
+    get_premarket_config, score, FactorBreakdown, Grade, PremarketConfig, SymbolScore,
 };
+use crate::invest::premarket::sector_flow::{fetch_sector_flow, SectorFlow};
 use crate::storage::invest::macro_cache::{build_macro_snapshot, MacroSnapshot};
 use crate::storage::invest::portfolio::{self, Holding, HoldingKind};
+use crate::storage::invest::stock_industry;
 
 /// 单标的输入：`(symbol, name)`。默认从 holdings（Hold + Watch）聚合。
 fn collect_pool() -> Vec<(String, String)> {
@@ -385,6 +388,304 @@ fn render_ai_commentary_md(ai: &AiCommentary) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// 02 段：板块资金流入榜 + 拥挤度雷达
+// ---------------------------------------------------------------------------
+
+/// 02 段一条板块记录（写进 json / 前端消费）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SectorFlowEntry {
+    pub name: String,
+    /// 主力净流入 (亿元)
+    pub net_inflow: f64,
+    /// 板块涨跌幅 (%)
+    pub change_pct: Option<f64>,
+    /// 板块总成交额 (亿元)
+    pub total_turnover: Option<f64>,
+    /// 板块内上涨家数
+    pub advance_count: Option<i64>,
+    /// 板块内下跌家数
+    pub decline_count: Option<i64>,
+    /// 领涨股名
+    pub lead_stock: Option<String>,
+    /// 领涨股涨跌幅 (%)
+    pub lead_change_pct: Option<f64>,
+    /// 拥挤度: "healthy" / "warm" / "hot"
+    pub crowd_level: String,
+    /// 拥挤度三个 0-1 输入（供前端调试展示）
+    pub crowd_inputs: CrowdInputsOut,
+    /// 净流入横向条宽度：0-100 相对 Top1 归一
+    pub bar_width: f64,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CrowdInputsOut {
+    pub turnover_pct: f64,
+    pub volume_share: f64,
+    pub divergence: f64,
+}
+
+fn crowd_level_str(l: &CrowdLevel) -> &'static str {
+    match l {
+        CrowdLevel::Healthy => "healthy",
+        CrowdLevel::Warm => "warm",
+        CrowdLevel::Hot => "hot",
+    }
+}
+
+/// 板块列表 → 02 段结构。按 `net_inflow` 降序，取 `top_n`。
+///
+/// `bar_width` 归一：以列表首条（Top1 净流入）为满档 100。首条 <=0 时全部 0。
+fn build_sector_flows(sectors: &[SectorFlow], top_n: usize) -> Vec<SectorFlowEntry> {
+    if sectors.is_empty() {
+        return vec![];
+    }
+    // sectors 已在 Python 侧按 net_inflow 降序；防御性再排一次
+    let mut ordered: Vec<&SectorFlow> = sectors.iter().collect();
+    ordered.sort_by(|a, b| {
+        b.net_inflow
+            .partial_cmp(&a.net_inflow)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    // 计算拥挤度用完整分布（用整份 sectors 做分位/成交占比分母）
+    let crowd = crowd_levels_for(sectors);
+    // idx by name → crowd
+    use std::collections::HashMap;
+    let by_name: HashMap<&str, (&CrowdLevel, super::crowding::CrowdInputs)> = sectors
+        .iter()
+        .zip(crowd.iter())
+        .map(|(s, (lvl, inp))| (s.name.as_str(), (lvl, *inp)))
+        .collect();
+
+    let top_net = ordered.first().map(|s| s.net_inflow).unwrap_or(0.0);
+
+    ordered
+        .into_iter()
+        .take(top_n)
+        .map(|s| {
+            let (lvl, inp) = by_name
+                .get(s.name.as_str())
+                .copied()
+                .unwrap_or((&CrowdLevel::Healthy, super::crowding::CrowdInputs {
+                    turnover_pct: 0.5,
+                    volume_share: 0.0,
+                    divergence: 0.0,
+                }));
+            let bar_width = if top_net > 0.0 {
+                (s.net_inflow / top_net * 100.0).clamp(0.0, 100.0)
+            } else {
+                0.0
+            };
+            SectorFlowEntry {
+                name: s.name.clone(),
+                net_inflow: s.net_inflow,
+                change_pct: s.change_pct,
+                total_turnover: s.total_turnover,
+                advance_count: s.advance_count,
+                decline_count: s.decline_count,
+                lead_stock: s.lead_stock.clone(),
+                lead_change_pct: s.lead_change_pct,
+                crowd_level: crowd_level_str(lvl).to_string(),
+                crowd_inputs: CrowdInputsOut {
+                    turnover_pct: (inp.turnover_pct * 1000.0).round() / 1000.0,
+                    volume_share: (inp.volume_share * 1000.0).round() / 1000.0,
+                    divergence: (inp.divergence * 1000.0).round() / 1000.0,
+                },
+                bar_width: (bar_width * 100.0).round() / 100.0,
+                source: s.source.clone(),
+            }
+        })
+        .collect()
+}
+
+fn render_sector_flows_md(entries: &[SectorFlowEntry]) -> String {
+    if entries.is_empty() {
+        return "（当日板块资金流数据缺失）\n".to_string();
+    }
+    let mut md = String::new();
+    md.push_str("| 板块 | 净流入(亿) | 涨跌幅 | 拥挤度 | 领涨股 | 领涨股涨幅 | 上涨/下跌 |\n");
+    md.push_str("|------|-----------|--------|--------|--------|-----------|-----------|\n");
+    for e in entries {
+        let chg = e
+            .change_pct
+            .map(|v| format!("{v:+.2}%"))
+            .unwrap_or_else(|| "—".to_string());
+        let lead_chg = e
+            .lead_change_pct
+            .map(|v| format!("{v:+.2}%"))
+            .unwrap_or_else(|| "—".to_string());
+        let adv_dec = match (e.advance_count, e.decline_count) {
+            (Some(a), Some(d)) => format!("{a}/{d}"),
+            _ => "—".to_string(),
+        };
+        md.push_str(&format!(
+            "| {} | {:+.2} | {} | {} | {} | {} | {} |\n",
+            e.name,
+            e.net_inflow,
+            chg,
+            e.crowd_level,
+            e.lead_stock.as_deref().unwrap_or("—"),
+            lead_chg,
+            adv_dec,
+        ));
+    }
+    md
+}
+
+// ---------------------------------------------------------------------------
+// 03 段：主线（行业主题）排序 —— 纯 Rust 聚合
+// ---------------------------------------------------------------------------
+
+/// 03 段一条主线记录。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeEntry {
+    pub rank: u32,
+    pub name: String,
+    /// 池内命中的股票数（同一行业下的观察池标的数）
+    pub member_count: u32,
+    /// 组内舆论均值 (0-100)
+    pub sentiment: f64,
+    /// 组内资金均值 (0-100)
+    pub capital: f64,
+    /// 组内催化均值 (0-100)
+    pub catalyst: f64,
+    /// 组内技术均值 (0-100) —— 一并给出，避免前端只看到 3 因子
+    pub technical: f64,
+    /// 板块总分：与 score() 相同的权重公式（sentiment/capital/technical/catalyst）
+    pub total: f64,
+    /// SABC 评级：直接复用 score() 的阈值
+    pub grade: Grade,
+    /// 模板化摘要
+    pub reason: String,
+}
+
+fn grade_from_total(total: f64, cfg: &PremarketConfig) -> Grade {
+    if total >= cfg.threshold_s {
+        Grade::S
+    } else if total >= cfg.threshold_a {
+        Grade::A
+    } else if total >= cfg.threshold_b {
+        Grade::B
+    } else {
+        Grade::C
+    }
+}
+
+/// 观察池 scores 按 industry 聚合出 03 段主线排序。
+///
+/// 组内因子取算数平均；板块总分 = 复用 cfg 权重加权。
+/// `code_of` 传入函数：给 symbol → 6 位 code 的映射，用来查 stock_industry 表。
+fn build_themes(scores: &[SymbolScore], cfg: &PremarketConfig, top_n: usize) -> Vec<ThemeEntry> {
+    use std::collections::HashMap;
+
+    // industry_name → 该组的因子累加 + 计数
+    struct Bucket {
+        sent_sum: f64,
+        cap_sum: f64,
+        tech_sum: f64,
+        cat_sum: f64,
+        count: u32,
+    }
+    impl Bucket {
+        fn new() -> Self {
+            Self {
+                sent_sum: 0.0,
+                cap_sum: 0.0,
+                tech_sum: 0.0,
+                cat_sum: 0.0,
+                count: 0,
+            }
+        }
+    }
+
+    let mut buckets: HashMap<String, Bucket> = HashMap::new();
+    for s in scores {
+        // symbol 形如 "600519.SH" → 6 位 code
+        let code = s.symbol.split('.').next().unwrap_or(&s.symbol);
+        let industry = match stock_industry::industry_of(code) {
+            Ok(Some(name)) if !name.trim().is_empty() => name,
+            _ => continue, // 无行业映射 → 跳过（不落入"其他"，避免噪声）
+        };
+        let b = buckets.entry(industry).or_insert_with(Bucket::new);
+        b.sent_sum += s.factors.sentiment;
+        b.cap_sum += s.factors.capital;
+        b.tech_sum += s.factors.technical;
+        b.cat_sum += s.factors.catalyst;
+        b.count += 1;
+    }
+
+    let mut entries: Vec<ThemeEntry> = buckets
+        .into_iter()
+        .map(|(name, b)| {
+            let n = b.count as f64;
+            let sentiment = b.sent_sum / n;
+            let capital = b.cap_sum / n;
+            let technical = b.tech_sum / n;
+            let catalyst = b.cat_sum / n;
+            let total = sentiment * cfg.weight_sentiment
+                + capital * cfg.weight_capital
+                + technical * cfg.weight_technical
+                + catalyst * cfg.weight_catalyst;
+            let grade = grade_from_total(total, cfg);
+            let reason = format!(
+                "舆论 {:.0} / 资金 {:.0} / 催化 {:.0}, 池内 {} 只",
+                sentiment, capital, catalyst, b.count
+            );
+            ThemeEntry {
+                rank: 0, // 后面按 total 降序赋值
+                name,
+                member_count: b.count,
+                sentiment: (sentiment * 100.0).round() / 100.0,
+                capital: (capital * 100.0).round() / 100.0,
+                catalyst: (catalyst * 100.0).round() / 100.0,
+                technical: (technical * 100.0).round() / 100.0,
+                total: (total * 100.0).round() / 100.0,
+                grade,
+                reason,
+            }
+        })
+        .collect();
+
+    entries.sort_by(|a, b| {
+        b.total
+            .partial_cmp(&a.total)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    entries.truncate(top_n);
+    for (i, e) in entries.iter_mut().enumerate() {
+        e.rank = (i + 1) as u32;
+    }
+    entries
+}
+
+fn render_themes_md(themes: &[ThemeEntry]) -> String {
+    if themes.is_empty() {
+        return "（观察池无行业映射，主线暂缺）\n".to_string();
+    }
+    let mut md = String::new();
+    md.push_str("| 排名 | 主线 | 池内 | 总分 | 评级 | 舆论 | 资金 | 催化 | 技术 |\n");
+    md.push_str("|------|------|------|------|------|------|------|------|------|\n");
+    for t in themes {
+        md.push_str(&format!(
+            "| {} | {} | {} | {:.2} | {:?} | {:.0} | {:.0} | {:.0} | {:.0} |\n",
+            t.rank,
+            t.name,
+            t.member_count,
+            t.total,
+            t.grade,
+            t.sentiment,
+            t.capital,
+            t.catalyst,
+            t.technical,
+        ));
+    }
+    md
+}
+
+// ---------------------------------------------------------------------------
 // 主入口
 // ---------------------------------------------------------------------------
 
@@ -421,6 +722,24 @@ pub async fn generate_premarket_report(data_dir: &Path) -> Result<String, String
         scores.push(score(symbol, name, factors, missing, &cfg));
     }
 
+    // 3.5 板块资金流 + 拥挤度雷达（02 段）—— 尽力而为
+    let sector_flows_entries: Vec<SectorFlowEntry> = match fetch_sector_flow().await {
+        Ok(rows) if !rows.is_empty() => build_sector_flows(&rows, 10),
+        Ok(_) => {
+            log::warn!("[premarket] sector_flow returned empty; 02 段 fallback []");
+            vec![]
+        }
+        Err(e) => {
+            log::warn!("[premarket] fetch_sector_flow failed: {e}; 02 段 fallback []");
+            vec![]
+        }
+    };
+    let sector_flows_md = render_sector_flows_md(&sector_flows_entries);
+
+    // 3.6 主线（行业主题）排序（03 段）—— 纯 Rust 聚合
+    let themes: Vec<ThemeEntry> = build_themes(&scores, &cfg, 5);
+    let themes_md = render_themes_md(&themes);
+
     // 4. AI 点评（结构化 JSON；失败 → None，不影响分数）
     let news_block = build_news_block_for_ai();
     let ai = ai_commentary(&news_block).await;
@@ -438,6 +757,12 @@ pub async fn generate_premarket_report(data_dir: &Path) -> Result<String, String
     md.push_str("## 宏观快照\n\n");
     md.push_str(&macro_md);
     md.push('\n');
+    md.push_str("## 板块资金流入榜 (Top 10)\n\n");
+    md.push_str(&sector_flows_md);
+    md.push('\n');
+    md.push_str("## 主线排序 (Top 5)\n\n");
+    md.push_str(&themes_md);
+    md.push('\n');
     md.push_str("## SABC 观察池\n\n");
     md.push_str(&format!("共 {} 标的\n\n", scores.len()));
     md.push_str(&render_scores_md(&scores));
@@ -452,6 +777,8 @@ pub async fn generate_premarket_report(data_dir: &Path) -> Result<String, String
     let json = serde_json::json!({
         "date": date,
         "macro": macro_snapshot,
+        "sectorFlows": sector_flows_entries,
+        "themes": themes,
         "scores": scores,
         "config": cfg,
         "aiCommentary": ai,
