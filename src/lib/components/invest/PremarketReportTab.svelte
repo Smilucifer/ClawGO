@@ -730,6 +730,7 @@
      come from the [data-invest-scope] scope in src/app.css. */
 
   .premarket-tab {
+    --report-w: 1080px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -740,7 +741,7 @@
   .toolbar {
     display: flex;
     gap: var(--space-2);
-    width: 720px;
+    width: var(--report-w);
   }
   .btn {
     flex: 1;
@@ -771,7 +772,7 @@
   }
 
   .settings-panel {
-    width: 720px;
+    width: var(--report-w);
     padding: var(--space-3) var(--space-4);
     border: 1px solid var(--border);
     background: var(--bg-card);
@@ -796,7 +797,7 @@
   .save-msg { font-size: 11px; color: var(--text-secondary); }
 
   .err-strip {
-    width: 720px;
+    width: var(--report-w);
     padding: var(--space-2) var(--space-3);
     border: 1px solid var(--color-error);
     border-radius: var(--radius-sm);
@@ -806,7 +807,7 @@
   }
 
   .empty {
-    width: 720px;
+    width: var(--report-w);
     padding: 40px var(--space-4);
     text-align: center;
     color: var(--text-tertiary);
@@ -818,7 +819,7 @@
 
   /* ── Report canvas (exact copy of demo) ─────────────────── */
   #report-canvas {
-    width: 720px;
+    width: var(--report-w);
     padding: var(--space-4);
     background: var(--bg-base);
     border-radius: var(--radius-lg);
@@ -859,7 +860,7 @@
   .section-tag { font-size: 10px; color: var(--text-tertiary); margin-left: auto; }
 
   /* 01 舆情标签墙 */
-  .theme-wall { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-2); }
+  .theme-wall { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-2); }
   .theme-tag-card {
     display: flex; flex-direction: column; gap: var(--space-2);
     padding: var(--space-3);
