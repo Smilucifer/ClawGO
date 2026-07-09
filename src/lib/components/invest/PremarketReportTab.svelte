@@ -1,11 +1,12 @@
 <script lang="ts">
   /**
    * 盘前观察 tab — reads the latest premarket report JSON via Tauri commands
-   * and renders the four-section long image (`#report-canvas`, fixed 720px).
+   * and renders the four-section long image (`#report-canvas`, width var --report-w).
    *
-   * Toolbar: 立即生成 (trigger_cron_job "premarket_report") / 导出 PNG (html2canvas)
-   * / 导出 PDF (jspdf). Collapsible settings panel edits the 4 weights + 3
-   * thresholds via `save_premarket_config_cmd`.
+   * Generation state lives in premarket-store (survives tab switches); toolbar shows
+   * elapsed time. 导出 PNG/PDF (html2canvas + jsPDF) 走 Tauri save() + write_binary_export.
+   * Collapsible settings panel edits the 4 weights + 3 thresholds via
+   * `save_premarket_config_cmd`.
    *
    * Class names / tokens are copied 1:1 from
    * `docs/ui-demo/premarket-report-demo.html`.
@@ -424,7 +425,7 @@
     <div class="err-strip">{errorMsg}</div>
   {/if}
 
-  <!-- Report canvas (720px, export target) -->
+  <!-- Report canvas (width var --report-w, export target) -->
   {#if !report}
     <div class="empty">
       {loading ? t('invest_loading') : t('invest_premarket_empty')}
