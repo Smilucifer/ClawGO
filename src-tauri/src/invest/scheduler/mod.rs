@@ -176,6 +176,34 @@ pub fn default_jobs() -> Vec<CronJob> {
             description: "开盘时段每30分钟产出全局宏观判断(赚钱效应/市场阶段/signal)".into(),
             dedicated: false,
         },
+        CronJob {
+            id: "premarket_cache".into(),
+            name: "盘后SABC缓存".into(),
+            // 盘后 16:30 工作日:收盘后拉全市场,粗筛≤200,算四因子落表
+            cron_expr: "0 30 16 * * 1-5".into(),
+            interval_min: None,
+            enabled: true,
+            requires_trading_day: true,
+            last_run: None,
+            next_run: None,
+            last_status: None,
+            description: "盘后批量拉全市场→粗筛→四因子→premarket_factor_cache".into(),
+            dedicated: false,
+        },
+        CronJob {
+            id: "sentiment_collector".into(),
+            name: "舆情定时采集".into(),
+            // 每小时采集外部舆情 + 串联归一化打标(非交易日也采,覆盖周末消息)
+            cron_expr: "0 0 * * * *".into(),
+            interval_min: None,
+            enabled: true,
+            requires_trading_day: false,
+            last_run: None,
+            next_run: None,
+            last_status: None,
+            description: "每小时采集外部舆情并归一化打标(全市场口径)".into(),
+            dedicated: false,
+        },
     ]
 }
 

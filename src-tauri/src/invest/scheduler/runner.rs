@@ -127,6 +127,19 @@ pub async fn dispatch_job(id: &str) -> Result<String, String> {
             let path = crate::invest::premarket::report::generate_premarket_report(&data_dir).await?;
             Ok(format!("盘前报告生成: {}", path))
         }
+        "premarket_cache" => {
+            let (td, n) = crate::invest::premarket::cache_builder::build_cache().await?;
+            Ok(format!("盘后缓存: {} 共 {} 候选", td, n))
+        }
+        "sentiment_collector" => {
+            // collect_all_sentiment 内部已 loop analyze_pending 到 total_pending==0
+            // (sentiment.rs L154-172),故采集即含归一化打标,无需再单独调 analyze_pending。
+            let r = crate::invest::sentiment::collect_all_sentiment(None, 30).await?;
+            Ok(format!(
+                "舆情采集+归一化: 待处理 {}, 打标 {}, 跳过 {}",
+                r.total_pending, r.analyzed, r.skipped
+            ))
+        }
         _ => Err(format!("Unknown job: {}", id)),
     }
 }
