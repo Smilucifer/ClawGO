@@ -21,12 +21,6 @@ describe('PremarketStore timer', () => {
     expect(s.completionSeq).toBe(seq0 + 1);
   });
 
-  it('elapsedSec computes whole seconds from startedAt', () => {
-    const s = new PremarketStore();
-    s.markStart(1000);
-    expect(s.elapsedSec(5500)).toBe(4);
-  });
-
   it('markFinish with error stores message, still bumps seq', () => {
     const s = new PremarketStore();
     s.markStart(0);

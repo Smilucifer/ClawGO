@@ -232,23 +232,29 @@
     }
   });
 
-  async function exportPng() {
+  // 公共导出流程:截图 report-canvas → 转 base64 → Tauri save() 落盘。
+  // toBase64 负责把 canvas 转成对应格式的 base64(去掉 data-URI 头)。
+  async function captureAndSave(ext: 'png' | 'pdf', toBase64: (c: HTMLCanvasElement) => string) {
     const el = document.getElementById('report-canvas');
     if (!el) return;
+    const canvas = await html2canvas(el, {
+      scale: 2,
+      backgroundColor: getComputedStyle(el).backgroundColor || '#1a1918',
+      useCORS: true,
+    });
+    const base64 = toBase64(canvas);
+    const { save } = await import('@tauri-apps/plugin-dialog');
+    const path = await save({
+      defaultPath: `premarket_${report?.date ?? latestDate ?? 'report'}.${ext}`,
+      filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+    });
+    if (path) await invoke<void>('write_binary_export', { path, base64 });
+  }
+
+  async function exportPng() {
     exportingPng = true;
     try {
-      const canvas = await html2canvas(el, {
-        scale: 2,
-        backgroundColor: getComputedStyle(el).backgroundColor || '#1a1918',
-        useCORS: true,
-      });
-      const base64 = canvas.toDataURL('image/png').split(',')[1];
-      const { save } = await import('@tauri-apps/plugin-dialog');
-      const path = await save({
-        defaultPath: `premarket_${report?.date ?? latestDate ?? 'report'}.png`,
-        filters: [{ name: 'PNG', extensions: ['png'] }],
-      });
-      if (path) await invoke<void>('write_binary_export', { path, base64 });
+      await captureAndSave('png', (c) => c.toDataURL('image/png').split(',')[1]);
     } catch (e) {
       console.error('[premarket] exportPng:', e);
       errorMsg = String(e);
@@ -258,28 +264,17 @@
   }
 
   async function exportPdf() {
-    const el = document.getElementById('report-canvas');
-    if (!el) return;
     exportingPdf = true;
     try {
-      const canvas = await html2canvas(el, {
-        scale: 2,
-        backgroundColor: getComputedStyle(el).backgroundColor || '#1a1918',
-        useCORS: true,
+      await captureAndSave('pdf', (c) => {
+        const pdf = new jsPDF({
+          unit: 'px',
+          format: [c.width, c.height],
+          orientation: c.width >= c.height ? 'landscape' : 'portrait',
+        });
+        pdf.addImage(c.toDataURL('image/png'), 'PNG', 0, 0, c.width, c.height);
+        return pdf.output('datauristring').split(',')[1];
       });
-      const pdf = new jsPDF({
-        unit: 'px',
-        format: [canvas.width, canvas.height],
-        orientation: canvas.width >= canvas.height ? 'landscape' : 'portrait',
-      });
-      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, canvas.width, canvas.height);
-      const base64 = pdf.output('datauristring').split(',')[1];
-      const { save } = await import('@tauri-apps/plugin-dialog');
-      const path = await save({
-        defaultPath: `premarket_${report?.date ?? latestDate ?? 'report'}.pdf`,
-        filters: [{ name: 'PDF', extensions: ['pdf'] }],
-      });
-      if (path) await invoke<void>('write_binary_export', { path, base64 });
     } catch (e) {
       console.error('[premarket] exportPdf:', e);
       errorMsg = String(e);

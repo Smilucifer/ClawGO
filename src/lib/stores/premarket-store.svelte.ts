@@ -11,7 +11,6 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 export class PremarketStore {
   generating = $state<boolean>(false);
   startedAt = $state<number>(0);
-  elapsedMs = $state<number>(0);
   lastElapsedMs = $state<number>(0);
   lastError = $state<string | null>(null);
   /** 每次生成完成自增;组件 $effect 观察它触发 loadLatest。 */
@@ -20,25 +19,14 @@ export class PremarketStore {
   markStart(now: number): void {
     this.generating = true;
     this.startedAt = now;
-    this.elapsedMs = 0;
     this.lastError = null;
-  }
-
-  /** 秒表 tick:更新 elapsedMs(组件每秒调一次)。 */
-  tick(now: number): void {
-    if (this.generating) this.elapsedMs = now - this.startedAt;
   }
 
   markFinish(err: string | null, now: number): void {
     this.lastElapsedMs = now - this.startedAt;
-    this.elapsedMs = this.lastElapsedMs;
     this.lastError = err;
     this.generating = false;
     this.completionSeq += 1;
-  }
-
-  elapsedSec(now: number): number {
-    return Math.floor((now - this.startedAt) / 1000);
   }
 
   /** 完整生成生命周期:优先 cron dispatcher,失败回退 direct;结束 markFinish。 */

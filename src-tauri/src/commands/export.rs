@@ -42,19 +42,12 @@ pub async fn write_html_export(path: String, content: String) -> Result<(), Stri
         content.len()
     );
 
-    let ext = Path::new(&path)
-        .extension()
-        .and_then(|s| s.to_str())
-        .map(|s| s.to_ascii_lowercase());
-    match ext.as_deref() {
-        Some("html") | Some("htm") => {}
-        _ => {
-            log::error!(
-                "[export] write_html_export rejected non-html path: {}",
-                path
-            );
-            return Err("write_html_export: only .html/.htm paths allowed".into());
-        }
+    if !export_ext_allowed(&path, &["html", "htm"]) {
+        log::error!(
+            "[export] write_html_export rejected non-html path: {}",
+            path
+        );
+        return Err("write_html_export: only .html/.htm paths allowed".into());
     }
 
     tokio::fs::write(&path, content).await.map_err(|e| {
@@ -63,13 +56,13 @@ pub async fn write_html_export(path: String, content: String) -> Result<(), Stri
     })
 }
 
-/// 导出写盘白名单:仅 .png / .pdf(大小写不敏感)。
-fn binary_export_ext_ok(path: &str) -> bool {
+/// 导出写盘扩展名白名单校验(大小写不敏感)。allowed 传小写扩展名列表。
+fn export_ext_allowed(path: &str, allowed: &[&str]) -> bool {
     Path::new(path)
         .extension()
         .and_then(|s| s.to_str())
         .map(|s| s.to_ascii_lowercase())
-        .is_some_and(|e| e == "png" || e == "pdf")
+        .is_some_and(|e| allowed.contains(&e.as_str()))
 }
 
 /// 把 base64 编码的二进制(PNG/PDF)解码后写入用户选定路径。
@@ -82,7 +75,7 @@ pub async fn write_binary_export(path: String, base64: String) -> Result<(), Str
         path,
         base64.len()
     );
-    if !binary_export_ext_ok(&path) {
+    if !export_ext_allowed(&path, &["png", "pdf"]) {
         log::error!("[export] write_binary_export rejected path: {}", path);
         return Err("write_binary_export: only .png/.pdf paths allowed".into());
     }
@@ -100,19 +93,19 @@ pub async fn write_binary_export(path: String, base64: String) -> Result<(), Str
 
 #[cfg(test)]
 mod tests {
-    use super::binary_export_ext_ok;
+    use super::export_ext_allowed;
 
     #[test]
     fn accepts_png_and_pdf_case_insensitive() {
-        assert!(binary_export_ext_ok("C:/tmp/a.png"));
-        assert!(binary_export_ext_ok("/tmp/a.PDF"));
-        assert!(binary_export_ext_ok("report.Png"));
+        assert!(export_ext_allowed("C:/tmp/a.png", &["png", "pdf"]));
+        assert!(export_ext_allowed("/tmp/a.PDF", &["png", "pdf"]));
+        assert!(export_ext_allowed("report.Png", &["png", "pdf"]));
     }
 
     #[test]
     fn rejects_other_extensions() {
-        assert!(!binary_export_ext_ok("a.exe"));
-        assert!(!binary_export_ext_ok("a.html"));
-        assert!(!binary_export_ext_ok("noext"));
+        assert!(!export_ext_allowed("a.exe", &["png", "pdf"]));
+        assert!(!export_ext_allowed("a.html", &["png", "pdf"]));
+        assert!(!export_ext_allowed("noext", &["png", "pdf"]));
     }
 }

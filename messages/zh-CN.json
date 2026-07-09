@@ -325,7 +325,6 @@
 
   "invest_system_sub_cron": "定时任务",
   "invest_system_sub_events": "事件",
-  "invest_system_sub_reports": "盘前观察",
   "invest_premarket_title": "明日盘前观察",
   "invest_premarket_subtitle": "外部新闻先验 × 主力资金双重确认 × 明日主线预排序 × 观察池分级",
   "invest_premarket_session_badge": "下一交易日 · 盘前",
