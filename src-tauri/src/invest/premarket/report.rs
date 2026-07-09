@@ -114,7 +114,7 @@ fn render_scores_md(scores: &[SymbolScore]) -> String {
 ///
 /// - **舆论**：sentiment_hint 均值（-1..1 → 0-100）。
 /// - **催化**：3 日内关联条数 × 10，上限 100（10 条即封顶，避免噪声堆积）。
-fn compute_sentiment_and_catalyst(code: &str) -> (Option<f64>, Option<f64>) {
+pub(crate) fn compute_sentiment_and_catalyst(code: &str) -> (Option<f64>, Option<f64>) {
     let since = (chrono::Local::now() - chrono::Duration::days(3))
         .format("%Y-%m-%d %H:%M:%S")
         .to_string();
@@ -214,7 +214,7 @@ async fn compute_capital(symbol: &str) -> Option<f64> {
 /// - regime 基分：uptrend=75 / range_bound=55 / downtrend=35 / crash=15 / unknown=50。
 /// - RSI 修正：50±(rsi-50)×0.4（RSI 极端往中位靠拢，避免超买/超卖时过高分）。
 /// - 2年分位加成：分位 <0.2 或 >0.8 时轻微扣分（过热/过冷）。
-async fn compute_technical(symbol: &str) -> Option<f64> {
+pub(crate) async fn compute_technical(symbol: &str) -> Option<f64> {
     let client = match crate::tushare::client::TushareClient::from_settings() {
         Ok(c) => c,
         Err(e) => {
