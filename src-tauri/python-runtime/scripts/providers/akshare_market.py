@@ -156,3 +156,61 @@ def market_advance_decline(date: str = "") -> dict:
         import sys
         print(f"[akshare_market] market_advance_decline error: {e}", file=sys.stderr)
         return {}
+
+
+def _latest_futures_foreign(symbol: str) -> dict:
+    """Helper: fetch latest close from foreign futures (VIX=VX, gold=GC, oil=CL)."""
+    try:
+        import akshare as ak
+    except ImportError:
+        return {}
+    try:
+        df = ak.futures_foreign_hist(symbol=symbol)
+    except Exception:
+        return {}
+    if df is None or df.empty:
+        return {}
+    df = df.dropna(subset=["close"])
+    if df.empty:
+        return {}
+    return {"value": round(float(df.iloc[-1]["close"]), 4)}
+
+
+def overseas_vix() -> dict:
+    """Fetch latest VIX (CBOE Volatility Index) via futures_foreign_hist."""
+    return _latest_futures_foreign("VX")
+
+
+def overseas_gold() -> dict:
+    """Fetch latest gold futures price (COMEX GC) via futures_foreign_hist."""
+    return _latest_futures_foreign("GC")
+
+
+def overseas_oil() -> dict:
+    """Fetch latest crude oil futures price (NYMEX CL) via futures_foreign_hist."""
+    return _latest_futures_foreign("CL")
+
+
+def overseas_usdcny() -> dict:
+    """Fetch USD/CNY spot rate via akshare fx_spot_quote.
+
+    Returns {"value": float} or {} on failure.
+    """
+    try:
+        import akshare as ak
+    except ImportError:
+        return {}
+    try:
+        df = ak.fx_spot_quote()
+    except Exception:
+        return {}
+    if df is None or df.empty:
+        return {}
+    # Columns: '货币对', '买报价', '卖报价' (verified against bundled akshare 1.18.64)
+    row = df[df["货币对"].astype(str).str.contains("USD/CNY", na=False)]
+    if row.empty:
+        return {}
+    try:
+        return {"value": round(float(row.iloc[0]["买报价"]), 4)}
+    except (ValueError, KeyError, TypeError):
+        return {}

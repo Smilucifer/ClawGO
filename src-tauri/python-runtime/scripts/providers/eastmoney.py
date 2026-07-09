@@ -157,3 +157,45 @@ def quote(symbol: str) -> dict:
         "previous_close": round(prev_close, 3),
         "timestamp": int(datetime.now().timestamp()),
     }
+
+
+def overseas_indicator(secid: str) -> dict:
+    """Fetch an overseas indicator (DXY / US10Y) from EastMoney push2.
+
+    secid examples: "100.UDI" (美元指数), "171.US10Y" (美国10年期国债收益率).
+    Decodes value = f43 / 10**f59 (dynamic decimals — NOT the /100 used for A-shares).
+    Returns {"value": float, "name": str, "change_pct": float} or {} on failure.
+    """
+    url = "https://push2.eastmoney.com/api/qt/stock/get"
+    params = {
+        "secid": secid,
+        "fields": "f43,f57,f58,f59,f170",
+        "ut": "fa5fd1943c7b386f172d6893dbbd1d0c",
+    }
+    session = _session.get()
+    if session is None:
+        return {}
+    try:
+        resp = session.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json().get("data", {})
+    except Exception:
+        return {}
+    if not data:
+        return {}
+    raw = data.get("f43")
+    dec = data.get("f59")
+    if raw is None or dec is None:
+        return {}
+    try:
+        value = float(raw) / (10 ** int(dec))
+    except (ValueError, TypeError):
+        return {}
+    # f170 change_pct encoded as integer * 100 (2 decimal places)
+    chg_raw = data.get("f170")
+    change_pct = (float(chg_raw) / 100.0) if chg_raw is not None else 0.0
+    return {
+        "value": round(value, 4),
+        "name": data.get("f58", secid),
+        "change_pct": round(change_pct, 2),
+    }
