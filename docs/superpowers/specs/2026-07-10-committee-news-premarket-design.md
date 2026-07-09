@@ -79,8 +79,18 @@
 
 **实现**:
 - 新建 `src-tauri/src/storage/invest/news_cleanup.rs`,内含两个删除函数 + 单测(用 in-memory / 临时 DB 验证:超期未触发被删、已触发/high 保留、7 天内保留)。
-- 在 `invest/scheduler/mod.rs` 的 `default_jobs` 增加第 14 个 cron(如 `0 30 3 * * *`,每日凌晨盘后),在 `runner.rs` 增加 dispatch 分支调用清理函数。
+- 在 `invest/scheduler/mod.rs` 的 `default_jobs` 追加一条清理 cron(每日凌晨,如 `0 30 3 * * *`;序号视合入顺序而定),在 `runner.rs` 增加 dispatch match 分支调用清理函数。
 - 交易日限制:否(清理不必限交易日)。
+
+### A6 — 盘前 cron 时序订正(盘前报告改前一晚生成)
+
+**目标**: 修正两个盘前 cron 的触发时机,让盘前报告在**交易日前一晚**就备好,用户早上打开即见,不必等当天早上现生成。
+
+**变更**(实现阶段以 `scheduler/mod.rs` 代码现值为准核对,不在 spec 写死):
+- **盘后因子缓存 `premarket_cache`**: 下午收盘后 **16:30** 触发(收盘 15:00 后板块资金流/moneyflow 已为当日终值),`requires_trading_day: true`。`build_cache` 算好五因子(含 B5 sector)存 `premarket_factor_cache`。
+- **盘前报告 `premarket_report`**: 改为**每个交易日的前一晚 ~21:00** 自动生成(不再是当天早上)。即"为下一个交易日生成预期报告"。
+- **交易日历语义(关键)**: "前一晚"要用交易日历判断——今晚生成的报告服务于**下一个交易日**。周五晚上生成的是下周一(或下个交易日)的;节假日前最后一个交易日晚上生成的是节后第一个交易日的。实现需查交易日历确认"今晚之后的下一个交易日",而非简单 +1 天。
+- 报告日期标注为其服务的**目标交易日**,不是生成当晚的日历日。
 
 ---
 
@@ -208,10 +218,16 @@
 - **多板块取值**: 取该股所属板块中单板块得分最高的 **top-2 加权**(`0.7×最强 + 0.3×次强`),**不取 max**(避免概念多的蹭热点小票因秩序统计偏差被系统性抬升)。
 - **兜底**: 无板块归属(次新股/映射缺失)→ 给**当日全市场 sector 分的中位数**(动态中性,弱市自动下移),不固定 50。实现时先打印映射覆盖率作为验收(目标 >80%),并打印 industry 分 vs concept 分分布确认量纲可比。
 
+**盘后预缓存(关键:板块强度进盘后缓存链路,不盘前现拉)**:
+- 现有架构:四因子在**盘后 `premarket_cache` cron** 由 `build_cache` 全部算好,存入 `premarket_factor_cache` 表;盘前报告只**读缓存**做线性合成,不重算个股因子。
+- 板块强度因子**并入这条盘后缓存链路**:在 `build_cache` 里(遍历候选算四因子的同一轮)一次性拉 B5 东财板块强度 + 查 `stock_board_map` 映射 + 算出每只 `sector_strength`,和四因子一起写入缓存。时序天然成立——板块当日资金流 15:00 收盘后即为终值,盘后缓存时点数据完整。
+- **缓存粒度(用户确认)**: `premarket_factor_cache` **只加一列 `sector_strength REAL`**(个股最终板块得分),不存板块名。代价:盘前展示不了"命中哪个板块名",因子标签只显示"板块强"。
+- `CachedFactor`(`storage/invest/premarket_cache.rs`)+ 表 schema 同步加 `sector_strength` 列(`ALTER TABLE ... ADD COLUMN sector_strength REAL DEFAULT <中性>`);`upsert`/`load` 的 SQL 同步。
+
 **并入打分**:
-- `FactorBreakdown`(`scoring.rs`,**注:结构体现名 `FactorBreakdown` 而非 `FactorScores`**)新增字段 `sector_strength: f64`;`CachedFactor`(`storage/invest/premarket_cache.rs`)与 `premarket_factor_cache` 表同步加列(`ALTER TABLE` 迁移,旧行默认中性)。
+- `FactorBreakdown`(`scoring.rs`,**注:结构体现名 `FactorBreakdown` 而非 `FactorScores`**)新增字段 `sector_strength: f64`。
 - 五因子加权(见 B2 固定权重,**sector 占 0.15**,不是 0.25)。
-- 前端 `types.ts` 同步加 `sectorStrength` 字段;04 模块因子标签增一个"板块强"chip(`sector_strength >= 60` 时显示)。
+- **前端类型内联在 `PremarketReportTab.svelte`(不在 `types.ts`)**:该组件内联的 `FactorBreakdown` 加 `sectorStrength`、`PremarketConfig` 加 `weight_sector`。04 模块因子标签增一个"板块强"chip(`sector_strength >= 60` 时显示)。
 
 **V1 / V2 分界**:
 - **V1(本轮)**: **当日**板块强度(相对分位 + ex-self + 板块内相对强度)。上述修正把 V1 从"纯追高的残缺形态"变为"去循环、与 capital 正交的可信开局"。
@@ -246,7 +262,8 @@
 - `src-tauri/src/storage/invest/sentiment.rs` — 新增 `list_recent_sentiment(conn, limit)`(A1)。
 - `src-tauri/src/storage/invest/news_cleanup.rs` — 新建(A4 清理 + 单测)。
 - `src-tauri/src/storage/invest/stock_board_map.rs` — 新建(B5 一对多板块映射表 `stock_board_map` + CRUD)。
-- `src-tauri/src/invest/scheduler/mod.rs` + `runner.rs` — 新增清理 cron(A4)+ 板块映射低频刷新 cron(B5,每周一次);均需手动加 dispatch match 分支。
+- `src-tauri/src/invest/scheduler/mod.rs` + `runner.rs` — 新增清理 cron(A4)+ 板块映射低频刷新 cron(B5,每周一次);**订正 `premarket_report` cron 为前一晚 ~21:00、`premarket_cache` 为盘后 16:30(A6)**;均需手动加 dispatch match 分支。
+- `src-tauri/src/invest/premarket/report.rs`(A6 目标交易日逻辑)— 盘前报告日期改按"下一个交易日"标注,查交易日历。
 - `src-tauri/src/invest/premarket/cache_builder.rs` — `select_candidates` 多信号化 + S2 降级(B1);build_cache 里加 B5 专用东财板块强度取数 + 板块强度分位归一 + 个股 `相对强度×ex-self` top-2 加权(B5)。
 - `src-tauri/src/invest/premarket/scoring.rs` — `PremarketConfig` 五因子权重(加 `weight_sector`)+ `weight_source` + `enable_ai_review`;`FactorBreakdown`(现名,非 `FactorScores`)加 `sector_strength`;`AiReview` 结构(serde 需处理 `risk_flag` snake_case ↔ 前端 camelCase,见 B3 契约)+ `SymbolScore.ai_review`;废弃绝对阈值切档改名次切档(**仅 B4**)。
 - `src-tauri/src/storage/invest/premarket_cache.rs` — `CachedFactor` 加 `sector_strength` 字段 + `premarket_factor_cache` 表 `ALTER TABLE` 加列(B5,spec 早期漏列的迁移点)。
