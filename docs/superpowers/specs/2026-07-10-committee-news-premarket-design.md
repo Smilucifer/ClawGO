@@ -15,6 +15,15 @@
 
 三个后台研究(命中率闭环、候选池+权重、AI 复核)已确认:选池的历史反馈链目前是断的(盘前池从未被登记追踪),因此任何"用历史命中率反馈进选池"的方案都需先补数据存档再攒样本,本轮不做。本轮只做**不依赖历史数据、立刻见效**的三项选池优化。
 
+## 实施拆分建议
+
+本 spec 覆盖 7 块,建议在 writing-plans 阶段**拆成两份实施计划**,理由:验证节奏不同(UI 当天可目视验收,选池 KPI 需多交易日)、文件耦合不同(选池四块都改 `scoring.rs`/`report.rs`,需串行)。
+
+- **Plan 1 — UI 组**: A1(双列新闻/舆论)+ A3(01 自适应)+ A4(7 天清理)。三块彼此近乎独立,可并行。
+- **Plan 2 — 选池组**: B4(名次切档)→ B1(候选多信号)→ B2(regime 权重)→ B3(AI 复核)。**B4 最先做**——它最独立、最低风险,拿现有 `SymbolScore.total` 即可切档,且最直接兑现"观察池=最强 20 只"的核心洞察;B1/B2/B3 在已改成名次切档的稳定视图上迭代打分逻辑。
+
+两份 plan 独立实施、独立发版、独立可回滚。
+
 ---
 
 ## A. UI / 功能改动
@@ -34,16 +43,17 @@
 - **右列 = 新闻/舆论**: 其他来源的紧凑流式列表,与左列同密度。来源包括公告(`events` 表 `source='tushare_anns_d'`)、个股新闻(`events` 表 `source LIKE 'akshare:%'`)、舆情(`sentiment_items` 表)。每条:小来源标签(东财公告=金 / 个股=灰 / 雪球=青蓝)+ 标题 + 一行灰色摘要 + 立场 + 标的 + 时间。顶部筛选 chip:全部 / 公告 / 个股新闻 / 雪球舆情。
 - 右列**不做垂直分组堆叠**(避免数据一多难以滚动定位),来源区分靠顶部筛选 chip + 每条的小来源标签。
 - 两列各自 `overflow-y-auto`,独立滚动。顶部保留现有状态栏(总数/高/待触发/最新)+「立即扫描」按钮,横跨两列。
+- **窄屏断点**: `@media (max-width: 900px)` 时双列折叠为上下堆叠(左列在上、右列在下),各自仍独立滚动;避免两列被挤成极窄流。
 
 **组件重构** (`src/lib/components/invest/`):
 - 将 `EventWatchTab.svelte` 重构为双列容器,建议拆出两个子组件 `NewsFlashColumn.svelte`(左)与 `NewsDigestColumn.svelte`(右),各自持有筛选状态与滚动容器。
 - 数据来源:
   - 左列复用 `investStore.fetchEvents()` 结果,前端按 `source==='jinshi_flash'` 过滤。
   - 右列的公告/个股新闻同样从 events 结果按 source 过滤;舆情需要新增读取路径(见下)。
-- **舆情数据接入**: `sentiment_items` 表目前无前端读取命令。需在 `commands/invest.rs` 新增 `get_sentiment_items(limit)` 命令(调 `storage::invest::sentiment` 已有的列举函数),并在 `invest-store` 增加 `fetchSentimentItems()` + state。若本轮暂不接舆情真实数据,右列可先只展示公告+个股新闻,舆情列为空态占位——**决策:本轮接入 `get_sentiment_items` 读现有表,有数据即显示**(表已由 `sentiment_collector` cron 每小时写入)。
+- **舆情数据接入**: `sentiment_items` 表目前无前端读取路径,且 `storage::invest::sentiment` **没有**"取最近 N 条"的通用列举函数(现有只有 `list_sentiment_by_symbol` / `list_sentiment_by_sectors`)。因此需:① 在 `storage/invest/sentiment.rs` 新增 `list_recent_sentiment(conn, limit)`(按 `created_at` 倒序,已有 `idx_sentiment_created` 索引支撑);② 在 `commands/invest.rs` 新增 `get_sentiment_items(limit)` 命令调它;③ 在 `invest-store` 增加 `fetchSentimentItems()` + state。**决策:本轮接入,读现有表,有数据即显示**(表已由 `sentiment_collector` cron 每小时写入);表为空时右列公告+个股新闻照常,舆情类筛选显示空态。
 - **雪球 scrapling 抓取不在本轮范围**(见 memory `project_xueqiu-scrapling-waf`),右列消费 `sentiment_items` 现有内容即可。
 
-**i18n**: 新增 `news.*` 键(列标题、筛选 chip、来源标签、空态),`en.json` 与 `zh-CN.json` 同步。保留原 `invest.eventWatch.*` 中仍复用的键;移除 `invest_system_sub_events`(或保留但不再引用)。
+**i18n**: sub-tab label 键遵循现有模式,新增 `invest_committee_sub_news`(与 `invest_committee_sub_live/replay/...` 一致);另新增内容区 `news.*` 键(列标题、筛选 chip、来源标签、空态)。`en.json` 与 `zh-CN.json` 同步。保留原 `invest.eventWatch.*` 中仍复用的键;移除 `invest_system_sub_events` 引用。
 
 ### A3 — 盘前 01 模块(舆论/新闻先验)自适应布局
 
@@ -54,7 +64,8 @@
 - n = 5 → 第一个占满整行(`grid-column: 1 / -1`)+ 第二行 4 等分(**1+4 布局**)。
 - n ≥ 6 → 每行 3 列(`repeat(3, 1fr)`)。
 - 带"风险预警"标签的卡保留现有 `grid-column: 1 / -1`(占满整行)逻辑。
-- 实现方式:根据 `commentary.sectors.length` 动态设置容器的 `grid-template-columns`,5 张时对第一张单独加占满类。用 CSS `:has()` 或在 Svelte 里按 length 计算 class,择其一(实现阶段定)。
+- **风险卡与 1+4 的冲突消解**: 若卡片集合中存在风险卡,**优先按风险卡规则排**(风险卡各自占满整行),其余非风险卡按每行 3 列铺;此时忽略 n=5 的 1+4 特殊规则(1+4 只在无风险卡时生效),避免风险卡不在首位时布局失控。
+- 实现方式:根据 `commentary.sectors.length` 与"是否含风险卡"动态设置容器的 `grid-template-columns`,5 张(无风险卡)时对第一张单独加占满类。用 CSS `:has()` 或在 Svelte 里按 length 计算 class,择其一(实现阶段定)。
 
 ### A4 — 快讯/新闻 7 天清理
 
@@ -64,6 +75,7 @@
 - `events`: `DELETE WHERE created_at < now-7d AND triggered = 0 AND severity != 'high'`(保留已触发委员会的、以及高价值的历史)。
 - `sentiment_items`: `DELETE WHERE created_at < now-7d`(舆情无触发概念,一刀切)。
 - 7 天为硬编码常量,不做可配置(YAGNI)。
+- **引用消歧**: committee 引用某条舆情/事件(如 verdict.reasoning 里贴了原文)不阻止清理——reasoning 已冗余抄写原文,原表删除不影响回溯。
 
 **实现**:
 - 新建 `src-tauri/src/storage/invest/news_cleanup.rs`,内含两个删除函数 + 单测(用 in-memory / 临时 DB 验证:超期未触发被删、已触发/high 保留、7 天内保留)。
@@ -84,6 +96,7 @@
   - **S2 主力净流入榜 Top60**:`moneyflow_dc_market` 的 `net_amount` map 已在 `build_cache` 内存中,排序取 Top60 union 进候选。**零新接口**。
   - **S7 涨幅兜底**:`daily_market` 的 `pct_chg` 降序,仅在候选不足 `CANDIDATE_CAP` 时补齐(从"主要补池方式"降级为"兜底")。
 - 合并去重:按"命中信号数"降序,同命中数内按 `net_amount` 降序。
+- **S2 数据源降级**: `moneyflow_dc_market` 当日拉取失败(网络/限流)→ net_amount map 为空 → S2 命中数为 0,静默退化为 S1+S7,并在报告 `sections_status` 标注 `capital_flow: unavailable`(与 memory `project_premarket-followups-v568` 的降级可观测性待办合并)。
 - `CANDIDATE_CAP` 维持 200(P1 不调)。
 - 放量(S3)、涨停梯队(S5)、龙虎榜(S4)、突破新高(S6)等需新数据端点的信号,列为后续 P2~P5,**本轮不做**。
 
@@ -105,7 +118,9 @@
   | unknown | 0.30 | 0.30 | 0.25 | 0.15(=当前默认) |
 
   (以上为基线值,实现阶段可微调;和恒为 1。)
-- **权重 EMA 平滑**(α=0.3):regime 切换时权重不突变,与上一日 EMA 混合后归一,避免观察池天天大换血。新建 `src-tauri/src/invest/premarket/weight_state.rs` 持久化 EMA 状态到 `~/.claw-go/invest/premarket_weight_state.json`,节假日不推进。
+- **权重 EMA 平滑**(α=0.3):regime 切换时权重不突变,与上一日 EMA 混合后归一,避免观察池天天大换血。新建 `src-tauri/src/invest/premarket/weight_state.rs` 持久化 EMA 状态到 `~/.claw-go/invest/premarket_weight_state.json`,节假日不推进(交易日判断复用 `regime.rs` / tushare 交易日历,实现阶段定其一)。
+- **crash 旁路 EMA**: 当 regime 转为 `crash` 时,**跳过 EMA 平滑,直接采用矩阵值**(technical=0.50)。理由:崩盘恰恰最需要立刻降情绪权重,EMA 会拖 4~5 个交易日收敛,反而误事。其余 regime 转换正常走 EMA。
+- **weight_state.json 边界**: 文件不存在(首次运行)→ 直接采用当日 regime 矩阵值作为初始 EMA 基点,不做平滑;文件损坏/解析失败 → 记 warn 日志后静默重建(同首次运行)。
 - **关键约束**: `technical` 因子内部已经吃了**个股** regime(`compute_technical`),权重矩阵用的是**大盘** regime,两者分开,不二次放大。
 - **保留手动权重**: `PremarketConfig` 增加 `weight_source: "auto" | "manual"`。`manual` 时用用户在权重面板设的固定值(现有行为);`auto` 时用 regime 矩阵 + EMA。前端权重面板加"自动/手动"开关。
 - **不做分位阈值**:因为 SABC 改为按名次切分(见 B4),档位不再由绝对分阈值决定,分位阈值无意义。
@@ -116,13 +131,23 @@
 
 **流程**:
 1. 量化(B1+B2 打分)选出 **top25 候选**(比最终 20 略多,给 AI 留剔除余量)。
-2. 一次**批量**喂给 LLM(单次 CLI 调用,非逐只并发)做证伪:每只输出 `action ∈ {keep, downgrade, drop}` + 一句 `reason` + `risk_flag ∈ {none, regulatory, sentiment_only, weak_fundamental, other}`。**AI 只能保留/降档/剔除,不能加分或提档**。
+2. 一次**批量**喂给 LLM(单次 CLI 调用,非逐只并发)做证伪:每只输出 `action ∈ {keep, drop}` + 一句 `reason` + `risk_flag ∈ {none, regulatory, sentiment_only, weak_fundamental, other}`。**AI 只能保留或剔除,不能加分/提档/降档**(名次切档下"降档"无实际语义,故不设 downgrade)。
 3. 剔除 `drop` 的,剩余按量化总分取 top20 进入最终观察池。
+
+**AiReview 契约(三处一次定死)**:
+- **LLM 输出 JSON schema**: 顶层 `{ "decisions": [ {"symbol": "600519.SH", "action": "keep|drop", "reason": "≤30字", "risk_flag": "none|regulatory|sentiment_only|weak_fundamental|other"}, ... ] }`。数组,每只一条,`symbol` 为 ts_code。prompt 约束 `reason` ≤ 30 汉字。
+- **Rust 结构**(`scoring.rs`,serde camelCase):
+  ```rust
+  pub struct AiReview { pub action: String, pub reason: String, pub risk_flag: String }
+  // SymbolScore 增: pub ai_review: Option<AiReview>  (serde skip_serializing_if = None)
+  ```
+- **前端 TS**(`types.ts`): `aiReview?: { action: 'keep' | 'drop'; reason: string; riskFlag: string }`。
 
 **架构约束(硬性)**:
 - `SymbolScore.total` 与档位**永远只由量化决定**。AI 结果走独立可选字段 `ai_review: Option<AiReview>`,不回写 `total`。
-- 前端展示层消费 `ai_review`:`drop` 的从池中剔除(或折叠到"AI 剔除"区),`downgrade` 仅作展示提示,`reason` 显示为卡片下一行小字,`risk_flag` 显示小徽标。
-- **关闭 AI 时**:前端不消费 `ai_review`,回退纯量化,干净无副作用。
+- **AI 剔除的展示(决策:显示剔除区)**: 04 模块正常显示最终 top20 精英(名次切档 SABC);其下方增加一块**「AI 剔除」折叠区**,列出被 `drop` 的票 + `reason` + `risk_flag` 小徽标。透明、可回溯、AI 误杀时用户能看见并人工判断。`reason` 显示为小字,前端 CSS 截断兜底防溢出。
+- **关闭 AI 时**:前端不消费 `ai_review`,不显示剔除区,回退纯量化 top20,干净无副作用。
+- **落盘(决策:落盘存档)**: `ai_review` 随 `scores` 写进盘前报告存档 JSON,为以后命中率闭环留历史信号(即使前端某处不展示也落盘)。
 
 **执行路径**:
 - 复用 `event_analyzer::cli_complete_with_settings` + `macro_verdict::resolve_settings_path()`,**走现有委员会配置**(`CommitteeTuning.selected_provider + model` + `platform_credentials`),与 `ai_commentary`、`macro_verdict` 一致,**零新配置**。
@@ -133,9 +158,13 @@
 - `PremarketConfig.enable_ai_review: bool`,**默认 true**。做成**前端设置面板的显式 toggle**(用户可随时开关),非仅配置文件。
 - 三重降级,任一触发退回纯量化 top20:
   1. 开关关闭 → 跳过 AI pass。
-  2. CLI 超时/错误/JSON 解析失败 → 全部 `ai_review=None`,报告标注"AI 精筛失败(不影响选池)"。
-  3. **熔断**: AI `drop` 率 > 50%(如 25 只砍 >12 只)或全 drop → 视为异常,整体作废,记 warn 日志。
-- 单只在 JSON 中缺失或 action 非法 → 该只 `ai_review=None`,其余照用。
+  2. CLI 超时/错误/JSON 解析失败 → 全部 `ai_review=None`,报告标注"AI 精筛失败(不影响选池)",`sections_status` 标 `ai_review: failed`。
+  3. **熔断**: `drop_count >= 13`(top_k=25,即 drop 率 ≥ 52%)或全 drop → 视为异常判断,整体作废(全部 `ai_review=None`),记 warn 日志,`sections_status` 标 `ai_review: circuit_broken`。
+- **LLM 输出异常处理**:
+  - 返回输入 25 只之外的 ts_code → 忽略该条。
+  - 25 只输入但只返回部分 → 未返回的按 `keep`(`ai_review=None`),**不判 drop**。
+  - `action` 值非 `keep`/`drop` → 该只按 `keep`(`ai_review=None`)。
+  - `risk_flag` 不在枚举内 → 归为 `other`。
 
 ### B4 — SABC 观察池:先选池 → 打分排序 → 按名次切档(核心模型重构)
 
@@ -158,7 +187,8 @@
 - **废弃绝对阈值** `threshold_s/a/b/c`:改为纯名次切分。
 - **前端** `PremarketReportTab.svelte` 04 模块:保留 S/A/B/C 分组的 2×2 视觉,但分组来源改为"按名次切的 5 只",不再是"按绝对分阈值分桶 + slice(0,3)"。组内按分降序。
 - **展示上限**: 每档正好 5 只(总 20),取代原来的每档 3 只(总 12)。
-- **不足 20 只时**(候选/AI 剔除后不满 20):按实际数量从高到低填 S→A→B→C,末档可能不满 5 只。
+- **切档规则的精确表述**: `pool` = AI 剔除后的最终股票数。`pool >= 20` → 取 top20,每档正好 5 只(1-5=S / 6-10=A / 11-15=B / 16-20=C)。`pool < 20` → 按序填 S→A→B→C,每档最多 5 只,末档不满 5(不补更差的票)。`pool < 20` 的**唯一触发路径**是 B3 AI 砍了 6~12 只(K≤5 时 25→20 无损;K≥13 触发熔断整体作废,不会发生),即 drop 数落在 [6,12] 的窄区间。
+- **不足 20 只时**(pool<20):如上,末档可能不满 5 只,不凑数。
 
 **已知取舍(可接受)**: 名次切分有"临界感"——第 5 名(S 末)与第 6 名(A 首)分数可能接近却戴不同徽章。这是排名榜固有特性,作为展示标签可接受,远优于老的凑档逻辑。
 
@@ -168,6 +198,7 @@
 
 - **A2(SABC 显示名字 + tooltip 代码)**: 当前已是"名字(主)+ 后面小灰代码",符合用户预期,**无需改动**,从范围移除。若后续觉得代码字太大再单独微调 `.stk-code` 样式。
 - **A5(每档最多 5 只作为配额)**: 被 B4 的名次切分取代(每档正好 5 只是名次切分的结果,不是"最多 5 的配额上限"),概念作废。
+- **AI `downgrade` action**: 名次切档下"降档"无实际语义(不改分、不改档),留着是装饰。AI action 简化为 `keep` / `drop` 两态。
 - **命中率反馈闭环 / 因子权重自适应 / 逻辑回归模型**: 需先建 `premarket_selection_history` 表并攒 1~1.5 个月数据,本轮不做。
 - **候选池 P2~P5 信号(放量/涨停梯队/龙虎/新高)**: 需新数据端点,本轮不做。
 - **雪球 scrapling 抓取落地**: 本轮右列只消费 `sentiment_items` 现有内容。
@@ -178,20 +209,21 @@
 
 **前端**:
 - `src/routes/invest/+page.svelte` — sub-tab 迁移(events → committee/news)。
-- `src/lib/components/invest/EventWatchTab.svelte` → 重构为双列(+ 新增 `NewsFlashColumn.svelte`、`NewsDigestColumn.svelte`)。
-- `src/lib/components/invest/PremarketReportTab.svelte` — 01 自适应布局(A3)、04 名次切档展示(B4)、AI 复核字段展示 + 设置面板 toggle(B3)。
+- `src/lib/components/invest/EventWatchTab.svelte` → 重构为双列(+ 新增 `NewsFlashColumn.svelte`、`NewsDigestColumn.svelte`);双列在 ≤900px 折叠上下堆叠。
+- `src/lib/components/invest/PremarketReportTab.svelte` — 01 自适应布局 + 风险卡冲突消解(A3)、04 名次切档展示(B4)、AI 复核字段展示 + 「AI 剔除」折叠区 + 设置面板 toggle(B3)。
 - `src/lib/stores/invest-store.svelte.ts` — 新增 `fetchSentimentItems()` + state。
 - `src/lib/types.ts` — `SymbolScore` 加 `aiReview?`;新增 sentiment item 类型。
 
 **后端**:
 - `src-tauri/src/commands/invest.rs` — 新增 `get_sentiment_items`。
+- `src-tauri/src/storage/invest/sentiment.rs` — 新增 `list_recent_sentiment(conn, limit)`(A1)。
 - `src-tauri/src/storage/invest/news_cleanup.rs` — 新建(A4 清理 + 单测)。
-- `src-tauri/src/invest/scheduler/mod.rs` + `runner.rs` — 新增清理 cron(A4)。
-- `src-tauri/src/invest/premarket/cache_builder.rs` — `select_candidates` 多信号化(B1)。
+- `src-tauri/src/invest/scheduler/mod.rs` + `runner.rs` — 新增清理 cron + dispatch 分支(A4,需手动加 match 分支)。
+- `src-tauri/src/invest/premarket/cache_builder.rs` — `select_candidates` 多信号化 + S2 降级(B1)。
 - `src-tauri/src/invest/premarket/scoring.rs` — `PremarketConfig` 加 `weight_source` / `enable_ai_review`;`AiReview` 结构 + `SymbolScore.ai_review`;废弃绝对阈值切档,改名次切档(B2/B3/B4)。
-- `src-tauri/src/invest/premarket/weight_state.rs` — 新建(B2 EMA 状态)。
-- `src-tauri/src/invest/premarket/report.rs` — 大盘 regime 取 + 权重 resolve(B2);top25 选取 + AI 复核 pass + 熔断降级(B3);名次切档(B4)。
-- `src-tauri/src/messages/en.json` + `zh-CN.json` — i18n。
+- `src-tauri/src/invest/premarket/weight_state.rs` — 新建(B2 EMA 状态 + crash 旁路 + 首次/损坏处理)。
+- `src-tauri/src/invest/premarket/report.rs` — 大盘 regime 取 + 权重 resolve(B2);top25 选取 + AI 复核 pass + 熔断降级 + `sections_status` 标注(B3);名次切档(B4);`ai_review` 落盘存档。
+- `src-tauri/src/messages/en.json` + `zh-CN.json` — i18n(含 `invest_committee_sub_news`)。
 
 ---
 
@@ -199,5 +231,6 @@
 
 - 前端: `npm run build`、`npm run check`、`npm run i18n:check`。
 - 后端: `cargo check`、`cargo clippy -- -D warnings`;`news_cleanup` 与名次切档、AI JSON 解析的单测(本机裸 `cargo test` 有已知 0xc0000139 问题,用 `npm run rust:test` 或 `cargo check` 验证)。
-- 选池效果观察指标(上线后跟踪): 观察池日换血率、S/A 档次日命中率、追高股(pct_chg>7%)占比。
-- AI 复核降级路径逐条验证:关开关、CLI 失败、drop 率熔断。
+- AI 复核降级路径逐条单测(开发期用 mock 即可,不必等实盘):关开关、CLI 失败、`drop_count>=13` 熔断、LLM 幻觉/缺失/非法值。
+- B4 名次切档单测:`pool>=20` 每档 5 只、`pool<20` 末档不满、组内降序。
+- **plan 完成态定义**: 代码 + 单测 + `npm run build`/`check`/`i18n:check` + `cargo check`/`clippy` 全过即算 done。**选池效果 KPI(观察池日换血率、S/A 档次日命中率、追高股 pct_chg>7% 占比)是发版后跟踪项,不阻塞 plan close**(这些指标需多交易日样本,且当前无历史基线)。
