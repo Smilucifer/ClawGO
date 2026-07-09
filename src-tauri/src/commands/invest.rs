@@ -1018,42 +1018,10 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
             }
         }
 
-        // Tushare 新闻 (major_news API — different permission tier than quote)
-        // Probe a small recent date window (today) using "sina" as the source.
-        let today = Local::now().format("%Y%m%d").to_string();
-        match client.major_news("sina", &today, &today).await {
-            Ok(items) => {
-                let sample = items
-                    .first()
-                    .map(|i| i.title.chars().take(20).collect::<String>())
-                    .unwrap_or_else(|| "(empty)".into());
-                sources.push(DataSourceStatus {
-                    name: "Tushare 新闻".into(),
-                    ok: true,
-                    last_success: Some(now_str.clone()),
-                    sample_value: Some(sample),
-                });
-            }
-            Err(e) => {
-                log::warn!("[datasource] Tushare 新闻 probe failed: {}", e);
-                sources.push(DataSourceStatus {
-                    name: "Tushare 新闻".into(),
-                    ok: false,
-                    last_success: None,
-                    sample_value: Some(format!("{e}")),
-                });
-            }
-        }
 
     } else {
         sources.push(DataSourceStatus {
             name: "Tushare 行情".into(),
-            ok: false,
-            last_success: None,
-            sample_value: Some("no token configured".into()),
-        });
-        sources.push(DataSourceStatus {
-            name: "Tushare 新闻".into(),
             ok: false,
             last_success: None,
             sample_value: Some("no token configured".into()),
@@ -1134,7 +1102,7 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
         }),
     }
 
-    // Python runtime — root dependency for AkShare / Jin10 / Yahoo (yfinance)
+    // Python runtime — root dependency for AkShare / Jin10 / 东财海外
     match crate::python::require() {
         Ok(_) => sources.push(DataSourceStatus {
             name: "Python 运行时".into(),
@@ -1267,20 +1235,18 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
         }
     }
 
-    // Yahoo Finance (VIX, TNX, DXY, Gold, Oil, USDCNY)
-    match intl_client.fetch_yahoo_quote("^VIX").await {
-        Ok(q) => {
-            sources.push(DataSourceStatus {
-                name: "Yahoo Finance".into(),
-                ok: true,
-                last_success: Some(now_str.clone()),
-                sample_value: Some(format!("VIX = {:.2}", q.price)),
-            });
-        }
+    // 东财海外指标 (DXY / 美10Y — f59 解码直连)
+    match intl_client.fetch_eastmoney_overseas("100.UDI").await {
+        Ok(q) => sources.push(DataSourceStatus {
+            name: "东财海外指标".into(),
+            ok: true,
+            last_success: Some(now_str.clone()),
+            sample_value: Some(format!("DXY = {:.2}", q.value)),
+        }),
         Err(e) => {
-            log::warn!("[datasource] Yahoo Finance probe failed: {}", e);
+            log::warn!("[datasource] 东财海外指标 probe failed: {}", e);
             sources.push(DataSourceStatus {
-                name: "Yahoo Finance".into(),
+                name: "东财海外指标".into(),
                 ok: false,
                 last_success: None,
                 sample_value: Some(e),
@@ -1288,24 +1254,18 @@ pub async fn get_datasource_health() -> Vec<DataSourceStatus> {
         }
     }
 
-    // Yahoo Finance history (distinct from quote — uses yfinance.history endpoint)
-    match intl_client.fetch_yahoo_history("^VIX", 5).await {
-        Ok(bars) => {
-            let sample = bars
-                .last()
-                .map(|b| format!("{} {} close = {:.2}", b.symbol, b.date, b.close))
-                .unwrap_or_else(|| "(empty)".into());
-            sources.push(DataSourceStatus {
-                name: "Yahoo Finance 历史".into(),
-                ok: !bars.is_empty(),
-                last_success: if bars.is_empty() { None } else { Some(now_str.clone()) },
-                sample_value: Some(sample),
-            });
-        }
+    // AkShare 海外标量 (VIX)
+    match intl_client.fetch_akshare_overseas("overseas_vix").await {
+        Ok(v) => sources.push(DataSourceStatus {
+            name: "AkShare 海外指标".into(),
+            ok: true,
+            last_success: Some(now_str.clone()),
+            sample_value: Some(format!("VIX = {:.2}", v.value)),
+        }),
         Err(e) => {
-            log::warn!("[datasource] Yahoo Finance 历史 probe failed: {}", e);
+            log::warn!("[datasource] AkShare 海外指标 probe failed: {}", e);
             sources.push(DataSourceStatus {
-                name: "Yahoo Finance 历史".into(),
+                name: "AkShare 海外指标".into(),
                 ok: false,
                 last_success: None,
                 sample_value: Some(e),
