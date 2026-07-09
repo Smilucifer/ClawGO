@@ -29,6 +29,18 @@ pub async fn cli_complete(
     exec.run_role(system_prompt, user_message, 0, None, None).await
 }
 
+/// 同 cli_complete,但显式传 --settings 路径(委员会 provider 路由)。
+/// settings_path=None 等价于 cli_complete(默认 Claude provider)。
+pub async fn cli_complete_with_settings(
+    system_prompt: &str,
+    user_message: &str,
+    settings_path: Option<&std::path::Path>,
+) -> Result<String, String> {
+    let exec = crate::invest::committee::cli_executor::CliCommitteeExecutor::global()
+        .ok_or("claude CLI not available")?;
+    exec.run_role(system_prompt, user_message, 0, settings_path, None).await
+}
+
 /// Result of an analysis run.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]

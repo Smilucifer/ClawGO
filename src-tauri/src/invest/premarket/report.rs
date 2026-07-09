@@ -21,18 +21,40 @@ use crate::invest::premarket::scoring::{
 };
 use crate::invest::premarket::sector_flow::{fetch_sector_flow, SectorFlow};
 use crate::storage::invest::macro_cache::{build_macro_snapshot, MacroSnapshot};
-use crate::storage::invest::portfolio::{self, Holding, HoldingKind};
 use crate::storage::invest::stock_industry;
 
-/// 单标的输入：`(symbol, name)`。默认从 holdings（Hold + Watch）聚合。
-fn collect_pool() -> Vec<(String, String)> {
-    let holdings: Vec<Holding> = portfolio::list_holdings().unwrap_or_default();
-    holdings
-        .into_iter()
-        .filter(|h| matches!(h.kind, HoldingKind::Hold | HoldingKind::Watch))
-        .map(|h| {
-            let name = h.name.clone().unwrap_or_else(|| h.symbol.clone());
-            (h.symbol, name)
+/// 从盘后缓存读最新交易日整批 → 组装 SymbolScore。缓存缺失/过期时先兜底构建一次再读。
+async fn collect_scores_from_cache(cfg: &PremarketConfig) -> Vec<SymbolScore> {
+    use crate::storage::invest::premarket_cache::{is_fresh, load_latest_cache};
+    let today = crate::invest::date_utils::get_invest_date();
+
+    let fresh_cache = match load_latest_cache() {
+        Ok(Some((td, rows))) if is_fresh(&td, &today, 4) && !rows.is_empty() => Some(rows),
+        _ => None,
+    };
+    let rows = match fresh_cache {
+        Some(r) => r,
+        None => {
+            log::warn!("[premarket] 缓存缺失/过期,兜底现场构建");
+            let _ = crate::invest::premarket::cache_builder::build_cache_for_generation().await;
+            match load_latest_cache() {
+                Ok(Some((_, r))) => r,
+                _ => {
+                    log::warn!("[premarket] 兜底后仍无缓存,观察池为空");
+                    return vec![];
+                }
+            }
+        }
+    };
+    rows.into_iter()
+        .map(|c| {
+            let factors = FactorBreakdown {
+                sentiment: c.sentiment,
+                capital: c.capital,
+                technical: c.technical,
+                catalyst: c.catalyst,
+            };
+            score(&c.symbol, &c.name, factors, c.missing, cfg)
         })
         .collect()
 }
@@ -145,70 +167,6 @@ pub(crate) fn compute_sentiment_and_catalyst(code: &str) -> (Option<f64>, Option
     (sentiment, catalyst)
 }
 
-/// 资金因子：`moneyflow_dc.net_amount`（个股主力净流入，万元）+ `moneyflow_hsgt.north_money`（北向，亿元）。
-///
-/// 归一策略（尽量鲁棒，缺一半仍可给分）：
-/// - 主力净流入率：近 5 交易日 net_amount 之和取 tanh(sum/5e5) 映射到 0-100
-///   （5e5 万元 = 50 亿主力净流入，接近顶部；负值同样对称压到 0）。
-/// - 北向：昨日 north_money（亿）用 tanh(x/50) 映射 0-100（50 亿是较强流入）。
-/// - 有一个可用即算，两个都算取平均；两个都缺 → None。
-async fn compute_capital(symbol: &str) -> Option<f64> {
-    let end = chrono::Local::now().format("%Y%m%d").to_string();
-    let start = (chrono::Local::now() - chrono::Duration::days(14))
-        .format("%Y%m%d")
-        .to_string();
-
-    let client = match crate::tushare::client::TushareClient::from_settings() {
-        Ok(c) => c,
-        Err(e) => {
-            log::warn!("[premarket] tushare unavailable for capital({symbol}): {e}");
-            return None;
-        }
-    };
-
-    // ── 个股主力资金：近 5 日 net_amount 求和 ─────────────────────────
-    let stock_score: Option<f64> = match client.moneyflow_dc(symbol, &start, &end).await {
-        Ok(rows) if !rows.is_empty() => {
-            // Tushare 通常返回最新在前；取前 5 条求 net_amount 之和（万元）
-            let sum: f64 = rows
-                .iter()
-                .take(5)
-                .filter_map(|r| r.net_amount)
-                .sum();
-            // tanh(sum/5e5)：5e5 万 = 50 亿；50 亿净流入 → tanh(1)=0.76 → 88 分
-            let normalized = (sum / 5.0e5).tanh(); // -1..1
-            Some((normalized + 1.0) / 2.0 * 100.0)
-        }
-        Ok(_) => None,
-        Err(e) => {
-            log::warn!("[premarket] moneyflow_dc({symbol}) failed: {e}");
-            None
-        }
-    };
-
-    // ── 北向资金（大盘层面）：昨日 north_money（亿元）─────────────────
-    let hsgt_score: Option<f64> = match client.moneyflow_hsgt(&start, &end).await {
-        Ok(rows) if !rows.is_empty() => {
-            // north_money 亿元；净流出为负。守卫已保证非空。
-            let latest = rows[0].north_money;
-            let normalized = (latest / 50.0).tanh(); // ±50 亿是较强
-            Some((normalized + 1.0) / 2.0 * 100.0)
-        }
-        Ok(_) => None,
-        Err(e) => {
-            log::warn!("[premarket] moneyflow_hsgt failed: {e}");
-            None
-        }
-    };
-
-    match (stock_score, hsgt_score) {
-        (Some(a), Some(b)) => Some(((a * 0.7) + (b * 0.3)).clamp(0.0, 100.0)),
-        (Some(a), None) => Some(a),
-        (None, Some(b)) => Some(b),
-        (None, None) => None,
-    }
-}
-
 /// 技术因子：从 `compute_regime_for_symbol` 的 regime 字符串 + RSI + 分位合成 0-100。
 ///
 /// - regime 基分：uptrend=75 / range_bound=55 / downtrend=35 / crash=15 / unknown=50。
@@ -264,43 +222,6 @@ pub(crate) async fn compute_technical(symbol: &str) -> Option<f64> {
     Some((base + rsi_adj + q_adj).clamp(0.0, 100.0))
 }
 
-/// 组装一档 `(FactorBreakdown, missing)`：单档缺失填 50（中性），并记 missing。
-async fn compute_factors(symbol: &str) -> (FactorBreakdown, Vec<String>) {
-    // symbol 形如 "600519.SH"；sentiment 存 6 位裸码
-    let code = symbol.split('.').next().unwrap_or(symbol);
-    let mut missing = Vec::new();
-
-    let (sent_opt, cat_opt) = compute_sentiment_and_catalyst(code);
-    let sentiment = sent_opt.unwrap_or_else(|| {
-        missing.push("sentiment".to_string());
-        50.0
-    });
-    let catalyst = cat_opt.unwrap_or_else(|| {
-        missing.push("catalyst".to_string());
-        50.0
-    });
-
-    let capital = compute_capital(symbol).await.unwrap_or_else(|| {
-        missing.push("capital".to_string());
-        50.0
-    });
-
-    let technical = compute_technical(symbol).await.unwrap_or_else(|| {
-        missing.push("technical".to_string());
-        50.0
-    });
-
-    (
-        FactorBreakdown {
-            sentiment,
-            capital,
-            technical,
-            catalyst,
-        },
-        missing,
-    )
-}
-
 // ---------------------------------------------------------------------------
 // AI 点评（结构化 JSON，不改档）
 // ---------------------------------------------------------------------------
@@ -333,9 +254,11 @@ async fn ai_commentary(news_block: &str) -> Option<AiCommentary> {
          风险预警专收监管/政策转向/处罚退市/地缘扰动。输出JSON: {{\"sectors\":[...],\"tone\":\"基调总述\"}}。只输出JSON。\n\n{}",
         news_block
     );
-    let resp = crate::invest::event_analyzer::cli_complete(
+    let settings = crate::invest::macro_verdict::resolve_settings_path();
+    let resp = crate::invest::event_analyzer::cli_complete_with_settings(
         "你是严谨的金融分析师，只输出JSON。",
         &prompt,
+        settings.as_deref(),
     )
     .await
     .ok()?;
@@ -354,15 +277,15 @@ async fn ai_commentary(news_block: &str) -> Option<AiCommentary> {
     }
 }
 
-/// 从最近 sentiment_items 拼一段新闻文本喂给 AI。上限 40 条，正文截断到 80 字避免 prompt 超长。
+/// 从最近 sentiment_items 拼一段新闻文本喂给 AI。上限 120 条，正文截断到 80 字避免 prompt 超长。
 fn build_news_block_for_ai() -> String {
-    let since = (chrono::Local::now() - chrono::Duration::days(1))
+    let since = (chrono::Local::now() - chrono::Duration::days(2))
         .format("%Y-%m-%d %H:%M:%S")
         .to_string();
-    let items = crate::storage::invest::sentiment::list_recent_sentiment(&since, 40)
+    let items = crate::storage::invest::sentiment::list_recent_sentiment(&since, 120)
         .unwrap_or_default();
     let mut buf = String::new();
-    for it in items.iter().take(40) {
+    for it in items.iter().take(120) {
         let summary = it.summary.as_deref().unwrap_or("");
         let short = summary.chars().take(80).collect::<String>();
         buf.push_str(&format!(
@@ -688,15 +611,9 @@ pub async fn generate_premarket_report(data_dir: &Path) -> Result<String, String
         ),
     };
 
-    // 3. 股票池 SABC 打分（四因子真实计算）
+    // 3. 股票池 SABC 打分（读盘后缓存,兜底现场构建）
     let cfg: PremarketConfig = get_premarket_config();
-    let pool = collect_pool();
-    let mut scores: Vec<SymbolScore> = Vec::with_capacity(pool.len());
-    for (symbol, name) in &pool {
-        let (factors, missing) = compute_factors(symbol).await;
-        // 关键：grade 完全由 score() 计算，AI 无法触及
-        scores.push(score(symbol, name, factors, missing, &cfg));
-    }
+    let scores: Vec<SymbolScore> = collect_scores_from_cache(&cfg).await;
 
     // 3.5 板块资金流 + 拥挤度雷达（02 段）—— 尽力而为
     let sector_flows_entries: Vec<SectorFlowEntry> = match fetch_sector_flow().await {

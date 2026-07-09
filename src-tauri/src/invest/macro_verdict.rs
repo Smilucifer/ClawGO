@@ -62,7 +62,7 @@ fn fill_global_prompt(
 }
 
 /// 读 committee_tuning.json → 生成 CLI --settings 路径(provider 路由)。
-fn resolve_settings_path() -> Option<std::path::PathBuf> {
+pub(crate) fn resolve_settings_path() -> Option<std::path::PathBuf> {
     // 复用委员会本体的 tuning 读取(类型化 + 默认值封装),与其 provider 路由保持一致。
     let tuning = crate::commands::invest::get_committee_tuning().ok();
     let provider = tuning.as_ref().map_or("default", |t| t.selected_provider.as_str());
