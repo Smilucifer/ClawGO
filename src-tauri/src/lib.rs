@@ -515,7 +515,7 @@ pub fn run() {
                 }
             });
 
-            // Initialize Python runtime (embedded data server for Yahoo Finance etc.)
+            // Initialize Python runtime (embedded data server for market data providers)
             // init() handles everything: path resolution, subprocess spawn, health check,
             // version query, and frontend progress events — no separate verify step needed.
             {

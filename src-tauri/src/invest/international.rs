@@ -6,7 +6,7 @@
 use serde::Deserialize;
 
 // ---------------------------------------------------------------------------
-// Data structures (unchanged — consumed by macro_refresh, event_scanner, etc.)
+// Data structures — consumed by macro_refresh, event_scanner, etc.
 // ---------------------------------------------------------------------------
 
 /// 东财直连海外指标（DXY / 美10Y 等），Python eastmoney.overseas_indicator 返回。
@@ -26,7 +26,7 @@ pub struct OverseasValue {
     pub value: f64,
 }
 
-/// A single news item from various providers (Yahoo Finance, AkShare, Jin10, etc.).
+/// A single news item from various providers (AkShare, Jin10, etc.).
 ///
 /// All Python providers emit snake_case keys, so no `rename_all` is applied.
 #[derive(Debug, Clone, serde::Serialize, Deserialize)]
@@ -110,26 +110,12 @@ pub struct MarketBreadth {
 }
 
 // ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-/// Well-known international indicator symbols.
-pub const INTERNATIONAL_SYMBOLS: &[(&str, &str)] = &[
-    ("^VIX", "VIX 恐慌指数"),
-    ("^TNX", "美10Y国债收益率"),
-    ("DX-Y.NYB", "美元指数"),
-    ("GC=F", "国际金价"),
-    ("CL=F", "国际油价"),
-    ("USDCNY=X", "USD/CNY 汇率"),
-];
-
-// ---------------------------------------------------------------------------
 // Client
 // ---------------------------------------------------------------------------
 
-/// Thin wrapper around the Python data server for Yahoo Finance operations.
+/// Thin wrapper around the Python data server for eastmoney/akshare overseas + market operations.
 ///
-/// All actual HTTP requests are handled by `python-runtime/scripts/providers/yahoo.py`
+/// All actual HTTP requests are handled by `python-runtime/scripts/providers/`
 /// via the JSON-RPC bridge.
 #[derive(Clone)]
 pub struct InternationalClient;
@@ -292,41 +278,3 @@ impl InternationalClient {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Symbol name resolution
-// ---------------------------------------------------------------------------
-
-/// Resolve a Yahoo symbol to a human-readable Chinese name.
-pub fn resolve_symbol_name(symbol: &str) -> String {
-    INTERNATIONAL_SYMBOLS
-        .iter()
-        .find(|(s, _)| *s == symbol)
-        .map(|(_, name)| name.to_string())
-        .unwrap_or_else(|| symbol.to_string())
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn resolve_symbol_name_known() {
-        assert_eq!(resolve_symbol_name("^VIX"), "VIX 恐慌指数");
-        assert_eq!(resolve_symbol_name("GC=F"), "国际金价");
-        assert_eq!(resolve_symbol_name("USDCNY=X"), "USD/CNY 汇率");
-    }
-
-    #[test]
-    fn resolve_symbol_name_unknown() {
-        assert_eq!(resolve_symbol_name("AAPL"), "AAPL");
-    }
-
-    #[test]
-    fn international_symbols_count() {
-        assert_eq!(INTERNATIONAL_SYMBOLS.len(), 6);
-    }
-}

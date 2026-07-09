@@ -4,7 +4,7 @@
 //! Partial failure strategy: failed indicators keep stale data, logged as warn.
 //!
 //! Data sources: Tushare (primary), Tencent Finance (Shanghai Composite fallback + market volume),
-//! AkShare (bond yield fallback + limit up/down stats + advance/decline), Yahoo Finance (international).
+//! AkShare (bond yield fallback + limit up/down stats + advance/decline), eastmoney/akshare (international).
 
 use crate::storage::invest::macro_cache;
 use crate::tushare::client::TushareClient;
