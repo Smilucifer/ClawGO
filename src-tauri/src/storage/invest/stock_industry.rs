@@ -44,6 +44,32 @@ pub fn industry_of(code: &str) -> Result<Option<String>, String> {
     })
 }
 
+/// 批量查名:codes 为 6 位裸码列表 → {code: name}。未收录的 code 不出现在结果里。
+/// 供盘前缓存填 CachedFactor.name;查不到时调用方回退代码。
+pub fn names_of(codes: &[String]) -> Result<std::collections::HashMap<String, String>, String> {
+    use std::collections::HashMap;
+    if codes.is_empty() {
+        return Ok(HashMap::new());
+    }
+    with_conn(|conn| {
+        let placeholders = std::iter::repeat("?").take(codes.len()).collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT code, name FROM stock_industry WHERE code IN ({placeholders}) AND name IS NOT NULL AND name != ''"
+        );
+        let mut stmt = conn.prepare(&sql).map_err(|e| format!("prepare names_of: {e}"))?;
+        let params = rusqlite::params_from_iter(codes.iter());
+        let rows = stmt
+            .query_map(params, |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .map_err(|e| format!("query names_of: {e}"))?;
+        let mut out = HashMap::new();
+        for r in rows {
+            let (c, n) = r.map_err(|e| format!("row names_of: {e}"))?;
+            out.insert(c, n);
+        }
+        Ok(out)
+    })
+}
+
 /// 返回全部去重后的行业名（供闭集词表）。
 pub fn all_industries() -> Result<Vec<String>, String> {
     with_conn(|conn| {
