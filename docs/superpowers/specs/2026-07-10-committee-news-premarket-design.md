@@ -20,7 +20,7 @@
 本 spec 覆盖 7 块,建议在 writing-plans 阶段**拆成两份实施计划**,理由:验证节奏不同(UI 当天可目视验收,选池 KPI 需多交易日)、文件耦合不同(选池四块都改 `scoring.rs`/`report.rs`,需串行)。
 
 - **Plan 1 — UI 组**: A1(双列新闻/舆论)+ A3(01 自适应)+ A4(7 天清理)。三块彼此近乎独立,可并行。
-- **Plan 2 — 选池组**: B4(名次切档)→ B1(候选多信号)→ B2(regime 权重)→ B3(AI 复核)。**B4 最先做**——它最独立、最低风险,拿现有 `SymbolScore.total` 即可切档,且最直接兑现"观察池=最强 20 只"的核心洞察;B1/B2/B3 在已改成名次切档的稳定视图上迭代打分逻辑。
+- **Plan 2 — 选池组**: B4(名次切档)→ B1(候选多信号)→ B2(五因子固定权重)→ B5(板块强度因子 + 东财数据源)→ B3(AI 复核)。**B4 最先做**——它最独立、最低风险,拿现有 `SymbolScore.total` 即可切档,且最直接兑现"观察池=最强 20 只"的核心洞察;B1/B2/B5/B3 在已改成名次切档的稳定视图上迭代打分逻辑。B5 是本轮选池优化的核心(取代 regime),含东财数据源接入 + 一对多板块映射表 + 低频刷新 cron,工作量最大。
 
 两份 plan 独立实施、独立发版、独立可回滚。
 
@@ -102,28 +102,20 @@
 
 **收益**: 候选池从"当日涨幅榜"扩展为"涨幅榜 ∪ 主力净流入榜 ∪ 舆情",捕获"温和放量、主力介入但涨幅未爆"的品种,并降低候选池日换血率。
 
-### B2 — 因子权重随市况(regime)动态化
+### B2 — 五因子固定权重(不做 regime 动态权重)
 
-**问题**: `scoring.rs` 四因子权重固定 `sentiment=0.30 / capital=0.30 / technical=0.25 / catalyst=0.15`,不随市况变化。
+**背景决策**: 早期设计曾拟用大盘(000001.SH)regime 动态调权,但经讨论**放弃**(路线乙)。理由:
+1. 单一上证综指代表性差(被权重股主导,结构性行情下背离);换成市场广度也解决不了"吸血行情被误判成熊市、权重调反"的问题(广度差 + 集中度高的吸血行情,在只看方向的 regime 眼里与真熊市无异,却需要完全相反的权重)。
+2. 真正缺的是**个股所属赛道强不强**这个维度——由新增的 **B5 板块强度因子**从个股级直接解决,比市场级 regime 判断更靠谱,且不引入"多交易日才验证得出、分类准不准存疑"的黑盒。
 
 **改法**:
-- 用**大盘(000001.SH)** 跑一次 `regime` 判断(5 态:uptrend / downtrend / range_bound / crash / unknown),查权重矩阵:
-
-  | regime | sentiment | capital | technical | catalyst |
-  |---|---|---|---|---|
-  | uptrend | 0.20 | 0.35 | 0.30 | 0.15 |
-  | range_bound | 0.30 | 0.25 | 0.20 | 0.25 |
-  | downtrend | 0.15 | 0.35 | 0.35 | 0.15 |
-  | crash | 0.10 | 0.30 | 0.50 | 0.10 |
-  | unknown | 0.30 | 0.30 | 0.25 | 0.15(=当前默认) |
-
-  (以上为基线值,实现阶段可微调;和恒为 1。)
-- **权重 EMA 平滑**(α=0.3):regime 切换时权重不突变,与上一日 EMA 混合后归一,避免观察池天天大换血。新建 `src-tauri/src/invest/premarket/weight_state.rs` 持久化 EMA 状态到 `~/.claw-go/invest/premarket_weight_state.json`,节假日不推进(交易日判断复用 `regime.rs` / tushare 交易日历,实现阶段定其一)。
-- **crash 旁路 EMA**: 当 regime 转为 `crash` 时,**跳过 EMA 平滑,直接采用矩阵值**(technical=0.50)。理由:崩盘恰恰最需要立刻降情绪权重,EMA 会拖 4~5 个交易日收敛,反而误事。其余 regime 转换正常走 EMA。
-- **weight_state.json 边界**: 文件不存在(首次运行)→ 直接采用当日 regime 矩阵值作为初始 EMA 基点,不做平滑;文件损坏/解析失败 → 记 warn 日志后静默重建(同首次运行)。
-- **关键约束**: `technical` 因子内部已经吃了**个股** regime(`compute_technical`),权重矩阵用的是**大盘** regime,两者分开,不二次放大。
-- **保留手动权重**: `PremarketConfig` 增加 `weight_source: "auto" | "manual"`。`manual` 时用用户在权重面板设的固定值(现有行为);`auto` 时用 regime 矩阵 + EMA。前端权重面板加"自动/手动"开关。
-- **不做分位阈值**:因为 SABC 改为按名次切分(见 B4),档位不再由绝对分阈值决定,分位阈值无意义。
+- 四因子扩为**五因子**(新增 B5 `sector`),采用**固定权重**基线:
+  `sentiment=0.25 / capital=0.25 / technical=0.15 / catalyst=0.10 / sector=0.25`(和为 1,实现阶段可微调)。
+- `PremarketConfig` 权重字段从 4 个扩到 5 个(新增 `weight_sector`)。
+- **保留 `weight_source: "auto" | "manual"`**: `auto` = 上述固定基线;`manual` = 用户在权重面板自定义五个权重。前端权重面板加"自动/手动"开关 + 第五个权重滑块。
+- **不做** regime 权重矩阵、EMA 平滑、`weight_state.rs`、crash 旁路——这些随路线乙一并移除(见"明确移除/不做的项")。
+- **保留约束**: `technical` 因子内部仍吃**个股** regime(`compute_technical` 现状不变),这是因子分内部逻辑,与权重无关。
+- **不做分位阈值**: SABC 改为按名次切分(见 B4),档位不由绝对分阈值决定。
 
 ### B3 — AI 终选复核
 
@@ -171,7 +163,7 @@
 **问题(用户核心洞察)**: 现状是"先按绝对分阈值分档,再每档 `slice(0,3)`"。这会**强制凑档**——市场最强的票若都够 S 档,只取前几只 S,然后被迫去 A/B/C 捞 top20 之外更差的票填满格子。等于"为填满档位格子主动纳入更差股票,还挤掉更好的票",与"观察池=最值得看的一批"的初衷相反。
 
 **新模型(用户确认)**:
-1. **先选池**: B1+B2+B3 选出全市场**总分最高的 20 只**——这 20 只是一个精英整体,是"市场上最值得追的 20 只"。
+1. **先选池**: B1 多信号候选 → 五因子打分(B2 固定权重 + B5 板块因子)→ B3 AI 复核,选出全市场**总分最高的 20 只**——这 20 只是一个精英整体,是"市场上最值得追的 20 只"。
 2. **打分排序**: 这 20 只按总分从高到低排名。
 3. **按名次切档**(不是按绝对分阈值):
    - 排名 1-5 → **S**
@@ -192,6 +184,34 @@
 
 **已知取舍(可接受)**: 名次切分有"临界感"——第 5 名(S 末)与第 6 名(A 首)分数可能接近却戴不同徽章。这是排名榜固有特性,作为展示标签可接受,远优于老的凑档逻辑。
 
+### B5 — 个股所属板块强度因子(第五因子)
+
+**目标**: 新增一个个股级因子——身处强势赛道(尤其被资金吸血的板块)的题材龙头自动加分浮上来。这从个股层面解决了市场级 regime 在结构性/吸血行情下失灵的问题(取代 B2 的 regime 动态权重,见路线乙决策)。
+
+**为什么解吸血行情**: 大多数板块普跌、资金吸血到半导体+通信时,身处这些强板块的票 `sector_strength` 拿高分而浮上来;那些"个股自身没跌但所处板块也无资金"的防御性杂毛板块分低被压下。这是市场级 regime 做不到的区分。
+
+**数据源统一到东财(根治板块名不匹配)**:
+- **问题**: 现状个股行业名来自 Tushare(`stock_basic.industry`,申万风格单一字符串),板块强度来自东财(`stock_sector_fund_flow_rank`),两套编码 join 会有一批匹配不上。
+- **改法**: 个股→板块映射也改从**东财**取,与板块强度同源,直接 join,无需名称映射层。
+  - 行业板块成分:`stock_board_industry_cons_em`。
+  - 概念板块成分:`stock_board_concept_cons_em`(支持一只股票属**多个**概念,如"锂电池"/"新能源车"/"储能")。
+  - 需在 `python-runtime/scripts/providers/akshare_sector.py`(或新建 provider)新增这两个端点,并在 Rust 侧封装。
+- **一对多映射 + 低频缓存**: 新建 SQLite 表 `stock_board_map(ts_code, board_name, board_type)`(一只股票多行,`board_type ∈ {industry, concept}`),仿现有 `stock_industry` 模式。板块归属变化慢,**低频刷新**——新增每周一次 cron(或并入现有 `refresh_stock_basic` 手动触发),平时打分读缓存,**零盘前开销**。新股上市后下次刷新自动纳入。
+
+**因子计算**:
+- 板块强度分:`fetch_sector_flow()`(已有,一次调用拿全部东财板块当日涨跌幅 + 主力净流入)→ 合成 0-100 分/板块。build_cache 里加这一次调用(成本低)。
+- 个股 `sector_strength`:查 `stock_board_map` 拿该股所属所有板块,**取其中强度分最高的那个**(用户确认:取最强板块,最贴合吸血行情)。
+- **兜底**: 无板块归属(次新股/映射缺失)→ 给中性分 **50**,不惩罚。实现时先打印一次映射覆盖率作为验收(目标 >80%)。
+
+**并入打分**:
+- `FactorScores`(`scoring.rs`)新增字段 `sector_strength: f64`。
+- 五因子加权(见 B2 固定权重,sector 占 0.25)。
+- 前端 04 模块因子标签增一个"板块强"chip(`sector_strength >= 60` 时显示)。
+
+**V1 / V2 分界**:
+- **V1(本轮)**: 纯**当日**板块强度(涨跌幅 + 主力净流入)。足以解"当天谁在被吸血"。
+- **V2(后续,不做)**: 板块 **N 日动量/加速度**(识别板块刚启动加速),需新增 akshare `stock_board_industry_hist_em` 或 tushare `sw_daily` 板块历史端点,中等成本。
+
 ---
 
 ## 明确移除/不做的项
@@ -199,6 +219,8 @@
 - **A2(SABC 显示名字 + tooltip 代码)**: 当前已是"名字(主)+ 后面小灰代码",符合用户预期,**无需改动**,从范围移除。若后续觉得代码字太大再单独微调 `.stk-code` 样式。
 - **A5(每档最多 5 只作为配额)**: 被 B4 的名次切分取代(每档正好 5 只是名次切分的结果,不是"最多 5 的配额上限"),概念作废。
 - **AI `downgrade` action**: 名次切档下"降档"无实际语义(不改分、不改档),留着是装饰。AI action 简化为 `keep` / `drop` 两态。
+- **regime 动态权重整套(路线乙决策)**: 大盘/广度 regime 权重矩阵、EMA 平滑、`weight_state.rs`、crash 旁路——全部**不做**。市况维度改由 B5 板块强度因子从个股级表达。B2 退化为五因子固定权重。理由见 B2 段。
+- **板块 N 日动量/加速度(B5 V2)**: 需新增 akshare/tushare 板块历史端点,本轮只做当日板块强度。
 - **命中率反馈闭环 / 因子权重自适应 / 逻辑回归模型**: 需先建 `premarket_selection_history` 表并攒 1~1.5 个月数据,本轮不做。
 - **候选池 P2~P5 信号(放量/涨停梯队/龙虎/新高)**: 需新数据端点,本轮不做。
 - **雪球 scrapling 抓取落地**: 本轮右列只消费 `sentiment_items` 现有内容。
@@ -215,15 +237,16 @@
 - `src/lib/types.ts` — `SymbolScore` 加 `aiReview?`;新增 sentiment item 类型。
 
 **后端**:
-- `src-tauri/src/commands/invest.rs` — 新增 `get_sentiment_items`。
+- `src-tauri/src/commands/invest.rs` — 新增 `get_sentiment_items`;新增 `refresh_stock_board_map`(或并入现有 `refresh_stock_basic`)(B5)。
 - `src-tauri/src/storage/invest/sentiment.rs` — 新增 `list_recent_sentiment(conn, limit)`(A1)。
 - `src-tauri/src/storage/invest/news_cleanup.rs` — 新建(A4 清理 + 单测)。
-- `src-tauri/src/invest/scheduler/mod.rs` + `runner.rs` — 新增清理 cron + dispatch 分支(A4,需手动加 match 分支)。
-- `src-tauri/src/invest/premarket/cache_builder.rs` — `select_candidates` 多信号化 + S2 降级(B1)。
-- `src-tauri/src/invest/premarket/scoring.rs` — `PremarketConfig` 加 `weight_source` / `enable_ai_review`;`AiReview` 结构 + `SymbolScore.ai_review`;废弃绝对阈值切档,改名次切档(B2/B3/B4)。
-- `src-tauri/src/invest/premarket/weight_state.rs` — 新建(B2 EMA 状态 + crash 旁路 + 首次/损坏处理)。
-- `src-tauri/src/invest/premarket/report.rs` — 大盘 regime 取 + 权重 resolve(B2);top25 选取 + AI 复核 pass + 熔断降级 + `sections_status` 标注(B3);名次切档(B4);`ai_review` 落盘存档。
-- `src-tauri/src/messages/en.json` + `zh-CN.json` — i18n(含 `invest_committee_sub_news`)。
+- `src-tauri/src/storage/invest/stock_board_map.rs` — 新建(B5 一对多板块映射表 `stock_board_map` + CRUD)。
+- `src-tauri/src/invest/scheduler/mod.rs` + `runner.rs` — 新增清理 cron(A4)+ 板块映射低频刷新 cron(B5,每周一次);均需手动加 dispatch match 分支。
+- `src-tauri/src/invest/premarket/cache_builder.rs` — `select_candidates` 多信号化 + S2 降级(B1);build_cache 里加 `fetch_sector_flow()` + 板块强度 map + 个股取最强板块分(B5)。
+- `src-tauri/src/invest/premarket/scoring.rs` — `PremarketConfig` 五因子权重(加 `weight_sector`)+ `weight_source` + `enable_ai_review`;`FactorScores` 加 `sector_strength`;`AiReview` 结构 + `SymbolScore.ai_review`;废弃绝对阈值切档,改名次切档(B2/B3/B4/B5)。
+- `src-tauri/src/invest/premarket/report.rs` — 五因子加权(B2/B5);top25 选取 + AI 复核 pass + 熔断降级 + `sections_status` 标注(B3);名次切档(B4);`ai_review` 落盘存档。
+- `src-tauri/python-runtime/scripts/providers/akshare_sector.py` — 新增 `stock_board_industry_cons_em` / `stock_board_concept_cons_em` 端点(B5)。
+- `src-tauri/src/messages/en.json` + `zh-CN.json` — i18n(含 `invest_committee_sub_news`、板块强 chip)。
 
 ---
 
