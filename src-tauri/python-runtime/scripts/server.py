@@ -1,6 +1,6 @@
 """
 ClawGO Python Data Server
-JSON-RPC over stdin/stdout for Yahoo Finance and future data providers.
+JSON-RPC over stdin/stdout for market data providers (akshare / eastmoney / jinshi / ...).
 """
 
 import sys

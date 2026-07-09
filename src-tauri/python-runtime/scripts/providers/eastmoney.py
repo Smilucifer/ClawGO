@@ -118,7 +118,7 @@ def _fetch_7x24_news(count: int) -> list:
 def quote(symbol: str) -> dict:
     """Fetch real-time quote for an A-share symbol from EastMoney.
 
-    Returns dict matching YahooQuote schema:
+    Returns dict with quote fields:
     {symbol, name, price, change, change_pct, previous_close, timestamp}
     """
     # Determine market code (1=SH, 0=SZ)
