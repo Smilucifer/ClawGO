@@ -15,6 +15,7 @@
   import { jsPDF } from 'jspdf';
   import { getTransport } from '$lib/transport';
   import { t } from '$lib/i18n/index.svelte';
+  import { premarketStore } from '$lib/stores/premarket-store.svelte';
 
   // ── Types (mirrors src-tauri/src/invest/premarket/*) ─────────────
   type Grade = 'S' | 'A' | 'B' | 'C';
@@ -114,7 +115,13 @@
   // ── State ─────────────────────────────────────────────────────────
   let report = $state<ReportPayload | null>(null);
   let latestDate = $state<string | null>(null);
-  let generating = $state(false);
+  const generating = $derived(premarketStore.generating);
+  let nowTick = $state(Date.now());
+  const elapsedSec = $derived(
+    generating
+      ? Math.floor((nowTick - premarketStore.startedAt) / 1000)
+      : Math.round(premarketStore.lastElapsedMs / 1000),
+  );
   let loading = $state(false);
   let errorMsg = $state<string | null>(null);
   let exportingPng = $state(false);
@@ -202,24 +209,27 @@
   }
 
   async function generate() {
-    generating = true;
     errorMsg = null;
-    try {
-      // 优先走 cron dispatcher (与调度器同路径); 失败则回退到 direct 命令
-      try {
-        await invoke<string>('trigger_cron_job', { id: 'premarket_report' });
-      } catch (cronErr) {
-        console.warn('[premarket] cron trigger failed, fallback:', cronErr);
-        await invoke<string>('generate_premarket_report_cmd');
-      }
-      await loadLatest();
-    } catch (e) {
-      console.error('[premarket] generate:', e);
-      errorMsg = String(e);
-    } finally {
-      generating = false;
-    }
+    await premarketStore.generate();
   }
+
+  // 秒表:生成中每秒推进 nowTick(驱动 elapsedSec 重算)
+  $effect(() => {
+    if (!premarketStore.generating) return;
+    const h = setInterval(() => { nowTick = Date.now(); }, 1000);
+    return () => clearInterval(h);
+  });
+
+  // 生成完成(completionSeq 变化)→ 刷新报告 + 回填错误
+  let lastSeq = premarketStore.completionSeq;
+  $effect(() => {
+    const seq = premarketStore.completionSeq;
+    if (seq !== lastSeq) {
+      lastSeq = seq;
+      if (premarketStore.lastError) errorMsg = premarketStore.lastError;
+      else loadLatest();
+    }
+  });
 
   async function exportPng() {
     const el = document.getElementById('report-canvas');
@@ -231,10 +241,13 @@
         backgroundColor: getComputedStyle(el).backgroundColor || '#1a1918',
         useCORS: true,
       });
-      const link = document.createElement('a');
-      link.href = canvas.toDataURL('image/png');
-      link.download = `premarket_${report?.date ?? latestDate ?? 'report'}.png`;
-      link.click();
+      const base64 = canvas.toDataURL('image/png').split(',')[1];
+      const { save } = await import('@tauri-apps/plugin-dialog');
+      const path = await save({
+        defaultPath: `premarket_${report?.date ?? latestDate ?? 'report'}.png`,
+        filters: [{ name: 'PNG', extensions: ['png'] }],
+      });
+      if (path) await invoke<void>('write_binary_export', { path, base64 });
     } catch (e) {
       console.error('[premarket] exportPng:', e);
       errorMsg = String(e);
@@ -253,14 +266,19 @@
         backgroundColor: getComputedStyle(el).backgroundColor || '#1a1918',
         useCORS: true,
       });
-      const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF({
         unit: 'px',
         format: [canvas.width, canvas.height],
         orientation: canvas.width >= canvas.height ? 'landscape' : 'portrait',
       });
-      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-      pdf.save(`premarket_${report?.date ?? latestDate ?? 'report'}.pdf`);
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, canvas.width, canvas.height);
+      const base64 = pdf.output('datauristring').split(',')[1];
+      const { save } = await import('@tauri-apps/plugin-dialog');
+      const path = await save({
+        defaultPath: `premarket_${report?.date ?? latestDate ?? 'report'}.pdf`,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      });
+      if (path) await invoke<void>('write_binary_export', { path, base64 });
     } catch (e) {
       console.error('[premarket] exportPdf:', e);
       errorMsg = String(e);
@@ -323,8 +341,13 @@
   <!-- Toolbar -->
   <div class="toolbar">
     <button class="btn primary" onclick={generate} disabled={generating || loading}>
-      {generating ? t('invest_premarket_generating') : t('invest_premarket_generate_now')}
+      {generating
+        ? `${t('invest_premarket_elapsed_running')} ${elapsedSec}s`
+        : t('invest_premarket_generate_now')}
     </button>
+    {#if !generating && premarketStore.lastElapsedMs > 0}
+      <span class="elapsed-note">{t('invest_premarket_elapsed')} {elapsedSec}s</span>
+    {/if}
     <button class="btn" onclick={exportPng} disabled={!report || exportingPng}>
       {exportingPng ? '...' : t('invest_premarket_export_png')}
     </button>
@@ -739,6 +762,13 @@
   .btn.subtle  { flex: 0 0 auto; padding: 9px 14px; }
   .btn:hover:not(:disabled) { border-color: var(--accent); }
   .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .elapsed-note {
+    align-self: center;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    white-space: nowrap;
+  }
 
   .settings-panel {
     width: 720px;

@@ -332,6 +332,8 @@
   "invest_premarket_next_day": "预测交易日",
   "invest_premarket_generate_now": "立即生成",
   "invest_premarket_generating": "生成中…",
+  "invest_premarket_elapsed": "本次用时",
+  "invest_premarket_elapsed_running": "生成中",
   "invest_premarket_export_png": "导出 PNG",
   "invest_premarket_export_pdf": "导出 PDF",
   "invest_premarket_settings_show": "设置",

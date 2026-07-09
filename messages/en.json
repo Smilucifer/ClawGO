@@ -332,6 +332,8 @@
   "invest_premarket_next_day": "Forecast session",
   "invest_premarket_generate_now": "Generate now",
   "invest_premarket_generating": "Generating…",
+  "invest_premarket_elapsed": "Generated in",
+  "invest_premarket_elapsed_running": "Generating…",
   "invest_premarket_export_png": "Export PNG",
   "invest_premarket_export_pdf": "Export PDF",
   "invest_premarket_settings_show": "Settings",
