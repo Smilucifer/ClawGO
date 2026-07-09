@@ -566,6 +566,50 @@ impl TushareClient {
         Ok(bars)
     }
 
+    /// 按 trade_date 拉全市场日线（单次覆盖全 A ~5500 行，无需分页）。
+    /// 用于盘后缓存，固定走股票 `daily` API（非 ETF）。
+    pub async fn daily_market(&self, trade_date: &str) -> Result<Vec<DailyBar>, String> {
+        let params = serde_json::json!({ "trade_date": trade_date });
+        let resp = self.call_api("daily", params, "").await?;
+        Ok(Self::parse_daily_rows(&resp.data.fields, &resp.data.items))
+    }
+
+    /// 纯解析：tushare daily 响应行 → Vec<DailyBar>。全市场固定用 `close` 列。
+    pub(crate) fn parse_daily_rows(
+        fields: &[String],
+        items: &[Vec<serde_json::Value>],
+    ) -> Vec<DailyBar> {
+        let idx = |name: &str| fields.iter().position(|f| f == name);
+        let (ts_i, td_i) = (idx("ts_code"), idx("trade_date"));
+        let (open_i, high_i, low_i, close_i) =
+            (idx("open"), idx("high"), idx("low"), idx("close"));
+        let (pre_i, chg_i, pct_i, vol_i, amt_i) = (
+            idx("pre_close"),
+            idx("change"),
+            idx("pct_chg"),
+            idx("vol"),
+            idx("amount"),
+        );
+        let mut bars = Vec::with_capacity(items.len());
+        for row in items {
+            let g = |i: Option<usize>| i.and_then(|i| get_f64(row, i)).unwrap_or_default();
+            bars.push(DailyBar {
+                ts_code: ts_i.and_then(|i| get_str(row, i)).unwrap_or_default(),
+                trade_date: td_i.and_then(|i| get_str(row, i)).unwrap_or_default(),
+                open: g(open_i),
+                high: g(high_i),
+                low: g(low_i),
+                close: g(close_i),
+                pre_close: g(pre_i),
+                change: g(chg_i),
+                pct_chg: g(pct_i),
+                vol: g(vol_i),
+                amount: g(amt_i),
+            });
+        }
+        bars
+    }
+
     /// Search stocks by optional name or ts_code (精确匹配 ts_code 优先).
     /// If `name` is `None`, returns the first 50 stocks.
     pub async fn stock_basic(&self, name: Option<&str>) -> Result<Vec<StockBasic>, String> {
@@ -1456,6 +1500,28 @@ impl TushareClient {
         }
         Ok(items)
     }
+
+    /// 按 trade_date 拉全市场东财资金流（单次 ~5900 行）。
+    pub async fn moneyflow_dc_market(&self, trade_date: &str) -> Result<Vec<MoneyflowDc>, String> {
+        let params = serde_json::json!({ "trade_date": trade_date });
+        let resp = self.call_api("moneyflow_dc", params, "").await?;
+        let fields = &resp.data.fields;
+        let idx = |name: &str| fields.iter().position(|f| f == name);
+        let (ts_i, td_i, net_i) = (idx("ts_code"), idx("trade_date"), idx("net_amount"));
+        let mut items = Vec::with_capacity(resp.data.items.len());
+        for row in &resp.data.items {
+            items.push(MoneyflowDc {
+                ts_code: ts_i.and_then(|i| get_str(row, i)).unwrap_or_default(),
+                trade_date: td_i.and_then(|i| get_str(row, i)).unwrap_or_default(),
+                buy_sm_amount: None,
+                buy_md_amount: None,
+                buy_lg_amount: None,
+                buy_elg_amount: None,
+                net_amount: net_i.and_then(|i| get_f64(row, i)),
+            });
+        }
+        Ok(items)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1526,5 +1592,38 @@ mod tests {
     fn get_i64_out_of_bounds() {
         let row = vec![json!(1)];
         assert_eq!(get_i64(&row, 3), None);
+    }
+
+    #[test]
+    fn parse_daily_rows_maps_fields_by_name() {
+        let fields = vec![
+            "ts_code".to_string(),
+            "trade_date".to_string(),
+            "close".to_string(),
+            "pct_chg".to_string(),
+            "amount".to_string(),
+        ];
+        let items = vec![
+            vec![
+                json!("600519.SH"),
+                json!("20260708"),
+                json!(1680.5),
+                json!(2.31),
+                json!(123456.0),
+            ],
+            vec![
+                json!("000001.SZ"),
+                json!("20260708"),
+                json!(11.2),
+                json!(-1.1),
+                json!(98765.0),
+            ],
+        ];
+        let bars = super::TushareClient::parse_daily_rows(&fields, &items);
+        assert_eq!(bars.len(), 2);
+        assert_eq!(bars[0].ts_code, "600519.SH");
+        assert_eq!(bars[0].pct_chg, 2.31);
+        assert_eq!(bars[1].ts_code, "000001.SZ");
+        assert_eq!(bars[1].pct_chg, -1.1);
     }
 }
