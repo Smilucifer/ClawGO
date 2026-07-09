@@ -62,3 +62,57 @@ pub async fn write_html_export(path: String, content: String) -> Result<(), Stri
         e.to_string()
     })
 }
+
+/// 导出写盘白名单:仅 .png / .pdf(大小写不敏感)。
+fn binary_export_ext_ok(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase())
+        .is_some_and(|e| e == "png" || e == "pdf")
+}
+
+/// 把 base64 编码的二进制(PNG/PDF)解码后写入用户选定路径。
+/// 仿 `write_html_export`,但白名单为 .png/.pdf,内容走 base64 解码。
+#[tauri::command]
+pub async fn write_binary_export(path: String, base64: String) -> Result<(), String> {
+    use base64::Engine;
+    log::debug!(
+        "[export] write_binary_export: path={}, b64_len={}",
+        path,
+        base64.len()
+    );
+    if !binary_export_ext_ok(&path) {
+        log::error!("[export] write_binary_export rejected path: {}", path);
+        return Err("write_binary_export: only .png/.pdf paths allowed".into());
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(base64.as_bytes())
+        .map_err(|e| {
+            log::error!("[export] write_binary_export base64 decode failed: {}", e);
+            e.to_string()
+        })?;
+    tokio::fs::write(&path, bytes).await.map_err(|e| {
+        log::error!("[export] write_binary_export write failed: {}", e);
+        e.to_string()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::binary_export_ext_ok;
+
+    #[test]
+    fn accepts_png_and_pdf_case_insensitive() {
+        assert!(binary_export_ext_ok("C:/tmp/a.png"));
+        assert!(binary_export_ext_ok("/tmp/a.PDF"));
+        assert!(binary_export_ext_ok("report.Png"));
+    }
+
+    #[test]
+    fn rejects_other_extensions() {
+        assert!(!binary_export_ext_ok("a.exe"));
+        assert!(!binary_export_ext_ok("a.html"));
+        assert!(!binary_export_ext_ok("noext"));
+    }
+}
