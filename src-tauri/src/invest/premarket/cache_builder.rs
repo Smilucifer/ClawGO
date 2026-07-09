@@ -116,10 +116,11 @@ pub async fn build_cache() -> Result<(String, usize), String> {
         .unwrap_or_default();
 
     // 6. technical(K线)限速慢拉;sentiment/catalyst(本地库)+ capital(查 net_map)同步
+    let tech_targets: Vec<String> = candidates.iter().map(|(ts, _, _)| ts.clone()).collect();
     let tech_results: Vec<(String, Option<f64>)> = futures_util::stream::iter(
-        candidates.iter().map(|(ts, _, _)| {
-            let ts = ts.clone();
-            async move { (ts.clone(), compute_technical(&ts).await) }
+        tech_targets.into_iter().map(|ts| async move {
+            let r = compute_technical(&ts).await;
+            (ts, r)
         }),
     )
     .buffer_unordered(TECH_CONCURRENCY)
