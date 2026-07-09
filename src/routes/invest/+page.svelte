@@ -27,8 +27,8 @@
   import type { Holding } from '$lib/types';
 
   type InvestTab = 'dashboard' | 'committee' | 'strategy' | 'trades' | 'system';
-  type CommitteeSubTab = 'live' | 'replay' | 'archive' | 'roles' | 'accuracy';
-  type SystemSubTab = 'cron' | 'events' | 'reports' | 'datasource' | 'pnl_history' | 'insights' | 'dreams' | 'profile' | 'cleanup';
+  type CommitteeSubTab = 'live' | 'replay' | 'archive' | 'roles' | 'accuracy' | 'premarket';
+  type SystemSubTab = 'cron' | 'events' | 'datasource' | 'pnl_history' | 'insights' | 'dreams' | 'profile' | 'cleanup';
 
   let activeTab: InvestTab = $state('dashboard');
   let committeeSubTab: CommitteeSubTab = $state('live');
@@ -45,7 +45,6 @@
   const systemSubTabs: { id: SystemSubTab; label: string }[] = $derived([
     { id: 'cron', label: t('invest_system_sub_cron') },
     { id: 'events', label: t('invest_system_sub_events') },
-    { id: 'reports', label: t('invest_system_sub_reports') },
     { id: 'datasource', label: t('invest_system_sub_datasource') },
     { id: 'pnl_history', label: t('invest_system_sub_pnl_history') },
     { id: 'insights', label: t('invest_system_sub_insights') },
@@ -60,6 +59,7 @@
     { id: 'archive', label: t('invest_committee_sub_archive') },
     { id: 'roles', label: t('invest_committee_sub_roles') },
     { id: 'accuracy', label: t('invest_committee_sub_accuracy') },
+    { id: 'premarket', label: t('invest_committee_sub_premarket') },
   ]);
 
   let tushareToken = $state<string>('');
@@ -234,6 +234,8 @@
         <CommitteeRolesTab />
       {:else if committeeSubTab === 'accuracy'}
         <CommitteeAccuracyTab />
+      {:else if committeeSubTab === 'premarket'}
+        <PremarketReportTab />
       {/if}
     {:else if activeTab === 'system'}
       <!-- System sub-tab navigation (pill style) -->
@@ -298,8 +300,6 @@
         <SchedulerTab />
       {:else if systemSubTab === 'events'}
         <EventWatchTab onNavigateToCommittee={() => { activeTab = 'committee'; committeeSubTab = 'live'; }} />
-      {:else if systemSubTab === 'reports'}
-        <PremarketReportTab />
       {:else if systemSubTab === 'datasource'}
         <SystemDatasourceTab />
       {:else if systemSubTab === 'pnl_history'}
