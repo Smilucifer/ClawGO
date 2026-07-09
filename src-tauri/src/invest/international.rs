@@ -1,6 +1,6 @@
-//! International market indicators via Python yfinance backend.
+//! International market indicators via Python data backends (eastmoney + akshare).
 //!
-//! Delegates all Yahoo Finance API calls to the embedded Python data server
+//! Delegates overseas market data calls to the embedded Python data server
 //! (`python-runtime/scripts/server.py`) via JSON-RPC over stdin/stdout.
 
 use serde::Deserialize;
@@ -9,32 +9,21 @@ use serde::Deserialize;
 // Data structures (unchanged — consumed by macro_refresh, event_scanner, etc.)
 // ---------------------------------------------------------------------------
 
-/// A single real-time quote from Yahoo Finance.
-#[derive(Debug, Clone, serde::Serialize, Deserialize)]
+/// 东财直连海外指标（DXY / 美10Y 等），Python eastmoney.overseas_indicator 返回。
+#[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct YahooQuote {
-    pub symbol: String,
+pub struct OverseasIndicator {
+    pub value: f64,
+    #[serde(default)]
     pub name: String,
-    pub price: f64,
-    pub change: f64,
-    #[serde(alias = "change_pct")]
+    #[serde(alias = "change_pct", default)]
     pub change_pct: f64,
-    #[serde(alias = "previous_close")]
-    pub previous_close: f64,
-    pub timestamp: i64,
 }
 
-/// A single daily bar from Yahoo Finance historical data.
-#[derive(Debug, Clone, serde::Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct YahooBar {
-    pub symbol: String,
-    pub date: String,
-    pub open: f64,
-    pub high: f64,
-    pub low: f64,
-    pub close: f64,
-    pub volume: u64,
+/// akshare 海外标量指标（VIX / 金 / 油 / 汇率），Python akshare_market.overseas_* 返回。
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct OverseasValue {
+    pub value: f64,
 }
 
 /// A single news item from various providers (Yahoo Finance, AkShare, Jin10, etc.).
@@ -168,28 +157,18 @@ impl InternationalClient {
             .map_err(|e| format!("Failed to parse {method} response: {e}"))
     }
 
-    // -- Yahoo Finance (quote + history) --------------------------------------
+    // -- 东财 + akshare 海外指标 --------------------------------------------------
 
-    /// Fetch real-time quote for a Yahoo symbol.
-    pub async fn fetch_yahoo_quote(&self, symbol: &str) -> Result<YahooQuote, String> {
-        self.rpc_call("yahoo.quote", serde_json::json!({"symbol": symbol}))
+    /// 东财直连海外指标(DXY secid=100.UDI / 美10Y secid=171.US10Y)。
+    pub async fn fetch_eastmoney_overseas(&self, secid: &str) -> Result<OverseasIndicator, String> {
+        self.rpc_call("eastmoney.overseas_indicator", serde_json::json!({ "secid": secid }))
             .await
     }
 
-    /// Fetch historical daily bars for a Yahoo symbol.
-    ///
-    /// `days` controls the lookback window (e.g. 30 for 1 month).
-    /// Returns bars in chronological order (oldest first).
-    pub async fn fetch_yahoo_history(
-        &self,
-        symbol: &str,
-        days: u32,
-    ) -> Result<Vec<YahooBar>, String> {
-        self.rpc_call(
-            "yahoo.history",
-            serde_json::json!({"symbol": symbol, "days": days}),
-        )
-        .await
+    /// akshare 海外标量指标(method 取 "overseas_vix"/"overseas_gold"/"overseas_oil"/"overseas_usdcny")。
+    pub async fn fetch_akshare_overseas(&self, method: &str) -> Result<OverseasValue, String> {
+        self.rpc_call(&format!("akshare_market.{method}"), serde_json::json!({}))
+            .await
     }
 
     // -- Jin10 provider (金十数据) --------------------------------------------

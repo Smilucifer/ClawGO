@@ -369,53 +369,44 @@ async fn fetch_cgb_10y(
 }
 
 // ---------------------------------------------------------------------------
-// Yahoo Finance international indicators
+// 海外指标（东财直连 + akshare）
 // ---------------------------------------------------------------------------
 
-/// Fetch VIX, TNX, DXY, Gold, Oil, USDCNY from Yahoo Finance.
-///
-/// Requests are sequential with 500ms spacing to avoid Yahoo's rate limiter (429).
+/// Fetch VIX / 美10Y / DXY / Gold / Oil / USDCNY —— akshare(4) + 东财直连(2)。
+/// Yahoo 已弃用。任一失败只 warn 跳过,不阻断其余。
 async fn fetch_international() -> MacroResult {
     let client = crate::invest::international::InternationalClient::from_settings();
-
-    let symbols: &[(&str, &str)] = &[
-        ("^VIX", "vix"),
-        ("^TNX", "tnx"),
-        ("DX-Y.NYB", "dxy"),
-        ("GC=F", "gold"),
-        ("CL=F", "oil"),
-        ("USDCNY=X", "usdcny"),
-    ];
-
     let mut entries = Vec::new();
-    for (i, (yahoo_sym, indicator)) in symbols.iter().enumerate() {
-        // 500ms spacing between requests to avoid Yahoo rate limiter (429).
-        if i > 0 {
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        }
-        match client.fetch_yahoo_quote(yahoo_sym).await {
-            Ok(quote) => entries.push((
+
+    // 东财直连:DXY / 美10Y(按 f59 解码,value 已是真值)
+    for (secid, indicator) in [("100.UDI", "dxy"), ("171.US10Y", "tnx")] {
+        match client.fetch_eastmoney_overseas(secid).await {
+            Ok(q) => entries.push((
                 indicator.to_string(),
-                Some(quote.price),
-                Some(
-                    serde_json::json!({
-                        "change_pct": quote.change_pct,
-                        "previous_close": quote.previous_close,
-                    })
-                    .to_string(),
-                ),
-                "yahoo",
+                Some(q.value),
+                Some(serde_json::json!({ "change_pct": q.change_pct }).to_string()),
+                "eastmoney",
             )),
-            Err(e) => {
-                log::warn!("macro_refresh: yahoo {yahoo_sym}: {e}");
-            }
+            Err(e) => log::warn!("macro_refresh: eastmoney {secid}: {e}"),
+        }
+    }
+
+    // akshare:VIX / 金 / 油 / 汇率
+    for (method, indicator) in [
+        ("overseas_vix", "vix"),
+        ("overseas_gold", "gold"),
+        ("overseas_oil", "oil"),
+        ("overseas_usdcny", "usdcny"),
+    ] {
+        match client.fetch_akshare_overseas(method).await {
+            Ok(v) => entries.push((indicator.to_string(), Some(v.value), None, "akshare")),
+            Err(e) => log::warn!("macro_refresh: akshare {method}: {e}"),
         }
     }
 
     if entries.is_empty() {
-        return Err("international: all Yahoo fetches failed".into());
+        return Err("international: all overseas fetches failed".into());
     }
-
     Ok(entries)
 }
 

@@ -91,7 +91,6 @@ def _safe_print(text: str) -> bool:
 
 def main():
     # Register providers
-    register_provider("yahoo", "yahoo")
     register_provider("eastmoney", "eastmoney")
     register_provider("jinshi", "jinshi")
     register_provider("akshare", "akshare_news")
