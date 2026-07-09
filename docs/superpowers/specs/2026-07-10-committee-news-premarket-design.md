@@ -110,7 +110,7 @@
 
 **改法**:
 - 四因子扩为**五因子**(新增 B5 `sector`),采用**固定权重**基线:
-  `sentiment=0.25 / capital=0.25 / technical=0.15 / catalyst=0.10 / sector=0.25`(和为 1,实现阶段可微调)。
+  `sentiment=0.25 / capital=0.25 / technical=0.20 / catalyst=0.15 / sector=0.15`(和为 1,实现阶段可微调)。sector 起步权重刻意压低(0.15)——它是未经实盘验证的新因子,给"观察期"权重,一个月后按 KPI 重估再考虑上调。
 - `PremarketConfig` 权重字段从 4 个扩到 5 个(新增 `weight_sector`)。
 - **保留 `weight_source: "auto" | "manual"`**: `auto` = 上述固定基线;`manual` = 用户在权重面板自定义五个权重。前端权重面板加"自动/手动"开关 + 第五个权重滑块。
 - **不做** regime 权重矩阵、EMA 平滑、`weight_state.rs`、crash 旁路——这些随路线乙一并移除(见"明确移除/不做的项")。
@@ -144,7 +144,7 @@
 **执行路径**:
 - 复用 `event_analyzer::cli_complete_with_settings` + `macro_verdict::resolve_settings_path()`,**走现有委员会配置**(`CommitteeTuning.selected_provider + model` + `platform_credentials`),与 `ai_commentary`、`macro_verdict` 一致,**零新配置**。
 - 60s 超时(盘前时间敏感,不用默认 180s)。
-- 输入组装:每只标的喂 `名称 + 行业 + 四因子分 + 近3日 sentiment 命中(读本地 `sentiment_items`,不发新 API)`。约 ~180 tokens/只,25 只 ~4.5k input。
+- 输入组装:每只标的喂 `名称 + 行业 + 五因子分(sentiment/capital/technical/catalyst/sector)+ 近3日 sentiment 命中(读本地 `sentiment_items`,不发新 API)`。约 ~180 tokens/只,25 只 ~4.5k input。
 
 **开关与降级**:
 - `PremarketConfig.enable_ai_review: bool`,**默认 true**。做成**前端设置面板的显式 toggle**(用户可随时开关),非仅配置文件。
@@ -191,25 +191,30 @@
 **为什么解吸血行情**: 大多数板块普跌、资金吸血到半导体+通信时,身处这些强板块的票 `sector_strength` 拿高分而浮上来;那些"个股自身没跌但所处板块也无资金"的防御性杂毛板块分低被压下。这是市场级 regime 做不到的区分。
 
 **数据源统一到东财(根治板块名不匹配)**:
-- **问题**: 现状个股行业名来自 Tushare(`stock_basic.industry`,申万风格单一字符串),板块强度来自东财(`stock_sector_fund_flow_rank`),两套编码 join 会有一批匹配不上。
-- **改法**: 个股→板块映射也改从**东财**取,与板块强度同源,直接 join,无需名称映射层。
-  - 行业板块成分:`stock_board_industry_cons_em`。
-  - 概念板块成分:`stock_board_concept_cons_em`(支持一只股票属**多个**概念,如"锂电池"/"新能源车"/"储能")。
-  - 需在 `python-runtime/scripts/providers/akshare_sector.py`(或新建 provider)新增这两个端点,并在 Rust 侧封装。
-- **一对多映射 + 低频缓存**: 新建 SQLite 表 `stock_board_map(ts_code, board_name, board_type)`(一只股票多行,`board_type ∈ {industry, concept}`),仿现有 `stock_industry` 模式。板块归属变化慢,**低频刷新**——新增每周一次 cron(或并入现有 `refresh_stock_basic` 手动触发),平时打分读缓存,**零盘前开销**。新股上市后下次刷新自动纳入。
+- **问题**: 现状个股行业名来自 Tushare(`stock_basic.industry`,申万风格单一字符串)。而现有 `fetch_sector_flow()` 的**主源是同花顺(THS)**,东财只是回退——两套编码 join 会有一批匹配不上;且现有取数路径**只有行业板块、没有概念板块强度**。
+- **改法(新建专供 B5 的东财取数路径,不复用 `fetch_sector_flow`)**: 保留 `fetch_sector_flow()`(THS 主源)给报告 02 段用(它提供 02 段所需的成交额/涨跌家数/领涨股字段);**另建**一条 B5 专用的东财路径,保证个股映射与板块强度**同源可 join**:
+  - 板块成分(建映射):`stock_board_industry_cons_em`(行业)+ `stock_board_concept_cons_em`(概念,一只股票属多个概念)。
+  - 板块强度(打分):`stock_sector_fund_flow_rank` 的**两个 sector_type**——行业资金流 + 概念资金流,都拉。这样概念板块也有强度分,与 cons_em 成分表同源。
+  - 需在 `python-runtime/scripts/providers/akshare_sector.py`(或新建 provider)新增上述端点,并在 Rust 侧封装。
+- **一对多映射 + 低频缓存**: 新建 SQLite 表 `stock_board_map(ts_code, board_name, board_type)`(一只股票多行,`board_type ∈ {industry, concept}`,复合主键 `(ts_code, board_type, board_name)` + `board_name` 二级索引),仿现有 `stock_industry` 模式。
+- **刷新成本与频率**: 成分接口按板块名逐板块调(~90 行业 + 300+ 概念,每板块 ≥1 次 HTTP),整轮刷新可能跑**几分钟**,故**低频**——新增每周一次 cron(或并入 `refresh_stock_basic` 手动触发)。刷新需**进度可观测 + 失败可恢复**(中途挂不能只写半张表:先写临时表再原子替换,或按 board_type 分段提交)。平时打分读缓存,**零盘前开销**。新股上市后下次刷新自动纳入。
 
-**因子计算**:
-- 板块强度分:`fetch_sector_flow()`(已有,一次调用拿全部东财板块当日涨跌幅 + 主力净流入)→ 合成 0-100 分/板块。build_cache 里加这一次调用(成本低)。
-- 个股 `sector_strength`:查 `stock_board_map` 拿该股所属所有板块,**取其中强度分最高的那个**(用户确认:取最强板块,最贴合吸血行情)。
-- **兜底**: 无板块归属(次新股/映射缺失)→ 给中性分 **50**,不惩罚。实现时先打印一次映射覆盖率作为验收(目标 >80%)。
+**因子计算(取值方式经量化审查修正,避免追高/共线/秩序偏差)**:
+- **板块强度分**: B5 专用东财路径一次拿全部行业+概念板块的当日强度(涨跌幅 + 主力净流入),**按当日全市场分布做相对分位归一化到 0-100**(不用绝对映射,保证普跌日最强板块仍拿高分、因子不失分辨)。build_cache 里加这一次调用(成本低,一次拿全)。
+- **个股 `sector_strength` = 板块内相对强度 × 板块 ex-self 强度**:
+  - **板块内相对强度**: 个股当日涨幅在其所属板块内的分位(要求个股自身也强,压掉"沾边强板块但自己不涨"的杂毛)。
+  - **板块 ex-self 强度**: 板块强度分**剔除该股自身贡献**后计算(消除"个股涨→板块涨→个股得分"的机械循环,并与 capital 因子天然正交)。
+  - 二者相乘作为单板块得分。
+- **多板块取值**: 取该股所属板块中单板块得分最高的 **top-2 加权**(`0.7×最强 + 0.3×次强`),**不取 max**(避免概念多的蹭热点小票因秩序统计偏差被系统性抬升)。
+- **兜底**: 无板块归属(次新股/映射缺失)→ 给**当日全市场 sector 分的中位数**(动态中性,弱市自动下移),不固定 50。实现时先打印映射覆盖率作为验收(目标 >80%),并打印 industry 分 vs concept 分分布确认量纲可比。
 
 **并入打分**:
-- `FactorScores`(`scoring.rs`)新增字段 `sector_strength: f64`。
-- 五因子加权(见 B2 固定权重,sector 占 0.25)。
-- 前端 04 模块因子标签增一个"板块强"chip(`sector_strength >= 60` 时显示)。
+- `FactorBreakdown`(`scoring.rs`,**注:结构体现名 `FactorBreakdown` 而非 `FactorScores`**)新增字段 `sector_strength: f64`;`CachedFactor`(`storage/invest/premarket_cache.rs`)与 `premarket_factor_cache` 表同步加列(`ALTER TABLE` 迁移,旧行默认中性)。
+- 五因子加权(见 B2 固定权重,**sector 占 0.15**,不是 0.25)。
+- 前端 `types.ts` 同步加 `sectorStrength` 字段;04 模块因子标签增一个"板块强"chip(`sector_strength >= 60` 时显示)。
 
 **V1 / V2 分界**:
-- **V1(本轮)**: 纯**当日**板块强度(涨跌幅 + 主力净流入)。足以解"当天谁在被吸血"。
+- **V1(本轮)**: **当日**板块强度(相对分位 + ex-self + 板块内相对强度)。上述修正把 V1 从"纯追高的残缺形态"变为"去循环、与 capital 正交的可信开局"。
 - **V2(后续,不做)**: 板块 **N 日动量/加速度**(识别板块刚启动加速),需新增 akshare `stock_board_industry_hist_em` 或 tushare `sw_daily` 板块历史端点,中等成本。
 
 ---
@@ -219,7 +224,7 @@
 - **A2(SABC 显示名字 + tooltip 代码)**: 当前已是"名字(主)+ 后面小灰代码",符合用户预期,**无需改动**,从范围移除。若后续觉得代码字太大再单独微调 `.stk-code` 样式。
 - **A5(每档最多 5 只作为配额)**: 被 B4 的名次切分取代(每档正好 5 只是名次切分的结果,不是"最多 5 的配额上限"),概念作废。
 - **AI `downgrade` action**: 名次切档下"降档"无实际语义(不改分、不改档),留着是装饰。AI action 简化为 `keep` / `drop` 两态。
-- **regime 动态权重整套(路线乙决策)**: 大盘/广度 regime 权重矩阵、EMA 平滑、`weight_state.rs`、crash 旁路——全部**不做**。市况维度改由 B5 板块强度因子从个股级表达。B2 退化为五因子固定权重。理由见 B2 段。
+- **regime 动态权重整套(路线乙决策)**: 大盘/广度 regime 权重矩阵、EMA 平滑、`weight_state.rs`、crash 旁路——全部**不做**。市况维度改由 B5 板块强度因子从个股级表达。B2 退化为五因子固定权重(sector 起步 0.15)。理由见 B2 段。
 - **板块 N 日动量/加速度(B5 V2)**: 需新增 akshare/tushare 板块历史端点,本轮只做当日板块强度。
 - **命中率反馈闭环 / 因子权重自适应 / 逻辑回归模型**: 需先建 `premarket_selection_history` 表并攒 1~1.5 个月数据,本轮不做。
 - **候选池 P2~P5 信号(放量/涨停梯队/龙虎/新高)**: 需新数据端点,本轮不做。
@@ -242,10 +247,11 @@
 - `src-tauri/src/storage/invest/news_cleanup.rs` — 新建(A4 清理 + 单测)。
 - `src-tauri/src/storage/invest/stock_board_map.rs` — 新建(B5 一对多板块映射表 `stock_board_map` + CRUD)。
 - `src-tauri/src/invest/scheduler/mod.rs` + `runner.rs` — 新增清理 cron(A4)+ 板块映射低频刷新 cron(B5,每周一次);均需手动加 dispatch match 分支。
-- `src-tauri/src/invest/premarket/cache_builder.rs` — `select_candidates` 多信号化 + S2 降级(B1);build_cache 里加 `fetch_sector_flow()` + 板块强度 map + 个股取最强板块分(B5)。
-- `src-tauri/src/invest/premarket/scoring.rs` — `PremarketConfig` 五因子权重(加 `weight_sector`)+ `weight_source` + `enable_ai_review`;`FactorScores` 加 `sector_strength`;`AiReview` 结构 + `SymbolScore.ai_review`;废弃绝对阈值切档,改名次切档(B2/B3/B4/B5)。
+- `src-tauri/src/invest/premarket/cache_builder.rs` — `select_candidates` 多信号化 + S2 降级(B1);build_cache 里加 B5 专用东财板块强度取数 + 板块强度分位归一 + 个股 `相对强度×ex-self` top-2 加权(B5)。
+- `src-tauri/src/invest/premarket/scoring.rs` — `PremarketConfig` 五因子权重(加 `weight_sector`)+ `weight_source` + `enable_ai_review`;`FactorBreakdown`(现名,非 `FactorScores`)加 `sector_strength`;`AiReview` 结构(serde 需处理 `risk_flag` snake_case ↔ 前端 camelCase,见 B3 契约)+ `SymbolScore.ai_review`;废弃绝对阈值切档改名次切档(**仅 B4**)。
+- `src-tauri/src/storage/invest/premarket_cache.rs` — `CachedFactor` 加 `sector_strength` 字段 + `premarket_factor_cache` 表 `ALTER TABLE` 加列(B5,spec 早期漏列的迁移点)。
 - `src-tauri/src/invest/premarket/report.rs` — 五因子加权(B2/B5);top25 选取 + AI 复核 pass + 熔断降级 + `sections_status` 标注(B3);名次切档(B4);`ai_review` 落盘存档。
-- `src-tauri/python-runtime/scripts/providers/akshare_sector.py` — 新增 `stock_board_industry_cons_em` / `stock_board_concept_cons_em` 端点(B5)。
+- `src-tauri/python-runtime/scripts/providers/akshare_sector.py` — 新增 B5 专用端点:`stock_board_industry_cons_em`/`stock_board_concept_cons_em`(成分)+ `stock_sector_fund_flow_rank` 行业/概念两个 sector_type(强度);不改现有 `sector_fund_flow`(THS 主源,留给 02 段)。
 - `src-tauri/src/messages/en.json` + `zh-CN.json` — i18n(含 `invest_committee_sub_news`、板块强 chip)。
 
 ---
