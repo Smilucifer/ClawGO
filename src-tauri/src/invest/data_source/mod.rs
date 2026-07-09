@@ -14,7 +14,6 @@ pub enum SourceId {
     Tushare,
     Akshare,
     Tencent,
-    Yahoo,
 }
 
 impl SourceId {
@@ -25,7 +24,6 @@ impl SourceId {
             SourceId::Tushare => "tushare",
             SourceId::Akshare => "akshare",
             SourceId::Tencent => "tencent",
-            SourceId::Yahoo => "yahoo",
         }
     }
 }

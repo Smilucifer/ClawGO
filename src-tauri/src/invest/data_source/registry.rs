@@ -15,7 +15,7 @@ pub enum Category {
     Macro,
     /// tushare 独有（moneyflow_dc/report_rc），无降级意义。
     TushareOnly,
-    /// 海外（VIX/美债/黄金/原油/汇率）。Yahoo 专属。
+    /// 海外（VIX/美债/黄金/原油/汇率）。akshare + 东财直连。
     Overseas,
 }
 
@@ -33,7 +33,7 @@ pub fn chain_for(category: Category, miniqmt_on: bool) -> Vec<SourceId> {
         Category::Capital => vec![Tushare, Akshare],
         Category::Macro => vec![Tushare, Akshare],
         Category::TushareOnly => vec![Tushare],
-        Category::Overseas => vec![Yahoo],
+        Category::Overseas => vec![Akshare],
     }
 }
 
@@ -79,7 +79,7 @@ mod tests {
     }
 
     #[test]
-    fn overseas_is_yahoo_only() {
-        assert_eq!(chain_for(Category::Overseas, true), vec![SourceId::Yahoo]);
+    fn overseas_is_akshare_only() {
+        assert_eq!(chain_for(Category::Overseas, true), vec![SourceId::Akshare]);
     }
 }

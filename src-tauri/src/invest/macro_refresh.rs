@@ -373,7 +373,7 @@ async fn fetch_cgb_10y(
 // ---------------------------------------------------------------------------
 
 /// Fetch VIX / 美10Y / DXY / Gold / Oil / USDCNY —— akshare(4) + 东财直连(2)。
-/// Yahoo 已弃用。任一失败只 warn 跳过,不阻断其余。
+/// 任一失败只 warn 跳过,不阻断其余。
 async fn fetch_international() -> MacroResult {
     let client = crate::invest::international::InternationalClient::from_settings();
     let mut entries = Vec::new();
