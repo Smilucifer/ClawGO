@@ -1,5 +1,39 @@
 # Changelog / 更新日志
 
+## v5.6.9 (2026-07-09)
+
+### 盘前观察报告后端改造:预构建缓存链
+
+完整设计见 `docs/superpowers/specs/[done] 2026-07-09-premarket-report-overhaul-design.md`,实施见 `docs/superpowers/plans/[done] 2026-07-09-premarket-backend-overhaul.md`。
+
+- **报告生成从"现算"改为"读缓存":** 原 `report.rs` 在生成时同步跑全市场粗筛 + 逐候选深度因子(分钟级)。新增 `premarket_factor_cache` 表(`storage/invest/premarket_cache.rs`,PK `(trade_date,symbol)`)缓存每日候选因子;`invest/premarket/cache_builder.rs` 负责构建(全市场 daily → moneyflow → 3 日舆情集粗筛 → 逐候选 `CachedFactor` + missing 标记 → 事务批量 upsert)。生成侧 `collect_scores_from_cache` 优先读当日新鲜缓存(`is_fresh`),命中直接组装 `FactorBreakdown` 调 `score()`,未命中兜底重建——报告产出从分钟级降到十几秒。
+- **tushare 全市场批量方法:** `client.rs` 新增 `daily_market`/`moneyflow_dc_market`(按 `trade_date` 一次拉全市场)+ `parse_daily_rows`(`pub(crate)` 纯函数,按字段名定位)。
+- **两个新 cron job:** `premarket_cache`(`0 30 16 * * 1-5`,工作日 16:30 收盘后预构建次日缓存,`requires_trading_day`)+ `sentiment_collector`(`0 0 * * * *`,每小时舆情采集并内联归一化)。
+- **AI 点评改走委员会 provider:** `event_analyzer` 新增 `cli_complete_with_settings`,`report.rs` 的 `ai_commentary` 从默认 provider 改为委员会 `CommitteeTuning` + `platform_credentials` 配置;催化新闻块 40→120 条、窗口 1→2 日。
+
+### 海外指标数据源:删 Yahoo,改 akshare + 东财直连
+
+实施见同一 backend overhaul plan(§6/7/8/9)。
+
+- **删除 Yahoo provider 全链:** 移除 `providers/yahoo.py`、Rust `YahooQuote`/`YahooBar`/`fetch_yahoo_quote`/`fetch_yahoo_history`、`server.py` 的 yahoo 注册、`data_source` 的 `SourceId::Yahoo` 变体及 `Category::Overseas` 源链(改 `vec![Akshare]`)。
+- **新数据源:** DXY(`100.UDI`)/US10Y(`171.US10Y`)走东财 `eastmoney.overseas_indicator`(push2,`f43/10**f59` 动态小数解码);VIX/黄金/原油/美元兑人民币走 `akshare_market.overseas_{vix,gold,oil,usdcny}`(`futures_foreign_hist` + `fx_spot_quote`)。`macro_refresh::fetch_international` 重写,每指标 warn+skip 降级。
+- **数据源健康检查更新:** 删 Tushare 新闻探针(误报)+ 两 Yahoo 探针,加东财海外 + AkShare 海外探针。
+
+### 盘前观察报告前端改造
+
+完整实施见 `docs/superpowers/plans/[done] 2026-07-09-premarket-frontend-overhaul.md`。
+
+- **入口迁移:** `PremarketReportTab` 从「系统 → 盘前观察」迁到「委员会 → 盘前观察」(排命中率之后),清理 `SystemSubTab`/`systemSubTabs`/system 渲染块的 `reports` 项。
+- **导出 PNG/PDF 修复:** 原 `link.click()` 在 Tauri webview 被拦截。新增后端 `write_binary_export(path, base64)` 命令(base64 解码 + `.png`/`.pdf` 白名单写盘),前端改走 `@tauri-apps/plugin-dialog` 的 `save()` 对话框 + 该命令。
+- **生成状态提到模块级单例 store:** 新建 `stores/premarket-store.svelte.ts`,`generating`/`startedAt`/`lastElapsedMs`/`completionSeq` + `generate()` 生命周期持在模块级,切 tab 卸载组件也不中断;`completionSeq` 自增驱动组件 `$effect` 刷新报告。工具栏显示生成秒表 + 完成用时。
+- **画布加宽:** `#report-canvas` 等 5 处写死 `720px` 提为 `--report-w: 1080px` 变量;01 段 `.theme-wall` 从 2 列改 4 列横排,风险预警卡仍通栏。
+
+### 重构（simplify 审查清理）
+
+- 前端:删 `premarket-store` 未用的 `elapsedMs` 字段 + `tick()`/`elapsedSec()` 方法(组件自用 `nowTick`);`exportPng`/`exportPdf` 抽公共 `captureAndSave(ext, toBase64)` helper 消 ~25 行重复。
+- 后端:`write_html_export` 内联扩展名校验与 `binary_export_ext_ok` 合并为共享 `export_ext_allowed(path, &[..])`。
+- 清理:删迁移遗留的孤儿 i18n 键 `invest_system_sub_reports`(en/zh 各一)。
+
 ## v5.6.8 (2026-07-08)
 
 ### 新增：盘前观察报告 + 舆情采集基础设施
