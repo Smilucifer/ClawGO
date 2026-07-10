@@ -2,6 +2,24 @@
 
 ## v5.6.10 (2026-07-10)
 
+### 盘前观察报告:AI 精筛 + 板块强度因子 + 多信号候选池
+
+实施见 `docs/superpowers/plans/[done] 2026-07-10-committee-news-premarket-pool.md`。
+
+- **AI 精筛(AiReview):** 报告生成后新增一轮 LLM 精筛,对 top-25 标的逐只审查风险(综合舆情、拥挤度、资金流),输出 keep/drop + risk_flag(none/soft/hard)。drop 超 13 只(熔断阈值)或全部 drop 时自动回退纯量化结果,避免 AI 误杀。前端设置面板新增「启用 AI 精筛」开关,报告页展示「AI 剔除」折叠区,按风险等级着色(绿/黄/红)。实现: `report.rs`(AiDecisions/apply_ai_decisions/build_ai_review_prompt/run_ai_review) + `PremarketReportTab.svelte`。
+- **板块强度因子(04 模块):** 新增 eastmoney 板块成分+强度数据源(`eastmoney.rs`),构建 `stock_board_map` 一对多映射表(个股↔板块,`storage/invest/stock_board_map.rs`)。盘后缓存计算个股板块强度因子(`cache_builder.rs`),写入 `premarket_factor_cache.sector_strength`(REAL)。板块映射每周自动刷新 cron(`stock_board_map_refresh`,每周日 02:00)。五因子固定权重新增 `sector` 槽位 0.15(可覆盖),总权重归一化。前端 04 模块新增「板块强」因子 chip + `invest_premarket_tag_sector` i18n 键。
+- **多信号候选池:** 候选池从单信号(涨幅)扩展为三路并集:舆情命中∪主力净流入 Top60∪涨幅兜底,覆盖面更广。
+- **SABC 改名次切档:** 评级从 A/B/C 改为次/切/档(全市场 top20,每档 5 只),更贴合 A 股语境。
+- **盘前报告改前一晚生成:** `premarket_cache` cron 从盘前 9:00 改为前一晚生成,按下一个交易日标注(`A6 cron timing fix`)。
+
+### 委员会新闻/舆论视图
+
+实施见 `docs/superpowers/plans/[done] 2026-07-10-committee-news-premarket-ui.md`。
+
+- **事件视图迁移:** 原「系统 → 事件」视图迁入委员会「新闻/舆论」子标签(排在「盘前观察」之后)。
+- **双列布局:** 新增金十快讯 + 新闻/舆情双列视图(≤900px 自动堆叠)。后端新增 `get_sentiment_items` 命令读取舆情条目,前端 `SentimentItem` 类型 + `store.fetchSentimentItems`。
+- **快讯/舆情 7 天清理 cron:** 新增定时清理任务(保留已触发/高价值条目),减少数据库膨胀。
+
 ### 定时归一化改走委员会 provider(修复后台偷跑默认 Claude)
 
 - **根因:** `event_analyzer::cli_complete`(事件/舆情归一化的共用文本补全入口,`event_analyzer.rs` 与 `event_scanner.rs::normalize_events` 都走它)此前以 `settings_path=None` 调 `run_role`,即不加 `--settings`、直接用 `~/.claude` 原生配置——归一化始终跑默认 Claude,无视委员会 `CommitteeTuning.selected_provider`。`event_analyzer` 定时任务全天每 10 分钟触发,导致休息时段后台 Claude 用量持续增长。
@@ -12,10 +30,18 @@
 - `event_analyzer` 原为 `dedicated: true`,由 `runner.rs` 硬编码 `Duration::from_secs(10*60)` 专用定时器驱动,`cron_expr` 形同虚设(全天无休)。改为 `dedicated: false` 走主 cron 循环,cron `0 */30 8-22 * * 1-5`(交易日 8-22 点每 30 分钟),其他时段仅手动 `trigger_cron_job` 触发。后台运行量约降 80%(144 次/日 → ~29 次/日)。
 - 删除 `start_dedicated_loop("event_analyzer", ...)`,仅保留 `jin10_collector`(15s 节拍,快于主循环 60s tick,须专用循环)。`dedicated` 不在 `scheduler.json` 的 `JobOverride` 里,永远取自 `default_jobs()`,存量用户升级即生效、不会双循环并跑。
 
+### 修复
+
+- **AI 精筛熔断(all_drop)逻辑错误:** 熔断检查 `.all(|d| d.action == "drop")` 遍历全部决策(含非 top-K 标的),若 LLM 对非 top-K 返回 keep 即使 top-K 全 drop 也不触发熔断。修复为 `drop_count == total_decided`(仅计 top-K 范围内)。
+
 ### 重构（simplify 审查清理）
 
 - 合并 `cli_complete` 与 `cli_complete_with_settings`:后者在 `cli_complete` 内联化后仅剩单一内部调用者,拆两层无意义,内联并去掉多余 `pub`。`premarket/report.rs::ai_commentary` 从手动 `resolve_settings_path()` + `cli_complete_with_settings()` 改为直接调 `cli_complete`,消除双路径漂移。
 - 修正 `event_analyzer.rs` 陈旧模块文档("Runs every 10 minutes")及 `runner.rs` 两处提及 event_analyzer 专用循环的过时注释。
+- `report.rs`:提取 `fail_with_clear` helper 消除 4 处复制粘贴的 AI 审查失败分支;移除多余 `#[serde(rename = "risk_flag")]` 注解。
+- `cache_builder.rs`:提取 `code6` 为模块级函数返回 `&str`;`percentile_rank` 改用预排序 + `partition_point`(消除每调 clone+sort);移除未使用的 `board_members` HashMap。
+- `premarket_cache.rs`:28 行自定义 `ensure_sector_strength_column` 迁移替换为已有的 `sentiment::ensure_column` 单行调用。
+- 删除意外创建的 `src/lib/server/events/EventPool.ts`。
 
 ## v5.6.9 (2026-07-09)
 
