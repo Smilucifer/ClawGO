@@ -733,6 +733,9 @@
                         {#if s.factors.technical >= 60}
                           <span class="stk-tag">{t('invest_premarket_tag_tech')}</span>
                         {/if}
+                        {#if s.factors.sector_strength >= 60}
+                          <span class="stk-tag">{t('invest_premarket_tag_sector')}</span>
+                        {/if}
                       </span>
                       <span class="stk-score">{s.total.toFixed(0)}</span>
                     </div>
