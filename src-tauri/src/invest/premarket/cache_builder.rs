@@ -1,10 +1,12 @@
 //! 盘后 SABC 全市场缓存构建。批量拉全市场 → 粗筛 ≤200 → 逐候选四因子 → 落 premarket_factor_cache。
 //! 粗筛+打分逻辑供 cache job 与生成兜底共享,避免两份实现漂移。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use crate::storage::invest::premarket_cache::{save_factor_cache, CachedFactor};
 use crate::tushare::client::{DailyBar, MoneyflowDc, TushareClient};
 use crate::invest::premarket::report::{compute_sentiment_and_catalyst, compute_technical};
+use crate::invest::premarket::sector_em;
+use crate::storage::invest::stock_board_map;
 use futures_util::StreamExt;
 
 /// 候选粗筛(纯函数) — 多信号 union:
@@ -82,6 +84,38 @@ pub fn capital_score_from_net(net_amount_wan: Option<f64>) -> f64 {
     }
 }
 
+/// 返回 `val` 在 `values` 中的百分位排名 (0..100)。
+/// `values` 会排序但不修改原始数据（clone 后排）。
+pub fn percentile_rank(val: f64, values: &[f64]) -> f64 {
+    if values.is_empty() {
+        return 50.0;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let count_below = sorted.iter().filter(|&&v| v < val).count();
+    let count_eq = sorted.iter().filter(|&&v| (v - val).abs() < f64::EPSILON).count();
+    if count_eq == 0 {
+        return 50.0;
+    }
+    ((count_below as f64 + (count_eq as f64 - 1.0) / 2.0) / sorted.len() as f64 * 100.0)
+        .clamp(0.0, 100.0)
+}
+
+/// 返回数值列表的中位数。空列表返回 50.0。
+pub fn median(values: &[f64]) -> f64 {
+    if values.is_empty() {
+        return 50.0;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mid = sorted.len() / 2;
+    if sorted.len().is_multiple_of(2) {
+        (sorted[mid - 1] + sorted[mid]) / 2.0
+    } else {
+        sorted[mid]
+    }
+}
+
 const CANDIDATE_CAP: usize = 200;
 const TECH_CONCURRENCY: usize = 3;
 const MAX_LOOKBACK_DAYS: i64 = 7;
@@ -149,6 +183,81 @@ pub async fn build_cache() -> Result<(String, usize), String> {
     let name_map = crate::storage::invest::stock_industry::names_of(&code_list)
         .unwrap_or_default();
 
+    // 5.5 板块强度: sector_em + board_map → per-candidate sector_strength
+    // 两张表按 board_type 分别算板块内百分位,取 max(industry_pct, concept_pct)。
+    // 失败一律静默降级,sector_strength 留 None 走兜底中位数。
+    let board_map_result = stock_board_map::all_board_maps();
+    let sector_strength_result = sector_em::fetch_sector_strength_em().await;
+
+    let sector_strength_map: Option<HashMap<String, f64>> = match (board_map_result, sector_strength_result) {
+        (Ok(board_map), Ok(sector_strengths)) => {
+            // reverse: board_name → Vec<code6> from board_map
+            let mut board_members: HashMap<String, Vec<String>> = HashMap::new();
+            for (code, boards) in &board_map {
+                for (bname, _btype) in boards {
+                    board_members.entry(bname.clone()).or_default().push(code.clone());
+                }
+            }
+            // compute per-board percentile (board's change_pct among all boards of same type)
+            let mut industry_pcts: Vec<f64> = Vec::new();
+            let mut concept_pcts: Vec<f64> = Vec::new();
+            for bs in &sector_strengths {
+                if let Some(pct) = bs.change_pct {
+                    match bs.board_type.as_str() {
+                        "industry" => industry_pcts.push(pct),
+                        "concept" => concept_pcts.push(pct),
+                        _ => {}
+                    }
+                }
+            }
+            // board_name → percentile rank within its type
+            let board_pct_rank: HashMap<String, f64> = sector_strengths
+                .iter()
+                .filter_map(|bs| {
+                    let pct = bs.change_pct?;
+                    let rank = match bs.board_type.as_str() {
+                        "industry" => percentile_rank(pct, &industry_pcts),
+                        "concept" => percentile_rank(pct, &concept_pcts),
+                        _ => percentile_rank(pct, &industry_pcts),
+                    };
+                    Some((bs.board_name.clone(), rank))
+                })
+                .collect();
+            // per-candidate: gather board pct_ranks via board_map, take max
+            let mut result: HashMap<String, f64> = HashMap::new();
+            let mut all_scores: Vec<f64> = Vec::new();
+            for (ts, _pct, _amount) in &candidates {
+                let c = code6(ts);
+                if let Some(boards) = board_map.get(&c) {
+                    let best = boards
+                        .iter()
+                        .filter_map(|(bname, _)| board_pct_rank.get(bname))
+                        .copied()
+                        .fold(0.0_f64, f64::max);
+                    if best > 0.0 {
+                        all_scores.push(best);
+                        result.insert(c, best);
+                    }
+                }
+            }
+            // ex_self: for candidates without a score, use median of scored candidates
+            let fallback = median(&all_scores);
+            for (ts, _pct, _amount) in &candidates {
+                let c = code6(ts);
+                result.entry(c).or_insert(fallback);
+            }
+            Some(result)
+        }
+        (Err(e), _) => {
+            log::warn!("[cache_builder] board_map load failed: {e}; sector_strength 全缺省");
+            None
+        }
+        (_, Err(e)) => {
+            log::warn!("[cache_builder] sector_em fetch failed: {e}; sector_strength 全缺省");
+            None
+        }
+    };
+
     // 6. technical(K线)限速慢拉;sentiment/catalyst(本地库)+ capital(查 net_map)同步
     let tech_targets: Vec<String> = candidates.iter().map(|(ts, _, _)| ts.clone()).collect();
     let tech_results: Vec<(String, Option<f64>)> = futures_util::stream::iter(
@@ -163,7 +272,8 @@ pub async fn build_cache() -> Result<(String, usize), String> {
     let tech_map: std::collections::HashMap<String, Option<f64>> =
         tech_results.into_iter().collect();
 
-    let mut rows: Vec<CachedFactor> = Vec::with_capacity(candidates.len());
+    // 6.5 First pass: build staging with Option<f64> sector_strength
+    let mut staging: Vec<(CachedFactor, Option<f64>)> = Vec::with_capacity(candidates.len());
     for (ts, pct, amount) in &candidates {
         let c6 = code6(ts);
         let (sent_opt, cat_opt) = compute_sentiment_and_catalyst(&c6);
@@ -178,16 +288,29 @@ pub async fn build_cache() -> Result<(String, usize), String> {
             Some(t) => t,
             None => { missing.push("technical".into()); 50.0 }
         };
-        // 名称:stock_industry 查表,查不到回退代码
         let name = name_map.get(&c6).cloned().unwrap_or_else(|| ts.clone());
-        rows.push(CachedFactor {
-            symbol: ts.clone(),
-            name,
-            change_pct: *pct,
-            amount: *amount,
-            sentiment, capital, technical, catalyst,
-            missing,
-        });
+        let ss = sector_strength_map.as_ref().and_then(|m| m.get(&c6).copied());
+        staging.push((
+            CachedFactor {
+                symbol: ts.clone(),
+                name,
+                change_pct: *pct,
+                amount: *amount,
+                sentiment, capital, technical, catalyst,
+                sector_strength: 0.0, // placeholder, filled in second pass
+                missing,
+            },
+            ss,
+        ));
+    }
+
+    // Second pass: apply fallback_median for None sector_strength values
+    let ss_scores: Vec<f64> = staging.iter().filter_map(|(_, ss)| *ss).collect();
+    let fallback_median = median(&ss_scores);
+    let mut rows: Vec<CachedFactor> = Vec::with_capacity(staging.len());
+    for (mut factor, ss_opt) in staging {
+        factor.sector_strength = ss_opt.unwrap_or(fallback_median);
+        rows.push(factor);
     }
 
     // 7. 落表(缓存 key = td_dash,与生成侧读取口径一致)
@@ -281,5 +404,48 @@ mod tests {
         assert!((capital_score_from_net(Some(0.0)) - 50.0).abs() < 0.01);
         assert!(capital_score_from_net(Some(1.0e5)) > 85.0);   // 10亿单日 → ~88
         assert!(capital_score_from_net(Some(-1.0e5)) < 15.0);  // 对称
+    }
+
+    #[test]
+    fn percentile_rank_basic() {
+        let vals = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        // 30.0 is at index 2 (0-based) of 5 → (2 + 0)/5*100 = 40
+        let r = percentile_rank(30.0, &vals);
+        assert!((r - 40.0).abs() < 0.01, "expected ~40, got {r}");
+        // 10.0 is minimum → rank 0
+        let r = percentile_rank(10.0, &vals);
+        assert!((r - 0.0).abs() < 0.01, "expected ~0, got {r}");
+        // 50.0 is maximum → rank 80
+        let r = percentile_rank(50.0, &vals);
+        assert!((r - 80.0).abs() < 0.01, "expected ~80, got {r}");
+    }
+
+    #[test]
+    fn percentile_rank_empty_returns_50() {
+        assert_eq!(percentile_rank(42.0, &[]), 50.0);
+    }
+
+    #[test]
+    fn percentile_rank_duplicates() {
+        let vals = vec![50.0, 50.0, 50.0];
+        let r = percentile_rank(50.0, &vals);
+        // all equal: count_below=0, count_eq=3 → (0 + 1)/3*100 ≈ 33.33
+        assert!((r - 33.33).abs() < 0.1, "expected ~33.33, got {r}");
+    }
+
+    #[test]
+    fn median_basic() {
+        assert_eq!(median(&[1.0, 3.0, 5.0]), 3.0);
+        assert!((median(&[1.0, 2.0, 3.0, 4.0]) - 2.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn median_empty_returns_50() {
+        assert_eq!(median(&[]), 50.0);
+    }
+
+    #[test]
+    fn median_single() {
+        assert_eq!(median(&[42.0]), 42.0);
     }
 }

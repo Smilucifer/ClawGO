@@ -3,17 +3,18 @@ use rusqlite::{params, Connection};
 
 const CREATE_TABLE_SQL: &str = "
 CREATE TABLE IF NOT EXISTS premarket_factor_cache (
-    trade_date  TEXT NOT NULL,
-    symbol      TEXT NOT NULL,
-    name        TEXT NOT NULL,
-    change_pct  REAL NOT NULL DEFAULT 0,
-    amount      REAL NOT NULL DEFAULT 0,
-    sentiment   REAL NOT NULL DEFAULT 50,
-    capital     REAL NOT NULL DEFAULT 50,
-    technical   REAL NOT NULL DEFAULT 50,
-    catalyst    REAL NOT NULL DEFAULT 50,
-    missing     TEXT NOT NULL DEFAULT '',
-    cached_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    trade_date      TEXT NOT NULL,
+    symbol          TEXT NOT NULL,
+    name            TEXT NOT NULL,
+    change_pct      REAL NOT NULL DEFAULT 0,
+    amount          REAL NOT NULL DEFAULT 0,
+    sentiment       REAL NOT NULL DEFAULT 50,
+    capital         REAL NOT NULL DEFAULT 50,
+    technical       REAL NOT NULL DEFAULT 50,
+    catalyst        REAL NOT NULL DEFAULT 50,
+    sector_strength REAL NOT NULL DEFAULT 50,
+    missing         TEXT NOT NULL DEFAULT '',
+    cached_at       TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (trade_date, symbol)
 );
 CREATE INDEX IF NOT EXISTS idx_pmcache_date ON premarket_factor_cache(trade_date);";
@@ -28,12 +29,39 @@ pub struct CachedFactor {
     pub capital: f64,
     pub technical: f64,
     pub catalyst: f64,
+    pub sector_strength: f64,
     pub missing: Vec<String>,
+}
+
+/// 幂等迁移：若 sector_strength 列不存在则 ALTER TABLE 补建。
+fn ensure_sector_strength_column(conn: &Connection) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(premarket_factor_cache)")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| e.to_string())?;
+    let mut has_col = false;
+    for r in rows {
+        if r.map_err(|e| e.to_string())? == "sector_strength" {
+            has_col = true;
+            break;
+        }
+    }
+    if !has_col {
+        conn.execute(
+            "ALTER TABLE premarket_factor_cache ADD COLUMN sector_strength REAL NOT NULL DEFAULT 50",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 pub fn create_table(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(CREATE_TABLE_SQL)
-        .map_err(|e| format!("create premarket_factor_cache: {e}"))
+        .map_err(|e| format!("create premarket_factor_cache: {e}"))?;
+    ensure_sector_strength_column(conn)
 }
 
 /// 缓存新鲜度:trade_date 与 today(均 "YYYY-MM-DD")相差 <= max_age_days 自然日视为新鲜。
@@ -60,18 +88,19 @@ pub fn save_factor_cache(trade_date: &str, rows: &[CachedFactor]) -> Result<(), 
             let mut stmt = tx
                 .prepare(
                     "INSERT INTO premarket_factor_cache
-                     (trade_date, symbol, name, change_pct, amount, sentiment, capital, technical, catalyst, missing, cached_at)
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10, datetime('now'))
+                     (trade_date, symbol, name, change_pct, amount, sentiment, capital, technical, catalyst, sector_strength, missing, cached_at)
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11, datetime('now'))
                      ON CONFLICT(trade_date, symbol) DO UPDATE SET
                         name=excluded.name, change_pct=excluded.change_pct, amount=excluded.amount,
                         sentiment=excluded.sentiment, capital=excluded.capital, technical=excluded.technical,
-                        catalyst=excluded.catalyst, missing=excluded.missing, cached_at=excluded.cached_at",
+                        catalyst=excluded.catalyst, sector_strength=excluded.sector_strength,
+                        missing=excluded.missing, cached_at=excluded.cached_at",
                 )
                 .map_err(|e| format!("prepare upsert: {e}"))?;
             for r in rows {
                 stmt.execute(params![
                     trade_date, r.symbol, r.name, r.change_pct, r.amount,
-                    r.sentiment, r.capital, r.technical, r.catalyst, r.missing.join(","),
+                    r.sentiment, r.capital, r.technical, r.catalyst, r.sector_strength, r.missing.join(","),
                 ])
                 .map_err(|e| format!("upsert row {}: {e}", r.symbol))?;
             }
@@ -93,13 +122,13 @@ pub fn load_latest_cache() -> Result<Option<(String, Vec<CachedFactor>)>, String
         let Some(td) = latest else { return Ok(None) };
         let mut stmt = conn
             .prepare(
-                "SELECT symbol, name, change_pct, amount, sentiment, capital, technical, catalyst, missing
+                "SELECT symbol, name, change_pct, amount, sentiment, capital, technical, catalyst, sector_strength, missing
                  FROM premarket_factor_cache WHERE trade_date = ?1 ORDER BY change_pct DESC",
             )
             .map_err(|e| format!("prepare load latest: {e}"))?;
         let rows = stmt
             .query_map([&td], |row| {
-                let missing_str: String = row.get(8)?;
+                let missing_str: String = row.get(9)?;
                 Ok(CachedFactor {
                     symbol: row.get(0)?,
                     name: row.get(1)?,
@@ -109,6 +138,7 @@ pub fn load_latest_cache() -> Result<Option<(String, Vec<CachedFactor>)>, String
                     capital: row.get(5)?,
                     technical: row.get(6)?,
                     catalyst: row.get(7)?,
+                    sector_strength: row.get(8)?,
                     missing: if missing_str.is_empty() {
                         vec![]
                     } else {
