@@ -920,6 +920,21 @@
   "invest.eventWatch.scanResult": "抓取 {fetched} 条，丢弃 {filtered} 条，新增 {saved} 条",
   "invest.eventWatch.scanErrors": "扫描警告",
 
+  "invest.news.flashTitle": "金十快讯",
+  "invest.news.digestTitle": "新闻/舆论",
+  "invest.news.filterAll": "全部",
+  "invest.news.filterHighOnly": "仅高",
+  "invest.news.filterBull": "偏多",
+  "invest.news.filterBear": "偏空",
+  "invest.news.filterAnns": "公告",
+  "invest.news.filterStock": "个股新闻",
+  "invest.news.filterXueqiu": "雪球舆情",
+  "invest.news.srcAnns": "东财公告",
+  "invest.news.srcStock": "个股",
+  "invest.news.srcXueqiu": "雪球",
+  "invest.news.flashEmpty": "暂无快讯",
+  "invest.news.digestEmpty": "暂无新闻/舆情",
+
   "python_restart_runtime": "重启 Python 运行时",
 
   "layout_appName": "Claw GO",

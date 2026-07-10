@@ -920,6 +920,21 @@
   "invest.eventWatch.scanResult": "Fetched {fetched}, dropped {filtered}, saved {saved}",
   "invest.eventWatch.scanErrors": "Scan warnings",
 
+  "invest.news.flashTitle": "Jinshi Flash",
+  "invest.news.digestTitle": "News / Opinion",
+  "invest.news.filterAll": "All",
+  "invest.news.filterHighOnly": "High only",
+  "invest.news.filterBull": "Bullish",
+  "invest.news.filterBear": "Bearish",
+  "invest.news.filterAnns": "Announcements",
+  "invest.news.filterStock": "Stock news",
+  "invest.news.filterXueqiu": "Xueqiu sentiment",
+  "invest.news.srcAnns": "DFCF ann.",
+  "invest.news.srcStock": "Stock",
+  "invest.news.srcXueqiu": "Xueqiu",
+  "invest.news.flashEmpty": "No flash items yet",
+  "invest.news.digestEmpty": "No news / sentiment items yet",
+
   "python_restart_runtime": "Restart Python Runtime",
 
   "layout_appName": "Claw GO",

@@ -1,241 +1,172 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { t } from '$lib/i18n/index.svelte';
-  import { fmtRelative, fmtDateTime } from '$lib/i18n/format';
-  import { investStore } from '$lib/stores/invest-store.svelte';
-  import EventTriggerDialog from './EventTriggerDialog.svelte';
-  import type { InvestEvent } from '$lib/types';
+  import { onMount } from "svelte";
+  import { t } from "$lib/i18n/index.svelte";
+  import { fmtRelative } from "$lib/i18n/format";
+  import { investStore } from "$lib/stores/invest-store.svelte";
+  import type { InvestEvent } from "$lib/types";
+  import NewsFlashColumn from "./NewsFlashColumn.svelte";
+  import NewsDigestColumn from "./NewsDigestColumn.svelte";
+  import EventTriggerDialog from "./EventTriggerDialog.svelte";
 
-  let { onNavigateToCommittee }: { onNavigateToCommittee?: () => void } = $props();
+  let { onNavigateToCommittee }: { onNavigateToCommittee?: () => void } =
+    $props();
 
-  const store = investStore;
+  let triggerTarget = $state<InvestEvent | null>(null);
 
   onMount(() => {
-    store.fetchEvents();
-    store.fetchScanStatus();
+    investStore.fetchEvents();
+    investStore.fetchScanStatus();
+    investStore.fetchSentimentItems();
   });
 
-  function handleTimeWindowChange(window: 'all' | '24h' | '48h' | '7d') {
-    store.setEventFilter({ timeWindow: window });
+  // `triggerScan()` is the existing store method; it internally re-fetches events
+  // + scan status. We additionally refresh sentiment items so the right column updates.
+  async function runScan(): Promise<void> {
+    await investStore.triggerScan();
+    await investStore.fetchSentimentItems();
   }
 
-  function handleSeverityChange(severity: 'all' | 'high' | 'medium' | 'low') {
-    store.setEventFilter({ severity });
+  function openTrigger(event: InvestEvent): void {
+    triggerTarget = event;
   }
 
-  function handleSearchInput(e: Event) {
-    const target = e.target as HTMLInputElement;
-    store.setEventFilter({ search: target.value });
+  function closeTrigger(): void {
+    triggerTarget = null;
   }
 
-  function handleScan() {
-    store.triggerScan();
-  }
-
-  function severityColor(severity: string): string {
-    switch (severity) {
-      case 'high': return 'text-[#a87a7a] bg-[var(--color-error-bg)] border-[var(--color-error-bg)]';
-      case 'medium': return 'text-[#b89a6a] bg-[var(--color-warning-bg)] border-[var(--color-warning-bg)]';
-      case 'pending': return 'text-[var(--text-tertiary)] bg-[var(--bg-input)] border-border animate-pulse';
-      default: return 'text-[var(--text-secondary)] bg-[var(--bg-hover)] border-border';
-    }
-  }
-
-  function stanceColor(stance: string): string {
-    switch (stance) {
-      case 'bullish': return 'text-[var(--up)]';
-      case 'bearish': return 'text-[var(--down)]';
-      case 'pending': return 'text-[var(--text-tertiary)] animate-pulse';
-      default: return 'text-[var(--text-tertiary)]';
-    }
-  }
-
-  function severityLabel(severity: string): string {
-    switch (severity) {
-      case 'high': return t('invest.eventWatch.filterHigh');
-      case 'medium': return t('invest.eventWatch.filterMedium');
-      case 'low': return t('invest.eventWatch.filterLow');
-      case 'pending': return t('invest.eventWatch.pending');
-      default: return severity;
-    }
-  }
-
-  function stanceLabel(stance: string): string {
-    switch (stance) {
-      case 'bullish': return t('invest.eventWatch.stanceBullish');
-      case 'bearish': return t('invest.eventWatch.stanceBearish');
-      case 'neutral': return t('invest.eventWatch.stanceNeutral');
-      case 'pending': return '...';
-      default: return stance;
-    }
-  }
-
-  let triggerEvent = $state<InvestEvent | null>(null);
-
-  function handleTrigger(ev: InvestEvent) {
-    triggerEvent = ev;
-  }
-
-  let expandedIds = $state<Set<string>>(new Set());
-
-  function toggleExpand(id: string) {
-    if (expandedIds.has(id)) {
-      expandedIds.delete(id);
-    } else {
-      expandedIds.add(id);
-    }
-    expandedIds = new Set(expandedIds); // trigger reactivity
+  function onTriggerSuccess(): void {
+    triggerTarget = null;
+    onNavigateToCommittee?.();
   }
 </script>
 
-<div class="flex flex-col h-full">
-  <!-- Status bar -->
-  <div class="flex items-center justify-between px-[var(--space-4)] py-[var(--space-2)] border-b border-border">
-    <div class="flex items-center gap-3 text-[12px] text-[var(--text-secondary)]">
-      {#if store.scanStatus}
-        <span>{store.scanStatus.totalEvents} {t('invest.eventWatch.events')}</span>
-        <span class="text-[#a87a7a]">{store.scanStatus.highCount} {t('invest.eventWatch.high')}</span>
-        {#if store.scanStatus.untriggeredHigh > 0}
-          <span class="text-[#b89a6a]">{store.scanStatus.untriggeredHigh} {t('invest.eventWatch.untriggered')}</span>
-        {/if}
-        {#if store.scanStatus.lastEventAt}
-          <span>{t('invest.eventWatch.last')}: {fmtRelative(store.scanStatus.lastEventAt)}</span>
+<div class="news-tab">
+  <header class="status-bar">
+    <div class="status-summary">
+      {#if investStore.scanStatus}
+        <span class="stat">
+          <span class="stat-label">{t("invest.eventWatch.events")}</span>
+          <span class="stat-value">{investStore.scanStatus.totalEvents}</span>
+        </span>
+        <span class="stat">
+          <span class="stat-label">{t("invest.eventWatch.high")}</span>
+          <span class="stat-value">{investStore.scanStatus.highCount}</span>
+        </span>
+        <span class="stat">
+          <span class="stat-label">{t("invest.eventWatch.untriggered")}</span>
+          <span class="stat-value"
+            >{investStore.scanStatus.untriggeredHigh}</span
+          >
+        </span>
+        {#if investStore.scanStatus.lastEventAt}
+          <span class="stat stat-muted">
+            {t("invest.eventWatch.last")}
+            {fmtRelative(investStore.scanStatus.lastEventAt)}
+          </span>
         {/if}
       {:else}
-        <span>{t('invest.eventWatch.noScanData')}</span>
+        <span class="stat stat-muted"
+          >{t("invest.eventWatch.noScanData")}</span
+        >
       {/if}
     </div>
-    <div class="flex items-center gap-2">
-      {#if store.error}
-        <span class="text-[12px] text-[#a87a7a] max-w-xs truncate" title={store.error}>{store.error}</span>
-      {/if}
+    <div class="status-actions">
       <button
-        onclick={handleScan}
-        disabled={store.isScanning}
-        class="rounded-[var(--radius-md)] px-[var(--space-3)] py-[var(--space-1)] text-[12px] bg-[var(--bg-input)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] transition-colors disabled:opacity-50"
+        type="button"
+        class="scan-btn"
+        disabled={investStore.isScanning}
+        onclick={runScan}
       >
-        {store.isScanning ? t('invest.eventWatch.scanning') : t('invest.eventWatch.scanNow')}
+        {investStore.isScanning
+          ? t("invest.eventWatch.scanning")
+          : t("invest.eventWatch.scanNow")}
       </button>
     </div>
+  </header>
+
+  <div class="two-col">
+    <NewsFlashColumn onTrigger={openTrigger} />
+    <NewsDigestColumn />
   </div>
 
-  <!-- Scan result feedback -->
-  {#if store.lastScanResult}
-    <div class="flex items-center gap-3 px-[var(--space-4)] py-[var(--space-1)] text-[11px] border-b border-border/50 {store.lastScanResult.errors.length > 0 ? 'bg-[var(--color-warning-bg)]/30' : 'bg-[var(--color-success-bg)]/20'}">
-      {#if store.lastScanResult.errors.length > 0}
-        <span class="text-[var(--color-warning)]">
-          {t('invest.eventWatch.scanErrors')}: {store.lastScanResult.errors.join('; ')}
-        </span>
-      {:else}
-        <span class="text-[var(--text-secondary)]">
-          {t('invest.eventWatch.scanResult', {
-            fetched: String(store.lastScanResult.fetched),
-            filtered: String(store.lastScanResult.filtered),
-            saved: String(store.lastScanResult.saved),
-          })}
-        </span>
-      {/if}
-    </div>
-  {/if}
-
-  <!-- Filters -->
-  <div class="flex items-center gap-2 px-[var(--space-4)] py-[var(--space-2)] border-b border-border">
-    <!-- Time window -->
-    <div class="flex rounded-[var(--radius-md)] overflow-hidden border border-border">
-      {#each ['all', '24h', '48h', '7d'] as tw}
-        <button
-          onclick={() => handleTimeWindowChange(tw as 'all' | '24h' | '48h' | '7d')}
-          class="px-2 py-0.5 text-[12px] {store.eventFilter.timeWindow === tw ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]' : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'}"
-        >{tw === 'all' ? t('invest.eventWatch.filterAll') : tw}</button>
-      {/each}
-    </div>
-
-    <!-- Severity -->
-    <div class="flex gap-1">
-      {#each ['all', 'high', 'medium', 'low'] as sev}
-        <button
-          onclick={() => handleSeverityChange(sev as 'all' | 'high' | 'medium' | 'low')}
-          class="px-2 py-0.5 text-[12px] rounded-[var(--radius-md)] border {store.eventFilter.severity === sev ? 'border-[var(--text-tertiary)] text-[var(--text-primary)]' : 'border-border text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'}"
-        >{sev === 'all' ? t('invest.eventWatch.filterAll') : sev === 'high' ? t('invest.eventWatch.filterHigh') : sev === 'medium' ? t('invest.eventWatch.filterMedium') : t('invest.eventWatch.filterLow')}</button>
-      {/each}
-    </div>
-
-    <!-- Search -->
-    <input
-      type="text"
-      placeholder={t('invest.eventWatch.searchPlaceholder')}
-      value={store.eventFilter.search}
-      oninput={handleSearchInput}
-      class="ml-auto rounded-[var(--radius-md)] px-[var(--space-2)] py-[var(--space-1)] text-[12px] bg-[var(--bg-input)] border border-border text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] w-40"
+  {#if triggerTarget}
+    <EventTriggerDialog
+      event={triggerTarget}
+      onClose={closeTrigger}
+      onTriggered={onTriggerSuccess}
     />
-  </div>
-
-  <!-- Event list -->
-  <div class="flex-1 overflow-y-auto">
-    {#if store.filteredEvents.length === 0}
-      <div class="flex items-center justify-center h-full text-[var(--text-tertiary)] text-[13px]">
-        {t('invest.eventWatch.noEvents')}
-      </div>
-    {:else}
-      {#each store.filteredEvents as event (event.id)}
-        <div class="px-[var(--space-4)] py-[var(--space-2)] border-b border-border/50 hover:bg-[var(--bg-hover)] transition-colors">
-          <div class="flex items-start gap-2">
-            <!-- Severity badge -->
-            <span class="px-1.5 py-0.5 text-[10px] rounded-[var(--radius-full)] border {severityColor(event.severity)}">
-              {severityLabel(event.severity)}
-            </span>
-
-            <!-- Content -->
-            <div class="flex-1 min-w-0 cursor-pointer" role="button" tabindex="0" onclick={() => toggleExpand(event.id)} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpand(event.id); } }}>
-              <div class="flex items-center gap-2">
-                <span class="text-[13px] text-[var(--text-primary)] truncate" title={event.body && event.title !== event.body ? event.title : ''}>{event.body || event.title}</span>
-                <span class="text-[10px] {stanceColor(event.stance)}">{stanceLabel(event.stance)}</span>
-              </div>
-              {#if event.body && event.title && event.title !== event.body}
-                {#if expandedIds.has(event.id)}
-                  <p class="text-[12px] text-[var(--text-secondary)] mt-1">{event.title}</p>
-                {:else}
-                  <p class="text-[12px] text-[var(--text-tertiary)] mt-0.5 line-clamp-1">{event.title}</p>
-                {/if}
-              {/if}
-              <div class="flex items-center gap-2 mt-1">
-                <span class="text-[10px] text-[var(--text-tertiary)]">{event.source}</span>
-                <span class="text-[10px] text-[var(--text-tertiary)]" title={fmtDateTime(event.createdAt)}>{fmtRelative(event.createdAt)}</span>
-                {#if event.symbols}
-                  <div class="flex gap-1">
-                    {#each event.symbols.split(',').filter(Boolean) as sym}
-                      <span class="px-1 py-0 text-[10px] bg-[var(--bg-input)] rounded-[var(--radius-md)] text-[var(--text-secondary)]">{sym}</span>
-                    {/each}
-                  </div>
-                {/if}
-              </div>
-            </div>
-
-            <!-- Trigger button -->
-            {#if event.severity === 'high' && !event.triggered}
-              <button
-                onclick={(e) => { e.stopPropagation(); handleTrigger(event); }}
-                class="rounded-[var(--radius-md)] px-2 py-1 text-[12px] bg-[var(--color-warning-bg)] hover:bg-[var(--color-warning-bg)]/80 text-[var(--color-warning)] transition-colors"
-              >
-                {t('invest.eventWatch.triggerCommittee')}
-              </button>
-            {:else if event.triggered}
-              <span class="text-[10px] text-[var(--text-tertiary)]">{t('invest.eventWatch.triggered')}</span>
-            {/if}
-          </div>
-        </div>
-      {/each}
-    {/if}
-  </div>
+  {/if}
 </div>
 
-{#if triggerEvent}
-  <EventTriggerDialog
-    event={triggerEvent}
-    onClose={() => triggerEvent = null}
-    onTriggered={() => {
-      triggerEvent = null;
-      onNavigateToCommittee?.();
-    }}
-  />
-{/if}
+<style>
+  .news-tab {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    height: 100%;
+    min-height: 0;
+    padding: var(--space-3) var(--space-4);
+  }
+  .status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg-input);
+    border-radius: var(--radius-md);
+    flex-wrap: wrap;
+  }
+  .status-summary {
+    display: flex;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .stat {
+    display: inline-flex;
+    gap: 4px;
+    font-size: 0.8rem;
+    align-items: baseline;
+  }
+  .stat-label {
+    color: var(--text-tertiary);
+  }
+  .stat-value {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+  .stat-muted {
+    color: var(--text-tertiary);
+  }
+  .scan-btn {
+    font-size: 0.8rem;
+    padding: 4px var(--space-3);
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+  }
+  .scan-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .scan-btn:not(:disabled):hover {
+    filter: brightness(1.1);
+  }
+  .two-col {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+  }
+  /* Below 900px viewport width, the columns stack and each keeps its own scroll region. */
+  @media (max-width: 900px) {
+    .two-col {
+      grid-template-columns: 1fr;
+      grid-auto-rows: minmax(0, 1fr);
+    }
+  }
+</style>
