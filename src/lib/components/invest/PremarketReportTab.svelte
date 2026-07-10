@@ -106,6 +106,17 @@
     grade: Grade;
     reason: string;
   }
+  interface AiDropped {
+    symbol: string;
+    name: string;
+    total: number;
+    grade: string;
+    ai_review: {
+      action: string;
+      reason: string;
+      risk_flag: string;
+    };
+  }
   interface ReportPayload {
     date: string;
     markdown: string | null;
@@ -118,6 +129,8 @@
       sectorFlows?: SectorFlowEntry[] | null;
       themes?: ThemeEntry[] | null;
     } | null;
+    aiDropped?: AiDropped[];
+    sectionsStatus?: { capitalFlow?: string; aiReview?: string };
   }
 
   const invoke = <T,>(cmd: string, args?: Record<string, unknown>) =>
@@ -352,6 +365,12 @@
     // Factor scores are 0-100 raw; clamp for bar.
     return Math.max(0, Math.min(100, v));
   }
+  function riskClass(flag: string | undefined): string {
+    if (!flag || flag === 'none' || flag === 'low') return 'risk-none';
+    if (flag === 'medium') return 'risk-soft';
+    if (flag === 'high') return 'risk-hard';
+    return 'risk-none';
+  }
 
   const factorLabelSentiment = $derived(t('invest_premarket_factor_sentiment'));
   const factorLabelCapital = $derived(t('invest_premarket_factor_capital'));
@@ -434,6 +453,11 @@
           <input type="number" step="0.5" bind:value={cfg.threshold_b} />
         </label>
       </div>
+
+      <label class="toggle-row">
+        <input type="checkbox" bind:checked={cfg.enable_ai_review} onchange={saveConfig} />
+        {t('invest_premarket_ai_review_toggle')}
+      </label>
 
       <div class="settings-hint">
         <span class:bad={!weightSumOk} class:ok={weightSumOk}>
@@ -755,6 +779,30 @@
         </div>
       </div>
 
+      <!-- 05 AI 剔除 -->
+      {#if report?.aiDropped?.length}
+        <details class="ai-dropped-section">
+          <summary>
+            <span class="section-title">{t('invest_premarket_ai_dropped_title')}</span>
+            <span class="badge">{report.aiDropped.length}</span>
+          </summary>
+          <div class="dropped-list">
+            {#each report.aiDropped as item}
+              <div class="dropped-item">
+                <span class="dropped-symbol">{item.symbol}</span>
+                <span class="dropped-name">{item.name}</span>
+                <span class="dropped-total">{item.total.toFixed(1)}</span>
+                <span class="dropped-grade">{item.grade}</span>
+                <span class="risk-badge {riskClass(item.ai_review?.risk_flag)}">
+                  {item.ai_review?.risk_flag || '—'}
+                </span>
+                <span class="dropped-reason">{item.ai_review?.reason}</span>
+              </div>
+            {/each}
+          </div>
+        </details>
+      {/if}
+
       <!-- footer -->
       <div class="report-foot">
         <span class="disclaimer">
@@ -1071,4 +1119,102 @@
   }
   .report-foot .disclaimer { flex: 1; }
   .report-foot .brand { font-weight: 700; color: var(--accent); }
+
+  /* 05 AI 剔除 */
+  .ai-dropped-section {
+    width: var(--report-w);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-card);
+    overflow: hidden;
+  }
+  .ai-dropped-section summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+  }
+  .ai-dropped-section summary::-webkit-details-marker { display: none; }
+  .ai-dropped-section summary .badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--color-error);
+    color: var(--bg-base);
+    font-family: var(--font-mono);
+  }
+  .dropped-list {
+    padding: 0 var(--space-4) var(--space-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .dropped-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 6px var(--space-3);
+    border-radius: var(--radius-sm);
+    background: var(--bg-hover);
+    border: 1px solid var(--border);
+  }
+  .dropped-symbol {
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    min-width: 56px;
+  }
+  .dropped-name { font-size: 12px; min-width: 60px; }
+  .dropped-total {
+    font-size: 12px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    min-width: 40px;
+    text-align: right;
+  }
+  .dropped-grade {
+    font-size: 11px;
+    font-weight: 800;
+    min-width: 18px;
+    text-align: center;
+  }
+  .dropped-reason {
+    font-size: 11px;
+    color: var(--text-secondary);
+    flex: 1;
+    line-height: 1.5;
+  }
+
+  /* Risk badges */
+  .risk-badge {
+    display: inline-block;
+    padding: 0 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .risk-none { background: rgba(78, 154, 95, 0.18); color: var(--down); }
+  .risk-soft { background: rgba(192, 177, 104, 0.18); color: var(--flat); }
+  .risk-hard { background: rgba(192, 82, 74, 0.18); color: var(--up); }
+
+  /* Toggle row (settings) */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .toggle-row input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
 </style>
