@@ -40,7 +40,7 @@ struct AiDecision {
     action: String,
     #[serde(default)]
     reason: String,
-    #[serde(default, rename = "risk_flag")]
+    #[serde(default)]
     risk_flag: String,
 }
 
@@ -241,6 +241,12 @@ fn build_ai_review_prompt(top_k: &[SymbolScore], hit_map: &std::collections::Has
     )
 }
 
+/// 清空所有 `ai_review` 并返回 Failed 状态（AI 降级统一出口）。
+fn fail_with_clear(top_k: Vec<SymbolScore>) -> (Vec<SymbolScore>, Vec<SymbolScore>, AiReviewStatus) {
+    let cleared: Vec<SymbolScore> = top_k.into_iter().map(|mut s| { s.ai_review = None; s }).collect();
+    (cleared, vec![], AiReviewStatus::Failed)
+}
+
 /// 调用 CLI 执行 AI 精筛，解析 JSON 决策，应用到 top-K 列表。
 async fn run_ai_review(top_k: Vec<SymbolScore>) -> (Vec<SymbolScore>, Vec<SymbolScore>, AiReviewStatus) {
     if top_k.is_empty() {
@@ -255,8 +261,7 @@ async fn run_ai_review(top_k: Vec<SymbolScore>) -> (Vec<SymbolScore>, Vec<Symbol
         Some(e) => e,
         None => {
             log::warn!("[premarket] AI review: claude CLI not available, fallback");
-            let cleared: Vec<SymbolScore> = top_k.into_iter().map(|mut s| { s.ai_review = None; s }).collect();
-            return (cleared, vec![], AiReviewStatus::Failed);
+            return fail_with_clear(top_k);
         }
     };
 
@@ -276,13 +281,11 @@ async fn run_ai_review(top_k: Vec<SymbolScore>) -> (Vec<SymbolScore>, Vec<Symbol
         Ok(Ok(text)) => text,
         Ok(Err(e)) => {
             log::warn!("[premarket] AI review CLI failed: {e}");
-            let cleared: Vec<SymbolScore> = top_k.into_iter().map(|mut s| { s.ai_review = None; s }).collect();
-            return (cleared, vec![], AiReviewStatus::Failed);
+            return fail_with_clear(top_k);
         }
         Err(_) => {
             log::warn!("[premarket] AI review timed out after {}s", AI_REVIEW_TIMEOUT_SECS);
-            let cleared: Vec<SymbolScore> = top_k.into_iter().map(|mut s| { s.ai_review = None; s }).collect();
-            return (cleared, vec![], AiReviewStatus::Failed);
+            return fail_with_clear(top_k);
         }
     };
 
@@ -298,8 +301,7 @@ async fn run_ai_review(top_k: Vec<SymbolScore>) -> (Vec<SymbolScore>, Vec<Symbol
         Ok(d) => d.decisions,
         Err(e) => {
             log::warn!("[premarket] AI review parse failed: {e}; raw len={}", cleaned.len());
-            let cleared: Vec<SymbolScore> = top_k.into_iter().map(|mut s| { s.ai_review = None; s }).collect();
-            return (cleared, vec![], AiReviewStatus::Failed);
+            return fail_with_clear(top_k);
         }
     };
 

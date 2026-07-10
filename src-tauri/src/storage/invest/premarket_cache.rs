@@ -33,35 +33,10 @@ pub struct CachedFactor {
     pub missing: Vec<String>,
 }
 
-/// 幂等迁移：若 sector_strength 列不存在则 ALTER TABLE 补建。
-fn ensure_sector_strength_column(conn: &Connection) -> Result<(), String> {
-    let mut stmt = conn
-        .prepare("PRAGMA table_info(premarket_factor_cache)")
-        .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map([], |row| row.get::<_, String>(1))
-        .map_err(|e| e.to_string())?;
-    let mut has_col = false;
-    for r in rows {
-        if r.map_err(|e| e.to_string())? == "sector_strength" {
-            has_col = true;
-            break;
-        }
-    }
-    if !has_col {
-        conn.execute(
-            "ALTER TABLE premarket_factor_cache ADD COLUMN sector_strength REAL NOT NULL DEFAULT 50",
-            [],
-        )
-        .map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
 pub fn create_table(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(CREATE_TABLE_SQL)
         .map_err(|e| format!("create premarket_factor_cache: {e}"))?;
-    ensure_sector_strength_column(conn)
+    super::sentiment::ensure_column(conn, "premarket_factor_cache", "sector_strength", "REAL NOT NULL DEFAULT 50")
 }
 
 /// 缓存新鲜度:trade_date 与 today(均 "YYYY-MM-DD")相差 <= max_age_days 自然日视为新鲜。

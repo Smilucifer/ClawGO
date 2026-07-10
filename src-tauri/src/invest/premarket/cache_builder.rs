@@ -22,7 +22,6 @@ pub fn select_candidates(
     cap: usize,
     net_map: &std::collections::HashMap<String, Option<f64>>,
 ) -> Vec<(String, f64, f64)> {
-    let code6 = |ts: &str| ts.split('.').next().unwrap_or(ts).to_string();
 
     // S2: top 60 by net_amount from net_map. Empty map → empty set, silent degradation.
     let mut flow_pairs: Vec<(String, f64)> = net_map
@@ -40,10 +39,10 @@ pub fn select_candidates(
     let mut scored: Vec<Scored> = Vec::with_capacity(daily.len());
     for b in daily {
         let c6 = code6(&b.ts_code);
-        let s1 = sentiment_symbols.contains(&c6);
-        let s2 = s2_top.contains(&c6);
+        let s1 = sentiment_symbols.contains(c6);
+        let s2 = s2_top.contains(c6);
         let count = (s1 as u32) + (s2 as u32);
-        let net = net_map.get(&c6).and_then(|o| *o);
+        let net = net_map.get(c6).and_then(|o| *o);
         scored.push(Scored { bar: b, signal_count: count, net });
     }
 
@@ -84,21 +83,38 @@ pub fn capital_score_from_net(net_amount_wan: Option<f64>) -> f64 {
     }
 }
 
+/// 从 ts_code 提取 6 位裸码（去 `.SH`/`.SZ` 后缀）。
+fn code6(ts: &str) -> &str {
+    ts.split('.').next().unwrap_or(ts)
+}
+
+/// 返回 `val` 在**已升序** `sorted` 中的百分位排名 (0..100)。
+/// 空切片返回 50.0（中性）。使用 `partition_point` 避免 clone 和二次扫描。
+fn percentile_rank_sorted(val: f64, sorted: &[f64]) -> f64 {
+    if sorted.is_empty() {
+        return 50.0;
+    }
+    let n = sorted.len();
+    let count_below = sorted.partition_point(|x| *x < val);
+    let count_le = sorted.partition_point(|x| *x <= val);
+    let count_eq = count_le - count_below;
+    if count_eq == 0 {
+        return 50.0;
+    }
+    ((count_below as f64 + (count_eq as f64 - 1.0) / 2.0) / n as f64 * 100.0)
+        .clamp(0.0, 100.0)
+}
+
 /// 返回 `val` 在 `values` 中的百分位排名 (0..100)。
-/// `values` 会排序但不修改原始数据（clone 后排）。
-pub fn percentile_rank(val: f64, values: &[f64]) -> f64 {
+/// 内部排序后调用 `percentile_rank_sorted`；仅供测试使用。
+#[cfg(test)]
+fn percentile_rank(val: f64, values: &[f64]) -> f64 {
     if values.is_empty() {
         return 50.0;
     }
     let mut sorted = values.to_vec();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let count_below = sorted.iter().filter(|&&v| v < val).count();
-    let count_eq = sorted.iter().filter(|&&v| (v - val).abs() < f64::EPSILON).count();
-    if count_eq == 0 {
-        return 50.0;
-    }
-    ((count_below as f64 + (count_eq as f64 - 1.0) / 2.0) / sorted.len() as f64 * 100.0)
-        .clamp(0.0, 100.0)
+    percentile_rank_sorted(val, &sorted)
 }
 
 /// 返回数值列表的中位数。空列表返回 50.0。
@@ -156,9 +172,8 @@ pub async fn build_cache() -> Result<(String, usize), String> {
             log::warn!("[cache_builder] moneyflow_dc_market failed: {e}; capital 全缺省");
             vec![]
         });
-    let code6 = |ts: &str| ts.split('.').next().unwrap_or(ts).to_string();
     let net_map: std::collections::HashMap<String, Option<f64>> =
-        flow.iter().map(|f| (code6(&f.ts_code), f.net_amount)).collect();
+        flow.iter().map(|f| (code6(&f.ts_code).to_string(), f.net_amount)).collect();
 
     // 3. 近 3 日舆情命中股集合(6 位裸码)
     let since = (chrono::Local::now() - chrono::Duration::days(3))
@@ -169,7 +184,7 @@ pub async fn build_cache() -> Result<(String, usize), String> {
     let mut sentiment_symbols: HashSet<String> = HashSet::new();
     for it in &sent_items {
         if let Some(sym) = &it.symbol {
-            sentiment_symbols.insert(code6(sym));
+            sentiment_symbols.insert(code6(sym).to_string());
         }
     }
 
@@ -179,7 +194,7 @@ pub async fn build_cache() -> Result<(String, usize), String> {
         candidates.len(), daily.len(), sentiment_symbols.len());
 
     // 5. 批量查名(6 位裸码 → 中文名;查不到回退代码)
-    let code_list: Vec<String> = candidates.iter().map(|(ts, _, _)| code6(ts)).collect();
+    let code_list: Vec<String> = candidates.iter().map(|(ts, _, _)| code6(ts).to_string()).collect();
     let name_map = crate::storage::invest::stock_industry::names_of(&code_list)
         .unwrap_or_default();
 
@@ -191,13 +206,6 @@ pub async fn build_cache() -> Result<(String, usize), String> {
 
     let sector_strength_map: Option<HashMap<String, f64>> = match (board_map_result, sector_strength_result) {
         (Ok(board_map), Ok(sector_strengths)) => {
-            // reverse: board_name → Vec<code6> from board_map
-            let mut board_members: HashMap<String, Vec<String>> = HashMap::new();
-            for (code, boards) in &board_map {
-                for (bname, _btype) in boards {
-                    board_members.entry(bname.clone()).or_default().push(code.clone());
-                }
-            }
             // compute per-board percentile (board's change_pct among all boards of same type)
             let mut industry_pcts: Vec<f64> = Vec::new();
             let mut concept_pcts: Vec<f64> = Vec::new();
@@ -210,16 +218,19 @@ pub async fn build_cache() -> Result<(String, usize), String> {
                     }
                 }
             }
+            industry_pcts.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            concept_pcts.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             // board_name → percentile rank within its type
             let board_pct_rank: HashMap<String, f64> = sector_strengths
                 .iter()
                 .filter_map(|bs| {
                     let pct = bs.change_pct?;
-                    let rank = match bs.board_type.as_str() {
-                        "industry" => percentile_rank(pct, &industry_pcts),
-                        "concept" => percentile_rank(pct, &concept_pcts),
-                        _ => percentile_rank(pct, &industry_pcts),
+                    let sorted = match bs.board_type.as_str() {
+                        "industry" => &industry_pcts,
+                        "concept" => &concept_pcts,
+                        _ => &industry_pcts,
                     };
+                    let rank = percentile_rank_sorted(pct, sorted);
                     Some((bs.board_name.clone(), rank))
                 })
                 .collect();
@@ -228,7 +239,7 @@ pub async fn build_cache() -> Result<(String, usize), String> {
             let mut all_scores: Vec<f64> = Vec::new();
             for (ts, _pct, _amount) in &candidates {
                 let c = code6(ts);
-                if let Some(boards) = board_map.get(&c) {
+                if let Some(boards) = board_map.get(c) {
                     let best = boards
                         .iter()
                         .filter_map(|(bname, _)| board_pct_rank.get(bname))
@@ -236,7 +247,7 @@ pub async fn build_cache() -> Result<(String, usize), String> {
                         .fold(0.0_f64, f64::max);
                     if best > 0.0 {
                         all_scores.push(best);
-                        result.insert(c, best);
+                        result.insert(c.to_string(), best);
                     }
                 }
             }
@@ -244,7 +255,7 @@ pub async fn build_cache() -> Result<(String, usize), String> {
             let fallback = median(&all_scores);
             for (ts, _pct, _amount) in &candidates {
                 let c = code6(ts);
-                result.entry(c).or_insert(fallback);
+                result.entry(c.to_string()).or_insert(fallback);
             }
             Some(result)
         }
@@ -276,11 +287,11 @@ pub async fn build_cache() -> Result<(String, usize), String> {
     let mut staging: Vec<(CachedFactor, Option<f64>)> = Vec::with_capacity(candidates.len());
     for (ts, pct, amount) in &candidates {
         let c6 = code6(ts);
-        let (sent_opt, cat_opt) = compute_sentiment_and_catalyst(&c6);
+        let (sent_opt, cat_opt) = compute_sentiment_and_catalyst(c6);
         let mut missing = Vec::new();
         let sentiment = sent_opt.unwrap_or_else(|| { missing.push("sentiment".into()); 50.0 });
         let catalyst = cat_opt.unwrap_or_else(|| { missing.push("catalyst".into()); 50.0 });
-        let capital = match net_map.get(&c6) {
+        let capital = match net_map.get(c6) {
             Some(net) => capital_score_from_net(*net),
             None => { missing.push("capital".into()); 50.0 }
         };
@@ -288,8 +299,8 @@ pub async fn build_cache() -> Result<(String, usize), String> {
             Some(t) => t,
             None => { missing.push("technical".into()); 50.0 }
         };
-        let name = name_map.get(&c6).cloned().unwrap_or_else(|| ts.clone());
-        let ss = sector_strength_map.as_ref().and_then(|m| m.get(&c6).copied());
+        let name = name_map.get(c6).cloned().unwrap_or_else(|| ts.clone());
+        let ss = sector_strength_map.as_ref().and_then(|m| m.get(c6).copied());
         staging.push((
             CachedFactor {
                 symbol: ts.clone(),
