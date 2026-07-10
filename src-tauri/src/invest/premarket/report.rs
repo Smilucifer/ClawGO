@@ -614,6 +614,7 @@ pub async fn generate_premarket_report(data_dir: &Path) -> Result<String, String
     // 3. 股票池 SABC 打分（读盘后缓存,兜底现场构建）
     let cfg: PremarketConfig = get_premarket_config();
     let scores: Vec<SymbolScore> = collect_scores_from_cache(&cfg).await;
+    let scores = crate::invest::premarket::scoring::assign_grades_by_rank(scores);
 
     // 3.5 板块资金流 + 拥挤度雷达（02 段）—— 尽力而为
     let sector_flows_entries: Vec<SectorFlowEntry> = match fetch_sector_flow().await {

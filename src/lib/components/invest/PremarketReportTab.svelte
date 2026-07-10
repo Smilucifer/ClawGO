@@ -167,7 +167,7 @@
     return 'wall-3col';
   });
 
-  // Grouped Top10 by grade — cap 3 per bucket (matches demo layout).
+  // Grouped by grade — cap 5 per bucket (server assigns grade by rank).
   const grouped = $derived.by(() => {
     const buckets: Record<Grade, SymbolScore[]> = { S: [], A: [], B: [], C: [] };
     for (const s of scores) buckets[s.grade].push(s);
@@ -175,10 +175,10 @@
       buckets[g].sort((a, b) => b.total - a.total),
     );
     return {
-      S: buckets.S.slice(0, 3),
-      A: buckets.A.slice(0, 3),
-      B: buckets.B.slice(0, 3),
-      C: buckets.C.slice(0, 3),
+      S: buckets.S.slice(0, 5),
+      A: buckets.A.slice(0, 5),
+      B: buckets.B.slice(0, 5),
+      C: buckets.C.slice(0, 5),
     };
   });
 

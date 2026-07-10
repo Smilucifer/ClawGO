@@ -69,6 +69,23 @@ pub fn grade_of(total: f64, cfg: &PremarketConfig) -> Grade {
     }
 }
 
+/// Rank-cut grading: input sorted by total DESC. Top 20, each bucket 5 stocks.
+/// < 20 stocks: fill S→A→B→C in order, last bucket doesn't pad with worse stocks.
+/// Modifies grades in-place, returns top-20 (or all if < 20).
+pub fn assign_grades_by_rank(mut scores: Vec<SymbolScore>) -> Vec<SymbolScore> {
+    scores.sort_by(|a, b| b.total.partial_cmp(&a.total).unwrap_or(std::cmp::Ordering::Equal));
+    scores.truncate(20);
+    for (i, s) in scores.iter_mut().enumerate() {
+        s.grade = match i {
+            0..=4 => Grade::S,
+            5..=9 => Grade::A,
+            10..=14 => Grade::B,
+            _ => Grade::C,
+        };
+    }
+    scores
+}
+
 pub fn score(
     symbol: &str,
     name: &str,
@@ -177,5 +194,73 @@ mod tests {
         };
         let s = score("x", "x", f, vec!["capital".to_string()], &cfg());
         assert_eq!(s.missing_factors, vec!["capital".to_string()]);
+    }
+
+    fn mk(symbol: &str, total: f64) -> SymbolScore {
+        SymbolScore {
+            symbol: symbol.to_string(),
+            name: symbol.to_string(),
+            total,
+            grade: Grade::C,
+            factors: FactorBreakdown {
+                sentiment: 0.0,
+                capital: 0.0,
+                technical: 0.0,
+                catalyst: 0.0,
+            },
+            missing_factors: vec![],
+        }
+    }
+
+    #[test]
+    fn test_assign_grades_by_rank_25_stocks_takes_top20_and_cuts_5_per_bucket() {
+        // 25 stocks with descending totals 100..76
+        let scores: Vec<SymbolScore> = (0..25).map(|i| mk(&format!("s{i}"), 100.0 - i as f64)).collect();
+        let result = assign_grades_by_rank(scores);
+        assert_eq!(result.len(), 20);
+        // Grades should be S(0..4), A(5..9), B(10..14), C(15..19)
+        for (i, s) in result.iter().enumerate() {
+            match i {
+                0..=4 => assert!(matches!(s.grade, Grade::S), "rank {i} should be S"),
+                5..=9 => assert!(matches!(s.grade, Grade::A), "rank {i} should be A"),
+                10..=14 => assert!(matches!(s.grade, Grade::B), "rank {i} should be B"),
+                15..=19 => assert!(matches!(s.grade, Grade::C), "rank {i} should be C"),
+                _ => unreachable!(),
+            }
+        }
+        // Monotone DESC
+        for w in result.windows(2) {
+            assert!(w[0].total >= w[1].total, "expected monotone DESC");
+        }
+    }
+
+    #[test]
+    fn test_assign_grades_by_rank_12_stocks_last_bucket_underfilled() {
+        let scores: Vec<SymbolScore> = (0..12).map(|i| mk(&format!("s{i}"), 90.0 - i as f64)).collect();
+        let result = assign_grades_by_rank(scores);
+        assert_eq!(result.len(), 12);
+        let s_count = result.iter().filter(|s| matches!(s.grade, Grade::S)).count();
+        let a_count = result.iter().filter(|s| matches!(s.grade, Grade::A)).count();
+        let b_count = result.iter().filter(|s| matches!(s.grade, Grade::B)).count();
+        let c_count = result.iter().filter(|s| matches!(s.grade, Grade::C)).count();
+        assert_eq!(s_count, 5, "S should be 5");
+        assert_eq!(a_count, 5, "A should be 5");
+        assert_eq!(b_count, 2, "B should be 2 (underfilled)");
+        assert_eq!(c_count, 0, "C should be 0");
+    }
+
+    #[test]
+    fn test_assign_grades_by_rank_unsorted_input_gets_sorted_desc() {
+        // Deliberately shuffled input
+        let mut scores: Vec<SymbolScore> = (0..10).map(|i| mk(&format!("s{i}"), (i * 11) as f64)).collect();
+        // Reverse to make it unsorted ascending
+        scores.reverse();
+        let result = assign_grades_by_rank(scores);
+        assert_eq!(result.len(), 10);
+        // After ranking, s9 (99) should be first (S), s0 (0) should be last (A)
+        assert_eq!(result[0].symbol, "s9");
+        assert!(matches!(result[0].grade, Grade::S));
+        assert_eq!(result[9].symbol, "s0");
+        assert!(matches!(result[9].grade, Grade::A));
     }
 }
