@@ -4,6 +4,7 @@ pub mod dream_snapshots;
 pub mod events;
 pub mod macro_cache;
 pub mod macro_verdict;
+pub mod news_cleanup;
 pub mod premarket_cache;
 pub mod portfolio;
 pub mod scheduler;

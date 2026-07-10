@@ -204,6 +204,19 @@ pub fn default_jobs() -> Vec<CronJob> {
             description: "每小时采集外部舆情并归一化打标(全市场口径)".into(),
             dedicated: false,
         },
+        CronJob {
+            id: "news_cleanup".into(),
+            name: "快讯/新闻清理".into(),
+            cron_expr: "0 30 3 * * *".into(),
+            interval_min: None,
+            enabled: true,
+            requires_trading_day: false,
+            last_run: None,
+            next_run: None,
+            last_status: None,
+            description: "每日03:30清理7天前的快讯和舆情数据".into(),
+            dedicated: false,
+        },
     ]
 }
 

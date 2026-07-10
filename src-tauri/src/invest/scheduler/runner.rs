@@ -140,6 +140,15 @@ pub async fn dispatch_job(id: &str) -> Result<String, String> {
                 r.total_pending, r.analyzed, r.skipped
             ))
         }
+        "news_cleanup" => {
+            let events_deleted = crate::storage::invest::news_cleanup::prune_events(7)?;
+            let sentiment_deleted =
+                crate::storage::invest::news_cleanup::prune_sentiment_items(7)?;
+            Ok(format!(
+                "清理完成: events {}, sentiment {}",
+                events_deleted, sentiment_deleted
+            ))
+        }
         _ => Err(format!("Unknown job: {}", id)),
     }
 }
