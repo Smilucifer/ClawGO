@@ -53,6 +53,7 @@ async fn collect_scores_from_cache(cfg: &PremarketConfig) -> Vec<SymbolScore> {
                 capital: c.capital,
                 technical: c.technical,
                 catalyst: c.catalyst,
+                sector_strength: 50.0, // B2: neutral placeholder, B5 will provide real values
             };
             score(&c.symbol, &c.name, factors, c.missing, cfg)
         })

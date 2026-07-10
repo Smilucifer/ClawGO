@@ -1,4 +1,4 @@
-//! SABC 四因子打分器。纯函数、可单测、独立于委员会 verdict。
+//! SABC 五因子打分器。纯函数、可单测、独立于委员会 verdict。
 
 use serde::{Deserialize, Serialize};
 
@@ -9,6 +9,9 @@ pub struct PremarketConfig {
     pub weight_capital: f64,
     pub weight_technical: f64,
     pub weight_catalyst: f64,
+    pub weight_sector: f64,
+    /// "auto" — 固定权重由配置决定；"manual" — 用户逐项调节。
+    pub weight_source: String,
     pub threshold_s: f64,
     pub threshold_a: f64,
     pub threshold_b: f64,
@@ -17,10 +20,12 @@ pub struct PremarketConfig {
 impl Default for PremarketConfig {
     fn default() -> Self {
         Self {
-            weight_sentiment: 0.30,
-            weight_capital: 0.30,
-            weight_technical: 0.25,
+            weight_sentiment: 0.25,
+            weight_capital: 0.25,
+            weight_technical: 0.20,
             weight_catalyst: 0.15,
+            weight_sector: 0.15,
+            weight_source: "auto".to_string(),
             threshold_s: 78.0,
             threshold_a: 62.0,
             threshold_b: 45.0,
@@ -43,6 +48,7 @@ pub struct FactorBreakdown {
     pub capital: f64,
     pub technical: f64,
     pub catalyst: f64,
+    pub sector_strength: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,7 +102,8 @@ pub fn score(
     let total = factors.sentiment * cfg.weight_sentiment
         + factors.capital * cfg.weight_capital
         + factors.technical * cfg.weight_technical
-        + factors.catalyst * cfg.weight_catalyst;
+        + factors.catalyst * cfg.weight_catalyst
+        + factors.sector_strength * cfg.weight_sector;
     let grade = grade_of(total, cfg);
     SymbolScore {
         symbol: symbol.to_string(),
@@ -139,22 +146,56 @@ pub fn save_premarket_config(cfg: PremarketConfig) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// 5-factor config matching default weights: 0.25+0.25+0.20+0.15+0.15=1.0
     fn cfg() -> PremarketConfig {
         PremarketConfig::default()
     }
 
     #[test]
-    fn test_grade_thresholds() {
-        // 全 100 分 → S
+    fn default_config_sums_to_one() {
+        let c = PremarketConfig::default();
+        let sum = c.weight_sentiment + c.weight_capital + c.weight_technical
+            + c.weight_catalyst + c.weight_sector;
+        assert!((sum - 1.0).abs() < 1e-9, "weights sum to {sum}, expected 1.0");
+    }
+
+    #[test]
+    fn grade_of_thresholds() {
+        let c = cfg();
+        assert!(matches!(grade_of(80.0, &c), Grade::S));
+        assert!(matches!(grade_of(62.0, &c), Grade::A));
+        assert!(matches!(grade_of(45.0, &c), Grade::B));
+        assert!(matches!(grade_of(30.0, &c), Grade::C));
+    }
+
+    #[test]
+    fn score_weights_five_factors() {
+        // All factors 100 → total should be 100.0 (weights sum to 1.0)
         let f = FactorBreakdown {
             sentiment: 100.0,
             capital: 100.0,
             technical: 100.0,
             catalyst: 100.0,
+            sector_strength: 100.0,
         };
         let s = score("600519", "茅台", f, vec![], &cfg());
-        assert!((s.total - 100.0).abs() < 0.01);
+        assert!((s.total - 100.0).abs() < 0.01, "total={}", s.total);
         assert!(matches!(s.grade, Grade::S));
+    }
+
+    #[test]
+    fn score_sector_contributes_to_total() {
+        // Only sector_strength=100, others=0 → total = 100 * 0.15 = 15
+        let f = FactorBreakdown {
+            sentiment: 0.0,
+            capital: 0.0,
+            technical: 0.0,
+            catalyst: 0.0,
+            sector_strength: 100.0,
+        };
+        let s = score("x", "x", f, vec![], &cfg());
+        assert!((s.total - 15.0).abs() < 0.01, "total={}", s.total);
+        assert!(matches!(s.grade, Grade::C));
     }
 
     #[test]
@@ -164,6 +205,7 @@ mod tests {
             capital: 10.0,
             technical: 10.0,
             catalyst: 10.0,
+            sector_strength: 10.0,
         };
         let s = score("x", "x", f, vec![], &cfg());
         assert!(matches!(s.grade, Grade::C));
@@ -171,16 +213,17 @@ mod tests {
 
     #[test]
     fn test_weighted_sum() {
-        // sentiment=80(w.30) capital=60(w.30) technical=40(w.25) catalyst=20(w.15)
-        // = 24 + 18 + 10 + 3 = 55 → B (45<=55<62)
+        // sentiment=80(w.25) capital=60(w.25) technical=40(w.20) catalyst=20(w.15) sector=30(w.15)
+        // = 20 + 15 + 8 + 3 + 4.5 = 50.5 → B (45<=50.5<62)
         let f = FactorBreakdown {
             sentiment: 80.0,
             capital: 60.0,
             technical: 40.0,
             catalyst: 20.0,
+            sector_strength: 30.0,
         };
         let s = score("x", "x", f, vec![], &cfg());
-        assert!((s.total - 55.0).abs() < 0.01, "total={}", s.total);
+        assert!((s.total - 50.5).abs() < 0.01, "total={}", s.total);
         assert!(matches!(s.grade, Grade::B));
     }
 
@@ -191,6 +234,7 @@ mod tests {
             capital: 50.0,
             technical: 50.0,
             catalyst: 50.0,
+            sector_strength: 50.0,
         };
         let s = score("x", "x", f, vec!["capital".to_string()], &cfg());
         assert_eq!(s.missing_factors, vec!["capital".to_string()]);
@@ -207,6 +251,7 @@ mod tests {
                 capital: 0.0,
                 technical: 0.0,
                 catalyst: 0.0,
+                sector_strength: 0.0,
             },
             missing_factors: vec![],
         }
@@ -214,11 +259,9 @@ mod tests {
 
     #[test]
     fn test_assign_grades_by_rank_25_stocks_takes_top20_and_cuts_5_per_bucket() {
-        // 25 stocks with descending totals 100..76
         let scores: Vec<SymbolScore> = (0..25).map(|i| mk(&format!("s{i}"), 100.0 - i as f64)).collect();
         let result = assign_grades_by_rank(scores);
         assert_eq!(result.len(), 20);
-        // Grades should be S(0..4), A(5..9), B(10..14), C(15..19)
         for (i, s) in result.iter().enumerate() {
             match i {
                 0..=4 => assert!(matches!(s.grade, Grade::S), "rank {i} should be S"),
@@ -228,7 +271,6 @@ mod tests {
                 _ => unreachable!(),
             }
         }
-        // Monotone DESC
         for w in result.windows(2) {
             assert!(w[0].total >= w[1].total, "expected monotone DESC");
         }
@@ -251,13 +293,10 @@ mod tests {
 
     #[test]
     fn test_assign_grades_by_rank_unsorted_input_gets_sorted_desc() {
-        // Deliberately shuffled input
         let mut scores: Vec<SymbolScore> = (0..10).map(|i| mk(&format!("s{i}"), (i * 11) as f64)).collect();
-        // Reverse to make it unsorted ascending
         scores.reverse();
         let result = assign_grades_by_rank(scores);
         assert_eq!(result.len(), 10);
-        // After ranking, s9 (99) should be first (S), s0 (0) should be last (A)
         assert_eq!(result[0].symbol, "s9");
         assert!(matches!(result[0].grade, Grade::S));
         assert_eq!(result[9].symbol, "s0");

@@ -25,6 +25,7 @@
     capital: number;
     technical: number;
     catalyst: number;
+    sector_strength: number;
   }
   interface SymbolScore {
     symbol: string;
@@ -63,6 +64,8 @@
     weight_capital: number;
     weight_technical: number;
     weight_catalyst: number;
+    weight_sector: number;
+    weight_source: 'auto' | 'manual';
     threshold_s: number;
     threshold_a: number;
     threshold_b: number;
@@ -131,10 +134,12 @@
   // Settings panel
   let settingsOpen = $state(false);
   let cfg = $state<PremarketConfig>({
-    weight_sentiment: 0.30,
-    weight_capital: 0.30,
-    weight_technical: 0.25,
+    weight_sentiment: 0.25,
+    weight_capital: 0.25,
+    weight_technical: 0.20,
     weight_catalyst: 0.15,
+    weight_sector: 0.15,
+    weight_source: 'auto',
     threshold_s: 78,
     threshold_a: 62,
     threshold_b: 45,
@@ -144,7 +149,7 @@
   let cfgSaveMsg = $state<string | null>(null);
 
   const weightSum = $derived(
-    cfg.weight_sentiment + cfg.weight_capital + cfg.weight_technical + cfg.weight_catalyst,
+    cfg.weight_sentiment + cfg.weight_capital + cfg.weight_technical + cfg.weight_catalyst + cfg.weight_sector,
   );
   const weightSumOk = $derived(Math.abs(weightSum - 1.0) <= 0.001);
   const thresholdsOk = $derived(cfg.threshold_s > cfg.threshold_a && cfg.threshold_a > cfg.threshold_b);
@@ -389,6 +394,24 @@
         <label class="settings-item">
           <span>{t('invest_premarket_factor_catalyst')} · w</span>
           <input type="number" step="0.01" min="0" max="1" bind:value={cfg.weight_catalyst} />
+        </label>
+        <label class="settings-item">
+          <span>{t('invest_premarket_factor_sector')} · w</span>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            max="1"
+            bind:value={cfg.weight_sector}
+            disabled={cfg.weight_source === 'auto'}
+          />
+        </label>
+        <label class="settings-item">
+          <span>{t('invest_premarket_weight_source')}</span>
+          <select bind:value={cfg.weight_source}>
+            <option value="auto">{t('invest_premarket_weight_source_auto')}</option>
+            <option value="manual">{t('invest_premarket_weight_source_manual')}</option>
+          </select>
         </label>
         <label class="settings-item">
           <span>{t('invest_premarket_threshold_s')}</span>
