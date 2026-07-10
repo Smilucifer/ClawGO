@@ -324,7 +324,6 @@
   "invest_tab_system": "系统",
 
   "invest_system_sub_cron": "定时任务",
-  "invest_system_sub_events": "事件",
   "invest_premarket_title": "明日盘前观察",
   "invest_premarket_subtitle": "外部新闻先验 × 主力资金双重确认 × 明日主线预排序 × 观察池分级",
   "invest_premarket_session_badge": "下一交易日 · 盘前",
@@ -574,6 +573,7 @@
   "invest_committee_sub_live": "直播",
   "invest_committee_sub_replay": "决策回放",
   "invest_committee_sub_archive": "决议归档",
+  "invest_committee_sub_news": "新闻/舆论",
   "invest_committee_sub_roles": "角色配置",
   "invest_committee_sub_accuracy": "命中率",
   "invest_committee_sub_premarket": "盘前观察",

@@ -27,8 +27,8 @@
   import type { Holding } from '$lib/types';
 
   type InvestTab = 'dashboard' | 'committee' | 'strategy' | 'trades' | 'system';
-  type CommitteeSubTab = 'live' | 'replay' | 'archive' | 'roles' | 'accuracy' | 'premarket';
-  type SystemSubTab = 'cron' | 'events' | 'datasource' | 'pnl_history' | 'insights' | 'dreams' | 'profile' | 'cleanup';
+  type CommitteeSubTab = 'live' | 'replay' | 'archive' | 'news' | 'roles' | 'accuracy' | 'premarket';
+  type SystemSubTab = 'cron' | 'datasource' | 'pnl_history' | 'insights' | 'dreams' | 'profile' | 'cleanup';
 
   let activeTab: InvestTab = $state('dashboard');
   let committeeSubTab: CommitteeSubTab = $state('live');
@@ -44,7 +44,6 @@
 
   const systemSubTabs: { id: SystemSubTab; label: string }[] = $derived([
     { id: 'cron', label: t('invest_system_sub_cron') },
-    { id: 'events', label: t('invest_system_sub_events') },
     { id: 'datasource', label: t('invest_system_sub_datasource') },
     { id: 'pnl_history', label: t('invest_system_sub_pnl_history') },
     { id: 'insights', label: t('invest_system_sub_insights') },
@@ -57,6 +56,7 @@
     { id: 'live', label: t('invest_committee_sub_live') },
     { id: 'replay', label: t('invest_committee_sub_replay') },
     { id: 'archive', label: t('invest_committee_sub_archive') },
+    { id: 'news', label: t('invest_committee_sub_news') },
     { id: 'roles', label: t('invest_committee_sub_roles') },
     { id: 'accuracy', label: t('invest_committee_sub_accuracy') },
     { id: 'premarket', label: t('invest_committee_sub_premarket') },
@@ -230,6 +230,8 @@
         <CommitteeReplayTab />
       {:else if committeeSubTab === 'archive'}
         <CommitteeArchiveTab />
+      {:else if committeeSubTab === 'news'}
+        <EventWatchTab onNavigateToCommittee={() => { committeeSubTab = 'live'; }} />
       {:else if committeeSubTab === 'roles'}
         <CommitteeRolesTab />
       {:else if committeeSubTab === 'accuracy'}
@@ -298,8 +300,6 @@
 
       {#if systemSubTab === 'cron'}
         <SchedulerTab />
-      {:else if systemSubTab === 'events'}
-        <EventWatchTab onNavigateToCommittee={() => { activeTab = 'committee'; committeeSubTab = 'live'; }} />
       {:else if systemSubTab === 'datasource'}
         <SystemDatasourceTab />
       {:else if systemSubTab === 'pnl_history'}
