@@ -255,3 +255,221 @@ def sector_fund_flow() -> list[dict]:
         return ths_flow
     _warn("all sources unavailable, returning []")
     return []
+
+
+# ---------------------------------------------------------------------------
+# 东财板块成分 + 强度端点 (B5a)
+# ---------------------------------------------------------------------------
+
+def _normalize_code(v) -> str | None:
+    """将各种格式的股票代码统一为6位纯数字字符串。"""
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s:
+        return None
+    # 去掉点号 (如 600519.SH)
+    s = s.replace(".", "").replace(" ", "")
+    # 只保留数字
+    s = "".join(c for c in s if c.isdigit())
+    if not s:
+        return None
+    # 取后6位并补零
+    return s[-6:].zfill(6)
+
+
+def _detect_code_col(columns: list[str]) -> str | None:
+    """从 DataFrame 列名中检测股票代码列。"""
+    candidates = ["代码", "成分券代码", "股票代码", "证券代码", "code"]
+    for c in columns:
+        cs = str(c).strip()
+        for kw in candidates:
+            if cs == kw:
+                return c
+    # 模糊匹配
+    for c in columns:
+        cs = str(c).strip().lower()
+        if "代码" in cs or "code" in cs:
+            return c
+    return None
+
+
+def _fetch_board_cons(ak, board_name: str, board_type: str) -> list[dict]:
+    """获取单个东财板块的成分股列表。"""
+    try:
+        if board_type == "industry":
+            df = ak.stock_board_industry_cons_em(symbol=board_name)
+        else:
+            df = ak.stock_board_concept_cons_em(symbol=board_name)
+    except Exception as e:
+        _warn(f"board_cons_em fetch '{board_name}' ({board_type}) failed: {e!r}")
+        return []
+
+    if df is None or df.empty:
+        return []
+
+    code_col = _detect_code_col(list(df.columns))
+    if not code_col:
+        _warn(f"board_cons_em cannot detect code col for '{board_name}'; cols={list(df.columns)}")
+        return []
+
+    out: list[dict] = []
+    for _, row in df.iterrows():
+        code = _normalize_code(row.get(code_col))
+        if not code:
+            continue
+        out.append({
+            "ts_code": code,
+            "board_name": board_name,
+            "board_type": board_type,
+        })
+    return out
+
+
+def board_cons_em(board_type: str | None = None) -> list[dict]:
+    """东财板块成分股列表。
+
+    Args:
+        board_type: None=行业+概念, "industry"=仅行业, "concept"=仅概念。
+
+    Returns:
+        [{"ts_code": "600519", "board_name": "白酒", "board_type": "industry"}, ...]
+    """
+    try:
+        import akshare as ak
+    except ImportError:
+        _warn("akshare not installed, skipping board_cons_em")
+        return []
+
+    do_industry = board_type in (None, "industry")
+    do_concept = board_type in (None, "concept")
+
+    results: list[dict] = []
+
+    if do_industry:
+        try:
+            name_df = ak.stock_board_industry_name_em()
+        except Exception as e:
+            _warn(f"board_cons_em industry name list failed: {e!r}")
+            name_df = None
+
+        if name_df is not None and not name_df.empty:
+            # 板块名在 "板块名称" 列
+            board_names_col = None
+            for c in name_df.columns:
+                cs = str(c).strip()
+                if "板块名称" in cs or cs == "名称":
+                    board_names_col = c
+                    break
+            if board_names_col is None:
+                # fallback: first column that looks like a name
+                for c in name_df.columns:
+                    if "名称" in str(c):
+                        board_names_col = c
+                        break
+
+            if board_names_col is not None:
+                for _, r in name_df.iterrows():
+                    bname = str(r.get(board_names_col, "")).strip()
+                    if not bname:
+                        continue
+                    results.extend(_fetch_board_cons(ak, bname, "industry"))
+            else:
+                _warn(f"board_cons_em industry: cannot find board name col; got={list(name_df.columns)}")
+
+    if do_concept:
+        try:
+            name_df = ak.stock_board_concept_name_em()
+        except Exception as e:
+            _warn(f"board_cons_em concept name list failed: {e!r}")
+            name_df = None
+
+        if name_df is not None and not name_df.empty:
+            board_names_col = None
+            for c in name_df.columns:
+                cs = str(c).strip()
+                if "板块名称" in cs or cs == "名称":
+                    board_names_col = c
+                    break
+            if board_names_col is None:
+                for c in name_df.columns:
+                    if "名称" in str(c):
+                        board_names_col = c
+                        break
+
+            if board_names_col is not None:
+                for _, r in name_df.iterrows():
+                    bname = str(r.get(board_names_col, "")).strip()
+                    if not bname:
+                        continue
+                    results.extend(_fetch_board_cons(ak, bname, "concept"))
+            else:
+                _warn(f"board_cons_em concept: cannot find board name col; got={list(name_df.columns)}")
+
+    return results
+
+
+def _detect_col(columns: list[str], candidates: list[str]) -> str | None:
+    """按候选列表检测 DataFrame 列名，精确匹配优先，模糊匹配兜底。"""
+    for kw in candidates:
+        for c in columns:
+            if str(c).strip() == kw:
+                return c
+    for kw in candidates:
+        for c in columns:
+            if kw in str(c):
+                return c
+    return None
+
+
+def sector_strength_em() -> list[dict]:
+    """东财板块强度（涨跌幅 + 主力净流入）。
+
+    Returns:
+        [{"board_name": "...", "board_type": "industry"|"concept",
+          "change_pct": float|None, "net_amount": float|None (亿元)}, ...]
+    """
+    try:
+        import akshare as ak
+    except ImportError:
+        _warn("akshare not installed, skipping sector_strength_em")
+        return []
+
+    results: list[dict] = []
+
+    for stype, board_type in [("行业资金流", "industry"), ("概念资金流", "concept")]:
+        try:
+            df = ak.stock_sector_fund_flow_rank(indicator="今日", sector_type=stype)
+        except Exception as e:
+            _warn(f"sector_strength_em {stype} failed: {e!r}")
+            continue
+
+        if df is None or df.empty:
+            _warn(f"sector_strength_em {stype} returned empty")
+            continue
+
+        cols = list(df.columns)
+        name_col = _detect_col(cols, ["名称", "板块名称", "行业名称", "概念名称"])
+        pct_col = _detect_col(cols, ["今日涨跌幅", "涨跌幅"])
+        net_col = _detect_col(cols, ["今日主力净流入-净额", "主力净流入-净额", "主力净流入净额"])
+
+        if not name_col:
+            _warn(f"sector_strength_em {stype}: cannot find name col; got={cols}")
+            continue
+
+        for _, row in df.iterrows():
+            name = str(row.get(name_col, "")).strip()
+            if not name:
+                continue
+            pct = _to_float(row.get(pct_col)) if pct_col else None
+            net_yuan = _to_float(row.get(net_col)) if net_col else None
+            net_yi = round(net_yuan / 1e8, 4) if net_yuan is not None else None
+
+            results.append({
+                "board_name": name,
+                "board_type": board_type,
+                "change_pct": pct,
+                "net_amount": net_yi,
+            })
+
+    return results
