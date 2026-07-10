@@ -1,5 +1,22 @@
 # Changelog / 更新日志
 
+## v5.6.10 (2026-07-10)
+
+### 定时归一化改走委员会 provider(修复后台偷跑默认 Claude)
+
+- **根因:** `event_analyzer::cli_complete`(事件/舆情归一化的共用文本补全入口,`event_analyzer.rs` 与 `event_scanner.rs::normalize_events` 都走它)此前以 `settings_path=None` 调 `run_role`,即不加 `--settings`、直接用 `~/.claude` 原生配置——归一化始终跑默认 Claude,无视委员会 `CommitteeTuning.selected_provider`。`event_analyzer` 定时任务全天每 10 分钟触发,导致休息时段后台 Claude 用量持续增长。
+- **修复:** `cli_complete` 改为先 `macro_verdict::resolve_settings_path()`(读 `committee_tuning.json` → provider/model → `write_committee_settings_json` 生成 `--settings`)再执行,与 `ai_commentary`、`macro_verdict` 路由一致。委员会选 `"default"` 时 `resolve_settings_path` 返回 `None`,退回 `~/.claude`,默认用户行为不变。一处入口收敛两条归一化路径,调用点无需改动。
+
+### event_analyzer 调度收敛(专用循环 → 主 cron)
+
+- `event_analyzer` 原为 `dedicated: true`,由 `runner.rs` 硬编码 `Duration::from_secs(10*60)` 专用定时器驱动,`cron_expr` 形同虚设(全天无休)。改为 `dedicated: false` 走主 cron 循环,cron `0 */30 8-22 * * 1-5`(交易日 8-22 点每 30 分钟),其他时段仅手动 `trigger_cron_job` 触发。后台运行量约降 80%(144 次/日 → ~29 次/日)。
+- 删除 `start_dedicated_loop("event_analyzer", ...)`,仅保留 `jin10_collector`(15s 节拍,快于主循环 60s tick,须专用循环)。`dedicated` 不在 `scheduler.json` 的 `JobOverride` 里,永远取自 `default_jobs()`,存量用户升级即生效、不会双循环并跑。
+
+### 重构（simplify 审查清理）
+
+- 合并 `cli_complete` 与 `cli_complete_with_settings`:后者在 `cli_complete` 内联化后仅剩单一内部调用者,拆两层无意义,内联并去掉多余 `pub`。`premarket/report.rs::ai_commentary` 从手动 `resolve_settings_path()` + `cli_complete_with_settings()` 改为直接调 `cli_complete`,消除双路径漂移。
+- 修正 `event_analyzer.rs` 陈旧模块文档("Runs every 10 minutes")及 `runner.rs` 两处提及 event_analyzer 专用循环的过时注释。
+
 ## v5.6.9 (2026-07-09)
 
 ### 盘前观察报告后端改造:预构建缓存链

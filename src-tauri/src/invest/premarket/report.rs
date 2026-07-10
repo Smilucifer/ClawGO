@@ -17,11 +17,60 @@ use serde::{Deserialize, Serialize};
 
 use crate::invest::premarket::crowding::{crowd_levels_for, CrowdLevel};
 use crate::invest::premarket::scoring::{
-    get_premarket_config, grade_of, score, FactorBreakdown, Grade, PremarketConfig, SymbolScore,
+    get_premarket_config, grade_of, score, AiReview, FactorBreakdown, Grade, PremarketConfig,
+    SymbolScore,
 };
 use crate::invest::premarket::sector_flow::{fetch_sector_flow, SectorFlow};
 use crate::storage::invest::macro_cache::{build_macro_snapshot, MacroSnapshot};
 use crate::storage::invest::stock_industry;
+
+// ---------------------------------------------------------------------------
+// AI 精筛（B3b）：AI keep/drop + 熔断降级 + sections_status
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct AiDecisions {
+    #[serde(default)]
+    decisions: Vec<AiDecision>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct AiDecision {
+    symbol: String,
+    action: String,
+    #[serde(default)]
+    reason: String,
+    #[serde(default, rename = "risk_flag")]
+    risk_flag: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AiReviewStatus {
+    Ok,
+    Disabled,
+    Failed,
+    CircuitBroken,
+}
+
+impl AiReviewStatus {
+    fn as_wire(&self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Disabled => "disabled",
+            Self::Failed => "failed",
+            Self::CircuitBroken => "circuit_broken",
+        }
+    }
+}
+
+/// 最终进池上限（AI 精筛后取前 20 做 rank-cut）。
+const AI_REVIEW_FINAL_LIMIT: usize = 20;
+/// 候选池上限：量化打分后取 top K 送 AI 精筛。
+const AI_REVIEW_TOP_K: usize = 25;
+/// 熔断阈值：AI drop 数 >= 此值时回退纯量化 top20。
+const AI_REVIEW_DROP_CIRCUIT: usize = 13;
+/// AI 精筛 CLI 超时（秒）。
+const AI_REVIEW_TIMEOUT_SECS: u64 = 60;
 
 /// 从盘后缓存读最新交易日整批 → 组装 SymbolScore。缓存缺失/过期时先兜底构建一次再读。
 async fn collect_scores_from_cache(cfg: &PremarketConfig) -> Vec<SymbolScore> {
@@ -58,6 +107,203 @@ async fn collect_scores_from_cache(cfg: &PremarketConfig) -> Vec<SymbolScore> {
             score(&c.symbol, &c.name, factors, c.missing, cfg)
         })
         .collect()
+}
+
+// ---------------------------------------------------------------------------
+// AI 精筛：apply_ai_decisions（纯函数）
+// ---------------------------------------------------------------------------
+
+/// 把 AI 的 keep/drop 决策应用到量化 top-K 列表上。
+///
+/// 返回 `(kept, dropped, status)`：
+/// - `kept`：被保留的 SymbolScore（ai_review 字段已填充）
+/// - `dropped`：被 AI drop 的 SymbolScore
+/// - `status`：本次精筛的状态
+///
+/// 熔断逻辑：drop_count >= `AI_REVIEW_DROP_CIRCUIT` 或全部被 drop → CircuitBroken，
+/// 此时所有标的回退为 kept（ai_review=None），dropped 为空。
+fn apply_ai_decisions(
+    top_k: Vec<SymbolScore>,
+    decisions: Vec<AiDecision>,
+) -> (Vec<SymbolScore>, Vec<SymbolScore>, AiReviewStatus) {
+    if top_k.is_empty() {
+        return (vec![], vec![], AiReviewStatus::Ok);
+    }
+
+    let mut decision_map: std::collections::HashMap<&str, &AiDecision> =
+        std::collections::HashMap::new();
+    for d in &decisions {
+        decision_map.insert(d.symbol.as_str(), d);
+    }
+
+    let mut kept = Vec::new();
+    let mut dropped = Vec::new();
+
+    for score in top_k {
+        match decision_map.get(score.symbol.as_str()) {
+            Some(decision) => {
+                let action = decision.action.trim().to_lowercase();
+                let risk_flag = if decision.risk_flag.trim().is_empty() {
+                    "other".to_string()
+                } else {
+                    decision.risk_flag.trim().to_string()
+                };
+                if action == "drop" {
+                    dropped.push(score);
+                } else {
+                    // "keep" or any bad action → keep
+                    let mut s = score;
+                    s.ai_review = Some(AiReview {
+                        action: "keep".to_string(),
+                        reason: decision.reason.clone(),
+                        risk_flag,
+                    });
+                    kept.push(s);
+                }
+            }
+            None => {
+                // Missing ts_code in decisions → default keep, ai_review=None
+                let mut s = score;
+                s.ai_review = None;
+                kept.push(s);
+            }
+        }
+    }
+
+    // 熔断检查：drop 数 >= 阈值，或 AI 对所有标的都下了 drop
+    let drop_count = dropped.len();
+    let total_decided = kept.len() + dropped.len();
+    // "all drop" = every decision says drop, and at least half the candidates were dropped
+    let all_drop = total_decided > 0
+        && drop_count == total_decided
+        && decisions.iter().all(|d| d.action.trim().to_lowercase() == "drop");
+    if drop_count >= AI_REVIEW_DROP_CIRCUIT || all_drop {
+        // CircuitBroken：全部回退，ai_review 置 None
+        let mut all: Vec<SymbolScore> = kept.into_iter().chain(dropped).collect();
+        for s in &mut all {
+            s.ai_review = None;
+        }
+        return (all, vec![], AiReviewStatus::CircuitBroken);
+    }
+
+    (kept, dropped, AiReviewStatus::Ok)
+}
+
+/// 统计最近 3 天每只标的的舆情命中条数（供 AI 精筛 prompt 附加上下文）。
+fn sentiment_hit_map(symbols: &[SymbolScore]) -> std::collections::HashMap<String, u32> {
+    let since = (chrono::Local::now() - chrono::Duration::days(3))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+    let mut map: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    for s in symbols {
+        let code = s.symbol.split('.').next().unwrap_or(&s.symbol);
+        let count = crate::storage::invest::sentiment::list_sentiment_by_symbol(code, &since, 50)
+            .map(|v| v.len() as u32)
+            .unwrap_or(0);
+        map.insert(s.symbol.clone(), count);
+    }
+    map
+}
+
+/// 构建 AI 精筛 prompt：每只标的一行摘要，AI 输出 JSON keep/drop 决策。
+fn build_ai_review_prompt(top_k: &[SymbolScore], hit_map: &std::collections::HashMap<String, u32>) -> String {
+    let mut lines = Vec::new();
+    for s in top_k {
+        let hits = hit_map.get(&s.symbol).copied().unwrap_or(0);
+        lines.push(format!(
+            "{} ({}) | 总分 {:.1} | 情绪{:.0} 资金{:.0} 技术{:.0} 催化{:.0} | 舆情{}条{}",
+            s.symbol,
+            s.name,
+            s.total,
+            s.factors.sentiment,
+            s.factors.capital,
+            s.factors.technical,
+            s.factors.catalyst,
+            hits,
+            if s.missing_factors.is_empty() {
+                String::new()
+            } else {
+                format!(" | 缺:{}", s.missing_factors.join(","))
+            }
+        ));
+    }
+    let stock_list = lines.join("\n");
+    format!(
+        "你是A股盘前量化筛选的 AI 复核员。以下 {count} 只标的是量化打分 top-K 候选。\n\
+         请逐只评估，判断是否值得保留进入最终观察池。\n\
+         保留标准：基本面无重大利空、近期舆情正面或中性、技术面未处于极端超买。\n\
+         剔除标准：存在监管处罚、退市风险、重大利空舆情、技术面极端超买（RSI>85）。\n\n\
+         输出严格JSON格式：\n\
+         {{\"decisions\":[{{\"symbol\":\"代码\",\"action\":\"keep或drop\",\"reason\":\"一句话\",\"risk_flag\":\"low/medium/high/other\"}}]}}\n\
+         只输出JSON，不要解释。\n\n\
+         标的列表：\n{stock_list}",
+        count = top_k.len()
+    )
+}
+
+/// 调用 CLI 执行 AI 精筛，解析 JSON 决策，应用到 top-K 列表。
+async fn run_ai_review(top_k: Vec<SymbolScore>) -> (Vec<SymbolScore>, Vec<SymbolScore>, AiReviewStatus) {
+    if top_k.is_empty() {
+        return (vec![], vec![], AiReviewStatus::Ok);
+    }
+
+    let hit_map = sentiment_hit_map(&top_k);
+    let prompt = build_ai_review_prompt(&top_k, &hit_map);
+
+    let settings = crate::invest::macro_verdict::resolve_settings_path();
+    let exec = match crate::invest::committee::cli_executor::CliCommitteeExecutor::global() {
+        Some(e) => e,
+        None => {
+            log::warn!("[premarket] AI review: claude CLI not available, fallback");
+            let cleared: Vec<SymbolScore> = top_k.into_iter().map(|mut s| { s.ai_review = None; s }).collect();
+            return (cleared, vec![], AiReviewStatus::Failed);
+        }
+    };
+
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(AI_REVIEW_TIMEOUT_SECS),
+        exec.run_role(
+            "你是严谨的A股量化筛选复核员，只输出JSON。",
+            &prompt,
+            AI_REVIEW_TIMEOUT_SECS,
+            settings.as_deref(),
+            None,
+        ),
+    )
+    .await;
+
+    let resp = match result {
+        Ok(Ok(text)) => text,
+        Ok(Err(e)) => {
+            log::warn!("[premarket] AI review CLI failed: {e}");
+            let cleared: Vec<SymbolScore> = top_k.into_iter().map(|mut s| { s.ai_review = None; s }).collect();
+            return (cleared, vec![], AiReviewStatus::Failed);
+        }
+        Err(_) => {
+            log::warn!("[premarket] AI review timed out after {}s", AI_REVIEW_TIMEOUT_SECS);
+            let cleared: Vec<SymbolScore> = top_k.into_iter().map(|mut s| { s.ai_review = None; s }).collect();
+            return (cleared, vec![], AiReviewStatus::Failed);
+        }
+    };
+
+    // 解析 JSON（容错：可能被 markdown 包裹）
+    let cleaned = resp
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+
+    let decisions = match serde_json::from_str::<AiDecisions>(cleaned) {
+        Ok(d) => d.decisions,
+        Err(e) => {
+            log::warn!("[premarket] AI review parse failed: {e}; raw len={}", cleaned.len());
+            let cleared: Vec<SymbolScore> = top_k.into_iter().map(|mut s| { s.ai_review = None; s }).collect();
+            return (cleared, vec![], AiReviewStatus::Failed);
+        }
+    };
+
+    apply_ai_decisions(top_k, decisions)
 }
 
 /// 用真实 `MacroSnapshot` 字段渲染成中文 md 片段。缺失字段写"—"。
@@ -614,8 +860,28 @@ pub async fn generate_premarket_report(data_dir: &Path) -> Result<String, String
 
     // 3. 股票池 SABC 打分（读盘后缓存,兜底现场构建）
     let cfg: PremarketConfig = get_premarket_config();
-    let scores: Vec<SymbolScore> = collect_scores_from_cache(&cfg).await;
-    let scores = crate::invest::premarket::scoring::assign_grades_by_rank(scores);
+    let full_pool: Vec<SymbolScore> = collect_scores_from_cache(&cfg).await;
+    let mut sorted_pool = full_pool;
+    sorted_pool.sort_by(|a, b| b.total.partial_cmp(&a.total).unwrap_or(std::cmp::Ordering::Equal));
+    let top_k: Vec<SymbolScore> = sorted_pool.into_iter().take(AI_REVIEW_TOP_K).collect();
+
+    // B3b: AI 精筛 pass — quant top 25 → AI keep/drop → kept top 20 → rank-cut
+    let (kept_after_ai, ai_dropped, ai_status) = if cfg.enable_ai_review {
+        run_ai_review(top_k).await
+    } else {
+        let cleared: Vec<SymbolScore> = top_k
+            .into_iter()
+            .map(|mut s| {
+                s.ai_review = None;
+                s
+            })
+            .collect();
+        (cleared, vec![], AiReviewStatus::Disabled)
+    };
+
+    let scores: Vec<SymbolScore> = crate::invest::premarket::scoring::assign_grades_by_rank(
+        kept_after_ai.into_iter().take(AI_REVIEW_FINAL_LIMIT).collect(),
+    );
 
     // 3.5 板块资金流 + 拥挤度雷达（02 段）—— 尽力而为
     let sector_flows_entries: Vec<SectorFlowEntry> = match fetch_sector_flow().await {
@@ -661,6 +927,15 @@ pub async fn generate_premarket_report(data_dir: &Path) -> Result<String, String
     md.push_str("## SABC 观察池\n\n");
     md.push_str(&format!("共 {} 标的\n\n", scores.len()));
     md.push_str(&render_scores_md(&scores));
+    // B3b: AI 精筛状态通知
+    if matches!(ai_status, AiReviewStatus::Failed) {
+        md.push_str("\n> AI 精筛失败(不影响选池)。\n");
+    } else if matches!(ai_status, AiReviewStatus::CircuitBroken) {
+        md.push_str(&format!(
+            "\n> AI 精筛熔断（drop 数 >= {}），已回退纯量化 top20。\n",
+            AI_REVIEW_DROP_CIRCUIT
+        ));
+    }
     md.push_str("\n## AI 点评\n\n");
     md.push_str(&ai_md);
     md.push('\n');
@@ -677,6 +952,11 @@ pub async fn generate_premarket_report(data_dir: &Path) -> Result<String, String
         "scores": scores,
         "config": cfg,
         "aiCommentary": ai,
+        "aiDropped": ai_dropped,
+        "sectionsStatus": {
+            "capitalFlow": if sector_flows_entries.is_empty() { "unavailable" } else { "ok" },
+            "aiReview": ai_status.as_wire(),
+        },
     });
     std::fs::write(
         &json_path,
@@ -685,4 +965,138 @@ pub async fn generate_premarket_report(data_dir: &Path) -> Result<String, String
     .map_err(|e| format!("write json: {e}"))?;
 
     Ok(md_path.to_string_lossy().to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::invest::premarket::scoring::FactorBreakdown;
+
+    fn mk(symbol: &str, total: f64) -> SymbolScore {
+        SymbolScore {
+            symbol: symbol.to_string(),
+            name: symbol.to_string(),
+            total,
+            grade: Grade::C,
+            factors: FactorBreakdown {
+                sentiment: 50.0,
+                capital: 50.0,
+                technical: 50.0,
+                catalyst: 50.0,
+                sector_strength: 50.0,
+            },
+            missing_factors: vec![],
+            ai_review: None,
+        }
+    }
+
+    #[test]
+    fn apply_normal_drop_produces_kept_and_dropped_lists() {
+        let top_k = vec![mk("600519.SH", 90.0), mk("000858.SZ", 85.0), mk("601318.SH", 80.0)];
+        let decisions = vec![
+            AiDecision { symbol: "600519.SH".into(), action: "keep".into(), reason: "ok".into(), risk_flag: "low".into() },
+            AiDecision { symbol: "000858.SZ".into(), action: "drop".into(), reason: "overbought".into(), risk_flag: "high".into() },
+            AiDecision { symbol: "601318.SH".into(), action: "keep".into(), reason: "fine".into(), risk_flag: "medium".into() },
+        ];
+        let (kept, dropped, status) = apply_ai_decisions(top_k, decisions);
+        assert_eq!(kept.len(), 2);
+        assert_eq!(dropped.len(), 1);
+        assert_eq!(dropped[0].symbol, "000858.SZ");
+        assert_eq!(status, AiReviewStatus::Ok);
+        // kept items should have ai_review populated
+        for s in &kept {
+            assert!(s.ai_review.is_some());
+            assert_eq!(s.ai_review.as_ref().unwrap().action, "keep");
+        }
+    }
+
+    #[test]
+    fn apply_circuit_breaker_when_drop_ge_13_returns_empty_ai() {
+        // 13 drops → circuit breaker
+        let top_k: Vec<SymbolScore> = (0..15).map(|i| mk(&format!("S{i:04}"), 100.0 - i as f64)).collect();
+        let decisions: Vec<AiDecision> = (0..13)
+            .map(|i| AiDecision {
+                symbol: format!("S{i:04}"),
+                action: "drop".into(),
+                reason: "risk".into(),
+                risk_flag: "high".into(),
+            })
+            .collect();
+        let (kept, dropped, status) = apply_ai_decisions(top_k, decisions);
+        assert_eq!(status, AiReviewStatus::CircuitBroken);
+        assert_eq!(dropped.len(), 0);
+        assert_eq!(kept.len(), 15);
+        // All ai_review should be None on circuit break
+        for s in &kept {
+            assert!(s.ai_review.is_none());
+        }
+    }
+
+    #[test]
+    fn apply_partial_return_missing_symbols_default_to_keep() {
+        let top_k = vec![mk("600519.SH", 90.0), mk("000858.SZ", 85.0)];
+        // Only one decision — the other symbol is missing from AI output
+        let decisions = vec![AiDecision {
+            symbol: "600519.SH".into(),
+            action: "drop".into(),
+            reason: "bad".into(),
+            risk_flag: "high".into(),
+        }];
+        let (kept, dropped, status) = apply_ai_decisions(top_k, decisions);
+        assert_eq!(status, AiReviewStatus::Ok);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(dropped.len(), 1);
+        assert_eq!(kept[0].symbol, "000858.SZ");
+        assert!(kept[0].ai_review.is_none()); // missing → default keep, no review
+    }
+
+    #[test]
+    fn apply_unknown_ts_code_is_ignored() {
+        let top_k = vec![mk("600519.SH", 90.0)];
+        let decisions = vec![AiDecision {
+            symbol: "NONEXIST.XX".into(),
+            action: "drop".into(),
+            reason: "nope".into(),
+            risk_flag: "high".into(),
+        }];
+        let (kept, dropped, status) = apply_ai_decisions(top_k, decisions);
+        assert_eq!(status, AiReviewStatus::Ok);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(dropped.len(), 0);
+        assert_eq!(kept[0].symbol, "600519.SH");
+    }
+
+    #[test]
+    fn apply_bad_risk_flag_and_bad_action_are_coerced() {
+        let top_k = vec![mk("600519.SH", 90.0), mk("000858.SZ", 85.0)];
+        let decisions = vec![
+            AiDecision {
+                symbol: "600519.SH".into(),
+                action: "INVALID".into(),
+                reason: "test".into(),
+                risk_flag: "".into(), // empty → "other"
+            },
+            AiDecision {
+                symbol: "000858.SZ".into(),
+                action: "keep".into(),
+                reason: "ok".into(),
+                risk_flag: "invalid_value".into(), // unknown → kept as-is
+            },
+        ];
+        let (kept, dropped, status) = apply_ai_decisions(top_k, decisions);
+        assert_eq!(status, AiReviewStatus::Ok);
+        assert_eq!(kept.len(), 2);
+        assert_eq!(dropped.len(), 0);
+        // bad action → coerced to "keep"
+        let r0 = kept[0].ai_review.as_ref().unwrap();
+        assert_eq!(r0.action, "keep");
+        assert_eq!(r0.risk_flag, "other"); // empty → "other"
+        // bad risk_flag → kept as-is (not in the low/medium/high enum)
+        let r1 = kept[1].ai_review.as_ref().unwrap();
+        assert_eq!(r1.risk_flag, "invalid_value");
+    }
 }
