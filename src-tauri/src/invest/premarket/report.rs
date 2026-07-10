@@ -170,14 +170,11 @@ fn apply_ai_decisions(
         }
     }
 
-    // 熔断检查：drop 数 >= 阈值，或 AI 对所有标的都下了 drop
+    // 熔断检查：drop 数 >= 阈值，或 top_k 全部被 drop
     let drop_count = dropped.len();
     let total_decided = kept.len() + dropped.len();
-    // "all drop" = every decision says drop, and at least half the candidates were dropped
-    let all_drop = total_decided > 0
-        && drop_count == total_decided
-        && decisions.iter().all(|d| d.action.trim().to_lowercase() == "drop");
-    if drop_count >= AI_REVIEW_DROP_CIRCUIT || all_drop {
+    let all_dropped = total_decided > 0 && drop_count == total_decided;
+    if drop_count >= AI_REVIEW_DROP_CIRCUIT || all_dropped {
         // CircuitBroken：全部回退，ai_review 置 None
         let mut all: Vec<SymbolScore> = kept.into_iter().chain(dropped).collect();
         for s in &mut all {
