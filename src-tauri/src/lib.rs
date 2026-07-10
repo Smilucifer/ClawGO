@@ -484,6 +484,7 @@ pub fn run() {
             commands::invest::fetch_sentiment,
             commands::invest::refresh_stock_industry_cmd,
             commands::invest::collect_sentiment,
+            commands::invest::get_sentiment_items,
             commands::invest::generate_premarket_report_cmd,
             commands::invest::list_premarket_reports,
             commands::invest::read_premarket_report,

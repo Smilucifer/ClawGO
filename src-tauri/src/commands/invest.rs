@@ -2,6 +2,7 @@ use crate::storage::invest::{
     events::{self, Event},
     portfolio::{self, Holding, Trade},
     scheduler,
+    sentiment::{self, SentimentItem},
     strategy,
     verdicts::{self, PnlSnapshot, Verdict},
 };
@@ -173,6 +174,11 @@ pub fn delete_pnl_snapshot(id: i64) -> Result<(), String> {
 #[tauri::command]
 pub fn get_events(source: Option<String>, limit: Option<i64>) -> Result<Vec<Event>, String> {
     events::list_events(source.as_deref(), limit)
+}
+
+#[tauri::command]
+pub fn get_sentiment_items(limit: Option<i64>) -> Result<Vec<SentimentItem>, String> {
+    sentiment::list_recent_sentiment("1970-01-01 00:00:00", limit.unwrap_or(200))
 }
 
 #[tauri::command]
