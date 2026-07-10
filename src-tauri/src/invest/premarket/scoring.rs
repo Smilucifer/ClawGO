@@ -15,6 +15,13 @@ pub struct PremarketConfig {
     pub threshold_s: f64,
     pub threshold_a: f64,
     pub threshold_b: f64,
+    /// Enable AI final review step (B3). Display/persistence only, never affects total/grade.
+    #[serde(default = "default_true")]
+    pub enable_ai_review: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for PremarketConfig {
@@ -29,6 +36,7 @@ impl Default for PremarketConfig {
             threshold_s: 78.0,
             threshold_a: 62.0,
             threshold_b: 45.0,
+            enable_ai_review: true,
         }
     }
 }
@@ -51,6 +59,16 @@ pub struct FactorBreakdown {
     pub sector_strength: f64,
 }
 
+/// AI final review result (B3). Attached to SymbolScore.ai_review, display/persistence only.
+/// Never participates in total/grade calculation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiReview {
+    pub action: String,
+    pub reason: String,
+    pub risk_flag: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SymbolScore {
@@ -60,6 +78,8 @@ pub struct SymbolScore {
     pub grade: Grade,
     pub factors: FactorBreakdown,
     pub missing_factors: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_review: Option<AiReview>,
 }
 
 /// 按 SABC 阈值把合成分映射到档位。`score()` 与板块聚合（report::build_themes）共用。
@@ -112,6 +132,7 @@ pub fn score(
         grade,
         factors,
         missing_factors: missing,
+        ai_review: None,
     }
 }
 
@@ -254,6 +275,7 @@ mod tests {
                 sector_strength: 0.0,
             },
             missing_factors: vec![],
+            ai_review: None,
         }
     }
 

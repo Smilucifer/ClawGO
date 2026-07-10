@@ -27,6 +27,11 @@
     catalyst: number;
     sector_strength: number;
   }
+  interface AiReview {
+    action: 'keep' | 'drop';
+    reason: string;
+    riskFlag: 'none' | 'regulatory' | 'sentiment_only' | 'weak_fundamental' | 'other';
+  }
   interface SymbolScore {
     symbol: string;
     name: string;
@@ -34,6 +39,7 @@
     grade: Grade;
     factors: FactorBreakdown;
     missingFactors: string[];
+    aiReview?: AiReview;
   }
   interface AiSector {
     name: string;
@@ -69,6 +75,7 @@
     threshold_s: number;
     threshold_a: number;
     threshold_b: number;
+    enable_ai_review: boolean;
   }
   // 02 段：板块资金流入榜 + 拥挤度雷达 —— 与后端 SectorFlowEntry 对齐
   type CrowdLevel = 'healthy' | 'warm' | 'hot';
@@ -143,6 +150,7 @@
     threshold_s: 78,
     threshold_a: 62,
     threshold_b: 45,
+    enable_ai_review: true,
   });
   let cfgLoaded = $state(false);
   let cfgSaving = $state(false);
