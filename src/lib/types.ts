@@ -1890,6 +1890,7 @@ export interface InvestEvent {
   title: string;
   body: string | null;
   symbols: string | null;
+  sectors: string | null;
   severity: string;
   stance: string;
   triggered: boolean;
@@ -1919,6 +1920,27 @@ export interface EventFilter {
   timeWindow: "all" | "24h" | "48h" | "7d";
   severity: "all" | "high" | "medium" | "low";
   search: string;
+}
+
+export interface SentimentItem {
+  id: string;
+  provider: string;
+  symbol: string | null;
+  title: string;
+  summary: string | null;
+  url: string | null;
+  publishedAt: string | null;
+  readCount: number | null;
+  commentCount: number | null;
+  sourceType: string;
+  sentimentHint: number | null;
+  affectedSymbols: string | null;
+  sectors: string | null;
+  topics: string | null;
+  stance: string;
+  severity: string;
+  analyzed: boolean;
+  createdAt: string;
 }
 
 // ── Invest types (Phase 4a: Domain Insights) ──

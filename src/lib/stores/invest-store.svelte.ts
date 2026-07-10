@@ -14,6 +14,7 @@ import type {
   ScanStatus,
   ScanResult,
   EventFilter,
+  SentimentItem,
 } from "$lib/types";
 
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -83,6 +84,7 @@ class InvestStore {
   scanStatus = $state<ScanStatus | null>(null);
   isScanning = $state<boolean>(false);
   lastScanResult = $state<ScanResult | null>(null);
+  sentimentItems = $state<SentimentItem[]>([]);
 
   // ── Derived ──────────────────────────────────────────────────────────
   holdHoldings = $derived(this.holdings.filter((h) => h.kind === "hold"));
@@ -601,6 +603,15 @@ class InvestStore {
       this.events = events;
     } catch (e) {
       console.error("Failed to fetch events:", e);
+    }
+  }
+
+  async fetchSentimentItems(): Promise<void> {
+    try {
+      const items = await invoke<SentimentItem[]>("get_sentiment_items", { limit: 200 });
+      this.sentimentItems = items;
+    } catch (e) {
+      console.error("Failed to fetch sentiment items:", e);
     }
   }
 
