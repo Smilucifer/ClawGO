@@ -243,17 +243,15 @@ where
         return; // already running
     }
 
-    // Spawn dedicated loops for high-frequency jobs
+    // Spawn dedicated loops for high-frequency jobs.
+    // event_analyzer used to live here on a fixed 10-min all-day timer; it now
+    // runs through the main cron loop (0 */30 8-22 * * 1-5) so its schedule is
+    // config-driven and confined to trading-hour weekdays. Only jin10_collector
+    // (15s cadence, too fast for the 60s main loop) still needs a dedicated loop.
     start_dedicated_loop(
         "jin10_collector",
         Duration::from_secs(10),
         Duration::from_secs(15),
-        cancel.clone(),
-    );
-    start_dedicated_loop(
-        "event_analyzer",
-        Duration::from_secs(30),
-        Duration::from_secs(10 * 60),
         cancel.clone(),
     );
 
@@ -311,8 +309,8 @@ where
                 // persist_job_status (via run_job_guarded -> execute_and_log) is the
                 // single authority for advancing last_run/next_run. Don't write them
                 // again here from the stale tick-top `jobs` snapshot — doing so would
-                // clobber last_run updates that dedicated loops (jin10/event_analyzer)
-                // persisted while this tick's dispatch was running.
+                // clobber last_run updates that the jin10_collector dedicated
+                // loop persisted while this tick's dispatch was running.
                 run_job_guarded(dispatch.clone(), job_id.clone(), true).await;
             }
 

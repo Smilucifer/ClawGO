@@ -254,11 +254,9 @@ async fn ai_commentary(news_block: &str) -> Option<AiCommentary> {
          风险预警专收监管/政策转向/处罚退市/地缘扰动。输出JSON: {{\"sectors\":[...],\"tone\":\"基调总述\"}}。只输出JSON。\n\n{}",
         news_block
     );
-    let settings = crate::invest::macro_verdict::resolve_settings_path();
-    let resp = crate::invest::event_analyzer::cli_complete_with_settings(
+    let resp = crate::invest::event_analyzer::cli_complete(
         "你是严谨的金融分析师，只输出JSON。",
         &prompt,
-        settings.as_deref(),
     )
     .await
     .ok()?;

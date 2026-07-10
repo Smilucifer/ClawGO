@@ -85,15 +85,15 @@ pub fn default_jobs() -> Vec<CronJob> {
         CronJob {
             id: "event_analyzer".into(),
             name: "事件分析器".into(),
-            cron_expr: "0 */10 * * * *".into(),
+            cron_expr: "0 */30 8-22 * * 1-5".into(),
             interval_min: None,
             enabled: true,
             requires_trading_day: false,
             last_run: None,
             next_run: None,
             last_status: None,
-            description: "每10分钟分析未处理事件".into(),
-            dedicated: true,
+            description: "交易日8-22点每30分钟分析未处理事件(其他时间手动触发)".into(),
+            dedicated: false,
         },
         CronJob {
             id: "dream_invest".into(),

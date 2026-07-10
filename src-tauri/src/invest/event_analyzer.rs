@@ -1,6 +1,7 @@
 //! Event analyzer: batch-processes unanalyzed events via LLM.
 //!
-//! Runs every 10 minutes, queries events with `analyzed=false`,
+//! Scheduled on trading-day market hours (see `event_analyzer` cron in
+//! `scheduler::default_jobs`), queries events with `analyzed=false`,
 //! normalizes them via LLM, and updates severity/stance/symbols fields.
 
 use crate::invest::event_scanner::{
@@ -17,28 +18,20 @@ const MAX_BATCH_SIZE: i64 = 50;
 /// Run a single text-completion via the committee CLI executor.
 ///
 /// Used by event scanner/analyzer normalization in place of `OpenAiCompatClient`.
-/// `settings_path: None` means use the ambient `~/.claude` settings — committee
-/// roles use `write_committee_settings_json` for platform_credentials, but event
-/// normalization is fine on the default Claude provider.
+/// Routes through the committee-configured provider (`committee_tuning.json` →
+/// `selected_provider`/`model`) so scheduled normalization uses the same LLM the
+/// user picked for the committee (e.g. MiMo Plan) rather than silently burning
+/// the default Claude subscription. When the committee provider is `"default"`
+/// (native CC), `resolve_settings_path` returns `None` and this falls back to the
+/// ambient `~/.claude` settings — same as before for default users.
 pub async fn cli_complete(
     system_prompt: &str,
     user_message: &str,
 ) -> Result<String, String> {
+    let settings = crate::invest::macro_verdict::resolve_settings_path();
     let exec = crate::invest::committee::cli_executor::CliCommitteeExecutor::global()
         .ok_or("claude CLI not available")?;
-    exec.run_role(system_prompt, user_message, 0, None, None).await
-}
-
-/// 同 cli_complete,但显式传 --settings 路径(委员会 provider 路由)。
-/// settings_path=None 等价于 cli_complete(默认 Claude provider)。
-pub async fn cli_complete_with_settings(
-    system_prompt: &str,
-    user_message: &str,
-    settings_path: Option<&std::path::Path>,
-) -> Result<String, String> {
-    let exec = crate::invest::committee::cli_executor::CliCommitteeExecutor::global()
-        .ok_or("claude CLI not available")?;
-    exec.run_role(system_prompt, user_message, 0, settings_path, None).await
+    exec.run_role(system_prompt, user_message, 0, settings.as_deref(), None).await
 }
 
 /// Result of an analysis run.
