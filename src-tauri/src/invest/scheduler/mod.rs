@@ -151,14 +151,15 @@ pub fn default_jobs() -> Vec<CronJob> {
         CronJob {
             id: "premarket_report".into(),
             name: "盘前观察报告".into(),
-            cron_expr: "0 0 9 * * 1-5".into(),
+            cron_expr: "0 0 21 * * 0-4".into(),
             interval_min: None,
             enabled: true,
-            requires_trading_day: true,
+            // A6: runs Sun-Thu 21:00 (evening before); evening is NOT a trading day
+            requires_trading_day: false,
             last_run: None,
             next_run: None,
             last_status: None,
-            description: "盘前生成观察报告（舆情+SABC+拥挤度+AI点评）".into(),
+            description: "交易日前一晚 21:00 生成观察报告（舆情+SABC+拥挤度+AI点评）".into(),
             dedicated: false,
         },
         CronJob {

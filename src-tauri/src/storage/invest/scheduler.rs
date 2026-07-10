@@ -115,6 +115,33 @@ fn is_weekday(date: &str) -> bool {
     }
 }
 
+/// Returns the next trading day after the given date (YYYY-MM-DD).
+/// Prefers trade_calendar (is_open=1, cal_date > date, MIN);
+/// falls back to next weekday, max 10 days ahead.
+pub fn next_trading_day(date: &str) -> Result<String, String> {
+    let from_cal: Option<String> = with_conn(|conn| {
+        conn.query_row(
+            "SELECT MIN(cal_date) FROM trade_calendar WHERE is_open = 1 AND cal_date > ?1",
+            params![date],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .map_err(|e| format!("next_trading_day query: {}", e))
+    })?;
+    if let Some(d) = from_cal {
+        return Ok(d);
+    }
+    let base = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map_err(|e| format!("parse date: {}", e))?;
+    for i in 1..=10 {
+        let cand = base + chrono::Duration::days(i);
+        let s = cand.format("%Y-%m-%d").to_string();
+        if is_weekday(&s) {
+            return Ok(s);
+        }
+    }
+    Err(format!("next_trading_day: no trading day found after {}", date))
+}
+
 /// 返回北京时间当天的日历日期（`%Y-%m-%d`）。
 ///
 /// 这是日历日，与 `crate::invest::date_utils::get_invest_date` 不同：

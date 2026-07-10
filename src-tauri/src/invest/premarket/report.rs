@@ -594,7 +594,9 @@ fn render_themes_md(themes: &[ThemeEntry]) -> String {
 /// **grade 隔离**：SABC 评级只在 `score()` 内根据总分算出；AI 点评仅进入
 /// `aiCommentary`/md 展示层，任何 AI 失败都不影响 scores。
 pub async fn generate_premarket_report(data_dir: &Path) -> Result<String, String> {
-    let date = crate::invest::date_utils::get_invest_date();
+    // A6: report generated evening before, dated for next trading day
+    let today = crate::storage::invest::scheduler::beijing_today();
+    let date = crate::storage::invest::scheduler::next_trading_day(&today)?;
 
     // 1. 采集 + 内联归一化（CP2 时序保证）——含雪球独立通道
     let _ = crate::invest::sentiment::collect_all_sentiment(None, 20).await;
