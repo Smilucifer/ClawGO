@@ -218,6 +218,19 @@ pub fn default_jobs() -> Vec<CronJob> {
             description: "每日03:30清理7天前的快讯和舆情数据".into(),
             dedicated: false,
         },
+        CronJob {
+            id: "stock_board_map_refresh".into(),
+            name: "板块映射刷新".into(),
+            cron_expr: "0 0 4 * * 1".into(), // Monday 04:00
+            interval_min: None,
+            enabled: true,
+            requires_trading_day: false,
+            last_run: None,
+            next_run: None,
+            last_status: None,
+            description: "每周刷新东财 industry+concept 板块成分映射表".into(),
+            dedicated: false,
+        },
     ]
 }
 

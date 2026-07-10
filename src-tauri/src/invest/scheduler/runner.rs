@@ -149,6 +149,10 @@ pub async fn dispatch_job(id: &str) -> Result<String, String> {
                 events_deleted, sentiment_deleted
             ))
         }
+        "stock_board_map_refresh" => {
+            let n = crate::invest::premarket::board_refresh::refresh_stock_board_map().await?;
+            Ok(format!("板块映射刷新: {} 只", n))
+        }
         _ => Err(format!("Unknown job: {}", id)),
     }
 }

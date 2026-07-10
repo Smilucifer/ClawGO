@@ -1335,6 +1335,12 @@ pub async fn refresh_stock_industry_cmd() -> Result<usize, String> {
     crate::invest::sentiment::refresh_stock_industry().await
 }
 
+/// 刷新东财 industry + concept 板块成分映射表，返回覆盖 ts_code 数。
+#[tauri::command]
+pub async fn refresh_stock_board_map_cmd() -> Result<usize, String> {
+    crate::invest::premarket::board_refresh::refresh_stock_board_map().await
+}
+
 /// 盘前采集编排：抓取四源 → 内联归一化到清零，一次返回归一化聚合结果。
 #[tauri::command]
 pub async fn collect_sentiment(
