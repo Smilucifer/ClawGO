@@ -9,6 +9,7 @@ pub mod premarket_cache;
 pub mod portfolio;
 pub mod scheduler;
 pub mod sentiment;
+pub mod stock_board_map;
 pub mod stock_industry;
 pub mod strategy;
 pub mod stock_data_cache;
@@ -372,6 +373,10 @@ fn init_db_inner(db_path: &Path) -> Result<Connection, String> {
     // Migration: create stock_industry table (个股 → 行业映射，每周从 tushare stock_basic 刷新)
     conn.execute_batch(stock_industry::CREATE_STOCK_INDUSTRY_TABLE)
         .map_err(|e| format!("create stock_industry: {}", e))?;
+
+    // Migration: create stock_board_map table (个股 → 板块映射，行业/概念)
+    conn.execute_batch(stock_board_map::CREATE_STOCK_BOARD_MAP_TABLE)
+        .map_err(|e| format!("create stock_board_map: {}", e))?;
 
     // FTS5 virtual table for domain_insights full-text search
     conn.execute_batch(
