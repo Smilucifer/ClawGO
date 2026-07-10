@@ -33,6 +33,8 @@
 ### 修复
 
 - **AI 精筛熔断(all_drop)逻辑错误:** 熔断检查 `.all(|d| d.action == "drop")` 遍历全部决策(含非 top-K 标的),若 LLM 对非 top-K 返回 keep 即使 top-K 全 drop 也不触发熔断。修复为 `drop_count == total_decided`(仅计 top-K 范围内)。
+- **事件/快讯入库 title/body 字段颠倒:** `event_scanner.rs` 和 `jin10_collector.rs` 中 `RawEvent`/`CollectedNewsItem` 入库时 body 为 `"Publisher: X"`(无意义固定串)、title 为完整原文——字段语义错位。修复: title 截断至 80 字符、body 改为完整 title,两处同步。
+- **scheduler 启动自愈(next_run 过期):** `load_jobs()` 此前仅对 `next_run` 为 `None` 的 job 计算锚点;存量用户磁盘上已持久化的过期 `next_run` 不会被修复,导致部分 cron 重启后迟迟不触发。修复: 首次调用用 `AtomicBool` 标记,为所有已启用 job 无条件重算 `next_run`,后续调用维持原逻辑(仅补 `None`)。
 
 ### 重构（simplify 审查清理）
 
