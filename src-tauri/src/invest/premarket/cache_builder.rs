@@ -7,32 +7,66 @@ use crate::tushare::client::{DailyBar, MoneyflowDc, TushareClient};
 use crate::invest::premarket::report::{compute_sentiment_and_catalyst, compute_technical};
 use futures_util::StreamExt;
 
-/// 候选粗筛(纯函数):
-/// - 舆情命中股(在 sentiment_symbols 内)优先全保留;
-/// - 剩余名额按 pct_chg 降序补齐到 cap;
+/// 候选粗筛(纯函数) — 多信号 union:
+/// - S1: 舆情命中股(在 sentiment_symbols 内)全保留;
+/// - S2: 主力净流入 Top60 (net_map 按 net_amount DESC);
+/// - S7: pct_chg 降序兜底补齐到 cap;
+/// - 排序: signal_count DESC → net_amount DESC(None 最后) → pct_chg DESC;
+/// - S2 降级: 空 net_map → S2 贡献 0, 静默退化为 S1+S7。
 /// - 返回 (ts_code, pct_chg, amount)。
 pub fn select_candidates(
     daily: &[DailyBar],
     sentiment_symbols: &HashSet<String>,
     cap: usize,
+    net_map: &std::collections::HashMap<String, Option<f64>>,
 ) -> Vec<(String, f64, f64)> {
     let code6 = |ts: &str| ts.split('.').next().unwrap_or(ts).to_string();
-    let mut hit: Vec<&DailyBar> = Vec::new();
-    let mut rest: Vec<&DailyBar> = Vec::new();
-    for b in daily {
-        if sentiment_symbols.contains(&code6(&b.ts_code)) {
-            hit.push(b);
-        } else {
-            rest.push(b);
-        }
+
+    // S2: top 60 by net_amount from net_map. Empty map → empty set, silent degradation.
+    let mut flow_pairs: Vec<(String, f64)> = net_map
+        .iter()
+        .filter_map(|(c6, n)| n.map(|v| (c6.clone(), v)))
+        .collect();
+    flow_pairs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let s2_top: HashSet<String> = flow_pairs.into_iter().take(60).map(|(c, _)| c).collect();
+
+    struct Scored<'a> {
+        bar: &'a DailyBar,
+        signal_count: u32,
+        net: Option<f64>,
     }
-    rest.sort_by(|a, b| b.pct_chg.partial_cmp(&a.pct_chg).unwrap_or(std::cmp::Ordering::Equal));
+    let mut scored: Vec<Scored> = Vec::with_capacity(daily.len());
+    for b in daily {
+        let c6 = code6(&b.ts_code);
+        let s1 = sentiment_symbols.contains(&c6);
+        let s2 = s2_top.contains(&c6);
+        let count = (s1 as u32) + (s2 as u32);
+        let net = net_map.get(&c6).and_then(|o| *o);
+        scored.push(Scored { bar: b, signal_count: count, net });
+    }
+
+    let (mut signaled, mut fallback): (Vec<Scored>, Vec<Scored>) =
+        scored.into_iter().partition(|s| s.signal_count >= 1);
+
+    signaled.sort_by(|a, b| {
+        b.signal_count.cmp(&a.signal_count).then_with(|| {
+            match (a.net, b.net) {
+                (Some(x), Some(y)) => y.partial_cmp(&x).unwrap_or(std::cmp::Ordering::Equal),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            }
+        })
+    });
+
+    fallback.sort_by(|a, b| {
+        b.bar.pct_chg.partial_cmp(&a.bar.pct_chg).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
     let mut out: Vec<(String, f64, f64)> = Vec::with_capacity(cap);
-    for b in hit.iter().chain(rest.iter()) {
-        if out.len() >= cap {
-            break;
-        }
-        out.push((b.ts_code.clone(), b.pct_chg, b.amount));
+    for s in signaled.iter().chain(fallback.iter()) {
+        if out.len() >= cap { break; }
+        out.push((s.bar.ts_code.clone(), s.bar.pct_chg, s.bar.amount));
     }
     out
 }
@@ -106,7 +140,7 @@ pub async fn build_cache() -> Result<(String, usize), String> {
     }
 
     // 4. 粗筛候选
-    let candidates = select_candidates(&daily, &sentiment_symbols, CANDIDATE_CAP);
+    let candidates = select_candidates(&daily, &sentiment_symbols, CANDIDATE_CAP, &net_map);
     log::info!("[cache_builder] {} 候选(全市场 {} 行, 舆情命中 {})",
         candidates.len(), daily.len(), sentiment_symbols.len());
 
@@ -171,6 +205,7 @@ pub async fn build_cache_for_generation() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     fn bar(ts: &str, pct: f64) -> DailyBar {
         DailyBar {
@@ -180,15 +215,64 @@ mod tests {
         }
     }
 
+    fn empty_net() -> HashMap<String, Option<f64>> { HashMap::new() }
+
     #[test]
-    fn select_prioritizes_sentiment_hits_then_fills_by_pct() {
+    fn s1_sentiment_hit_always_kept_even_low_pct() {
+        // 600000 has low pct_chg but is a sentiment hit — must appear in output
+        let daily = vec![bar("600000.SH", -2.0), bar("600001.SH", 9.0), bar("600002.SH", 5.0)];
+        let mut hits = HashSet::new();
+        hits.insert("600000".to_string());
+        let out = select_candidates(&daily, &hits, 2, &empty_net());
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].0, "600000.SH");  // sentiment hit kept first
+        assert_eq!(out[1].0, "600001.SH");  // fallback by pct_chg DESC
+    }
+
+    #[test]
+    fn s2_top60_stock_pulled_in_even_low_pct() {
+        // 600000 is in S2 top but has low pct_chg — still pulled in
+        let daily = vec![bar("600000.SH", -3.0), bar("600001.SH", 8.0)];
+        let mut net_map = HashMap::new();
+        net_map.insert("600000".to_string(), Some(50000.0));  // high net inflow
+        let out = select_candidates(&daily, &HashSet::new(), 2, &net_map);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].0, "600000.SH");  // S2 hit, signal_count=1
+        assert_eq!(out[1].0, "600001.SH");  // fallback
+    }
+
+    #[test]
+    fn multi_signal_ranks_above_single_signal() {
+        // 600000 hits both S1 and S2 → signal_count=2, should rank above S1-only or S2-only
+        let daily = vec![
+            bar("600000.SH", 1.0),
+            bar("600001.SH", 9.0),  // S1 only
+            bar("600002.SH", 8.0),  // S2 only
+        ];
+        let mut hits = HashSet::new();
+        hits.insert("600000".to_string());
+        hits.insert("600001".to_string());
+        let mut net_map = HashMap::new();
+        net_map.insert("600000".to_string(), Some(30000.0));
+        net_map.insert("600002".to_string(), Some(40000.0));
+        let out = select_candidates(&daily, &hits, 3, &net_map);
+        // 600000: signal_count=2 (S1+S2), 600001: signal_count=1 (S1 only), 600002: signal_count=1 (S2 only)
+        assert_eq!(out[0].0, "600000.SH");  // dual signal first
+        // Among single-signal, 600001 (S1) has no net → ranked after 600002 (S2, net=40000)
+        assert_eq!(out[1].0, "600002.SH");  // S2-only, has net_amount
+        assert_eq!(out[2].0, "600001.SH");  // S1-only, net=None ranks last
+    }
+
+    #[test]
+    fn empty_net_map_degrades_to_s1_plus_s7() {
+        // With empty net_map, S2 contributes nothing; behaves like old S1 + pct_chg fallback
         let daily = vec![bar("600000.SH", 1.0), bar("600001.SH", 9.0), bar("600002.SH", 5.0)];
         let mut hits = HashSet::new();
-        hits.insert("600000".to_string()); // 低涨幅但命中舆情,须保留
-        let out = select_candidates(&daily, &hits, 2);
+        hits.insert("600000".to_string());
+        let out = select_candidates(&daily, &hits, 2, &empty_net());
         assert_eq!(out.len(), 2);
-        assert_eq!(out[0].0, "600000.SH");     // 命中优先
-        assert_eq!(out[1].0, "600001.SH");     // 剩余按涨幅降序 → 9.0 先
+        assert_eq!(out[0].0, "600000.SH");  // sentiment hit
+        assert_eq!(out[1].0, "600001.SH");  // fallback by pct_chg
     }
 
     #[test]
