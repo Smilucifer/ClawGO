@@ -155,6 +155,18 @@
   const macro = $derived<MacroSnapshot | null>(report?.json?.macro ?? null);
   const commentary = $derived<AiCommentary | null>(report?.json?.aiCommentary ?? null);
 
+  const hasRisk = $derived(
+    !!commentary && commentary.sectors.some((s) => s.tag.includes('风险')),
+  );
+  const wallClass = $derived.by(() => {
+    if (!commentary) return 'wall-3col';
+    const n = commentary.sectors.length;
+    if (hasRisk) return 'wall-3col';
+    if (n <= 4) return `wall-n${n}`;
+    if (n === 5) return 'wall-1plus4';
+    return 'wall-3col';
+  });
+
   // Grouped Top10 by grade — cap 3 per bucket (matches demo layout).
   const grouped = $derived.by(() => {
     const buckets: Record<Grade, SymbolScore[]> = { S: [], A: [], B: [], C: [] };
@@ -449,10 +461,11 @@
         </div>
 
         {#if commentary && commentary.sectors.length > 0}
-          <div class="theme-wall">
+          <div class="theme-wall {wallClass}">
             {#each commentary.sectors as sec, i}
               <div
                 class="theme-tag-card"
+                class:ttc-first={i === 0 && wallClass === 'wall-1plus4'}
                 style={sec.tag.includes('风险') ? 'grid-column: 1 / -1;' : ''}
               >
                 <div class="ttc-head">
@@ -856,7 +869,14 @@
   .section-tag { font-size: 10px; color: var(--text-tertiary); margin-left: auto; }
 
   /* 01 舆情标签墙 */
-  .theme-wall { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-2); }
+  .theme-wall { display: grid; gap: var(--space-2); grid-template-columns: repeat(4, 1fr); }
+  .theme-wall.wall-n1 { grid-template-columns: 1fr; }
+  .theme-wall.wall-n2 { grid-template-columns: repeat(2, 1fr); }
+  .theme-wall.wall-n3 { grid-template-columns: repeat(3, 1fr); }
+  .theme-wall.wall-n4 { grid-template-columns: repeat(4, 1fr); }
+  .theme-wall.wall-1plus4 { grid-template-columns: repeat(4, 1fr); }
+  .theme-wall.wall-3col { grid-template-columns: repeat(3, 1fr); }
+  .theme-tag-card.ttc-first { grid-column: 1 / -1; }
   .theme-tag-card {
     display: flex; flex-direction: column; gap: var(--space-2);
     padding: var(--space-3);
