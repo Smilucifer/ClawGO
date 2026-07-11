@@ -1644,43 +1644,6 @@ impl SessionActor {
                         self.active_extractor = None;
                         self.protocol.set_pending_slash_command(None);
 
-                        // ── Auto-extract memories from this normal-chat turn (non-group) ──
-                        // Only fire on idle (success); failed turns don't produce reliable
-                        // assistant content. Slash-command turns are skipped naturally because
-                        // turn_user_text is only set for UserTurnKind::Normal. Per-run debounce
-                        // via can_extract / record_extraction (Task 2 per-source counting).
-                        if emit_state == "idle" && !self.is_group_chat {
-                            if let Some(user_text) = self.turn_user_text.take() {
-                                let assistant_text = self.turn_assistant_texts.join("\n");
-                                self.turn_assistant_texts.clear();
-                                if !assistant_text.trim().is_empty() {
-                                    let source_key = self.run_id.clone();
-                                    let turn_texts = vec![
-                                        format!("[user]: {}", user_text),
-                                        format!("[assistant]: {}", assistant_text),
-                                    ];
-                                    tokio::spawn(async move {
-                                        use crate::group_chat::memory_extraction::{
-                                            auto_extract_memories, can_extract, log_to_file,
-                                            record_extraction,
-                                        };
-                                        if !can_extract(&source_key) {
-                                            return;
-                                        }
-                                        let memories = auto_extract_memories(&turn_texts).await;
-                                        log_to_file(&format!(
-                                            "[memory-extraction] RETURN run={} count={}",
-                                            source_key,
-                                            memories.len()
-                                        ));
-                                        if !memories.is_empty() {
-                                            record_extraction(&source_key);
-                                        }
-                                    });
-                                }
-                            }
-                        }
-
                         // Ralph loop: state transition on turn end
                         self.ralph_on_turn_end(&turn, &emit_state);
 

@@ -1,10 +1,7 @@
 pub mod adapter;
 pub mod context;
-pub mod memory_dream;
-pub mod memory_injection;
 pub mod memory_migration;
 pub mod migration;
 pub mod models;
-pub mod memory_extraction;
 pub mod data_lifecycle;
 pub mod orchestrator;

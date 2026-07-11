@@ -696,53 +696,6 @@ pub fn run() {
         _ => {}
     }
 
-    // Start background dream cycle task (memory consolidation).
-    // Controlled by UserSettings.memory_dream_enabled (default: true).
-    let dream_data_dir = data_dir.clone();
-    tauri::async_runtime::spawn(async move {
-        // Initial delay to let the app finish startup
-        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-        loop {
-            // Check if dream cycle is enabled in settings
-            let enabled = crate::storage::settings::get_user_settings().memory_dream_enabled;
-            if enabled {
-                let data_dir = dream_data_dir.clone();
-                match tokio::task::spawn_blocking(move || {
-                    crate::group_chat::memory_dream::run_dream_cycle(&data_dir)
-                })
-                .await
-                {
-                    Ok(Ok(crate::group_chat::memory_dream::DreamCycleResult::Completed {
-                        merged,
-                        decayed,
-                        ..
-                    })) => {
-                        log::info!(
-                            "[dream] cycle completed: merged={}, decayed={}",
-                            merged,
-                            decayed
-                        );
-                    }
-                    Ok(Ok(crate::group_chat::memory_dream::DreamCycleResult::Skipped)) => {
-                        log::debug!("[dream] cycle skipped (too soon)");
-                    }
-                    Ok(Err(e)) => {
-                        log::warn!("[dream] cycle failed: {}", e);
-                    }
-                    Err(e) => {
-                        log::warn!("[dream] task panicked: {}", e);
-                    }
-                }
-            } else {
-                log::debug!("[dream] cycle skipped (disabled in settings)");
-            }
-            // Sleep for the dream interval before next check
-            tokio::time::sleep(std::time::Duration::from_secs(
-                crate::group_chat::memory_dream::DREAM_INTERVAL_SECS,
-            ))
-            .await;
-        }
-    });
 
     let app = builder.build(tauri::generate_context!())
         .expect("error while building tauri application");

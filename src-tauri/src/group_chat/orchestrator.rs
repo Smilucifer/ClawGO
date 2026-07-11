@@ -10,7 +10,6 @@ use crate::group_chat::adapter::{
     adapter_for_run, can_use_group_chat_actor_run, AgentAdapter, AgentCapabilities, TurnOutcomeStatus,
 };
 use crate::group_chat::context::{check_handoff, record_participant_turn, HandoffDecision};
-use crate::group_chat::memory_extraction::{auto_extract_memories, can_extract, log_to_file, record_extraction};
 use crate::group_chat::models::{
     GroupChatParticipant, GroupChatResponseRef, GroupChatTurn, GroupChatTurnMode,
 };
@@ -509,38 +508,6 @@ pub async fn run_group_chat_turn_with_runtime(
                 }
             }
 
-            // ── Auto-extraction: fire-and-forget memory extraction ──
-            // Single extraction per group chat turn (user-centric, not per-character).
-            // Skip private (/dm) turns entirely: DM content must never be sent to an
-            // external LLM or written into the shared global user memory (privacy leak).
-            // Build turn_texts only when extraction will actually run.
-            if !is_private {
-                let gc_id = room_id.to_string();
-                let turn_texts: Vec<String> = turn
-                    .responses
-                    .iter()
-                    .filter_map(|r| {
-                        let text = r.preview.as_deref()?;
-                        let speaker = room.participants.iter()
-                            .find(|p| p.id == r.participant_id)
-                            .map(|p| p.label.as_str())
-                            .unwrap_or("?");
-                        Some(format!("[{}]: {}", speaker, text))
-                    })
-                    .collect();
-                tokio::spawn(async move {
-                    if !can_extract(&gc_id) {
-                        return;
-                    }
-                    let memories = auto_extract_memories(&turn_texts).await;
-                    log_to_file(&format!("[memory-extraction] RETURN gc={} count={}", gc_id, memories.len()));
-                    if !memories.is_empty() {
-                        record_extraction(&gc_id);
-                        log_to_file(&format!("[memory-extraction] PERSIST_DONE gc={} count={}", gc_id, memories.len()));
-                    }
-                });
-            }
-
             Ok(turn)
         }
         Err(e) => {
@@ -599,22 +566,6 @@ async fn execute_group_chat_target(
     }
 }
 
-/// Inject user memories into the system prompt.
-/// Delegates to the shared inject_memories_into_prompt in memory_injection module.
-fn inject_memories(
-    user_message: &str,
-    system_prompt: &mut String,
-    memory_config: Option<&crate::models::MemoryConfig>,
-) {
-    crate::group_chat::memory_injection::inject_memories_into_prompt(
-        user_message,
-        system_prompt,
-        memory_config,
-        2000,
-        300,
-    );
-}
-
 async fn execute_actor_turn(
     participant: &GroupChatParticipant,
     run: &RunMeta,
@@ -632,14 +583,6 @@ async fn execute_actor_turn(
             Some(role_prompt) if !role_prompt.is_empty() => role_prompt,
             _ => String::new(),
         };
-
-    // Inject user memory after the role prompt (respecting auto_learn gating)
-    let memory_config = user_settings
-        .ai_characters
-        .iter()
-        .find(|c| c.id == participant.character_id)
-        .and_then(|c| c.memory_config.as_ref());
-    inject_memories(user_message, &mut system_prompt, memory_config);
 
     let full_prompt = if !system_prompt.is_empty() {
         format!("{}\n\n---\n\n{}", system_prompt, target_prompt)
