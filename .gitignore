@@ -77,3 +77,10 @@ review/
 # Local credential / cookie files (never commit)
 xueqiu-cookies.csv
 *-cookies.csv
+
+# Local scratch / demo artifacts (not shipped)
+.pilotdeck/
+docs/read_pic/
+fortune_demo.html
+fortune_demo_data.json
+每日盈记.csv
