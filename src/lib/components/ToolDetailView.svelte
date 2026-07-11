@@ -15,7 +15,7 @@
   import MarkdownContent from "$lib/components/MarkdownContent.svelte";
   import FilePathLinks from "$lib/components/FilePathLinks.svelte";
   import TeamToolDetail from "$lib/components/TeamToolDetail.svelte";
-  import hljs from "highlight.js";
+  import { hljs } from "$lib/utils/markdown";
   import { structuredPatch } from "diff";
 
   const TEAM_TOOLS = new Set([

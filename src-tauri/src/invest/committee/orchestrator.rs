@@ -415,15 +415,6 @@ fn build_portfolio_summary(data: &PortfolioData) -> String {
     out
 }
 
-/// Default temperature for a role.
-#[allow(dead_code)]
-fn default_role_temperature(role: CommitteeRole) -> f64 {
-    match role {
-        CommitteeRole::Cio => 0.1,
-        _ => 0.7,
-    }
-}
-
 /// Load all active strategies and format them as a context block for prompt
 /// injection. Returns an empty string if no strategies are configured.
 fn build_strategy_context() -> String {

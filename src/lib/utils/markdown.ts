@@ -48,6 +48,10 @@ hljs.registerLanguage("c", cpp);
 hljs.registerLanguage("diff", diff);
 hljs.registerLanguage("shell", shell);
 
+// Shared tree-shaken hljs instance (core + the languages registered above).
+// Reused by ToolDetailView so it doesn't pull in the full highlight.js bundle.
+export { hljs };
+
 const marked = new Marked();
 
 marked.use({
