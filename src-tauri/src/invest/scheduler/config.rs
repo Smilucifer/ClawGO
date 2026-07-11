@@ -46,24 +46,37 @@ fn config_path() -> PathBuf {
     home.join(".claw-go").join("invest").join("scheduler.json")
 }
 
-/// Load jobs: start from defaults, overlay user overrides, compute next_run.
+/// Load jobs: start from defaults, overlay user overrides, recompute next_run.
 ///
-/// When a job's `next_run` is `None` on disk (fresh install or reset), the
+/// Always recomputes `next_run` for every enabled job. This self-heals stale
+/// or incorrect persisted values. When a job's `next_run` is `None` on disk (fresh install or reset), the
 /// computed anchor is persisted immediately.  This breaks the deadlock where
 /// `should_fire` returns false (future time) → `persist_job_status` never
 /// runs → disk `next_run` stays `None` forever.
 pub fn load_jobs() -> Vec<CronJob> {
     let mut jobs = load_jobs_base();
+    // Startup self-heal: on the very first call (app start), recompute
+    // next_run for ALL enabled jobs to correct stale/wrong persisted values.
+    // Subsequent calls only compute when next_run is None.
+    static STARTUP_HEAL_DONE: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
     let mut needs_save = false;
-    for job in &mut jobs {
-        if job.next_run.is_none() {
+    if !STARTUP_HEAL_DONE.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        for job in &mut jobs {
             job.next_run = compute_next_run_for_job(job);
             needs_save = true;
+        }
+    } else {
+        for job in &mut jobs {
+            if job.next_run.is_none() {
+                job.next_run = compute_next_run_for_job(job);
+                needs_save = true;
+            }
         }
     }
     if needs_save {
         if let Err(e) = save_jobs(&jobs) {
-            log::error!("[scheduler] failed to persist initial next_run anchors: {e}");
+            log::error!("[scheduler] failed to persist next_run: {e}");
         }
     }
     jobs

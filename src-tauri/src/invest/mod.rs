@@ -7,6 +7,7 @@ pub mod llm;
 pub mod committee;
 pub mod event_scanner;
 pub mod event_analyzer;
+pub mod fortune;
 pub mod international;
 pub mod jin10_collector;
 pub mod macro_refresh;

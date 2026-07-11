@@ -335,8 +335,10 @@ pub async fn scan_events(
                 raw_events.push(RawEvent {
                     source: source_name.to_string(),
                     event_type: "news".to_string(),
-                    title: item.title.clone(),
-                    body: format!("Publisher: {}", item.publisher),
+                    title: {
+                        item.title.chars().take(80).collect::<String>()
+                    },
+                    body: item.title.clone(),
                     url: Some(item.link.clone()),
                     created_at,
                 });

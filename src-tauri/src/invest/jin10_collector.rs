@@ -76,8 +76,10 @@ pub async fn collect_jin10_news() -> Result<CollectorResult, String> {
             id: item.uuid.clone(),
             source: "jinshi_flash".to_string(),
             event_type: "news".to_string(),
-            title: item.title.clone(),
-            body: Some(format!("Publisher: {}", item.publisher)),
+            title: {
+                item.title.chars().take(80).collect::<String>()
+            },
+            body: Some(item.title.clone()),
             symbols: None,
             severity: "pending".to_string(),
             stance: "pending".to_string(),

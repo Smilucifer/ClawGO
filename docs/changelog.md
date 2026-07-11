@@ -1,5 +1,21 @@
 # Changelog / 更新日志
 
+## v5.6.11 (2026-07-11)
+
+### 每日盈记(Fortune Journal)
+
+实施见 `docs/superpowers/plans/[done] 2026-07-11-fortune-journal-impl.md`,设计见 `docs/superpowers/specs/[done] 2026-07-10-fortune-journal-design.md`。
+
+- **存储层(`storage/invest/fortune.rs`):** `fortune_daily_returns` 表(date PK, return_pct, note) + `fortune_ai_readings` 表(date, reading, model, timestamp)。CRUD: `upsert_return`, `delete_return`, `list_returns`, `insert_reading`, `get_latest_reading`, `batch_upsert`(事务批量写入)。
+- **聚合层(`invest/fortune/aggregate.rs`):** 点对时(point-in-time)单遍扫描 `daily_returns`,同时计算"预测"与"盘后"两套统计。`Acc` 累加器按 stem/branch 维度分别统计 sum/sum_sq/count,0 无数据时跳过。`DayScore` 含 stem_layer_score, branch_layer_score, predict_score, post_score。`compute_analysis()` 返回 today/tomorrow 干支卡 + 整体概览 + 干支统计 + 月度趋势 + Top3 排名/风险 + 未来 10 日预测。`build_calendar(y,m)` 返回 6×7 月历网格,每格含日期/开盘标志/预测评分/盘后评分。`predict_day(date)` 查 Aggregation.day_map,无盘后数据时生成预测评分。
+- **AI 解读(`invest/fortune/reading.rs`):** `generate_reading(date)` 通过 `CliCommitteeExecutor::global()` 运行角色生成干支解读,结果入库。
+- **命令层(`commands/fortune.rs`):** 8 条 Tauri IPC 命令: `fortune_upsert_return`, `fortune_batch_upsert`, `fortune_delete_return`, `fortune_get_analysis`, `fortune_get_overview`, `fortune_get_data_summary`, `fortune_generate_reading`, `fortune_get_reading`。
+- **前端(`fortune-store.svelte.ts`):** Svelte 5 rune-based store,方法: `loadAll`, `upsert`, `batchUpsert`, `deleteReturn`, `generateReading`, `getReading`。
+- **组件:** `FortuneAnalysisTab`(今日/明日卡+AI解读+日历+记录按钮), `FortuneStemBranchTab`(天干/地支分层统计+预测卡), `FortuneDataTab`(KPI+Top3+月度图表), `FortuneRecordDialog`(单日/批量录入), `FortuneCalendar`(6×7 网格三态:盘后实线/预测虚线/休市灰底)。
+- **干支计算(`fortune-helpers.ts`):** `ganzhiForDate(dateStr)` 返回 {stem, branch}。天干 10 种(甲乙丙丁戊己庚辛壬癸),地支 12 种(子丑寅卯辰巳午未申酉戌亥),60 日一循环。映射表可独立修改。
+- **评分体系:** layer_score = avg_return × √(count) 经饱和曲线映射到 0–100。composite = 40 + 3×stem + 3×branch − 2×sign(overlap)×|stem×branch|/10。FortuneLevel: ≥75 大吉,60–75 吉,45–60 平,30–45 凶,<30 大凶。
+- **i18n:** `messages/zh-CN.json` + `messages/en.json` 新增 21 个 `fortune_*` 键,均用中文值(娱乐功能面向 A 股用户)。
+
 ## v5.6.10 (2026-07-10)
 
 ### 盘前观察报告:AI 精筛 + 板块强度因子 + 多信号候选池

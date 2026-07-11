@@ -12,7 +12,7 @@ Core product model:
 - `AiCharacter` — a reusable persona template (role_type, role_instruction, default provider/model), stored in UserSettings.
 - The provider shown in the UI is not always the execution agent under the hood (see architecture §5).
 
-**Current version:** v5.6.1 (Phase 10+). Full per-version history lives in `docs/changelog.md` — consult it instead of duplicating release notes here.
+**Current version:** v5.6.11 (Phase 10+). Full per-version history lives in `docs/changelog.md` — consult it instead of duplicating release notes here.
 
 ## Standard workflow
 
@@ -122,19 +122,21 @@ linker = "C:/Program Files (x86)/Microsoft Visual Studio/18/BuildTools/VC/Tools/
 ```
 Without it, `cargo build`/`test` and `npm run tauri build` fail at the link step. Update the path (forward slashes) if the Build Tools version changes.
 
-**Known issue:** Rust unit tests fail with `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)` when launched from Git Bash (MSYS2). The binary loads fine via `cmd.exe`. Workaround: use `cargo check` for quick validation, or run tests via cmd.exe:
+**Known issue (FIXED — use the wrapper):** `cargo test` binaries die at load with `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)` **in any shell** (not Git-Bash-specific). Root cause: `tauri-plugin-dialog` statically imports `comctl32.dll!TaskDialogIndirect`, which exists only in Common-Controls v6; the main exe gets a v6 manifest from tauri-build but `cargo test` binaries don't, so the loader binds System32 v5.82 and fails before `main`. Fix: **run Rust tests via `node scripts/rust-test.mjs`**, which compiles with `cargo test --no-run` then embeds `scripts/common-controls-v6.manifest` into the test exe with mt.exe. Bare `cargo test` will always crash — this is by design, not a regression.
 ```bash
-cmd.exe /c "cd /d D:\ClaudeWorkspace\Code\ClawGO && cargo test --manifest-path src-tauri/Cargo.toml --lib -- <test_filter> --nocapture"
+node scripts/rust-test.mjs --lib fortune::stats            # filter like cargo
+node scripts/rust-test.mjs --lib -- --nocapture            # pass args after --
 ```
 
 ### 12. openInvest subsystem (`invest/`)
 A self-contained quant/portfolio assistant under `src-tauri/src/invest/`, surfaced at `/invest`. Largely independent of the chat/group-chat core; persists to `storage/invest/` (`invest.db`, SQLite — on this machine at `C:\Users\InBlu\.claw-go\invest\invest.db`). Frontend state: `invest-store.svelte.ts`, `invest-committee-store.svelte.ts`. The committee role count and pipeline shape have changed across versions — read the source rather than trusting a number here.
 - **Committee** (`invest/committee/`) — a multi-role LLM debate that emits a per-symbol verdict. Active roles in `roles.rs` (Macro, Quant, Risk, CIO) across two rounds (R1/R2). `orchestrator.rs` drives the pipeline; `cli_executor.rs` runs each role through the Claude CLI (committee runs CLI-only — the legacy `OpenAiCompatClient`/`llm_config.json` path was removed in v5.5.4; provider/model now come from `CommitteeTuning` + `platform_credentials`); `parser.rs` + `analysis.rs` extract structured fields; `tools.rs` exposes role-scoped data tools; `queue.rs` persists the run queue with CancellationToken-based abort; `archive.rs` writes verdict reports.
-- **Data** — `tushare/` (HTTP client, custom proxy), `tencent_quotes.rs` (realtime), Python AkShare via the `python/` bridge, `international.rs` (global indices). `indicators.rs` is shared TA (RSI/MA/percentiles); `regime.rs` computes market regime; `macro_refresh.rs` caches macro indicators. **Data source orchestration** (`invest/data_source/`): unified source chain with priority/fallback per indicator category (Quote/Capital/Macro/TushareOnly/Overseas); optional miniQMT local market data source via `invest_miniqmt_enabled` setting; `fetch_with_chain` orchestrator with validity-based fallback; source tracking in `macro_cache.source`.
-- **Scheduler** (`invest/scheduler/`) — cron jobs: PnL snapshots, event scan, daily report (`daily_report.rs`), dreaming.
-- **Events** — `jin10_collector.rs` (high-frequency Jin10 feed), `event_analyzer.rs` (LLM normalization), `event_scanner.rs`.
+- **Data** — `tushare/` (HTTP client, custom proxy), `tencent_quotes.rs` (realtime), Python AkShare via the `python/` bridge, `international.rs` (global indices — DXY/US10Y via 东财 eastmoney, VIX/黄金/原油/美元兑人民币 via AkShare). `indicators.rs` is shared TA (RSI/MA/percentiles); `regime.rs` computes market regime; `macro_refresh.rs` caches macro indicators. `eastmoney.rs` provides sector composition + strength data. **Data source orchestration** (`invest/data_source/`): unified source chain with priority/fallback per indicator category (Quote/Capital/Macro/TushareOnly/Overseas); optional miniQMT local market data source via `invest_miniqmt_enabled` setting; `fetch_with_chain` orchestrator with validity-based fallback; source tracking in `macro_cache.source`.
+- **Scheduler** (`invest/scheduler/`) — cron jobs: PnL snapshots, event scan, daily report (`daily_report.rs`), dreaming, premarket report (`premarket_report`), premarket factor cache (`premarket_cache`), sentiment collector (`sentiment_collector`), stock board map refresh (`stock_board_map_refresh`).
+- **Events** — `jin10_collector.rs` (high-frequency Jin10 feed), `event_analyzer.rs` (LLM normalization), `event_scanner.rs`. **Sentiment** (`sentiment.rs`) — 5-source sentiment aggregation (同花顺/新浪/财联社/东财股吧/雪球) with AI normalization; Python providers in `providers/sentiment.py`.
 - **Dreaming** (`invest/dreaming/`) — periodic reflection producing domain insights.
 - **Verdict review** — `verdict_review.rs` (accuracy tracking).
+- **Fortune Journal** (`invest/fortune/`) — daily returns tracked by Chinese Heavenly Stems/Earthly Branches (天干地支). `aggregate.rs` does point-in-time single-pass aggregation (stem/branch layer scores → composite 0–100 → FortuneLevel). `reading.rs` generates AI commentary via committee CLI executor. Storage: `fortune_daily_returns` + `fortune_ai_readings` tables in `storage/invest/fortune.rs`. Frontend: `fortune-store.svelte.ts` + 5 components under `invest/fortune/`.
 
 ## Repo-specific conventions
 - Svelte 5 runes (`$state`, `$derived`, `$effect`, `$props`).
