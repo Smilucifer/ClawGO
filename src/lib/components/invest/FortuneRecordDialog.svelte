@@ -41,16 +41,17 @@
     return m;
   });
 
-  // 批量输入缓存：date → string
+  // 批量输入缓存：date → string（每月重置，避免无限增长）
   let batchVals = $state<Record<string, string>>({});
   // 进入某月时用已录旧值预填空白项
   $effect(() => {
+    // 重置为当月数据，避免积累旧月数据
+    const newVals: Record<string, string> = {};
     for (const ds of dates) {
-      if (batchVals[ds] === undefined) {
-        const old = recorded.get(ds);
-        batchVals[ds] = old != null ? String(old) : '';
-      }
+      const old = recorded.get(ds);
+      newVals[ds] = batchVals[ds] ?? (old != null ? String(old) : '');
     }
+    batchVals = newVals;
   });
 
   function prevMonth() {

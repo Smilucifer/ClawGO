@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { t } from '$lib/i18n/index.svelte';
   import { fortuneStore } from '$lib/stores/fortune-store.svelte';
-  import { levelLabel, levelColor, fmtScore, fmtReturn } from './fortune-helpers';
+  import { levelLabel, levelColor, fmtScore, fmtReturn, returnColor } from './fortune-helpers';
   const ov = $derived(fortuneStore.overview);
   onMount(() => { if (!ov) fortuneStore.loadAll(); });
 </script>
@@ -42,7 +42,7 @@
           {#each ov.stems as s}
             <tr class="border-b border-border/50">
               <td class="px-[var(--space-2)] py-[var(--space-1)] font-mono font-semibold text-[var(--text-primary)]">{s.name}</td>
-              <td class="px-[var(--space-2)] py-[var(--space-1)] text-right font-mono" style="color:{s.avgReturn >= 0 ? 'var(--up)' : 'var(--down)'}">{fmtReturn(s.avgReturn)}</td>
+              <td class="px-[var(--space-2)] py-[var(--space-1)] text-right font-mono" style="color:{returnColor(s.avgReturn)}">{fmtReturn(s.avgReturn)}</td>
               <td class="px-[var(--space-2)] py-[var(--space-1)] text-right font-mono">{(s.winRate * 100).toFixed(0)}%</td>
               <td class="px-[var(--space-2)] py-[var(--space-1)] text-right font-mono">{s.sample}</td>
               <td class="px-[var(--space-2)] py-[var(--space-1)] text-right font-mono font-semibold" style="color:{levelColor(s.level)}">{fmtScore(s.score)}</td>
@@ -75,7 +75,7 @@
           {#each ov.branches as b}
             <tr class="border-b border-border/50">
               <td class="px-[var(--space-2)] py-[var(--space-1)] font-mono font-semibold text-[var(--text-primary)]">{b.name}</td>
-              <td class="px-[var(--space-2)] py-[var(--space-1)] text-right font-mono" style="color:{b.avgReturn >= 0 ? 'var(--up)' : 'var(--down)'}">{fmtReturn(b.avgReturn)}</td>
+              <td class="px-[var(--space-2)] py-[var(--space-1)] text-right font-mono" style="color:{returnColor(b.avgReturn)}">{fmtReturn(b.avgReturn)}</td>
               <td class="px-[var(--space-2)] py-[var(--space-1)] text-right font-mono">{(b.winRate * 100).toFixed(0)}%</td>
               <td class="px-[var(--space-2)] py-[var(--space-1)] text-right font-mono">{b.sample}</td>
               <td class="px-[var(--space-2)] py-[var(--space-1)] text-right font-mono font-semibold" style="color:{levelColor(b.level)}">{fmtScore(b.score)}</td>

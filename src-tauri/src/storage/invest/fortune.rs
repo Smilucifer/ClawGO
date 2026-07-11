@@ -1,6 +1,7 @@
 //! 每日盈记存储：手动录入的每日收益率 + AI 解读。复用 invest.db。
 use rusqlite::Connection;
 use super::{with_conn, with_conn_mut};
+use crate::models::now_iso;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,10 +25,6 @@ pub fn create_table(conn: &Connection) -> Result<(), String> {
     .map_err(|e| format!("建 fortune 表失败: {e}"))
 }
 
-fn now_iso() -> String {
-    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
-}
-
 pub fn upsert_return(date: &str, return_pct: f64, note: &str) -> Result<(), String> {
     let ts = now_iso();
     with_conn_mut(|c| {
@@ -46,6 +43,24 @@ pub fn delete_return(date: &str) -> Result<(), String> {
     with_conn_mut(|c| {
         c.execute("DELETE FROM fortune_daily_returns WHERE date=?1", [date])
             .map_err(|e| format!("删除收益失败: {e}"))?;
+        Ok(())
+    })
+}
+
+pub fn batch_upsert(entries: &[crate::commands::fortune::BatchEntry]) -> Result<(), String> {
+    with_conn_mut(|c| {
+        let tx = c.transaction().map_err(|e| format!("开始事务失败: {e}"))?;
+        let ts = now_iso();
+        for e in entries {
+            tx.execute(
+                "INSERT INTO fortune_daily_returns (date, return_pct, note, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?4)
+                 ON CONFLICT(date) DO UPDATE SET return_pct=?2, note=?3, updated_at=?4",
+                rusqlite::params![e.date, e.return_pct, e.note, ts],
+            )
+            .map_err(|e| format!("upsert 收益失败: {e}"))?;
+        }
+        tx.commit().map_err(|e| format!("提交事务失败: {e}"))?;
         Ok(())
     })
 }

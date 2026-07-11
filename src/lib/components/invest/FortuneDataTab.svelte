@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { t } from '$lib/i18n/index.svelte';
   import { fortuneStore } from '$lib/stores/fortune-store.svelte';
-  import { levelColor, fmtReturn, fmtScore, levelLabel } from './fortune-helpers';
+  import { levelColor, fmtReturn, fmtScore, levelLabel, returnColor } from './fortune-helpers';
   const s = $derived(fortuneStore.summary);
   onMount(() => { if (!s) fortuneStore.loadAll(); });
   const kpis = $derived(s ? [
@@ -86,9 +86,9 @@
     <div class="flex items-end gap-[var(--space-2)]">
       {#each s.monthly as m}
         <div class="flex flex-col items-center">
-          <div class="text-[10px] font-mono" style="color:{m.avgReturn >= 0 ? 'var(--up)' : 'var(--down)'}">{fmtReturn(m.avgReturn)}</div>
+          <div class="text-[10px] font-mono" style="color:{returnColor(m.avgReturn)}">{fmtReturn(m.avgReturn)}</div>
           <div style="height:{Math.min(Math.abs(m.avgReturn) * 20, 80)}px;width:20px;
-            background:{m.avgReturn >= 0 ? 'var(--up)' : 'var(--down)'};border-radius:2px"></div>
+            background:{returnColor(m.avgReturn)};border-radius:2px"></div>
           <div class="mt-1 text-[10px] text-[var(--text-tertiary)]">{m.month.slice(5)}</div>
         </div>
       {/each}

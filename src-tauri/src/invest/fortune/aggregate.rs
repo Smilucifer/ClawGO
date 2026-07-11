@@ -138,11 +138,17 @@ fn predict_day(agg: &Aggregation, date: &str) -> Option<DayScore> {
     let idx = ganzhi_index(y, m, d);
     let (stem, branch) = ganzhi(y, m, d);
     let sc = score_for(&agg.stem_final, &agg.branch_final, idx % 10, idx % 12);
+    // 交易日判断：优先查交易日历，失败时用周末启发式
+    let is_trading = crate::storage::invest::scheduler::is_trading_day(date)
+        .unwrap_or_else(|_| {
+            let nd = chrono::NaiveDate::from_ymd_opt(y as i32, m as u32, d as u32);
+            !nd.map(|d| d.weekday() == chrono::Weekday::Sat || d.weekday() == chrono::Weekday::Sun).unwrap_or(true)
+        });
     Some(DayScore {
         date: date.to_string(), stem: stem.to_string(), branch: branch.to_string(),
         predict_score: sc, predict_level: fortune_level(sc),
         actual_return: None, post_score: None, post_level: None,
-        is_trading_day: crate::storage::invest::scheduler::is_trading_day(date).unwrap_or(true),
+        is_trading_day: is_trading,
     })
 }
 

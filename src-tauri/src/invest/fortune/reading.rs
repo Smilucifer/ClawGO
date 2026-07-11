@@ -1,15 +1,7 @@
 //! 每日盈记 AI 解读。复用 committee 的 CliCommitteeExecutor::run_role
-//! （其内部信号量与委员会共享）；此处额外加 permits=1 闸做防连点串行化。
-use std::sync::Arc;
-use tokio::sync::Semaphore;
+//! （其内部信号量与委员会共享）。前端通过 readingBusy 状态防连点。
 use crate::invest::fortune::aggregate::compute_analysis;
 use crate::storage::invest::fortune::insert_reading;
-
-/// 防连点闸：同一时刻最多 1 个 fortune 解读排队（注：CLI 并发仍受委员会共享闸约束）。
-static READING_SEM: std::sync::OnceLock<Arc<Semaphore>> = std::sync::OnceLock::new();
-fn sem() -> Arc<Semaphore> {
-    READING_SEM.get_or_init(|| Arc::new(Semaphore::new(1))).clone()
-}
 
 pub async fn generate_reading(date: &str) -> Result<String, String> {
     // 取当天卡的干支 + 分数作 prompt 素材
@@ -24,8 +16,6 @@ pub async fn generate_reading(date: &str) -> Result<String, String> {
         "日期 {}，干支「{}{}」，综合评分 {:.0}。请给一句话点评。",
         card.date, card.stem, card.branch, card.predict_score);
 
-    let semaphore = sem();
-    let _permit = semaphore.acquire().await.map_err(|e| format!("信号量获取失败: {e}"))?;
     let exec = crate::invest::committee::cli_executor::CliCommitteeExecutor::global()
         .ok_or_else(|| "未找到 claude CLI，无法生成解读".to_string())?;
     let content = exec.run_role(sys, &user, 60, None, None).await?;

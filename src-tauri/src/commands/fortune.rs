@@ -13,10 +13,7 @@ pub fn fortune_upsert_return(date: String, return_pct: f64, note: String) -> Res
 
 #[tauri::command]
 pub fn fortune_batch_upsert(entries: Vec<BatchEntry>) -> Result<(), String> {
-    for e in &entries {
-        store::upsert_return(&e.date, e.return_pct, &e.note)?;
-    }
-    Ok(())
+    store::batch_upsert(&entries)
 }
 
 #[tauri::command]
