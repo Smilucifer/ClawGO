@@ -16,7 +16,6 @@ export interface LocaleEntry {
 }
 
 export const LOCALE_REGISTRY = [
-  { code: "en", nativeName: "English", shortLabel: "EN", dir: "ltr", status: "stable" },
   {
     code: "zh-CN",
     nativeName: "\u7B80\u4F53\u4E2D\u6587",
@@ -29,7 +28,7 @@ export const LOCALE_REGISTRY = [
 export type Locale = (typeof LOCALE_REGISTRY)[number]["code"];
 
 export const SUPPORTED_LOCALES: Locale[] = LOCALE_REGISTRY.map((e) => e.code) as Locale[];
-export const BASE_LOCALE: Locale = "en";
+export const BASE_LOCALE: Locale = "zh-CN";
 
 export function isLocale(code: string): code is Locale {
   return (SUPPORTED_LOCALES as string[]).includes(code);

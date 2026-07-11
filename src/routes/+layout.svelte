@@ -70,24 +70,10 @@
   import type { PlatformCredential } from "$lib/types";
   import { KeybindingStore } from "$lib/stores/keybindings.svelte";
   import { getTransport } from "$lib/transport";
-  import {
-    t,
-    LOCALE_REGISTRY,
-    getEntry,
-    initLocale,
-    switchLocale,
-    currentLocale,
-  } from "$lib/i18n/index.svelte";
+  import { t, initLocale } from "$lib/i18n/index.svelte";
 
-  // Wire reactive locale before any t() usage
+  // Set <html lang> before any t() usage
   initLocale();
-
-  let localePopupOpen = $state(false);
-
-  function handleLocaleSelect(code: string) {
-    switchLocale(code);
-    localePopupOpen = false;
-  }
 
   let commandPaletteOpen = $state(false);
   let showSetupWizard = $state(false);
@@ -1304,7 +1290,7 @@
     localStorage.setItem("clawgo:expanded-projects", JSON.stringify(pruned));
   });
 
-  // Note: <html lang> is set by initLocale() and switchLocale() directly.
+  // Note: <html lang> is set by initLocale() directly.
 
   function handleKeydown(e: KeyboardEvent) {
     keybindingStore.dispatch(e);
@@ -1595,47 +1581,6 @@
               onclick={() => (showAbout = true)}
               title="About Claw GO">{appVersion}</button
             >
-          </div>
-          <div class="relative mx-auto mb-0.5">
-            <button
-              class="flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors duration-150"
-              onclick={() => (localePopupOpen = !localePopupOpen)}
-              title={currentLocale()}
-            >
-              <span class="text-xs font-medium"
-                >{getEntry(currentLocale())?.shortLabel ?? currentLocale()}</span
-              >
-            </button>
-            {#if localePopupOpen}
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <div
-                class="fixed inset-0 z-40"
-                onclick={() => (localePopupOpen = false)}
-                onkeydown={(e) => e.key === "Escape" && (localePopupOpen = false)}
-              ></div>
-              <div
-                class="absolute bottom-0 left-full ml-1 z-50 min-w-[140px] rounded-md border border-sidebar-border bg-popover py-1 shadow-lg"
-              >
-                {#each LOCALE_REGISTRY as entry}
-                  <button
-                    class="flex w-full items-center gap-2 px-3 py-1.5 text-xs transition-colors
-                      {currentLocale() === entry.code
-                      ? 'bg-accent text-accent-foreground'
-                      : 'text-popover-foreground hover:bg-accent/50'}"
-                    onclick={() => handleLocaleSelect(entry.code)}
-                  >
-                    <span class="w-5 text-center font-medium">{entry.shortLabel}</span>
-                    <span>{entry.nativeName}</span>
-                    {#if (entry.status as string) === "beta"}
-                      <span
-                        class="ml-auto text-[10px] text-muted-foreground/60 border border-muted-foreground/20 rounded px-1"
-                        >Beta</span
-                      >
-                    {/if}
-                  </button>
-                {/each}
-              </div>
-            {/if}
           </div>
         </div>
       </div>

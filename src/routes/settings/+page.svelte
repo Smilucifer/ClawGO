@@ -38,7 +38,7 @@
   import { splitPath } from "$lib/utils/format";
   import { IS_WINDOWS } from "$lib/utils/platform";
   import { uuid } from "$lib/utils/uuid";
-  import { t, LOCALE_REGISTRY, currentLocale, switchLocale } from "$lib/i18n/index.svelte";
+  import { t, currentLocale } from "$lib/i18n/index.svelte";
   import { getTransport } from "$lib/transport";
 
   // ── Tab state ──
@@ -248,9 +248,6 @@
     return "bypass";
   }
 
-  function isBetaLocale(entry: { status: string }): boolean {
-    return entry.status === "beta";
-  }
 
   function providerFieldRules(provider: Phase7ProviderEntry) {
     if (provider.mode === "official_cli") {
@@ -1420,38 +1417,6 @@
     <!-- ═══ General tab ═══ -->
     {#if activeTab === "general"}
       <div class="space-y-6">
-        <!-- Language Card -->
-        <Card class="p-6 space-y-4">
-          <h2 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-            {t("settings_general_language")}
-          </h2>
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium">{t("settings_general_displayLanguage")}</p>
-              <p class="text-xs text-muted-foreground">
-                {t("settings_general_displayLanguageDesc")}
-              </p>
-            </div>
-            <div class="flex gap-1.5">
-              {#each LOCALE_REGISTRY as entry}
-                <button
-                  class="rounded-md border px-3 py-1.5 text-xs transition-all duration-150
-                  {currentLocale() === entry.code
-                    ? 'bg-primary text-primary-foreground'
-                    : isBetaLocale(entry)
-                      ? 'border-muted-foreground/30 text-muted-foreground hover:bg-accent'
-                      : 'hover:bg-accent'}"
-                  onclick={() => switchLocale(entry.code)}
-                >
-                  {entry.nativeName}{#if isBetaLocale(entry)}<span
-                      class="ml-1 text-[10px] opacity-60">(Beta)</span
-                    >{/if}
-                </button>
-              {/each}
-            </div>
-          </div>
-        </Card>
-
         <!-- Display Card -->
         <Card class="p-6 space-y-4">
           <div class="flex items-center justify-between">

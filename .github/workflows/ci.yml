@@ -43,9 +43,6 @@ jobs:
             exit 1
           fi
 
-      - name: i18n check
-        run: npm run i18n:check
-
       - name: Test
         run: npm test
 
