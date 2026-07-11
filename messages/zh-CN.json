@@ -1,6 +1,5 @@
 {
   "settings_title": "设置",
-
   "settings_tab_general": "通用",
   "settings_tab_connection": "连接",
   "settings_tab_cliConfig": "CLI 配置",
@@ -10,7 +9,6 @@
   "settings_tab_characters": "角色库",
   "settings_tab_embedding": "角色记忆",
   "settings_tab_profile": "档案",
-
   "settings_profile_title": "用户档案",
   "settings_profile_desc": "配置投资档案以个性化委员会分析。",
   "settings_profile_family_backup": "家庭备用金可用",
@@ -43,7 +41,6 @@
   "settings_profile_save_failed": "保存用户档案失败，请重试。",
   "settings_save": "保存",
   "settings_saved": "已保存",
-
   "settings_general_connection": "连接",
   "settings_general_saved": "已保存",
   "settings_general_connectionMode": "连接方式",
@@ -87,7 +84,6 @@
   "settings_local_setupHint_ccswitch": "打开 CC Switch → 设置 → 启用「Proxy Enabled」开关，然后选择一个 Provider",
   "settings_local_setupHint_ccr": "运行 \"ccr start\" 仅启动路由服务（请勿使用 \"ccr code\"）。安装：npm i -g @musistudio/claude-code-router",
   "settings_local_setupHint_ollama": "运行 \"ollama serve\" 启动 Ollama 服务",
-
   "settings_apiTest": "测试",
   "settings_apiTest_testing": "测试中...",
   "settings_apiTest_success": "已连通 ({latency}ms)",
@@ -95,7 +91,6 @@
   "settings_apiTest_failed": "连接失败",
   "settings_apiTest_noKey": "请先输入 API Key",
   "settings_apiTest_noUrl": "请先填写 Base URL",
-
   "settings_msvc_title": "Windows 构建环境",
   "settings_msvc_desc": "控制本地 CLI 会话是否注入 Visual Studio C++ 环境。",
   "settings_msvc_checking": "检查中...",
@@ -108,7 +103,6 @@
   "settings_msvc_state_pending": "待检测",
   "settings_msvc_state_injected": "已注入",
   "settings_msvc_state_warning": "需要处理",
-
   "settings_general_setupWizard": "设置向导",
   "settings_general_setupWizardDesc": "重新运行初始设置向导以重新配置 CLI 和认证。",
   "settings_general_runWizard": "运行向导",
@@ -157,11 +151,9 @@
   "settings_general_language": "语言",
   "settings_general_displayLanguage": "界面语言",
   "settings_general_displayLanguageDesc": "选择应用界面的显示语言",
-
   "settings_general_display": "显示",
   "settings_general_uiZoom": "界面缩放",
   "settings_general_uiZoomDesc": "调整界面整体大小",
-
   "settings_cliConfig_loading": "正在加载 CLI 配置...",
   "settings_cliConfig_loadFailed": "加载 CLI 配置失败：{error}",
   "settings_cliConfig_retry": "重试",
@@ -170,7 +162,6 @@
   "settings_cliConfig_advanced": "高级",
   "settings_cliConfig_projectOverride": "项目级覆盖",
   "settings_cliConfig_footer": "更改已保存到 ~/.claude/settings.json。项目级配置（.claude/settings.json）优先级更高。",
-
   "settings_cliConfig_thinkingModeLabel": "思考模式",
   "settings_cliConfig_thinkingModeDesc": "为复杂问题启用扩展思考",
   "settings_cliConfig_fastModeLabel": "快速模式",
@@ -209,7 +200,6 @@
   "settings_cliConfig_updateChannelDesc": "自动更新的发布通道",
   "settings_cliConfig_notifChannelLabel": "通知方式",
   "settings_cliConfig_notifChannelDesc": "桌面通知的推送方式",
-
   "settings_cliConfig_optDefault": "默认",
   "settings_cliConfig_optPlan": "计划",
   "settings_cliConfig_optAutoEdit": "自动编辑",
@@ -224,14 +214,12 @@
   "settings_cliConfig_optStable": "稳定",
   "settings_cliConfig_optIterm2": "iTerm2",
   "settings_cliConfig_optTerminalBell": "终端铃声",
-
   "settings_shortcuts_appShortcuts": "应用快捷键",
   "settings_shortcuts_inputFixed": "输入（固定）",
   "settings_shortcuts_cliShortcuts": "Claude CLI 快捷键",
   "settings_shortcuts_readOnly": "（只读）",
   "settings_shortcuts_source": "来源：{source}",
   "settings_shortcuts_resetAll": "恢复所有默认值",
-
   "settings_remote_title": "远程主机",
   "settings_remote_desc": "通过 SSH 在远程机器上运行 Claude Code。需要基于密钥的身份验证。",
   "settings_remote_noHosts": "未配置远程主机。",
@@ -283,7 +271,6 @@
   "settings_remote_sshKeyAlreadyExists": "密钥已存在，跳过生成。",
   "settings_remote_cliNotFoundHint": "SSH 已连接，但未找到 CLI。在远程机器上运行以下命令获取路径：",
   "settings_remote_cliNotFoundHint2": "然后将完整路径粘贴到上方的「Claude CLI 路径（远程）」字段，再次测试。",
-
   "settings_debug_title": "调试日志",
   "settings_debug_desc": "启用详细的前端日志记录。",
   "settings_debug_rustHint": "Rust 日志：",
@@ -298,9 +285,7 @@
   "settings_debug_rustBackendLogs": "Rust 后端日志（终端）：",
   "settings_debug_copy": "复制",
   "settings_debug_maxEntries": "日志缓冲在内存中（最多 2000 条）。打开开发者工具控制台查看实时输出。",
-
   "common_required": "必填",
-
   "nav_chat": "聊天",
   "nav_explorer": "文件浏览",
   "nav_extend": "扩展",
@@ -309,11 +294,9 @@
   "nav_groupChats": "群聊",
   "nav_usage": "用量",
   "nav_settings": "设置",
-
   "moreMenu_doctor": "Doctor 诊断",
   "moreMenu_releaseNotes": "版本更新日志",
   "moreMenu_allSettings": "全部设置",
-
   "invest_tab_dashboard": "Dashboard",
   "invest_tab_committee": "委员会",
   "invest_tab_strategy": "策略",
@@ -322,7 +305,6 @@
   "invest_tab_scheduler": "定时任务",
   "invest_loading": "加载中...",
   "invest_tab_system": "系统",
-
   "invest_system_sub_cron": "定时任务",
   "invest_premarket_title": "明日盘前观察",
   "invest_premarket_subtitle": "外部新闻先验 × 主力资金双重确认 × 明日主线预排序 × 观察池分级",
@@ -421,7 +403,6 @@
   "invest_system_sub_dreams": "Dreams",
   "invest_system_sub_profile": "用户档案",
   "invest_system_sub_cleanup": "数据清理",
-
   "invest_cleanup_title": "数据清理",
   "invest_cleanup_scan": "重新扫描",
   "invest_cleanup_apply": "执行清理",
@@ -434,13 +415,11 @@
   "invest_cleanup_target_event_sources": "event_sources（无使用方）",
   "invest_cleanup_target_domain_insights_empty": "domain_insights — 空内容/空转 dreaming 记录",
   "invest_cleanup_target_rooms_dir": "遗留 ~/.claw-go/rooms/ 目录",
-
   "invest_system_datasource_title": "数据源健康",
   "invest_system_ds_name": "数据源",
   "invest_system_ds_status": "状态",
   "invest_system_ds_last_success": "最后成功",
   "invest_system_ds_sample": "采样值",
-
   "invest_system_pnl_history_title": "PnL 快照历史",
   "invest_system_pnl_history_empty": "暂无快照。",
   "invest_system_pnl_date": "日期",
@@ -449,10 +428,8 @@
   "invest_system_pnl_holdings": "持仓",
   "invest_system_pnl_daily": "当日 PnL",
   "invest_system_pnl_daily_pct": "当日 %",
-
   "invest_system_dreams_title": "Dream 追踪",
   "invest_system_dreams_empty": "暂无 Dream 追踪。",
-
   "invest_scheduler_title": "定时任务",
   "invest_scheduler_loading": "加载中...",
   "invest_scheduler_job_name": "任务",
@@ -491,7 +468,6 @@
   "invest_scheduler_cron_weekday": "星期",
   "invest_scheduler_cron_preview": "预览",
   "invest_scheduler_cron_generated": "生成表达式",
-
   "invest_accuracy_title": "命中率追踪",
   "invest_accuracy_run_review": "运行评审",
   "invest_accuracy_no_data": "暂无评审数据。",
@@ -517,7 +493,6 @@
   "invest_accuracy_returnPct": "收益率%",
   "invest_accuracy_hit": "命中",
   "invest_accuracy_lastReview": "上次评审：",
-
   "invest_committee_provider": "委员会 CLI 供应商",
   "invest_committee_tuning": "委员会调参",
   "invest_committee_api_key": "API Key",
@@ -584,7 +559,6 @@
   "invest_committee_sub_accuracy": "命中率",
   "invest_committee_sub_premarket": "盘前观察",
   "invest_committee_tuning_section": "委员会调参",
-
   "invest_roles_verdict_options": "5 个 verdict 选项",
   "invest_roles_verdict_buy_desc": "一次建满（仅强 bullish + Risk ok）",
   "invest_roles_verdict_accumulate_desc": "逆势分批",
@@ -644,7 +618,6 @@
   "invest_roles_save": "保存",
   "invest_roles_cancel": "取消",
   "invest_roles_click_to_edit": "点击编辑 prompt...",
-
   "invest_dashboard": "仪表盘",
   "invest_total_assets": "总资产",
   "invest_holdings_value": "持仓市值",
@@ -888,7 +861,6 @@
   "invest_verdict_trim": "部分减仓",
   "invest_verdict_sell": "全部清仓",
   "invest_no_verdicts": "暂无裁决记录。",
-
   "invest.eventWatch.noScanData": "暂无扫描数据",
   "invest.eventWatch.scanning": "扫描中...",
   "invest.eventWatch.scanNow": "立即扫描",
@@ -899,7 +871,6 @@
   "invest.eventWatch.high": "高",
   "invest.eventWatch.untriggered": "未触发",
   "invest.eventWatch.last": "最近",
-
   "invest.eventWatch.triggerDialogTitle": "事件触发委员会",
   "invest.eventWatch.triggerDialogDetected": "检测到高影响事件",
   "invest.eventWatch.triggerDialogHoldings": "关联持仓",
@@ -907,7 +878,6 @@
   "invest.eventWatch.triggerDialogConfirm": "是否立即启动委员会评估？",
   "invest.eventWatch.triggerDialogCancel": "取消",
   "invest.eventWatch.triggerDialogConfirmBtn": "确认启动",
-
   "invest.eventWatch.severityLabel": "严重度",
   "invest.eventWatch.stanceLabel": "立场",
   "invest.eventWatch.timeMinutesAgo": "{min}分钟前",
@@ -925,7 +895,6 @@
   "invest.eventWatch.scanComplete": "扫描完成",
   "invest.eventWatch.scanResult": "抓取 {fetched} 条，丢弃 {filtered} 条，新增 {saved} 条",
   "invest.eventWatch.scanErrors": "扫描警告",
-
   "invest.news.flashTitle": "金十快讯",
   "invest.news.digestTitle": "新闻/舆论",
   "invest.news.filterAll": "全部",
@@ -940,14 +909,11 @@
   "invest.news.srcXueqiu": "雪球",
   "invest.news.flashEmpty": "暂无快讯",
   "invest.news.digestEmpty": "暂无新闻/舆情",
-
   "python_restart_runtime": "重启 Python 运行时",
-
   "layout_appName": "Claw GO",
   "layout_newConversation": "新对话",
   "layout_selectProjectFolder": "选择项目文件夹",
   "layout_toggleSidebar": "切换侧边栏 (Ctrl+B)",
-
   "sidebar_skills": "技能",
   "sidebar_mcpServers": "MCP 服务器",
   "sidebar_plugins": "插件",
@@ -996,8 +962,7 @@
   "sidebar_deleteOk": "删除",
   "sidebar_removeProject": "移除项目",
   "sidebar_removeProjectConfirm": "移除项目文件夹",
-  "sidebar_removeProjectDesc": "该项目将从侧边栏移除，数据保留在磁盘上。通过\u201c打开文件夹\u201d可重新添加。",
-
+  "sidebar_removeProjectDesc": "该项目将从侧边栏移除，数据保留在磁盘上。通过“打开文件夹”可重新添加。",
   "statusbar_toggleSidebar": "切换侧边栏 (Ctrl+B)",
   "statusbar_contextTitle": "最新轮次的上下文使用量（{pct}%，共 {tokens} 个 token）。接近限制时 CLI 会自动压缩上下文。",
   "statusbar_ctx": "上下文 {pct}%",
@@ -1041,7 +1006,6 @@
   "statusbar_sshTitle": "在远程主机上运行：{name}",
   "statusbar_sessionTitle": "点击重命名",
   "statusbar_cliVersionTitle": "Claude CLI v{version} — 点击查看发布说明",
-
   "prompt_permAskLabel": "询问",
   "prompt_permAskShort": "询问",
   "prompt_permAskDesc": "标准模式，操作前询问确认",
@@ -1076,7 +1040,6 @@
   "prompt_unsupportedFile": "不支持的文件类型：.{ext}",
   "prompt_clipboardUnsupported": "当前平台暂不支持粘贴文件",
   "prompt_conversionFailed": "转换 {name} 失败",
-
   "common_cancel": "取消",
   "common_retry": "重试",
   "common_copy": "复制",
@@ -1087,7 +1050,6 @@
   "common_showAllItems": "显示全部（{count} 项）",
   "common_showAll": "显示全部",
   "common_dismiss": "关闭",
-
   "chat_examplePrompt1": "构建一个包含邮箱和密码的登录页面",
   "chat_examplePrompt2": "将此组件重构为 TypeScript",
   "chat_examplePrompt3": "为认证模块编写单元测试",
@@ -1135,7 +1097,6 @@
   "chat_roleClaude": "Claude",
   "chat_copyMessage": "复制消息",
   "chat_thoughtProcess": "思考过程",
-
   "tool_interrupted": "已中断",
   "tool_result": "结果",
   "tool_file": "{count} 个文件",
@@ -1169,11 +1130,9 @@
   "tool_taskListStatus": "状态",
   "tool_taskListOwner": "负责人",
   "tool_taskListBlocked": "阻塞",
-
   "project_allProjects": "所有项目",
   "project_openFolder": "打开文件夹...",
   "sidebar_currentProject": "项目:",
-
   "plugin_title": "技能",
   "plugin_desc": "为 Claude 扩展专业知识和行为",
   "plugin_discover": "发现",
@@ -1279,7 +1238,6 @@
   "plugin_badgeHooks": "钩子",
   "plugin_badgeMcp": "MCP",
   "plugin_badgeLsp": "LSP",
-
   "team_noActiveTeams": "暂无活跃团队",
   "team_emptyDesc": "在 Claude Code 中启动团队会话以在此查看。团队数据从 ~/.claude/teams/ 读取。",
   "team_membersCount": "{count} 个成员",
@@ -1327,7 +1285,6 @@
   "team_minutesAgo": "{count} 分钟前",
   "team_hoursAgo": "{count} 小时前",
   "team_daysAgo": "{count} 天前",
-
   "usage_title": "用量",
   "usage_subtitle": "Token 消耗和运行统计",
   "usage_scopeGlobal": "全局",
@@ -1370,7 +1327,6 @@
   "usage_longestStreak": "最长 {count} 天",
   "usage_heatmapLess": "少",
   "usage_heatmapMore": "多",
-
   "nav_history": "历史",
   "history_title": "历史",
   "history_subtitle": "浏览和搜索你的 AI 编码会话",
@@ -1378,7 +1334,6 @@
   "history_noResults": "没有匹配的会话",
   "history_advancedSearch": "高级",
   "history_allProjects": "所有项目",
-
   "history_cc_sessions": "个会话",
   "history_cc_continue": "继续对话",
   "history_cc_open": "打开",
@@ -1389,7 +1344,6 @@
   "history_cc_continueError": "继续对话失败",
   "history_cc_truncated": "显示的会话数量已达上限，部分会话未显示",
   "history_cc_alreadyImported": "已导入",
-
   "common_allow": "允许",
   "common_deny": "拒绝",
   "common_denied": "已拒绝",
@@ -1400,7 +1354,6 @@
   "common_redirecting": "正在跳转到聊天...",
   "common_edit": "编辑",
   "common_preview": "预览",
-
   "explorer_closeDiff": "关闭差异",
   "explorer_noChanges": "无更改",
   "explorer_selectFile": "选择文件以预览",
@@ -1410,7 +1363,6 @@
   "explorer_emptyFile": "空文件",
   "explorer_discardConfirm": "有未保存的更改，确定要丢弃吗？",
   "explorer_saveDisabledInPreview": "切换到编辑模式后可保存",
-
   "release_goBack": "返回",
   "release_title": "发布说明",
   "release_cliChangelog": "Claude Code 更新日志",
@@ -1420,7 +1372,6 @@
   "release_noMatching": "没有匹配的版本",
   "release_clearSearch": "清除搜索",
   "release_current": "当前",
-
   "runs_title": "运行历史",
   "runs_searchPlaceholder": "搜索运行...",
   "runs_filterAll": "全部",
@@ -1433,7 +1384,6 @@
   "runs_goToChat": "前往聊天",
   "runs_noMatching": "没有匹配的运行",
   "runs_adjustSearch": "尝试调整搜索或筛选条件",
-
   "runs_tabHistory": "历史",
   "runs_tabSearch": "搜索",
   "runs_tabFavorites": "收藏",
@@ -1456,9 +1406,7 @@
   "runs_tagReview": "review",
   "runs_tagDesign": "design",
   "runs_tagFix": "fix",
-
   "sidebar_favorites": "收藏",
-
   "memory_saved": "已保存",
   "memory_unsavedChanges": "有未保存的更改",
   "memory_setProjectFirst": "请先设置项目工作目录",
@@ -1471,25 +1419,20 @@
   "memory_noContent": "暂无内容可预览。",
   "memory_reload": "重新加载",
   "memory_discardConfirm": "你有未保存的更改。确定丢弃吗？",
-
   "memo_add": "添加",
   "memo_empty": "暂无备忘",
   "memo_delete": "删除",
   "memo_panelTitle": "快速备忘",
   "memo_panelPlaceholder": "输入想法...",
   "memo_redirectHint": "备忘录已移至全局快捷面板，正在跳转...",
-
   "error_title": "出错了",
   "error_defaultMessage": "发生了意外错误",
   "error_backToChat": "返回聊天",
   "errors_codexCliNotInstalled": "未找到 Codex CLI。请安装 codex 并确保其位于 PATH 中。",
-
   "hook_reviewTitle": "钩子审核：{type}",
   "hook_tool": "工具：{name}",
-
   "context_title": "上下文用量",
   "context_estimatedUsage": "按类别估算的用量",
-
   "cost_sessionCost": "会话费用",
   "cost_totalCost": "总费用：",
   "cost_durationApi": "时长（API）：",
@@ -1500,14 +1443,12 @@
   "cost_tokenLabels": "入 · 出 · 缓存读 · 缓存写",
   "cost_web": "网络",
   "cost_viewDetailed": "查看详细用量",
-
   "keybinding_pressCombo": "按下组合键...",
   "keybinding_reservedBySystem": "被系统保留",
   "keybinding_useAnyway": "仍然使用",
   "keybinding_confirm": "确认",
   "keybinding_resetDefault": "恢复默认",
   "keybinding_editShortcut": "编辑快捷键",
-
   "mcp_searchPlaceholder": "搜索 MCP 服务器...",
   "mcp_refreshTitle": "刷新",
   "mcp_scopeUser": "用户",
@@ -1568,16 +1509,13 @@
   "mcp_managedInvalidHeadersJson": "请求头必须是合法的 JSON",
   "mcp_managedRemoveConfirm": "移除托管 MCP 服务器「{name}」？移除后将不再注入到新会话中。",
   "mcp_managedInjectionNote": "此服务器会通过会话配置文件自动注入到每个新的 Claude 会话中。",
-
   "notes_title": "发布说明",
   "notes_cliTitle": "CLI 更新日志",
   "notes_latest": "最新",
   "notes_viewAll": "查看全部 {count} 个版本",
-
   "model_customModel": "自定义模型...",
   "model_placeholder": "模型 ID...",
   "model_set": "设置",
-
   "toolActivity_title": "工具活动",
   "toolActivity_collapse": "折叠侧边栏",
   "toolActivity_show": "显示工具活动",
@@ -1585,7 +1523,6 @@
   "toolActivity_turn": "轮次 {index}：",
   "toolActivity_systemResume": "系统 / 恢复",
   "toolActivity_scrollToTurn": "定位到此轮次",
-
   "cmd_placeholder": "输入命令...",
   "cmd_esc": "ESC",
   "cmd_noCommandsFound": "未找到命令",
@@ -1600,17 +1537,14 @@
   "cmd_workingTreeClean": "工作区干净",
   "cmd_cliInstalled": "已安装",
   "cmd_cliNotFound": "未找到",
-
   "perm_title": "工具权限",
   "perm_agentWantsToUse": "智能体想要使用",
   "perm_shellWarning": "这将在你的系统上执行一个 shell 命令。",
-
   "diff_unstaged": "未暂存",
   "diff_staged": "已暂存",
   "diff_noChanges": "未发现更改",
   "diff_noCwd": "未设置工作目录，请先打开一个项目。",
   "diff_failed": "Git diff 失败",
-
   "inline_question": "问题",
   "inline_questionsCount": "问题（{answered}/{total}）",
   "inline_submit": "提交",
@@ -1625,11 +1559,9 @@
   "inline_toolCount": "{count} 个工具",
   "batch_status": "{completed}/{total} 已完成 · {running} 执行中",
   "batch_failed": "{failed} 失败",
-
   "toolBurst_calls": "{total} 个工具调用",
   "toolBurst_completed": "{completed}/{total} 已完成",
   "toolBurst_failed": "{failed} 失败",
-
   "toolbar_planModeTitle": "计划模式：智能体只读不编辑文件",
   "toolbar_planOn": "计划 开",
   "toolbar_planOff": "计划 关",
@@ -1642,21 +1574,16 @@
   "toolbar_exportTitle": "导出对话为 Markdown",
   "toolbar_export": "导出",
   "toolbar_paletteTitle": "命令面板 (Cmd+K)",
-
   "runItem_resumeTitle": "恢复会话",
-
   "terminal_title": "终端",
   "terminal_newOutput": "新输出",
-
   "common_removeAttachment": "移除附件",
-
   "toolActivity_scrollToTool": "滚动到时间线中的工具",
   "toolActivity_tabTools": "工具",
   "toolActivity_tabContext": "上下文",
   "toolActivity_tabFiles": "文件",
   "toolActivity_tabInfo": "信息",
   "toolActivity_tabTasks": "任务",
-
   "bgTask_empty": "暂无后台任务",
   "filesPanel_noFiles": "暂无文件操作",
   "filesPanel_notLocatable": "无法定位到对应工具调用",
@@ -1665,7 +1592,6 @@
   "filesPanel_cannotPreview": "无法预览此文件",
   "filesPanel_save": "保存",
   "filesPanel_noContent": "暂无内容",
-
   "infoPanel_noInfo": "会话启动后将显示会话信息。",
   "infoPanel_session": "会话",
   "infoPanel_sessionId": "会话 ID",
@@ -1699,7 +1625,6 @@
   "contextPanel_history": "历史",
   "contextPanel_turn": "T{index}",
   "contextPanel_noData": "首轮对话后将显示上下文数据。",
-
   "toolSelector_addCustomPlaceholder": "添加自定义工具...",
   "toolSelector_add": "添加",
   "toolSelector_readDesc": "读取文件",
@@ -1710,7 +1635,6 @@
   "toolSelector_grepDesc": "搜索内容",
   "toolSelector_webFetchDesc": "抓取 URL",
   "toolSelector_webSearchDesc": "搜索网页",
-
   "slashMenu_backToCommands": "返回命令列表",
   "slashMenu_catSession": "会话",
   "slashMenu_catCoding": "编码",
@@ -1728,10 +1652,8 @@
   "fast_alreadyOn": "快速模式已经是开启状态",
   "fast_alreadyOff": "快速模式已经是关闭状态",
   "fast_usage": "用法：/fast [on|off]",
-
   "settings_shortcuts_conflictsWith": "冲突于：{label}",
   "settings_shortcuts_cliDefaults": "CLI 默认值",
-
   "setup_checking": "正在检查环境...",
   "setup_cliNotFound": "未检测到 Claude Code CLI",
   "setup_cliNotFoundDesc": "请在终端中使用以下命令安装：",
@@ -1767,23 +1689,19 @@
   "setup_allSet": "配置完成！",
   "setup_allSetDesc": "一切就绪，开始编码吧。",
   "setup_start": "开始",
-
   "chat_checkSettings": "检查设置",
   "prompt_platformTitle": "API 平台",
   "prompt_noPlatformKey": "未保存 API Key — 前往设置配置",
-
   "chat_runningLocally": "在本地运行",
   "chat_addRemoteMachine": "添加远程机器",
   "chat_cliVersion": "v{version}",
   "chat_cliChannelSwitched": "已切换到 {channel} 更新通道，CLI 将在下次重启时更新。",
   "chat_cliChannelDisabledHint": "仅对新会话生效",
   "chat_cliUpdateAvailable": "{version} 可用",
-
   "chat_initHintTitle": "项目尚未初始化",
   "chat_initHintDesc": "运行 /init 让 Claude 了解你的代码库，会自动创建 CLAUDE.md 项目文档。",
   "chat_initHintAction": "/init",
   "chat_initHintDismiss": "忽略",
-
   "settings_general_customEndpoints": "自定义端点",
   "settings_general_addCustom": "添加自定义",
   "settings_general_customName": "名称",
@@ -1792,7 +1710,6 @@
   "settings_general_customNamePlaceholder": "我的端点",
   "settings_general_customNameLabel": "名称",
   "settings_general_authType": "认证方式",
-
   "inline_applyHookContext": "应用 Hook 上下文",
   "inline_permissionPending": "等待授权…",
   "perm_nPermissions": "{count} 项权限待授权",
@@ -1802,9 +1719,7 @@
   "inline_otherPlaceholder": "输入内容...",
   "inline_submitOther": "提交",
   "inline_planLabel": "计划：{name}",
-
   "common_denyAndStop": "拒绝并停止",
-
   "plan_readyToCode": "准备开始编码？",
   "plan_approvalDesc": "Claude 已完成计划，准备执行。你希望如何继续？",
   "plan_requestedPermissions": "请求的权限：",
@@ -1814,7 +1729,6 @@
   "plan_keepPlanning": "继续规划",
   "plan_feedbackPlaceholder": "告诉 Claude 要修改什么...",
   "plan_cannotRebuild": "无法重建完整计划，请向上查看相关变更。",
-
   "auth_sourceLabel": "认证来源",
   "auth_cliAuth": "CLI 认证",
   "auth_appApiKey": "App API Key",
@@ -1878,7 +1792,6 @@
   "usage_tokenPlan": "套餐用量",
   "usage_tokenPlanUsed": "已用",
   "usage_tokenPlanTotal": "总计",
-
   "error_category_context_limit": "上下文超限",
   "error_category_budget_limit": "预算超限",
   "error_category_auth_issue": "认证问题",
@@ -1886,7 +1799,6 @@
   "error_category_session_timeout": "会话超时",
   "error_category_tool_issue": "工具问题",
   "error_category_unknown": "错误",
-
   "error_guidance_context_limit": "对话上下文过大。尝试分叉以使用摘要重新开始。",
   "error_guidance_budget_limit": "已达预算限制。在设置中调整 max_budget_usd 以继续。",
   "error_guidance_auth_issue": "认证失败。请在设置中检查 API 密钥或登录状态。",
@@ -1894,20 +1806,15 @@
   "error_guidance_session_timeout": "会话等待响应超时。可能原因：未处理的权限请求、API 响应慢、MCP 服务器无响应。尝试恢复会话或新建对话。",
   "error_guidance_tool_issue": "工具遇到错误。查看工具输出了解详情。",
   "error_guidance_unknown": "发生意外错误。你可以重试或关闭。",
-
   "statusbar_compactDetail": "{full} 次完整压缩，{micro} 次微压缩",
   "statusbar_durationPerTurn": "每轮",
-
   "plan_openRemote": "在 Claude 中打开",
-
   "bgTask_title": "后台任务（{count}）",
   "bgTask_active": "{count} 个运行中",
   "bgTask_activeTitle": "{count} 个后台任务运行中",
-
   "screenshot_notSupported": "截图功能仅支持 macOS",
   "screenshot_captured": "截图已捕获",
   "prompt_screenshot": "截取屏幕",
-
   "prompt_slashCommands": "斜杠命令 (/)",
   "quickAction_compact": "压缩上下文",
   "quickAction_copy": "复制回复",
@@ -1917,7 +1824,6 @@
   "quickAction_clear": "清除历史",
   "quickAction_more": "更多…",
   "quickAction_moreTitle": "显示所有斜杠命令",
-
   "cliSync_title": "导入 CLI 会话",
   "cliSync_found": "{count} 个会话",
   "cliSync_foundTruncated": "显示最近 {shown} 个会话（发现 {total}+ 个）",
@@ -1941,7 +1847,6 @@
   "cliSync_reconciling": "正在核对...",
   "cliSync_usageIncomplete": "部分用量数据无法重建",
   "cliSync_usageIncompleteHint": "用量数据不完整 — 从 CLI 导入",
-
   "shortcutHelp_title": "键盘快捷键",
   "shortcutHelp_global": "全局",
   "shortcutHelp_chat": "聊天",
@@ -1965,7 +1870,6 @@
   "toast_rewindSuccess": "文件已回退",
   "error_rewindNoCheckpoint": "没有可回退的文件检查点",
   "error_rewindFailed": "文件回退失败",
-
   "rewind_modalTitle": "回退到检查点",
   "rewind_selectCheckpoint": "选择要回退到的检查点：",
   "rewind_noCheckpoints": "此会话中没有可用的检查点。",
@@ -1995,7 +1899,6 @@
   "statusbar_verboseTitle": "详细输出已启用",
   "prompt_stashBadge": "已暂存",
   "prompt_stashRestore": "点击恢复暂存的输入",
-
   "infoPanel_auth": "认证",
   "infoPanel_authSource": "认证来源",
   "infoPanel_platformName": "平台",
@@ -2005,7 +1908,6 @@
   "infoPanel_goConfig": "配置",
   "infoPanel_goUsage": "用量",
   "statusPanel_noSession": "无活跃会话",
-
   "doctor_title": "诊断报告",
   "doctor_sectionInstallation": "安装",
   "doctor_sectionAuth": "认证",
@@ -2052,9 +1954,7 @@
   "doctor_running": "正在运行诊断...",
   "doctor_empty": "暂无诊断数据",
   "doctor_run": "运行诊断",
-
   "sidebar_hooks": "钩子",
-
   "hooks_title": "钩子",
   "hooks_desc": "在特定生命周期事件中运行的 Shell 命令和提示",
   "hooks_loading": "正在加载钩子配置...",
@@ -2106,25 +2006,20 @@
   "hooks_groupCount": "{count} 组",
   "hooks_handlerCount": "{count} 个处理器",
   "hooks_refresh": "刷新",
-
   "todos_empty": "当前没有待办事项。",
-
   "slashTasks_empty": "当前会话没有后台任务。",
   "slashTasks_notFound": "未找到任务：{id}",
   "slashTasks_ambiguous": "多个任务匹配 \"{id}\"：",
   "slashTasks_hint": "使用 `/tasks <task_id>` 查看任务输出。",
   "slashTasks_outputError": "无法读取任务输出：{error}",
-
   "chat_addDirSaved": "目录已添加：{path}\n（将在下次启动时生效）",
   "chat_addDirDuplicate": "目录已存在：{path}",
   "chat_addDirFailed": "添加目录失败：{error}",
   "chat_addDirTitle": "添加目录到工作区",
   "chat_addDirUnsupported": "add-dir 仅支持 Claude agent",
   "chat_addDirInvalidPath": "路径包含无效字符",
-
   "skillSelector_label": "技能",
   "skillSelector_empty": "未找到技能，请在 .claude/skills/ 中添加。",
-
   "sidebar_agents": "Agent",
   "agent_title": "Agent",
   "agent_desc": "管理 Claude 用于委派特定任务的 Agent 定义。",
@@ -2176,7 +2071,6 @@
   "agent_inherit": "继承",
   "agent_noTools": "未指定工具",
   "agent_allTools": "全部工具（继承）",
-
   "groupChat_title": "群聊",
   "groupChat_refresh": "刷新",
   "groupChat_namePlaceholder": "群聊名称",
@@ -2268,12 +2162,10 @@
   "groupChat_removeParticipant": "移除",
   "groupChat_removeParticipantConfirm": "从群聊中移除 {label}？",
   "groupChat_thinking": "思考中...",
-
   "groupChat_longRunning": "运行较久",
   "groupChat_longRunningHint": "此轮运行时间较长，代理可能仍在工作中。",
   "groupChat_lastActivity": "最近活动",
   "groupChat_ago": "前",
-
   "groupChat_seatMemory": "座位记忆",
   "groupChat_seatMemoryCount": "{count} 条记忆",
   "groupChat_addMemory": "添加记忆",
@@ -2300,7 +2192,6 @@
   "groupChat_roleReviewer": "审查者",
   "groupChat_yourMessage": "你的消息",
   "groupChat_replies": "条回复",
-
   "appUpdate_available": "发现新版本（{version}）。",
   "appUpdate_download": "下载",
   "appUpdate_dismiss": "忽略",
@@ -2308,18 +2199,15 @@
   "appUpdate_checking": "检查中...",
   "appUpdate_upToDate": "当前已为最新版本（v{version}）。",
   "appUpdate_checkFailed": "检查更新失败，请稍后重试。",
-
   "about_changelog": "更新日志",
   "about_searchVersions": "搜索版本...",
   "about_expandAll": "展开全部",
   "about_collapseAll": "收起全部",
   "about_noMatching": "没有匹配的版本",
-
   "drag_foldersInserted": "已添加 {count} 个文件夹路径引用",
   "drag_filesAsPathRef": "{count} 个文件已添加为路径引用",
   "drag_processing": "正在处理文件…",
   "common_listSeparator": "；",
-
   "permissions_title": "权限管理",
   "permissions_rules": "规则",
   "permissions_allow": "允许",
@@ -2333,13 +2221,11 @@
   "permissions_addPlaceholder": "例如 Bash(npm test)",
   "permissions_deleteConfirm": "移除规则",
   "permissions_projectUnavailable": "项目权限不可用：{reason}",
-
   "elicitation_title": "MCP 需要输入",
   "elicitation_pending": "{count} 项待处理",
   "elicitation_open_url": "打开认证链接",
   "elicitation_accept": "提交",
   "elicitation_decline": "拒绝",
-
   "preview_label": "预览",
   "preview_opened": "预览窗口已打开",
   "preview_closed": "预览窗口已关闭",
@@ -2355,9 +2241,7 @@
   "export_htmlSuccess": "已导出 HTML",
   "export_htmlFailed": "导出失败",
   "export_htmlButton": "导出为 HTML",
-
   "common_delete": "删除",
-
   "settings_characters": "AI 角色",
   "settings_characters_new": "新角色",
   "settings_characters_edit": "编辑角色",
@@ -2402,7 +2286,6 @@
   "settings_embedding_test_fail": "连接失败: ",
   "settings_embedding_unknown_error": "未知错误",
   "settings_embedding_disabled_notice": "角色记忆已暂停。启用后可恢复语义搜索。已存储的记忆数据不会丢失。",
-
   "settings_tushare_token": "Tushare 数据令牌",
   "settings_tushare_proxy_url": "Tushare 代理地址",
   "settings_tushare_proxy_hint": "留空使用官方 api.tushare.pro，填写自建代理地址可绕过限流",
@@ -2420,7 +2303,6 @@
   "settings_fee_transfer_fee_rate": "过户费率",
   "settings_invest_miniqmt_enabled": "启用 miniQMT 作为行情优先数据源",
   "settings_invest_miniqmt_hint": "开启后，行情数据（K线、实时报价）优先从 miniQMT 获取，取不到时降级 Tushare 再降级腾讯。需本机运行已登录券商账户的 miniQMT 客户端。",
-
   "scheduler.title": "调度器",
   "scheduler.credits": "额度",
   "scheduler.creditsDaily": "每日额度",
@@ -2441,7 +2323,6 @@
   "scheduler.dreamLastResult": "上次结果",
   "scheduler.dreamWritten": "已写入",
   "scheduler.dreamDuration": "耗时",
-
   "invest_insights_tab": "洞察",
   "invest_insights_title": "领域洞察",
   "invest_insights_empty": "暂无活跃洞察。洞察由梦境流水线生成。",
@@ -2455,7 +2336,6 @@
   "invest_insights_active": "活跃",
   "invest_insights_archived": "已归档",
   "invest_insights_pipeline_notification": "梦境流水线：写入 {count} 条洞察",
-
   "invest_dreaming_title_invest": "投资梦境",
   "invest_dreaming_title_userMemory": "用户记忆梦境",
   "invest_dreaming_configuration": "配置",
@@ -2490,7 +2370,6 @@
   "invest_fallback_unknown": "{role} 分析异常: {reason}",
   "invest_retry": "重试",
   "invest_transfer_out_exceeds_cash": "转出金额超过可用现金余额",
-
   "claudeUsage_5h": "5 小时",
   "claudeUsage_weekly": "本周",
   "claudeUsage_opus": "Opus 周额",
@@ -2500,5 +2379,25 @@
   "claudeUsage_stale": "可能已过期",
   "claudeUsage_title": "Claude 用量",
   "claudeUsage_today": "今天",
-  "claudeUsage_tomorrow": "明天"
+  "claudeUsage_tomorrow": "明天",
+  "invest_tab_fortune": "每日盈记",
+  "fortune_sub_analysis": "分析",
+  "fortune_sub_stembranch": "干支总览",
+  "fortune_sub_data": "数据总览",
+  "fortune_record_btn": "＋ 录入收益",
+  "fortune_predict": "预测",
+  "fortune_post": "盘后",
+  "fortune_empty_hint": "录入第一笔收益后即可查看干支评分",
+  "fortune_insufficient": "数据不足",
+  "fortune_generate_reading": "生成解读",
+  "fortune_generating": "生成中…",
+  "fortune_reading_failed": "解读生成失败，可重试",
+  "fortune_kpi_total": "总记录天数",
+  "fortune_kpi_win": "盈利天数",
+  "fortune_kpi_winrate": "胜率",
+  "fortune_kpi_cumulative": "累计收益",
+  "fortune_kpi_avg": "平均日收益",
+  "fortune_top_rank": "排行 Top3",
+  "fortune_top_risk": "风险 Top3",
+  "fortune_monthly": "月度统计"
 }

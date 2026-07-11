@@ -1,6 +1,5 @@
 {
   "settings_title": "Settings",
-
   "settings_tab_general": "General",
   "settings_tab_connection": "Connection",
   "settings_tab_cliConfig": "CLI Config",
@@ -10,7 +9,6 @@
   "settings_tab_characters": "Characters",
   "settings_tab_embedding": "Character Memory",
   "settings_tab_profile": "Profile",
-
   "settings_profile_title": "User Profile",
   "settings_profile_desc": "Configure your investment profile to personalize committee analysis.",
   "settings_profile_family_backup": "Family Backup Available",
@@ -43,7 +41,6 @@
   "settings_profile_save_failed": "Failed to save profile. Please try again.",
   "settings_save": "Save",
   "settings_saved": "Saved",
-
   "settings_general_connection": "Connection",
   "settings_general_saved": "Saved",
   "settings_general_connectionMode": "Connection Mode",
@@ -87,7 +84,6 @@
   "settings_local_setupHint_ccswitch": "Open CC Switch → Settings → enable \"Proxy Enabled\", then select a provider",
   "settings_local_setupHint_ccr": "Run \"ccr start\" to start the router only (do NOT use \"ccr code\"). Install: npm i -g @musistudio/claude-code-router",
   "settings_local_setupHint_ollama": "Run \"ollama serve\" to start the Ollama service",
-
   "settings_apiTest": "Test",
   "settings_apiTest_testing": "Testing...",
   "settings_apiTest_success": "Connected ({latency}ms)",
@@ -95,7 +91,6 @@
   "settings_apiTest_failed": "Connection failed",
   "settings_apiTest_noKey": "Enter an API key first",
   "settings_apiTest_noUrl": "Enter a base URL first",
-
   "settings_msvc_title": "Windows Build Environment",
   "settings_msvc_desc": "Controls Visual Studio C++ environment injection for local CLI sessions.",
   "settings_msvc_checking": "Checking...",
@@ -108,7 +103,6 @@
   "settings_msvc_state_pending": "Pending",
   "settings_msvc_state_injected": "Injected",
   "settings_msvc_state_warning": "Needs attention",
-
   "settings_general_setupWizard": "Setup Wizard",
   "settings_general_setupWizardDesc": "Re-run the initial setup wizard to reconfigure CLI and authentication.",
   "settings_general_runWizard": "Run Wizard",
@@ -157,11 +151,9 @@
   "settings_general_language": "Language",
   "settings_general_displayLanguage": "Display Language",
   "settings_general_displayLanguageDesc": "Choose the language for the app interface",
-
   "settings_general_display": "Display",
   "settings_general_uiZoom": "Interface Scale",
   "settings_general_uiZoomDesc": "Adjust the overall size of the interface",
-
   "settings_cliConfig_loading": "Loading CLI config...",
   "settings_cliConfig_loadFailed": "Failed to load CLI config: {error}",
   "settings_cliConfig_retry": "Retry",
@@ -170,7 +162,6 @@
   "settings_cliConfig_advanced": "Advanced",
   "settings_cliConfig_projectOverride": "project override",
   "settings_cliConfig_footer": "Changes saved to ~/.claude/settings.json. Project overrides (.claude/settings.json) take precedence.",
-
   "settings_cliConfig_thinkingModeLabel": "Thinking Mode",
   "settings_cliConfig_thinkingModeDesc": "Enable extended thinking for complex problems",
   "settings_cliConfig_fastModeLabel": "Fast Mode",
@@ -209,7 +200,6 @@
   "settings_cliConfig_updateChannelDesc": "Auto-update release channel",
   "settings_cliConfig_notifChannelLabel": "Notification Channel",
   "settings_cliConfig_notifChannelDesc": "How to deliver desktop notifications",
-
   "settings_cliConfig_optDefault": "Default",
   "settings_cliConfig_optPlan": "Plan",
   "settings_cliConfig_optAutoEdit": "Auto Edit",
@@ -224,14 +214,12 @@
   "settings_cliConfig_optStable": "Stable",
   "settings_cliConfig_optIterm2": "iTerm2",
   "settings_cliConfig_optTerminalBell": "Terminal Bell",
-
   "settings_shortcuts_appShortcuts": "App Shortcuts",
   "settings_shortcuts_inputFixed": "Input (fixed)",
   "settings_shortcuts_cliShortcuts": "Claude CLI Shortcuts",
   "settings_shortcuts_readOnly": "(read-only)",
   "settings_shortcuts_source": "Source: {source}",
   "settings_shortcuts_resetAll": "Reset All to Defaults",
-
   "settings_remote_title": "Remote Hosts",
   "settings_remote_desc": "Run Claude Code on remote machines via SSH. Requires key-based authentication.",
   "settings_remote_noHosts": "No remote hosts configured.",
@@ -283,7 +271,6 @@
   "settings_remote_sshKeyAlreadyExists": "Key already exists, skipping generation.",
   "settings_remote_cliNotFoundHint": "SSH connected but CLI not found. Run this on the remote machine to find the path:",
   "settings_remote_cliNotFoundHint2": "Then paste the full path into \"Claude CLI Path (remote)\" above and test again.",
-
   "settings_debug_title": "Debug Logging",
   "settings_debug_desc": "Enable detailed frontend logging.",
   "settings_debug_rustHint": "Rust logs:",
@@ -298,9 +285,7 @@
   "settings_debug_rustBackendLogs": "Rust backend logs (terminal):",
   "settings_debug_copy": "Copy",
   "settings_debug_maxEntries": "Logs are buffered in memory (max 2000 entries). Open DevTools Console to see live output.",
-
   "common_required": "required",
-
   "nav_chat": "Chat",
   "nav_explorer": "Explorer",
   "nav_extend": "Extend",
@@ -309,11 +294,9 @@
   "nav_groupChats": "Group Chats",
   "nav_usage": "Usage",
   "nav_settings": "Settings",
-
   "moreMenu_doctor": "Doctor Diagnostics",
   "moreMenu_releaseNotes": "Release Notes",
   "moreMenu_allSettings": "All Settings",
-
   "invest_tab_dashboard": "Dashboard",
   "invest_tab_committee": "Committee",
   "invest_tab_strategy": "Strategy",
@@ -322,7 +305,6 @@
   "invest_tab_scheduler": "Scheduled Tasks",
   "invest_loading": "Loading...",
   "invest_tab_system": "System",
-
   "invest_system_sub_cron": "Cron Jobs",
   "invest_premarket_title": "Tomorrow's Premarket Watch",
   "invest_premarket_subtitle": "External news priors × main-force capital confirmation × main-line pre-ranking × watch pool tiers",
@@ -421,7 +403,6 @@
   "invest_system_sub_dreams": "Dreams",
   "invest_system_sub_profile": "Profile",
   "invest_system_sub_cleanup": "Cleanup",
-
   "invest_cleanup_title": "Data Cleanup",
   "invest_cleanup_scan": "Rescan",
   "invest_cleanup_apply": "Run Cleanup",
@@ -434,13 +415,11 @@
   "invest_cleanup_target_event_sources": "event_sources (unused)",
   "invest_cleanup_target_domain_insights_empty": "domain_insights — empty / idle dreaming rows",
   "invest_cleanup_target_rooms_dir": "Legacy ~/.claw-go/rooms/ directory",
-
   "invest_system_datasource_title": "Data Source Health",
   "invest_system_ds_name": "Source",
   "invest_system_ds_status": "Status",
   "invest_system_ds_last_success": "Last Success",
   "invest_system_ds_sample": "Sample",
-
   "invest_system_pnl_history_title": "PnL Snapshot History",
   "invest_system_pnl_history_empty": "No snapshots yet.",
   "invest_system_pnl_date": "Date",
@@ -449,10 +428,8 @@
   "invest_system_pnl_holdings": "Holdings",
   "invest_system_pnl_daily": "Daily PnL",
   "invest_system_pnl_daily_pct": "Daily %",
-
   "invest_system_dreams_title": "Dream Traces",
   "invest_system_dreams_empty": "No dream traces yet.",
-
   "invest_scheduler_title": "Scheduled Tasks",
   "invest_scheduler_loading": "Loading...",
   "invest_scheduler_job_name": "Job",
@@ -491,7 +468,6 @@
   "invest_scheduler_cron_weekday": "Weekday",
   "invest_scheduler_cron_preview": "Preview",
   "invest_scheduler_cron_generated": "Generated",
-
   "invest_accuracy_title": "Hit Rate Tracking",
   "invest_accuracy_run_review": "Run Review",
   "invest_accuracy_no_data": "No verdict review data yet.",
@@ -517,7 +493,6 @@
   "invest_accuracy_returnPct": "Return%",
   "invest_accuracy_hit": "Hit",
   "invest_accuracy_lastReview": "Last review:",
-
   "invest_committee_provider": "Committee CLI Provider",
   "invest_committee_tuning": "Committee Tuning",
   "invest_committee_api_key": "API Key",
@@ -584,7 +559,6 @@
   "invest_committee_sub_accuracy": "Accuracy",
   "invest_committee_sub_premarket": "Premarket",
   "invest_committee_tuning_section": "Committee Tuning",
-
   "invest_roles_verdict_options": "5 Verdict Options",
   "invest_roles_verdict_buy_desc": "Full position entry (only strong bullish + Risk ok)",
   "invest_roles_verdict_accumulate_desc": "Contrarian gradual building",
@@ -644,7 +618,6 @@
   "invest_roles_save": "Save",
   "invest_roles_cancel": "Cancel",
   "invest_roles_click_to_edit": "Click to edit prompt...",
-
   "invest_dashboard": "Dashboard",
   "invest_total_assets": "Total Assets",
   "invest_holdings_value": "Holdings Value",
@@ -888,7 +861,6 @@
   "invest_verdict_trim": "TRIM (Partial Exit)",
   "invest_verdict_sell": "SELL (Full Exit)",
   "invest_no_verdicts": "No verdicts yet.",
-
   "invest.eventWatch.noScanData": "No scan data",
   "invest.eventWatch.scanning": "Scanning...",
   "invest.eventWatch.scanNow": "Scan Now",
@@ -899,7 +871,6 @@
   "invest.eventWatch.high": "high",
   "invest.eventWatch.untriggered": "untriggered",
   "invest.eventWatch.last": "last",
-
   "invest.eventWatch.triggerDialogTitle": "Event Triggers Committee",
   "invest.eventWatch.triggerDialogDetected": "High-impact event detected",
   "invest.eventWatch.triggerDialogHoldings": "Related holdings",
@@ -907,7 +878,6 @@
   "invest.eventWatch.triggerDialogConfirm": "Start committee evaluation now?",
   "invest.eventWatch.triggerDialogCancel": "Cancel",
   "invest.eventWatch.triggerDialogConfirmBtn": "Confirm & Start",
-
   "invest.eventWatch.severityLabel": "severity",
   "invest.eventWatch.stanceLabel": "stance",
   "invest.eventWatch.timeMinutesAgo": "{min}m ago",
@@ -925,7 +895,6 @@
   "invest.eventWatch.scanComplete": "Scan complete",
   "invest.eventWatch.scanResult": "Fetched {fetched}, dropped {filtered}, saved {saved}",
   "invest.eventWatch.scanErrors": "Scan warnings",
-
   "invest.news.flashTitle": "Jinshi Flash",
   "invest.news.digestTitle": "News / Opinion",
   "invest.news.filterAll": "All",
@@ -940,14 +909,11 @@
   "invest.news.srcXueqiu": "Xueqiu",
   "invest.news.flashEmpty": "No flash items yet",
   "invest.news.digestEmpty": "No news / sentiment items yet",
-
   "python_restart_runtime": "Restart Python Runtime",
-
   "layout_appName": "Claw GO",
   "layout_newConversation": "New conversation",
   "layout_selectProjectFolder": "Select Project Folder",
   "layout_toggleSidebar": "Toggle sidebar (Ctrl+B)",
-
   "sidebar_skills": "Skills",
   "sidebar_mcpServers": "MCP Servers",
   "sidebar_plugins": "Plugins",
@@ -997,7 +963,6 @@
   "sidebar_removeProject": "Remove project",
   "sidebar_removeProjectConfirm": "Remove project folder",
   "sidebar_removeProjectDesc": "This project will be removed from sidebar. Data is kept on disk. Use 'Open folder' to add it back.",
-
   "statusbar_toggleSidebar": "Toggle sidebar (Ctrl+B)",
   "statusbar_contextTitle": "Context usage for the latest turn ({pct}% of {tokens} tokens). The CLI automatically compacts context when approaching the limit.",
   "statusbar_ctx": "ctx {pct}%",
@@ -1041,7 +1006,6 @@
   "statusbar_sshTitle": "Running on remote host: {name}",
   "statusbar_sessionTitle": "Click to rename",
   "statusbar_cliVersionTitle": "Claude CLI v{version} — Click to view release notes",
-
   "prompt_permAskLabel": "Ask",
   "prompt_permAskShort": "Ask",
   "prompt_permAskDesc": "Standard mode, asks before actions",
@@ -1076,7 +1040,6 @@
   "prompt_unsupportedFile": "Unsupported file type: .{ext}",
   "prompt_clipboardUnsupported": "File paste is not yet supported on this platform",
   "prompt_conversionFailed": "Failed to convert {name}",
-
   "common_cancel": "Cancel",
   "common_retry": "Retry",
   "common_copy": "Copy",
@@ -1087,7 +1050,6 @@
   "common_showAllItems": "Show all ({count} items)",
   "common_showAll": "Show all",
   "common_dismiss": "dismiss",
-
   "chat_examplePrompt1": "Build a login page with email and password",
   "chat_examplePrompt2": "Refactor this component to use TypeScript",
   "chat_examplePrompt3": "Write unit tests for the auth module",
@@ -1135,7 +1097,6 @@
   "chat_roleClaude": "Claude",
   "chat_copyMessage": "Copy message",
   "chat_thoughtProcess": "Thought process",
-
   "tool_interrupted": "interrupted",
   "tool_result": "Result",
   "tool_file": "{count} file",
@@ -1169,11 +1130,9 @@
   "tool_taskListStatus": "Status",
   "tool_taskListOwner": "Owner",
   "tool_taskListBlocked": "Blocked",
-
   "project_allProjects": "All Projects",
   "project_openFolder": "Open folder...",
   "sidebar_currentProject": "Project:",
-
   "plugin_title": "Skills",
   "plugin_desc": "Extend Claude with specialized knowledge and behavior",
   "plugin_discover": "Discover",
@@ -1279,7 +1238,6 @@
   "plugin_badgeHooks": "hooks",
   "plugin_badgeMcp": "MCP",
   "plugin_badgeLsp": "LSP",
-
   "team_noActiveTeams": "No active teams",
   "team_emptyDesc": "Start a team session in Claude Code to see teams here. Team data is read from ~/.claude/teams/.",
   "team_membersCount": "{count} members",
@@ -1327,7 +1285,6 @@
   "team_minutesAgo": "{count}m ago",
   "team_hoursAgo": "{count}h ago",
   "team_daysAgo": "{count}d ago",
-
   "usage_title": "Usage",
   "usage_subtitle": "Token costs and run statistics",
   "usage_scopeGlobal": "Global",
@@ -1370,7 +1327,6 @@
   "usage_longestStreak": "{count} day best",
   "usage_heatmapLess": "Less",
   "usage_heatmapMore": "More",
-
   "nav_history": "History",
   "history_title": "History",
   "history_subtitle": "Browse and search your AI coding sessions",
@@ -1378,7 +1334,6 @@
   "history_noResults": "No sessions match your filters",
   "history_advancedSearch": "Advanced",
   "history_allProjects": "All Projects",
-
   "history_cc_sessions": "sessions",
   "history_cc_continue": "Continue",
   "history_cc_open": "Open",
@@ -1389,7 +1344,6 @@
   "history_cc_continueError": "Failed to continue conversation",
   "history_cc_truncated": "Session limit reached, some sessions are not shown",
   "history_cc_alreadyImported": "Already imported",
-
   "common_allow": "Allow",
   "common_deny": "Deny",
   "common_denied": "Denied",
@@ -1400,7 +1354,6 @@
   "common_redirecting": "Redirecting to chat...",
   "common_edit": "Edit",
   "common_preview": "Preview",
-
   "explorer_closeDiff": "Close diff",
   "explorer_noChanges": "No changes",
   "explorer_selectFile": "Select a file to preview",
@@ -1410,7 +1363,6 @@
   "explorer_emptyFile": "Empty file",
   "explorer_discardConfirm": "You have unsaved changes. Discard them?",
   "explorer_saveDisabledInPreview": "Switch to Edit mode to save",
-
   "release_goBack": "Go back",
   "release_title": "Release Notes",
   "release_cliChangelog": "Claude Code Changelog",
@@ -1420,7 +1372,6 @@
   "release_noMatching": "No matching releases found",
   "release_clearSearch": "Clear search",
   "release_current": "current",
-
   "runs_title": "Run History",
   "runs_searchPlaceholder": "Search runs...",
   "runs_filterAll": "All",
@@ -1433,7 +1384,6 @@
   "runs_goToChat": "Go to Chat",
   "runs_noMatching": "No matching runs",
   "runs_adjustSearch": "Try adjusting your search or filters",
-
   "runs_tabHistory": "History",
   "runs_tabSearch": "Search",
   "runs_tabFavorites": "Favorites",
@@ -1456,9 +1406,7 @@
   "runs_tagReview": "review",
   "runs_tagDesign": "design",
   "runs_tagFix": "fix",
-
   "sidebar_favorites": "Favorites",
-
   "memory_saved": "Saved",
   "memory_unsavedChanges": "Unsaved changes",
   "memory_setProjectFirst": "Set a project working directory first",
@@ -1471,25 +1419,20 @@
   "memory_noContent": "No content to preview.",
   "memory_reload": "Reload",
   "memory_discardConfirm": "You have unsaved changes. Discard them?",
-
   "memo_add": "Add",
   "memo_empty": "No memos",
   "memo_delete": "Delete",
   "memo_panelTitle": "Quick Memo",
   "memo_panelPlaceholder": "Jot something...",
   "memo_redirectHint": "Memo has moved to the global quick panel, redirecting...",
-
   "error_title": "Something went wrong",
   "error_defaultMessage": "An unexpected error occurred",
   "error_backToChat": "Back to Chat",
   "errors_codexCliNotInstalled": "Codex CLI not found. Please install codex and ensure it is in your PATH.",
-
   "hook_reviewTitle": "Hook Review: {type}",
   "hook_tool": "Tool: {name}",
-
   "context_title": "Context Usage",
   "context_estimatedUsage": "Estimated usage by category",
-
   "cost_sessionCost": "Session Cost",
   "cost_totalCost": "Total cost:",
   "cost_durationApi": "Duration (API):",
@@ -1500,14 +1443,12 @@
   "cost_tokenLabels": "in · out · cache r · cache w",
   "cost_web": "web",
   "cost_viewDetailed": "View detailed usage",
-
   "keybinding_pressCombo": "Press key combo...",
   "keybinding_reservedBySystem": "Reserved by system",
   "keybinding_useAnyway": "Use anyway",
   "keybinding_confirm": "Confirm",
   "keybinding_resetDefault": "Reset to default",
   "keybinding_editShortcut": "Edit shortcut",
-
   "mcp_searchPlaceholder": "Search MCP servers...",
   "mcp_refreshTitle": "Refresh",
   "mcp_scopeUser": "User",
@@ -1568,16 +1509,13 @@
   "mcp_managedInvalidHeadersJson": "Headers must be valid JSON",
   "mcp_managedRemoveConfirm": "Remove managed MCP server \"{name}\"? It will no longer be injected into sessions.",
   "mcp_managedInjectionNote": "This server is automatically injected into every new Claude session via the session settings file.",
-
   "notes_title": "Release Notes",
   "notes_cliTitle": "CLI Release Notes",
   "notes_latest": "latest",
   "notes_viewAll": "View all {count} versions",
-
   "model_customModel": "Custom model...",
   "model_placeholder": "model-id...",
   "model_set": "Set",
-
   "toolActivity_title": "Tool Activity",
   "toolActivity_collapse": "Collapse sidebar",
   "toolActivity_show": "Show Tool Activity",
@@ -1585,7 +1523,6 @@
   "toolActivity_turn": "Turn {index}:",
   "toolActivity_systemResume": "System / Resume",
   "toolActivity_scrollToTurn": "Scroll to this turn",
-
   "cmd_placeholder": "Type a command...",
   "cmd_esc": "ESC",
   "cmd_noCommandsFound": "No commands found",
@@ -1600,17 +1537,14 @@
   "cmd_workingTreeClean": "Working tree clean",
   "cmd_cliInstalled": "Installed",
   "cmd_cliNotFound": "Not found",
-
   "perm_title": "Tool Permission",
   "perm_agentWantsToUse": "The agent wants to use",
   "perm_shellWarning": "This will execute a shell command on your system.",
-
   "diff_unstaged": "Unstaged",
   "diff_staged": "Staged",
   "diff_noChanges": "No changes found",
   "diff_noCwd": "No working directory set. Open a project first.",
   "diff_failed": "Git diff failed",
-
   "inline_question": "Question",
   "inline_questionsCount": "Questions ({answered}/{total})",
   "inline_submit": "Submit",
@@ -1625,11 +1559,9 @@
   "inline_toolCount": "{count} tools",
   "batch_status": "{completed}/{total} completed · {running} running",
   "batch_failed": "{failed} failed",
-
   "toolBurst_calls": "{total} tool calls",
   "toolBurst_completed": "{completed}/{total} completed",
   "toolBurst_failed": "{failed} failed",
-
   "toolbar_planModeTitle": "Plan mode: agent reads but doesn't edit files",
   "toolbar_planOn": "Plan ON",
   "toolbar_planOff": "Plan OFF",
@@ -1642,21 +1574,16 @@
   "toolbar_exportTitle": "Export conversation as Markdown",
   "toolbar_export": "Export",
   "toolbar_paletteTitle": "Command palette (Cmd+K)",
-
   "runItem_resumeTitle": "Resume session",
-
   "terminal_title": "Terminal",
   "terminal_newOutput": "New output",
-
   "common_removeAttachment": "Remove attachment",
-
   "toolActivity_scrollToTool": "Scroll to tool in timeline",
   "toolActivity_tabTools": "Tools",
   "toolActivity_tabContext": "Context",
   "toolActivity_tabFiles": "Files",
   "toolActivity_tabInfo": "Info",
   "toolActivity_tabTasks": "Tasks",
-
   "bgTask_empty": "No background tasks",
   "filesPanel_noFiles": "No file operations yet",
   "filesPanel_notLocatable": "Cannot locate the corresponding tool call",
@@ -1665,7 +1592,6 @@
   "filesPanel_cannotPreview": "Cannot preview this file",
   "filesPanel_save": "Save",
   "filesPanel_noContent": "No content to display",
-
   "infoPanel_noInfo": "Session info will appear after the session starts.",
   "infoPanel_session": "Session",
   "infoPanel_sessionId": "Session ID",
@@ -1699,7 +1625,6 @@
   "contextPanel_history": "History",
   "contextPanel_turn": "T{index}",
   "contextPanel_noData": "Context data will appear after the first turn.",
-
   "toolSelector_addCustomPlaceholder": "Add custom tool...",
   "toolSelector_add": "Add",
   "toolSelector_readDesc": "Read files",
@@ -1710,7 +1635,6 @@
   "toolSelector_grepDesc": "Search content",
   "toolSelector_webFetchDesc": "Fetch URLs",
   "toolSelector_webSearchDesc": "Search web",
-
   "slashMenu_backToCommands": "Back to commands",
   "slashMenu_catSession": "Session",
   "slashMenu_catCoding": "Coding",
@@ -1728,10 +1652,8 @@
   "fast_alreadyOn": "Fast mode is already ON",
   "fast_alreadyOff": "Fast mode is already OFF",
   "fast_usage": "Usage: /fast [on|off]",
-
   "settings_shortcuts_conflictsWith": "Conflicts with: {label}",
   "settings_shortcuts_cliDefaults": "CLI defaults",
-
   "setup_checking": "Checking environment...",
   "setup_cliNotFound": "Claude Code CLI Not Detected",
   "setup_cliNotFoundDesc": "Install it in your terminal using one of these commands:",
@@ -1767,23 +1689,19 @@
   "setup_allSet": "You're All Set!",
   "setup_allSetDesc": "Everything is configured. Let's start coding.",
   "setup_start": "Start",
-
   "chat_checkSettings": "Check Settings",
   "prompt_platformTitle": "API Platform",
   "prompt_noPlatformKey": "No API key — configure in Settings",
-
   "chat_runningLocally": "Running locally",
   "chat_addRemoteMachine": "Add remote machine",
   "chat_cliVersion": "v{version}",
   "chat_cliChannelSwitched": "Update channel set to {channel}. CLI will update on next restart.",
   "chat_cliChannelDisabledHint": "Only takes effect on new sessions",
   "chat_cliUpdateAvailable": "{version} available",
-
   "chat_initHintTitle": "Project not initialized",
   "chat_initHintDesc": "Run /init to help Claude understand your codebase. This creates a CLAUDE.md file with project documentation.",
   "chat_initHintAction": "/init",
   "chat_initHintDismiss": "Dismiss",
-
   "settings_general_customEndpoints": "Custom Endpoints",
   "settings_general_addCustom": "Add Custom",
   "settings_general_customName": "Name",
@@ -1792,9 +1710,8 @@
   "settings_general_customNamePlaceholder": "My Endpoint",
   "settings_general_customNameLabel": "Name",
   "settings_general_authType": "Auth Type",
-
   "inline_applyHookContext": "Apply hook context",
-  "inline_permissionPending": "Waiting for permission\u2026",
+  "inline_permissionPending": "Waiting for permission…",
   "perm_nPermissions": "{count} permissions required",
   "perm_allowAll": "Allow All ({count})",
   "perm_denyAll": "Deny All",
@@ -1802,9 +1719,7 @@
   "inline_otherPlaceholder": "Type something...",
   "inline_submitOther": "Submit",
   "inline_planLabel": "Plan: {name}",
-
   "common_denyAndStop": "Deny & Stop",
-
   "plan_readyToCode": "Ready to code?",
   "plan_approvalDesc": "Claude has written a plan and is ready to execute. How would you like to proceed?",
   "plan_requestedPermissions": "Requested permissions:",
@@ -1814,7 +1729,6 @@
   "plan_keepPlanning": "Keep planning",
   "plan_feedbackPlaceholder": "Tell Claude what to change...",
   "plan_cannotRebuild": "Unable to reconstruct the full plan. Scroll up to view the relevant changes.",
-
   "auth_sourceLabel": "Auth source",
   "auth_cliAuth": "CLI Auth",
   "auth_appApiKey": "App API Key",
@@ -1878,7 +1792,6 @@
   "usage_tokenPlan": "Token Plan",
   "usage_tokenPlanUsed": "Used",
   "usage_tokenPlanTotal": "Total",
-
   "error_category_context_limit": "Context Limit",
   "error_category_budget_limit": "Budget Limit",
   "error_category_auth_issue": "Auth Issue",
@@ -1886,7 +1799,6 @@
   "error_category_session_timeout": "Session Timeout",
   "error_category_tool_issue": "Tool Issue",
   "error_category_unknown": "Error",
-
   "error_guidance_context_limit": "The conversation context is too large. Try forking to start fresh with a summary.",
   "error_guidance_budget_limit": "Budget limit reached. Adjust max_budget_usd in settings to continue.",
   "error_guidance_auth_issue": "Authentication failed. Check your API key or login status in settings.",
@@ -1894,20 +1806,15 @@
   "error_guidance_session_timeout": "The session timed out waiting for a response. This may be caused by a pending permission prompt, slow API, or unresponsive MCP server. Try resuming or starting a new chat.",
   "error_guidance_tool_issue": "A tool encountered an error. Check the tool output for details.",
   "error_guidance_unknown": "An unexpected error occurred. You can retry or dismiss.",
-
   "statusbar_compactDetail": "{full}x full, {micro}x micro compaction",
   "statusbar_durationPerTurn": "Per turn",
-
   "plan_openRemote": "Open in Claude",
-
   "bgTask_title": "Background Tasks ({count})",
   "bgTask_active": "{count} running",
   "bgTask_activeTitle": "{count} background tasks running",
-
   "screenshot_notSupported": "Screenshot capture is only supported on macOS",
   "screenshot_captured": "Screenshot captured",
   "prompt_screenshot": "Capture screenshot",
-
   "prompt_slashCommands": "Slash commands (/)",
   "quickAction_compact": "Compact",
   "quickAction_copy": "Copy",
@@ -1917,7 +1824,6 @@
   "quickAction_clear": "Clear",
   "quickAction_more": "More...",
   "quickAction_moreTitle": "Show all slash commands",
-
   "cliSync_title": "Import CLI Sessions",
   "cliSync_found": "{count} sessions",
   "cliSync_foundTruncated": "showing most recent {shown} sessions ({total}+ found)",
@@ -1941,7 +1847,6 @@
   "cliSync_reconciling": "Reconciling...",
   "cliSync_usageIncomplete": "Some usage data could not be reconstructed",
   "cliSync_usageIncompleteHint": "Usage data incomplete — imported from CLI",
-
   "shortcutHelp_title": "Keyboard Shortcuts",
   "shortcutHelp_global": "Global",
   "shortcutHelp_chat": "Chat",
@@ -1965,7 +1870,6 @@
   "toast_rewindSuccess": "Changes reverted",
   "error_rewindNoCheckpoint": "No file checkpoint found to rewind to",
   "error_rewindFailed": "Failed to rewind files",
-
   "rewind_modalTitle": "Rewind to Checkpoint",
   "rewind_selectCheckpoint": "Select a checkpoint to rewind to:",
   "rewind_noCheckpoints": "No checkpoints available in this session.",
@@ -1995,7 +1899,6 @@
   "statusbar_verboseTitle": "Verbose output enabled",
   "prompt_stashBadge": "Stashed",
   "prompt_stashRestore": "Click to restore stashed prompt",
-
   "infoPanel_auth": "Authentication",
   "infoPanel_authSource": "Auth Source",
   "infoPanel_platformName": "Platform",
@@ -2005,7 +1908,6 @@
   "infoPanel_goConfig": "Config",
   "infoPanel_goUsage": "Usage",
   "statusPanel_noSession": "No active session",
-
   "doctor_title": "Diagnostics Report",
   "doctor_sectionInstallation": "Installation",
   "doctor_sectionAuth": "Authentication",
@@ -2052,9 +1954,7 @@
   "doctor_running": "Running diagnostics...",
   "doctor_empty": "No diagnostics data",
   "doctor_run": "Run Diagnostics",
-
   "sidebar_hooks": "Hooks",
-
   "hooks_title": "Hooks",
   "hooks_desc": "Shell commands and prompts that run at specific lifecycle events",
   "hooks_loading": "Loading hook configuration...",
@@ -2106,25 +2006,20 @@
   "hooks_groupCount": "{count} groups",
   "hooks_handlerCount": "{count} handlers",
   "hooks_refresh": "Refresh",
-
   "todos_empty": "No todos currently tracked.",
-
   "slashTasks_empty": "No background tasks in this session.",
   "slashTasks_notFound": "Task not found: {id}",
   "slashTasks_ambiguous": "Multiple tasks match \"{id}\":",
   "slashTasks_hint": "Use `/tasks <task_id>` to view task output.",
   "slashTasks_outputError": "Could not read task output: {error}",
-
   "chat_addDirSaved": "Directory added: {path}\n(will be included on next session start)",
   "chat_addDirDuplicate": "Directory already added: {path}",
   "chat_addDirFailed": "Failed to add directory: {error}",
   "chat_addDirTitle": "Add directory to workspace",
   "chat_addDirUnsupported": "add-dir is only supported for Claude agent",
   "chat_addDirInvalidPath": "Path contains invalid characters",
-
   "skillSelector_label": "Skills",
   "skillSelector_empty": "No skills found. Add skills in .claude/skills/ to get started.",
-
   "sidebar_agents": "Agents",
   "agent_title": "Agents",
   "agent_desc": "Manage agent definitions that Claude uses to delegate specialized tasks.",
@@ -2176,7 +2071,6 @@
   "agent_inherit": "inherit",
   "agent_noTools": "No tools specified",
   "agent_allTools": "All tools (inherited)",
-
   "groupChat_title": "Group Chats",
   "groupChat_refresh": "Refresh",
   "groupChat_namePlaceholder": "Group chat name",
@@ -2268,12 +2162,10 @@
   "groupChat_removeParticipant": "Remove",
   "groupChat_removeParticipantConfirm": "Remove {label} from this group chat?",
   "groupChat_thinking": "Thinking...",
-
   "groupChat_longRunning": "Long running",
   "groupChat_longRunningHint": "This turn has been running for a while. The agent may still be working.",
   "groupChat_lastActivity": "Last activity",
   "groupChat_ago": "ago",
-
   "groupChat_seatMemory": "Seat Memory",
   "groupChat_seatMemoryCount": "{count} memories",
   "groupChat_addMemory": "Add Memory",
@@ -2300,7 +2192,6 @@
   "groupChat_roleReviewer": "Reviewer",
   "groupChat_yourMessage": "Your message",
   "groupChat_replies": "replies",
-
   "appUpdate_available": "A new version ({version}) is available.",
   "appUpdate_download": "Download",
   "appUpdate_dismiss": "Dismiss",
@@ -2308,18 +2199,15 @@
   "appUpdate_checking": "Checking...",
   "appUpdate_upToDate": "You are already on the latest version (v{version}).",
   "appUpdate_checkFailed": "Failed to check for updates. Please try again later.",
-
   "about_changelog": "Changelog",
   "about_searchVersions": "Search versions...",
   "about_expandAll": "Expand all",
   "about_collapseAll": "Collapse all",
   "about_noMatching": "No matching versions found",
-
   "drag_foldersInserted": "{count} folder(s) added as path reference",
   "drag_filesAsPathRef": "{count} file(s) added as path reference",
   "drag_processing": "Processing files...",
   "common_listSeparator": "; ",
-
   "permissions_title": "Permissions",
   "permissions_rules": "Rules",
   "permissions_allow": "Allow",
@@ -2333,13 +2221,11 @@
   "permissions_addPlaceholder": "e.g. Bash(npm test)",
   "permissions_deleteConfirm": "Remove rule",
   "permissions_projectUnavailable": "Project permissions unavailable: {reason}",
-
   "elicitation_title": "MCP Input Required",
   "elicitation_pending": "{count} pending",
   "elicitation_open_url": "Open authentication URL",
   "elicitation_accept": "Submit",
   "elicitation_decline": "Decline",
-
   "preview_label": "Preview",
   "preview_opened": "Preview window opened",
   "preview_closed": "Preview window closed",
@@ -2355,9 +2241,7 @@
   "export_htmlSuccess": "Exported HTML",
   "export_htmlFailed": "Export failed",
   "export_htmlButton": "Export as HTML",
-
   "common_delete": "Delete",
-
   "settings_characters": "AI Characters",
   "settings_characters_new": "New Character",
   "settings_characters_edit": "Edit Character",
@@ -2402,7 +2286,6 @@
   "settings_embedding_test_fail": "Connection failed: ",
   "settings_embedding_unknown_error": "Unknown error",
   "settings_embedding_disabled_notice": "Character memory is paused. Enable to restore semantic search. Stored memory data will not be lost.",
-
   "settings_tushare_token": "Tushare Token",
   "settings_tushare_proxy_url": "Tushare Proxy URL",
   "settings_tushare_proxy_hint": "Leave empty to use official api.tushare.pro. Enter a proxy URL to bypass rate limits.",
@@ -2420,7 +2303,6 @@
   "settings_fee_transfer_fee_rate": "Transfer Fee Rate",
   "settings_invest_miniqmt_enabled": "Enable miniQMT as priority market data source",
   "settings_invest_miniqmt_hint": "When on, quote data (K-line, real-time) is fetched from miniQMT first, falling back to Tushare then Tencent. Requires a running miniQMT client logged into a broker account.",
-
   "scheduler.title": "Scheduler",
   "scheduler.credits": "Credits",
   "scheduler.creditsDaily": "Daily limit",
@@ -2441,7 +2323,6 @@
   "scheduler.dreamLastResult": "Last result",
   "scheduler.dreamWritten": "Written",
   "scheduler.dreamDuration": "Duration",
-
   "invest_insights_tab": "Insights",
   "invest_insights_title": "Domain Insights",
   "invest_insights_empty": "No active insights. Insights are generated by the dream pipeline.",
@@ -2455,7 +2336,6 @@
   "invest_insights_active": "Active",
   "invest_insights_archived": "Archived",
   "invest_insights_pipeline_notification": "Dream pipeline: {count} insights written",
-
   "invest_dreaming_title_invest": "Investment Dreaming",
   "invest_dreaming_title_userMemory": "User Memory Dreaming",
   "invest_dreaming_configuration": "Configuration",
@@ -2490,7 +2370,6 @@
   "invest_fallback_unknown": "{role} analysis error: {reason}",
   "invest_retry": "Retry",
   "invest_transfer_out_exceeds_cash": "Transfer amount exceeds available cash balance",
-
   "claudeUsage_5h": "5h",
   "claudeUsage_weekly": "Weekly",
   "claudeUsage_opus": "Opus weekly",
@@ -2500,5 +2379,25 @@
   "claudeUsage_stale": "may be stale",
   "claudeUsage_title": "Claude usage",
   "claudeUsage_today": "today",
-  "claudeUsage_tomorrow": "tomorrow"
+  "claudeUsage_tomorrow": "tomorrow",
+  "invest_tab_fortune": "每日盈记",
+  "fortune_sub_analysis": "分析",
+  "fortune_sub_stembranch": "干支总览",
+  "fortune_sub_data": "数据总览",
+  "fortune_record_btn": "＋ 录入收益",
+  "fortune_predict": "预测",
+  "fortune_post": "盘后",
+  "fortune_empty_hint": "录入第一笔收益后即可查看干支评分",
+  "fortune_insufficient": "数据不足",
+  "fortune_generate_reading": "生成解读",
+  "fortune_generating": "生成中…",
+  "fortune_reading_failed": "解读生成失败，可重试",
+  "fortune_kpi_total": "总记录天数",
+  "fortune_kpi_win": "盈利天数",
+  "fortune_kpi_winrate": "胜率",
+  "fortune_kpi_cumulative": "累计收益",
+  "fortune_kpi_avg": "平均日收益",
+  "fortune_top_rank": "排行 Top3",
+  "fortune_top_risk": "风险 Top3",
+  "fortune_monthly": "月度统计"
 }

@@ -24,15 +24,20 @@
   import SystemPnlHistoryTab from '$lib/components/invest/SystemPnlHistoryTab.svelte';
   import SystemDreamsTab from '$lib/components/invest/SystemDreamsTab.svelte';
   import SystemCleanupTab from '$lib/components/invest/SystemCleanupTab.svelte';
+  import FortuneAnalysisTab from '$lib/components/invest/FortuneAnalysisTab.svelte';
+  import FortuneStemBranchTab from '$lib/components/invest/FortuneStemBranchTab.svelte';
+  import FortuneDataTab from '$lib/components/invest/FortuneDataTab.svelte';
   import type { Holding } from '$lib/types';
 
-  type InvestTab = 'dashboard' | 'committee' | 'strategy' | 'trades' | 'system';
+  type InvestTab = 'dashboard' | 'committee' | 'strategy' | 'trades' | 'system' | 'fortune';
   type CommitteeSubTab = 'live' | 'replay' | 'archive' | 'news' | 'roles' | 'accuracy' | 'premarket';
   type SystemSubTab = 'cron' | 'datasource' | 'pnl_history' | 'insights' | 'dreams' | 'profile' | 'cleanup';
+  type FortuneSubTab = 'analysis' | 'stembranch' | 'data';
 
   let activeTab: InvestTab = $state('dashboard');
   let committeeSubTab: CommitteeSubTab = $state('live');
   let systemSubTab: SystemSubTab = $state('cron');
+  let fortuneSubTab: FortuneSubTab = $state('analysis');
 
   const tabs: { id: InvestTab; label: string }[] = $derived([
     { id: 'dashboard', label: t('invest_tab_dashboard') },
@@ -40,6 +45,7 @@
     { id: 'strategy', label: t('invest_strategy') },
     { id: 'trades', label: t('invest_trade_log') },
     { id: 'system', label: t('invest_tab_system') },
+    { id: 'fortune', label: t('invest_tab_fortune') },
   ]);
 
   const systemSubTabs: { id: SystemSubTab; label: string }[] = $derived([
@@ -60,6 +66,12 @@
     { id: 'roles', label: t('invest_committee_sub_roles') },
     { id: 'accuracy', label: t('invest_committee_sub_accuracy') },
     { id: 'premarket', label: t('invest_committee_sub_premarket') },
+  ]);
+
+  const fortuneSubTabs: { id: FortuneSubTab; label: string }[] = $derived([
+    { id: 'analysis', label: t('fortune_sub_analysis') },
+    { id: 'stembranch', label: t('fortune_sub_stembranch') },
+    { id: 'data', label: t('fortune_sub_data') },
   ]);
 
   let tushareToken = $state<string>('');
@@ -312,6 +324,25 @@
         <UserProfileSection />
       {:else if systemSubTab === 'cleanup'}
         <SystemCleanupTab />
+      {/if}
+    {:else if activeTab === 'fortune'}
+      <div class="mb-[var(--space-4)] flex flex-wrap items-center gap-[var(--space-2)]">
+        {#each fortuneSubTabs as subTab}
+          <button
+            class="rounded-full px-[var(--space-3)] py-[var(--space-1)] text-[12px] font-medium transition-colors"
+            class:bg-[var(--accent-muted)]={fortuneSubTab === subTab.id}
+            class:text-[var(--accent)]={fortuneSubTab === subTab.id}
+            class:text-[var(--text-tertiary)]={fortuneSubTab !== subTab.id}
+            onclick={() => (fortuneSubTab = subTab.id)}
+          >{subTab.label}</button>
+        {/each}
+      </div>
+      {#if fortuneSubTab === 'analysis'}
+        <FortuneAnalysisTab />
+      {:else if fortuneSubTab === 'stembranch'}
+        <FortuneStemBranchTab />
+      {:else if fortuneSubTab === 'data'}
+        <FortuneDataTab />
       {/if}
     {/if}
   </div>
