@@ -2,6 +2,7 @@ pub mod committees;
 pub mod domain_insights;
 pub mod dream_snapshots;
 pub mod events;
+pub mod fortune;
 pub mod macro_cache;
 pub mod macro_verdict;
 pub mod news_cleanup;
@@ -359,6 +360,9 @@ fn init_db_inner(db_path: &Path) -> Result<Connection, String> {
 
     // Migration: create stock_data_cache table (permanent per-symbol data cache)
     stock_data_cache::create_table(&conn)?;
+
+    // Migration: create fortune tables (每日盈记)
+    fortune::create_table(&conn)?;
 
     // Migration: create sentiment_items table (舆情采集)
     conn.execute_batch(sentiment::CREATE_SENTIMENT_TABLE)

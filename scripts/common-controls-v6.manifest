@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Common-Controls v6 dependency manifest, embedded into `cargo test` binaries by
+  scripts/rust-test.mjs.
+
+  Why this exists: tauri-plugin-dialog statically imports comctl32.dll!TaskDialogIndirect,
+  which exists only in Common-Controls v6 (WinSxS). The default System32\comctl32.dll is
+  v5.82 and lacks that export. The main ClawGO.exe receives this manifest from tauri-build,
+  but `cargo test` binaries do not, so without it the Windows loader binds v5.82 and every
+  test binary dies at load with STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139) before main runs —
+  in any shell. Cargo has no link-arg scope that reaches lib unit tests without also hitting
+  the bin (which would collide with tauri-build's manifest), so we embed post-compile via
+  mt.exe instead. See CLAUDE.md §11.
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
+    </dependentAssembly>
+  </dependency>
+</assembly>
