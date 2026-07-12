@@ -7,14 +7,13 @@
   import { formatYuan } from '$lib/utils/format';
   import type { Holding } from '$lib/types';
 
-  let { onBuy, onSell, onAddWatch, onEdit, onConvertToWatch, onDeleteWatch, tushareToken }: {
+  let { onBuy, onSell, onAddWatch, onEdit, onConvertToWatch, onDeleteWatch }: {
     onBuy: (h: Holding) => void;
     onSell: (h: Holding) => void;
     onAddWatch: () => void;
     onEdit: (h: Holding) => void;
     onConvertToWatch: (h: Holding) => void;
     onDeleteWatch: (h: Holding) => void;
-    tushareToken: string;
   } = $props();
 
   // Shared button style classes

@@ -45,7 +45,7 @@ describe("InlineToolCard AskUserQuestion multi-question multi-select", () => {
     await fireEvent.click(screen.getByRole("button", { name: /DeepSeek/ }));
     await fireEvent.click(screen.getByRole("button", { name: /QWEN/ }));
     await fireEvent.click(screen.getByRole("button", { name: /KIMI/ }));
-    await fireEvent.click(screen.getByRole("button", { name: /Submit \(2\/2\)/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /提交（2\/2）/ }));
 
     expect(onPermissionRespond).toHaveBeenCalledTimes(1);
     expect(onPermissionRespond).toHaveBeenCalledWith(

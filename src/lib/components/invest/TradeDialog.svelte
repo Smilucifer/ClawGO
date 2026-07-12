@@ -246,7 +246,6 @@
 
   const needsSearch = $derived(mode === 'buy' || mode === 'add_watch' || mode === 'add_trade');
   const needsQty = $derived(mode !== 'cash' && mode !== 'add_watch');
-  const needsPrice = $derived(mode !== 'cash');
   const canSubmit = $derived(
     mode === 'cash' ? (cashAmount !== 0 && (cashSubMode !== 'transfer_out' || cashAmount <= investStore.cash))
     : mode === 'add_watch' ? (symbol && price > 0)

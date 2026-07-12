@@ -1,6 +1,9 @@
 <script lang="ts">
   import { t } from '$lib/i18n/index.svelte';
   import { fortuneStore } from '$lib/stores/fortune-store.svelte';
+  import { fmtReturn } from './fortune-helpers';
+  import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+  import { guardedSave } from '$lib/utils/with-saving';
 
   let { onclose }: { onclose: () => void } = $props();
   let mode = $state<'single' | 'batch'>('single');
@@ -32,24 +35,19 @@
   }
   const dates = $derived(workdays(year, month));
 
-  // 已录入映射：date → return_pct（从 analysis.calendar 拿）
-  const recorded = $derived.by(() => {
-    const m = new Map<string, number>();
-    for (const d of fortuneStore.analysis?.calendar ?? []) {
-      if (d.actualReturn != null) m.set(d.date, d.actualReturn);
-    }
-    return m;
-  });
+  // 已录入映射：date → return_pct（从 store 拿）
+  const recorded = $derived(fortuneStore.recordedMap);
 
   // 批量输入缓存：date → string（每月重置，避免无限增长）
   let batchVals = $state<Record<string, string>>({});
   // 进入某月时用已录旧值预填空白项
   $effect(() => {
-    // 重置为当月数据，避免积累旧月数据
+    // year, month, dates, recorded are tracked; batchVals is only written, not read
+    const _y = year; const _m = month; const _d = dates; const _r = recorded;
     const newVals: Record<string, string> = {};
-    for (const ds of dates) {
-      const old = recorded.get(ds);
-      newVals[ds] = batchVals[ds] ?? (old != null ? String(old) : '');
+    for (const ds of _d) {
+      const old = _r.get(ds);
+      newVals[ds] = old != null ? String(old) : '';
     }
     batchVals = newVals;
   });
@@ -62,19 +60,75 @@
     if (month === 12) { year += 1; month = 1; } else { month += 1; }
   }
 
+  let saving = $state(false);
+  // 覆盖确认
+  let overwriteConfirm = $state<{ date: string; val: number; note: string; batchCount?: number } | null>(null);
+  let overwriteOpen = $state(false);
+  const overwriteMessage = $derived(overwriteConfirm
+    ? (() => {
+        const oc = overwriteConfirm;
+        const existing = fortuneStore.recordedMap.get(oc.date);
+        const val = existing != null ? fmtReturn(existing) : '—';
+        return oc.batchCount && oc.batchCount > 1
+          ? t('fortune_overwrite_batch_confirm', { count: String(oc.batchCount), date: oc.date, val })
+          : t('fortune_overwrite_confirm', { date: oc.date, val });
+      })()
+    : '');
+
+  async function checkOverwriteAndSubmit(date: string, val: number, note: string) {
+    if (saving) return;
+    const existing = recorded.get(date);
+    if (existing != null) {
+      overwriteConfirm = { date, val, note };
+      overwriteOpen = true;
+      return;
+    }
+    await guardedSave(saving, (v) => saving = v, async () => {
+      await fortuneStore.upsert(date, val, note);
+      onclose();
+    });
+  }
+
+  async function handleOverwriteConfirm() {
+    const oc = overwriteConfirm;
+    if (!oc) return;
+    overwriteOpen = false;
+    if (mode === 'single') {
+      await guardedSave(saving, (v) => saving = v, async () => {
+        await fortuneStore.upsert(oc.date, oc.val, oc.note);
+        onclose();
+      });
+    } else {
+      await submitBatch();
+    }
+  }
+
   async function submitSingle() {
     const v = parseFloat(singleVal);
-    if (Number.isNaN(v)) return;   // 前端拦截非法
-    await fortuneStore.upsert(singleDate, v, singleNote);
-    onclose();
+    if (Number.isNaN(v)) return;
+    checkOverwriteAndSubmit(singleDate, v, singleNote);
   }
+
   async function submitBatch() {
+    if (saving) return;
     const entries = dates
       .filter((ds) => batchVals[ds]?.trim() !== '')
       .map((ds) => ({ date: ds, returnPct: parseFloat(batchVals[ds]), note: '' }))
-      .filter((e) => !Number.isNaN(e.returnPct));   // 跳过非法行
-    if (entries.length) await fortuneStore.batchUpsert(entries);
-    onclose();
+      .filter((e) => !Number.isNaN(e.returnPct));
+    if (!entries.length) return;
+    // 批量模式：检查是否有已录入日期需要覆盖
+    const conflicts = fortuneStore.findConflicts(entries.map((e) => e.date));
+    if (conflicts.length > 0 && !overwriteOpen) {
+      const first = entries.find((e) => e.date === conflicts[0].date)!;
+      overwriteConfirm = { date: first.date, val: first.returnPct, note: first.note, batchCount: conflicts.length };
+      overwriteOpen = true;
+      return;
+    }
+    overwriteOpen = false;
+    await guardedSave(saving, (v) => saving = v, async () => {
+      await fortuneStore.batchUpsert(entries);
+      onclose();
+    });
   }
 </script>
 
@@ -121,3 +175,13 @@
     {/if}
   </div>
 </div>
+
+<ConfirmDialog
+  bind:open={overwriteOpen}
+  message={overwriteMessage}
+  confirmLabel={t('fortune_btn_overwrite')}
+  cancelLabel={t('fortune_btn_cancel')}
+  variant="default"
+  onConfirm={handleOverwriteConfirm}
+  onCancel={() => (overwriteConfirm = null)}
+/>

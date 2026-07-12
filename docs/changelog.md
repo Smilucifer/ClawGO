@@ -11,6 +11,29 @@
 - **前端:** 删除 `UserMemoryPanel`/`CharacterMemoryPanel`/`MemoryAddModal` 组件、`user-memory-store`/`character-memory-store`、`memory-panel-helpers`;`+layout.svelte` 移除面板挂载与 `clawgo:toggle-memory` 事件;`commands.ts`/`CommandPalette.svelte` 移除「User Memory」命令;设置页移除「记忆配置」表单与 Embedding 标签。`api.ts`/`types.ts` 移除记忆相关函数与类型;`zh-CN.json` 移除 `settings_tab_embedding` + 24 个 `settings_embedding_*` 键。
 - **保留:** 基于文件的 `/memory` 编辑器、全局 Memo、以及 invest 委员会的 dreaming 子系统均不受影响。
 
+### 每日盈记增强
+
+- **数据总览新增每日收益记录表:** `FortuneDataTab` 底部新增按日期倒序的每日收益记录表,显示日期、收益率、干支、评分/吉凶等级,每行提供删除按钮(带确认对话框,复用 `ConfirmDialog` 组件)。
+- **录入收益覆盖确认:** `FortuneRecordDialog` 录入已有数据的日期时弹出覆盖确认对话框(复用 `ConfirmDialog`),显示现有收益值。批量模式下检测所有冲突日期并显示冲突数量。
+- **修复录入对话框交互 bug:** 修复 `$effect` 中 `batchVals` 循环依赖导致的保存按钮不关闭窗口、批量按钮不切换模式的问题。
+- **Fortune store 增强:** 新增 `recordedMap` getter(已录入日期映射)和 `findConflicts(dates)` 方法,冲突检测逻辑从组件移入 store 层。
+
+### 代码质量
+
+- **Excel 库统一:** 移除 `exceljs`(22MB 静态导入),`file-convert.ts` 改用已有的 `xlsx`(动态导入,与 OfficePreview 共享 chunk)。构建产物减少约 1MB。
+- **ESM 互操作提取:** 新增 `interopDefault` 工具函数(`lib/utils/interop-default.ts`),统一 `file-convert.ts` 和 `OfficePreview.svelte` 中 4 处动态 import 的 default-export 处理。
+- **保存守卫提取:** 新增 `guardedSave` 工具函数(`lib/utils/with-saving.ts`),FortuneRecordDialog 已应用。
+- **大表格防溢出:** `file-convert.ts` 的 `Math.max(...spread)` 替换为 `reduce`,避免 >65k 行表格导致 `RangeError`。
+- **ESLint 全清:** 修复 11 处未使用变量警告(0 warnings)。
+- **测试修复:** `InlineToolCard.ask-user-question.test.ts` 适配纯中文 UI(`Submit` → `提交`)。
+
+### 其他清理
+
+- `HoldingsTable`/`StrategyTab` 移除未使用的 `tushareToken` prop
+- `+layout.svelte` 移除未使用的 `groupChatRunIndexMap` 及 `listGroupChatRunIndex` 调用
+- `PremarketReportTab`/`TradeDialog`/`FilesPanel` 移除死代码
+- `strip-ansi-escapes` crate 从依赖中移除
+
 ## v5.6.11 (2026-07-11)
 
 ### 每日盈记(Fortune Journal)

@@ -207,7 +207,7 @@
         <button class="rounded-[var(--radius-md)] border border-border bg-[var(--bg-card)] px-[var(--space-4)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]" onclick={() => investStore.refreshPrices(tushareToken)}>{t('invest_refresh_prices')}</button>
       </div>
 
-      <HoldingsTable onBuy={openBuyFromHolding} onSell={openSell} onAddWatch={openAddWatch} onEdit={openEditHolding} onConvertToWatch={convertToWatch} onDeleteWatch={deleteWatchFromTable} {tushareToken} />
+      <HoldingsTable onBuy={openBuyFromHolding} onSell={openSell} onAddWatch={openAddWatch} onEdit={openEditHolding} onConvertToWatch={convertToWatch} onDeleteWatch={deleteWatchFromTable} />
 
       <div class="mt-[var(--space-6)]">
         <PnlChart />
@@ -216,7 +216,7 @@
     {:else if activeTab === 'trades'}
       <TradeLogTab {tushareToken} />
     {:else if activeTab === 'strategy'}
-      <StrategyTab {tushareToken} />
+      <StrategyTab />
     {:else if activeTab === 'committee'}
       <!-- Committee sub-tab navigation (pill style) -->
       <div class="mb-[var(--space-4)] flex flex-wrap gap-[var(--space-2)]">

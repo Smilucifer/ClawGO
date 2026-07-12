@@ -5,11 +5,9 @@
   let {
     fileEntries = [],
     onScrollToTool,
-    cwd = "/",
   }: {
     fileEntries: FileEntry[];
     onScrollToTool?: (toolUseId: string) => void;
-    cwd?: string;
   } = $props();
 
   // ── Tree building ──────────────────────────────────────────────

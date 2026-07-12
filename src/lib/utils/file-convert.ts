@@ -8,7 +8,7 @@
 
 import mammoth from "mammoth";
 import TurndownService from "turndown";
-import ExcelJS from "exceljs";
+import { interopDefault } from "./interop-default";
 
 /** Maximum characters in converted output. Prevents context explosion from huge spreadsheets. */
 export const MAX_CONVERTED_CHARS = 200_000;
@@ -60,28 +60,27 @@ async function convertDocx(arrayBuffer: ArrayBuffer): Promise<string> {
 /** Convert an xlsx ArrayBuffer to markdown tables (one section per sheet). */
 async function convertXlsx(arrayBuffer: ArrayBuffer): Promise<string> {
   try {
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(arrayBuffer);
+    // Dynamic import — shares the same chunk as OfficePreview's xlsx usage
+    const XLSX = interopDefault(await import("xlsx"));
+    const workbook = XLSX.read(arrayBuffer, { type: "array" });
 
     const sections: string[] = [];
 
-    workbook.eachSheet((sheet) => {
-      const rows: string[][] = [];
-      sheet.eachRow((row) => {
-        const cells: string[] = [];
-        row.eachCell({ includeEmpty: true }, (cell) => {
-          cells.push(String(cell.value ?? ""));
-        });
-        rows.push(cells);
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      // header: 1 → array of arrays (each row = string[])
+      const rows: string[][] = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        defval: "",
       });
 
-      if (rows.length === 0) return;
+      if (rows.length === 0) continue;
 
       // Normalize column count (pad shorter rows)
-      const maxCols = Math.max(...rows.map((r) => r.length));
+      const maxCols = rows.reduce((m, r) => Math.max(m, r.length), 0);
       const normalized = rows.map((r) => {
         while (r.length < maxCols) r.push("");
-        return r;
+        return r.map((c) => String(c));
       });
 
       // Build markdown table
@@ -93,8 +92,8 @@ async function convertXlsx(arrayBuffer: ArrayBuffer): Promise<string> {
         .join("\n");
 
       const table = [header, separator, body].filter(Boolean).join("\n");
-      sections.push(`## Sheet: ${sheet.name}\n\n${table}`);
-    });
+      sections.push(`## Sheet: ${sheetName}\n\n${table}`);
+    }
 
     if (sections.length === 0) {
       throw new Error("Spreadsheet appears to be empty");

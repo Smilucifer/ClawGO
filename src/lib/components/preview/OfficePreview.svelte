@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { interopDefault } from "$lib/utils/interop-default";
 
   let {
     filepath = "",
@@ -21,20 +22,18 @@
       const buffer = await readFileAsBuffer(filepath, cwd);
 
       if (fileType === "word") {
-        const mammothModule = await import("mammoth");
-        const mammoth = mammothModule.default ?? mammothModule;
+        const mammoth = interopDefault(await import("mammoth"));
         const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
         htmlContent = result.value;
       } else {
-        const XLSXModule = await import("xlsx");
-        const XLSX = XLSXModule.default ?? XLSXModule;
+        const XLSX = interopDefault(await import("xlsx"));
         const workbook = XLSX.read(buffer, { type: "array" });
         const firstSheet = workbook.SheetNames[0];
         const sheet = workbook.Sheets[firstSheet];
         htmlContent = XLSX.utils.sheet_to_html(sheet);
       }
 
-      const DOMPurify = (await import("dompurify")).default;
+      const DOMPurify = interopDefault(await import("dompurify"));
       htmlContent = DOMPurify.sanitize(htmlContent, {
         ADD_ATTR: ["class", "target", "style"],
       });

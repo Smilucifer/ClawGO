@@ -245,7 +245,7 @@ export class GroupChatStore {
     if (!trimmed) return;
     this.activeSnapshot = null;
     const pollSeq = ++this._loadSeq;
-    const gen = ++this._sendGeneration;
+    ++this._sendGeneration;
     this.saving = true;
     this.error = null;
 

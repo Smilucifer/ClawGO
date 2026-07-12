@@ -372,9 +372,6 @@
     return 'risk-none';
   }
 
-  const factorLabelSentiment = $derived(t('invest_premarket_factor_sentiment'));
-  const factorLabelCapital = $derived(t('invest_premarket_factor_capital'));
-  const factorLabelCatalyst = $derived(t('invest_premarket_factor_catalyst'));
 </script>
 
 <div class="premarket-tab" data-invest-scope>

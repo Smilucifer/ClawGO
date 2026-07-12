@@ -1,7 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
-  import { t } from "$lib/i18n/index.svelte";
   import { listRuns } from "$lib/api";
   import type { TaskRun } from "$lib/types";
   import { relativeTime, truncate } from "$lib/utils/format";

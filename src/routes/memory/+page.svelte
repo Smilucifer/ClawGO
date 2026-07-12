@@ -103,7 +103,7 @@
   let autoSelectSeq = 0;
 
   /** Refresh the candidate list from the backend. */
-  async function refreshCandidates(opts?: { soft?: boolean }) {
+  async function refreshCandidates() {
     const seq = ++candidateSeq;
     try {
       const result = await api.listMemoryFiles(
@@ -269,7 +269,7 @@
   // Listen for sidebar refresh signal (after save)
   onMount(() => {
     function onMemoryFileSaved() {
-      refreshCandidates({ soft: true });
+      refreshCandidates();
     }
     window.addEventListener("clawgo:memory-file-saved", onMemoryFileSaved);
     return () => window.removeEventListener("clawgo:memory-file-saved", onMemoryFileSaved);

@@ -2375,5 +2375,17 @@
   "fortune_kpi_avg": "平均日收益",
   "fortune_top_rank": "排行 Top3",
   "fortune_top_risk": "风险 Top3",
-  "fortune_monthly": "月度统计"
+  "fortune_monthly": "月度统计",
+  "fortune_daily_records": "每日收益记录",
+  "fortune_delete_confirm": "确定删除 {date} 的收益数据？",
+  "fortune_overwrite_confirm": "{date} 已有收益数据（{val}），是否覆盖？",
+  "fortune_overwrite_batch_confirm": "有 {count} 个日期已有收益数据（如 {date}：{val}），是否全部覆盖？",
+  "fortune_col_date": "日期",
+  "fortune_col_return": "收益",
+  "fortune_col_stembranch": "干支",
+  "fortune_col_score": "评分",
+  "fortune_col_action": "操作",
+  "fortune_btn_delete": "删除",
+  "fortune_btn_overwrite": "覆盖",
+  "fortune_btn_cancel": "取消"
 }

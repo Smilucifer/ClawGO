@@ -3,8 +3,6 @@
   import { investStore } from '$lib/stores/invest-store.svelte';
   import type { StrategyTarget } from '$lib/types';
 
-  let { tushareToken }: { tushareToken: string } = $props();
-
   /** Use centralized nameMap from store (enriched from holdings + price cache + trades) */
   const nameMap = $derived(investStore.nameMap);
 

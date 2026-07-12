@@ -40,6 +40,26 @@ class FortuneStore {
   error = $state<string | null>(null);
   readingBusy = $state(false);
 
+  /** Map of dates that already have recorded returns: date → returnPct. */
+  get recordedMap(): Map<string, number> {
+    const m = new Map<string, number>();
+    for (const d of this.analysis?.calendar ?? []) {
+      if (d.actualReturn != null) m.set(d.date, d.actualReturn);
+    }
+    return m;
+  }
+
+  /**
+   * Find which of the given dates already have recorded data.
+   * Returns `{ date, existingReturn }[]` — empty if no conflicts.
+   */
+  findConflicts(dates: string[]): { date: string; existingReturn: number }[] {
+    const map = this.recordedMap;
+    return dates
+      .map((d) => ({ date: d, existingReturn: map.get(d)! }))
+      .filter((c) => c.existingReturn != null);
+  }
+
   async loadAll(): Promise<void> {
     this.loading = true; this.error = null;
     try {

@@ -14,7 +14,6 @@
     softDeleteRuns,
     stopSession,
     listGroupChats,
-    listGroupChatRunIndex,
     createGroupChat,
     deleteGroupChat,
   } from "$lib/api";
@@ -110,7 +109,6 @@
 
   // ── Group chat sidebar state ──
   let groupChats = $state<GroupChatSummary[]>([]);
-  let groupChatRunIndexMap = $state<Map<string, string[]>>(new Map());
   let showGroupChatCreateDialog = $state(false);
   let groupChatCreateName = $state("");
   let groupChatCreateCwd = $state("");
@@ -458,16 +456,8 @@
 
   async function loadGroupChats() {
     try {
-      const [chats, runIndex] = await Promise.all([
-        listGroupChats(),
-        listGroupChatRunIndex(),
-      ]);
+      const chats = await listGroupChats();
       groupChats = chats.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-      const map = new Map<string, string[]>();
-      for (const entry of runIndex) {
-        map.set(entry.room_id, entry.run_ids);
-      }
-      groupChatRunIndexMap = map;
     } catch {
       // Silently fail
     }

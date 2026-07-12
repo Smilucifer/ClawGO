@@ -4,8 +4,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => ({
   convertToHtml: vi.fn(),
   turndown: vi.fn((html: string) => html.replace(/<[^>]+>/g, "").trim()),
-  xlsxLoad: vi.fn(),
-  eachSheet: vi.fn(),
+  xlsxRead: vi.fn(),
+  sheetToJson: vi.fn(),
 }));
 
 vi.mock("mammoth", () => ({
@@ -18,11 +18,10 @@ vi.mock("turndown", () => ({
   },
 }));
 
-vi.mock("exceljs", () => ({
+vi.mock("xlsx", () => ({
   default: {
-    Workbook: function Workbook() {
-      return { xlsx: { load: mocks.xlsxLoad }, eachSheet: mocks.eachSheet };
-    },
+    read: mocks.xlsxRead,
+    utils: { sheet_to_json: mocks.sheetToJson },
   },
 }));
 
@@ -73,35 +72,14 @@ describe("convertFile", () => {
 
   describe("xlsx conversion", () => {
     it("converts xlsx to markdown table", async () => {
-      mocks.xlsxLoad.mockResolvedValueOnce(undefined);
-      mocks.eachSheet.mockImplementationOnce(
-        (cb: (sheet: { name: string; eachRow: unknown }) => void) => {
-          cb({
-            name: "Sheet1",
-            eachRow: (
-              rowCb: (row: {
-                eachCell: (
-                  opts: { includeEmpty: boolean },
-                  cellCb: (cell: { value: string | number }) => void,
-                ) => void;
-              }) => void,
-            ) => {
-              rowCb({
-                eachCell: (_opts, cellCb) => {
-                  cellCb({ value: "Name" });
-                  cellCb({ value: "Age" });
-                },
-              });
-              rowCb({
-                eachCell: (_opts, cellCb) => {
-                  cellCb({ value: "Alice" });
-                  cellCb({ value: 30 });
-                },
-              });
-            },
-          });
-        },
-      );
+      mocks.xlsxRead.mockReturnValueOnce({
+        SheetNames: ["Sheet1"],
+        Sheets: { Sheet1: {} },
+      });
+      mocks.sheetToJson.mockReturnValueOnce([
+        ["Name", "Age"],
+        ["Alice", 30],
+      ]);
 
       const file = mockFile("test.xlsx");
       const result = await convertFile(file);
@@ -115,10 +93,11 @@ describe("convertFile", () => {
     });
 
     it("throws on empty spreadsheet", async () => {
-      mocks.xlsxLoad.mockResolvedValueOnce(undefined);
-      mocks.eachSheet.mockImplementationOnce(() => {
-        // No sheets iterated
+      mocks.xlsxRead.mockReturnValueOnce({
+        SheetNames: ["Sheet1"],
+        Sheets: { Sheet1: {} },
       });
+      mocks.sheetToJson.mockReturnValueOnce([]);
 
       const file = mockFile("empty.xlsx");
       await expect(convertFile(file)).rejects.toThrow("Spreadsheet appears to be empty");
