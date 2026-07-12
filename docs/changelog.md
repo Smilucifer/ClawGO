@@ -18,6 +18,12 @@
 - **修复录入对话框交互 bug:** 修复 `$effect` 中 `batchVals` 循环依赖导致的保存按钮不关闭窗口、批量按钮不切换模式的问题。
 - **Fortune store 增强:** 新增 `recordedMap` getter(已录入日期映射)和 `findConflicts(dates)` 方法,冲突检测逻辑从组件移入 store 层。
 
+### 修复
+
+- **批量录入覆盖保存死循环:** `FortuneRecordDialog.handleOverwriteConfirm` 批量模式下调用 `submitBatch()`,该函数重新检测冲突后再次弹出确认框,形成无限循环。修复为确认后直接构建 entries 并调用 `batchUpsert`。同时提取 `buildBatchEntries()` 消除重复的 entries 构建逻辑。
+- **日历翻月失效:** `FortuneCalendar` 的 `months` 数组只包含有数据的月份,仅一个月时两个翻页按钮都被禁用。改为始终显示当前年 12 个月,默认定位到有数据的最新月。`$derived(() => {...})` 改为 `$derived.by` 确保响应式正确。
+- **盘前报告标的名称缺失:** `cache_builder.rs` 中 `names_of` 查不到名称时 fallback 到 `ts_code`,导致 SABC 观察池显示股票代码。后端 fallback 改为空字符串(`unwrap_or_default`);缓存构建时检测名称覆盖率低则自动调用 `refresh_stock_industry` 拉取全量名称。
+
 ### 代码质量
 
 - **Excel 库统一:** 移除 `exceljs`(22MB 静态导入),`file-convert.ts` 改用已有的 `xlsx`(动态导入,与 OfficePreview 共享 chunk)。构建产物减少约 1MB。

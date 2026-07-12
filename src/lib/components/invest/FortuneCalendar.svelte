@@ -5,9 +5,24 @@
 
   // 后端已产出完整月历（三态齐）；这里按 "YYYY-MM" 分组，默认展示最后一个月，可翻页。
   const all = $derived(fortuneStore.analysis?.calendar ?? []);
-  const months = $derived([...new Set(all.map((d) => d.date.slice(0, 7)))]);  // 升序
-  let monthIdx = $state(0);   // 相对 months 末尾的偏移，0=最新月
-  const curMonth = $derived(months[months.length - 1 - monthIdx] ?? '');
+  // 始终显示当前年全部12个月（无数据月份显示空格子）
+  const currentYear = new Date().getFullYear();
+  const allMonths = Array.from({ length: 12 }, (_, i) =>
+    `${currentYear}-${String(i + 1).padStart(2, '0')}`,
+  );
+  const dataMonths = $derived([...new Set(all.map((d) => d.date.slice(0, 7)))]);
+  let monthIdx = $state<number | null>(null); // null = 未初始化
+  // 默认展示有数据的最新月；无数据时展示当前月
+  const effectiveIdx = $derived.by(() => {
+    if (monthIdx != null) return monthIdx;
+    const lastDataMonth = dataMonths[dataMonths.length - 1];
+    if (lastDataMonth) {
+      const idx = allMonths.indexOf(lastDataMonth);
+      if (idx >= 0) return idx;
+    }
+    return new Date().getMonth();
+  });
+  const curMonth = $derived(allMonths[effectiveIdx] ?? allMonths[0]);
   const cells = $derived(all.filter((d) => d.date.startsWith(curMonth)));
 
   // 单格样式：三态 = 休市/预测/盘后
@@ -31,22 +46,20 @@
   }
 </script>
 
-{#if months.length === 0}
-  <div class="text-[var(--text-tertiary)] text-[13px]">暂无日历数据</div>
-{:else}
+{#if allMonths.length > 0}
   <div class="rounded-[var(--radius-lg)] border border-border bg-[var(--bg-card)] p-[var(--space-4)]">
     <!-- 月份翻页 -->
     <div class="mb-[var(--space-3)] flex items-center justify-between">
       <button
         class="rounded-[var(--radius-sm)] px-[var(--space-2)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-40"
-        disabled={monthIdx >= months.length - 1}
-        onclick={() => monthIdx++}
+        disabled={effectiveIdx <= 0}
+        onclick={() => monthIdx = effectiveIdx - 1}
       >‹</button>
       <span class="font-mono text-[13px] font-semibold text-[var(--text-primary)]">{curMonth}</span>
       <button
         class="rounded-[var(--radius-sm)] px-[var(--space-2)] py-[var(--space-1)] text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-40"
-        disabled={monthIdx <= 0}
-        onclick={() => monthIdx--}
+        disabled={effectiveIdx >= 11}
+        onclick={() => monthIdx = effectiveIdx + 1}
       >›</button>
     </div>
 

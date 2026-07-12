@@ -195,8 +195,16 @@ pub async fn build_cache() -> Result<(String, usize), String> {
 
     // 5. 批量查名(6 位裸码 → 中文名;查不到回退代码)
     let code_list: Vec<String> = candidates.iter().map(|(ts, _, _)| code6(ts).to_string()).collect();
-    let name_map = crate::storage::invest::stock_industry::names_of(&code_list)
+    let mut name_map = crate::storage::invest::stock_industry::names_of(&code_list)
         .unwrap_or_default();
+    // 若 stock_industry 表为空（从未刷新），自动拉取一次全量名称
+    if name_map.len() < code_list.len() / 2 {
+        log::info!("[cache_builder] stock_industry 名称覆盖率过低 ({}/{}), 自动刷新",
+            name_map.len(), code_list.len());
+        let _ = crate::invest::sentiment::refresh_stock_industry().await;
+        name_map = crate::storage::invest::stock_industry::names_of(&code_list)
+            .unwrap_or_default();
+    }
 
     // 5.5 板块强度: sector_em + board_map → per-candidate sector_strength
     // 两张表按 board_type 分别算板块内百分位,取 max(industry_pct, concept_pct)。
@@ -299,7 +307,7 @@ pub async fn build_cache() -> Result<(String, usize), String> {
             Some(t) => t,
             None => { missing.push("technical".into()); 50.0 }
         };
-        let name = name_map.get(c6).cloned().unwrap_or_else(|| ts.clone());
+        let name = name_map.get(c6).cloned().unwrap_or_default();
         let ss = sector_strength_map.as_ref().and_then(|m| m.get(c6).copied());
         staging.push((
             CachedFactor {

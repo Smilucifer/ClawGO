@@ -89,17 +89,31 @@
     });
   }
 
+  function buildBatchEntries() {
+    return dates
+      .filter((ds) => batchVals[ds]?.trim() !== '')
+      .map((ds) => ({ date: ds, returnPct: parseFloat(batchVals[ds]), note: '' }))
+      .filter((e) => !Number.isNaN(e.returnPct));
+  }
+
   async function handleOverwriteConfirm() {
     const oc = overwriteConfirm;
     if (!oc) return;
     overwriteOpen = false;
+    overwriteConfirm = null;
     if (mode === 'single') {
       await guardedSave(saving, (v) => saving = v, async () => {
         await fortuneStore.upsert(oc.date, oc.val, oc.note);
         onclose();
       });
     } else {
-      await submitBatch();
+      // 已确认覆盖，直接保存，不重新走 submitBatch（会再次触发冲突检查）
+      const entries = buildBatchEntries();
+      if (!entries.length) return;
+      await guardedSave(saving, (v) => saving = v, async () => {
+        await fortuneStore.batchUpsert(entries);
+        onclose();
+      });
     }
   }
 
@@ -111,10 +125,7 @@
 
   async function submitBatch() {
     if (saving) return;
-    const entries = dates
-      .filter((ds) => batchVals[ds]?.trim() !== '')
-      .map((ds) => ({ date: ds, returnPct: parseFloat(batchVals[ds]), note: '' }))
-      .filter((e) => !Number.isNaN(e.returnPct));
+    const entries = buildBatchEntries();
     if (!entries.length) return;
     // 批量模式：检查是否有已录入日期需要覆盖
     const conflicts = fortuneStore.findConflicts(entries.map((e) => e.date));

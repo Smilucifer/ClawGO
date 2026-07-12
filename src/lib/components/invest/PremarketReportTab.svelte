@@ -747,7 +747,7 @@
                   {#each bucket.rows as s}
                     <div class="stock-row">
                       <span class="stk-name">{s.name || s.symbol}</span>
-                      <span class="stk-code">{s.symbol}</span>
+                      {#if s.name}<span class="stk-code">{s.symbol}</span>{/if}
                       <span class="stk-spacer"></span>
                       <span class="stk-tags">
                         {#if s.factors.capital >= 60}
