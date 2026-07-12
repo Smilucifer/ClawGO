@@ -9,7 +9,6 @@
   import { t } from "$lib/i18n/index.svelte";
   import type { MessageKey } from "$lib/i18n/types";
   import { dbgWarn } from "$lib/utils/debug";
-  import CharacterMemoryPanel from "$lib/components/CharacterMemoryPanel.svelte";
 
   // ── State ──
   let characters = $state<AiCharacter[]>([]);
@@ -29,13 +28,8 @@
   let formPersonality = $state("");
   let formExpertise = $state<string[]>([]);
   let expertiseInput = $state("");
-  let formAutoLearn = $state(false);
-  let formRetentionDays = $state<number | undefined>(undefined);
-  let formMaxRetrievalCount = $state<number>(5);
-  let formRelevanceThreshold = $state<number>(0.5);
   let editingAvatar = $state<string | null>(null);
   let pendingAvatarPath = $state<string | null>(null);
-  let memoryPanelCharId = $state<string | null>(null);
 
   // Toast
   let toastMessage = $state<string | null>(null);
@@ -83,10 +77,6 @@
     formPersonality = "";
     formExpertise = [];
     expertiseInput = "";
-    formAutoLearn = true;
-    formRetentionDays = undefined;
-    formMaxRetrievalCount = 5;
-    formRelevanceThreshold = 0.5;
     editingAvatar = null;
     pendingAvatarPath = null;
     editingId = null;
@@ -108,10 +98,6 @@
     formPersonality = char.personality ?? "";
     formExpertise = char.expertise ? [...char.expertise] : [];
     expertiseInput = "";
-    formAutoLearn = char.memory_config?.auto_learn ?? true;
-    formRetentionDays = char.memory_config?.retention_days ?? undefined;
-    formMaxRetrievalCount = char.memory_config?.max_retrieval_count ?? 5;
-    formRelevanceThreshold = char.memory_config?.relevance_threshold ?? 0.5;
     editingAvatar = char.avatar_path ?? null;
     showForm = true;
   }
@@ -166,14 +152,6 @@
           avatarPath: editingAvatar ?? null,
           personality: formPersonality.trim() || null,
           expertise: formExpertise,
-          memoryConfig: formAutoLearn
-            ? {
-                auto_learn: true,
-                retention_days: formRetentionDays ?? undefined,
-                max_retrieval_count: formMaxRetrievalCount,
-                relevance_threshold: formRelevanceThreshold,
-              }
-            : null,
         });
         characters = characters.map((c) => (c.id === editingId ? updated : c));
       } else {
@@ -322,14 +300,6 @@
 
               <!-- Actions -->
               <div class="flex items-center gap-1 shrink-0">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onclick={() => (memoryPanelCharId = char.id)}
-                  title="管理记忆"
-                >
-                  记忆
-                </Button>
                 <Button variant="ghost" size="icon" onclick={() => openEditForm(char)}>
                   <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
@@ -350,18 +320,6 @@
       </div>
     {/if}
   </div>
-{/if}
-
-<!-- Character Memory Panel -->
-{#if memoryPanelCharId}
-  {@const char = characters.find((c) => c.id === memoryPanelCharId)}
-  <CharacterMemoryPanel
-    characterId={memoryPanelCharId}
-    characterLabel={char?.label ?? ""}
-    characterIcon={char?.icon ?? ""}
-    open={true}
-    onclose={() => (memoryPanelCharId = null)}
-  />
 {/if}
 
 <!-- Create/Edit dialog -->
@@ -551,51 +509,6 @@
             }}
           >+</button>
         </div>
-      </div>
-
-      <!-- Memory config -->
-      <div class="space-y-1.5">
-        <label class="text-[10px] uppercase text-[#666] block mb-1">Memory Config</label>
-        <div class="flex items-center gap-2">
-          <input type="checkbox" class="w-3 h-3" bind:checked={formAutoLearn} />
-          <span class="text-xs">Auto-learn from conversations</span>
-        </div>
-        {#if formAutoLearn}
-          <div class="flex items-center gap-2 mt-1">
-            <span class="text-[11px] text-muted-foreground">Retention days:</span>
-            <input
-              type="number"
-              min="1"
-              max="365"
-              bind:value={formRetentionDays}
-              placeholder="30"
-              class="w-20 h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-          </div>
-          <div class="flex items-center gap-2 mt-1">
-            <span class="text-[11px] text-muted-foreground">Max retrieval:</span>
-            <input
-              type="number"
-              min="1"
-              max="20"
-              bind:value={formMaxRetrievalCount}
-              class="w-20 h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-            <span class="text-[11px] text-muted-foreground">memories per turn</span>
-          </div>
-          <div class="flex items-center gap-2 mt-1">
-            <span class="text-[11px] text-muted-foreground">Relevance threshold:</span>
-            <input
-              type="number"
-              min="0"
-              max="1"
-              step="0.1"
-              bind:value={formRelevanceThreshold}
-              class="w-20 h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-            <span class="text-[11px] text-muted-foreground">(0-1)</span>
-          </div>
-        {/if}
       </div>
 
       <!-- Actions -->

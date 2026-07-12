@@ -288,10 +288,6 @@ fn default_true() -> bool {
     true
 }
 
-fn default_extraction_min_confidence() -> u8 {
-    60
-}
-
 fn default_cc_agent() -> String {
     "claude".to_string()
 }
@@ -373,8 +369,6 @@ pub struct UserSettings {
     /// Whether native hooks have been migrated from legacy format.
     #[serde(default)]
     pub native_hooks_migrated: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub embedding_config: Option<EmbeddingConfig>,
     /// Tushare Pro API token for market data fetching.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tushare_token: Option<String>,
@@ -390,18 +384,6 @@ pub struct UserSettings {
     /// 默认手续费方案 id（买入弹窗预选）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invest_default_fee_profile_id: Option<String>,
-    /// Enable background memory dream cycle (decay, merge, archive).
-    /// Disabled by default — the auto-memory system was found to add little value.
-    #[serde(default)]
-    pub memory_dream_enabled: bool,
-    /// Enable automatic memory extraction from chat / group-chat turns.
-    /// Disabled by default — the auto-memory system was found to add little value.
-    #[serde(default)]
-    pub memory_extraction_enabled: bool,
-    /// Minimum confidence (0-100) an extracted memory must reach to be persisted.
-    /// Filters out low-value, speculative extractions. Defaults to 60.
-    #[serde(default = "default_extraction_min_confidence")]
-    pub memory_extraction_min_confidence: u8,
     pub updated_at: String,
 }
 
@@ -606,15 +588,11 @@ impl Default for UserSettings {
             hooks: std::collections::HashMap::new(),
             enabled_plugins: std::collections::HashMap::new(),
             native_hooks_migrated: false,
-            embedding_config: None,
             tushare_token: None,
             tushare_proxy_url: None,
             invest_miniqmt_enabled: false,
             invest_fee_profiles: Vec::new(),
             invest_default_fee_profile_id: None,
-            memory_dream_enabled: false,
-            memory_extraction_enabled: false,
-            memory_extraction_min_confidence: 60,
             updated_at: now_iso(),
         }
     }
@@ -1950,8 +1928,6 @@ pub struct AiCharacter {
     pub personality: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub expertise: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub memory_config: Option<MemoryConfig>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -2134,121 +2110,3 @@ pub struct RunSearchResponse {
     pub total_matching: usize,
 }
 
-// ── Character Memory System types ──
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryNode {
-    pub id: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub character_id: String,
-    pub content: String,
-    #[serde(rename = "type")]
-    pub memory_type: String,
-    pub confidence: f64,
-    pub source: MemorySource,
-    pub tags: Vec<String>,
-    #[serde(default = "default_memory_status")]
-    pub status: String,
-    #[serde(default = "default_memory_scope")]
-    pub scope: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project_id: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryExtractionConfig {
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    /// Chat completions endpoint for memory extraction LLM calls.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chat_endpoint: Option<String>,
-    /// Model name for memory extraction.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chat_model: Option<String>,
-    /// API key for memory extraction LLM calls.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chat_api_key: Option<String>,
-}
-
-fn default_memory_status() -> String {
-    "approved".to_string()
-}
-
-fn default_memory_scope() -> String {
-    "global".to_string()
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemorySource {
-    pub kind: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub run_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub group_chat_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KnowledgeGapInfo {
-    pub gap_type: String,
-    pub description: String,
-    pub suggestion: String,
-    pub affected_node_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EmbeddingConfig {
-    pub enabled: bool,
-    pub endpoint: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub api_key: Option<String>,
-    pub model: String,
-    /// Optional: explicit chat completions endpoint for memory extraction.
-    /// If None, derived from `endpoint` by replacing /embeddings with /chat/completions.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chat_endpoint: Option<String>,
-    /// Optional: model name for chat completions (memory extraction).
-    /// If None, falls back to `model` (the embedding model name).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chat_model: Option<String>,
-    /// Optional: separate API key for chat completions (memory extraction).
-    /// If None, falls back to `api_key`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chat_api_key: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TestEmbeddingResult {
-    pub success: bool,
-    pub latency_ms: u64,
-    pub dimension: usize,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VectorSearchResult {
-    pub page_id: String,
-    pub score: f64,
-    pub memory: Option<MemoryNode>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryConfig {
-    #[serde(default = "default_auto_learn")]
-    pub auto_learn: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub retention_days: Option<u32>,
-    #[serde(default = "default_max_retrieval_count")]
-    pub max_retrieval_count: usize,
-    #[serde(default = "default_relevance_threshold")]
-    pub relevance_threshold: f64,
-    #[serde(default = "default_graph_hops")]
-    pub graph_hops: usize,
-}
-
-fn default_auto_learn() -> bool { true }
-fn default_max_retrieval_count() -> usize { 5 }
-fn default_relevance_threshold() -> f64 { 0.5 }
-fn default_graph_hops() -> usize { 1 }

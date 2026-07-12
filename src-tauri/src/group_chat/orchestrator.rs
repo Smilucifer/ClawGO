@@ -112,7 +112,6 @@ async fn execute_turn_inner(
     let context_block = format_public_turn_context(public_turns, participants);
 
     let mut join_set = tokio::task::JoinSet::new();
-    let user_msg = user_input.to_string();
     for target in targets {
         let target = target.clone();
         let participant = target.participant.clone();
@@ -134,7 +133,6 @@ async fn execute_turn_inner(
         let pipe_runtime = pipe_runtime.clone();
 
         join_set.spawn({
-            let user_msg = user_msg.clone();
             async move {
                 let run_lock = run_orchestration_lock(&participant.run_id);
                 let _run_guard = run_lock.lock().await;
@@ -143,7 +141,6 @@ async fn execute_turn_inner(
                     &participant,
                     &run,
                     &target_prompt,
-                    &user_msg,
                     pipe_runtime,
                 )
                 .await
@@ -478,7 +475,6 @@ pub async fn run_group_chat_turn_with_runtime(
                             &participant,
                             &run,
                             &auto_prompt,
-                            &user_input,
                             pipe_runtime.clone(),
                         )
                         .await;
@@ -538,12 +534,11 @@ async fn execute_group_chat_target(
     participant: &GroupChatParticipant,
     run: &RunMeta,
     target_prompt: &str,
-    user_message: &str,
     pipe_runtime: Option<GroupChatPipeRuntime>,
 ) -> GroupChatResponseRef {
     match target.runtime {
         GroupChatTargetRuntime::Actor { cmd_tx } => {
-            execute_actor_turn(participant, run, target_prompt, user_message, cmd_tx).await
+            execute_actor_turn(participant, run, target_prompt, cmd_tx).await
         }
         GroupChatTargetRuntime::Pipe => match pipe_runtime {
             Some(runtime) => {
@@ -551,7 +546,6 @@ async fn execute_group_chat_target(
                     participant,
                     run,
                     target_prompt,
-                    user_message,
                     runtime.app,
                     runtime.process_map,
                 )
@@ -570,7 +564,6 @@ async fn execute_actor_turn(
     participant: &GroupChatParticipant,
     run: &RunMeta,
     target_prompt: &str,
-    user_message: &str,
     cmd_tx: mpsc::Sender<ActorCommand>,
 ) -> GroupChatResponseRef {
     let event_seq_start = storage::events::next_seq(&participant.run_id);
@@ -578,7 +571,7 @@ async fn execute_actor_turn(
 
     // Resolve role system prompt for the Actor path
     let user_settings = storage::settings::get_user_settings();
-    let mut system_prompt =
+    let system_prompt =
         match resolve_participant_system_prompt(participant, &user_settings.ai_characters) {
             Some(role_prompt) if !role_prompt.is_empty() => role_prompt,
             _ => String::new(),
@@ -629,7 +622,6 @@ async fn execute_pipe_turn(
     participant: &GroupChatParticipant,
     run: &RunMeta,
     target_prompt: &str,
-    user_message: &str,
     app: AppHandle,
     process_map: ProcessMap,
 ) -> GroupChatResponseRef {
@@ -663,21 +655,12 @@ async fn execute_pipe_turn(
     // GroupChat sessions run in plan/read-only mode.
     adapter_settings.permission_mode = Some("plan".to_string());
 
-    // Resolve role-based system prompt from the participant's linked character
-    // and inject character memory.
-    let mut pipe_system_prompt = resolve_participant_system_prompt(
+    // Resolve role-based system prompt from the participant's linked character.
+    let pipe_system_prompt = resolve_participant_system_prompt(
         participant,
         &user_settings.ai_characters,
     )
     .unwrap_or_default();
-
-    // Inject user memory after the role prompt (respecting auto_learn gating)
-    let memory_config = user_settings
-        .ai_characters
-        .iter()
-        .find(|c| c.id == participant.character_id)
-        .and_then(|c| c.memory_config.as_ref());
-    inject_memories(user_message, &mut pipe_system_prompt, memory_config);
 
     if !pipe_system_prompt.is_empty() {
         adapter_settings.append_system_prompt = Some(pipe_system_prompt);
@@ -2324,7 +2307,6 @@ mod tests {
                             execute_actor_turn(
                                 &participant,
                                 &run,
-                                "check status",
                                 "check status",
                                 cmd_tx,
                             )

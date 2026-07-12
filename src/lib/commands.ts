@@ -143,15 +143,6 @@ export const commands: CommandDef[] = [
     action: "open_modal",
     payload: "memo",
   },
-  {
-    id: "user-memory",
-    name: "User Memory",
-    description: "Open user memory panel",
-    category: "navigation",
-    agent: "both",
-    action: "open_modal",
-    payload: "user-memory",
-  },
 
   // Navigation
   {

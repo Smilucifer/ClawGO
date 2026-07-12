@@ -276,15 +276,6 @@ pub fn run() {
             commands::characters::create_character,
             commands::characters::update_character,
             commands::characters::delete_character,
-            commands::characters::list_character_memories,
-            commands::characters::get_character_memory,
-            commands::characters::create_character_memory,
-            commands::characters::update_character_memory,
-            commands::characters::delete_character_memory,
-            commands::characters::search_character_memories,
-            commands::characters::list_pending_memories,
-            commands::characters::approve_memory,
-            commands::characters::reject_memory,
             commands::avatar::upload_character_avatar,
             commands::memos::list_memos,
             commands::memos::add_memo,
@@ -628,11 +619,7 @@ pub fn run() {
         _ => {}
     }
 
-    // Initialize the user-centric memory database (SQLite + FTS5).
     let data_dir = crate::storage::data_dir();
-    if let Err(e) = crate::storage::memory_store::init_db(&data_dir) {
-        log::warn!("Failed to init memory DB: {}", e);
-    }
 
     // Initialize invest database (holdings, trades, verdicts, events, scheduler).
     // Failure is non-fatal: with_conn/with_conn_mut will retry via lazy init.
@@ -688,14 +675,6 @@ pub fn run() {
             }
         });
     }
-
-    // Run memory migration from per-character JSONL to SQLite (idempotent).
-    match crate::group_chat::memory_migration::migrate_jsonl_to_sqlite(&data_dir) {
-        Ok(n) if n > 0 => log::info!("Migrated {} memories from JSONL to SQLite", n),
-        Err(e) => log::warn!("Memory migration failed: {}", e),
-        _ => {}
-    }
-
 
     let app = builder.build(tauri::generate_context!())
         .expect("error while building tauri application");

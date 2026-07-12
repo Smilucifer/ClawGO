@@ -257,12 +257,6 @@ export interface UserSettings {
   invest_fee_profiles?: FeeProfile[];
   /** 默认手续费方案 id（买入弹窗预选）。 */
   invest_default_fee_profile_id?: string;
-  memory_dream_enabled?: boolean;
-  /** Independent master switch for automatic memory extraction. */
-  memory_extraction_enabled?: boolean;
-  /** Minimum confidence (0-100) an extracted memory must reach to be persisted. */
-  memory_extraction_min_confidence?: number;
-  embedding_config?: EmbeddingConfig;
   updated_at: string;
 }
 
@@ -279,16 +273,6 @@ export interface FeeProfile {
   min_commission: number;
   stamp_duty_rate: number;
   transfer_fee_rate: number;
-}
-
-export interface EmbeddingConfig {
-  enabled: boolean;
-  endpoint: string;
-  api_key?: string;
-  model: string;
-  chat_endpoint?: string;
-  chat_model?: string;
-  chat_api_key?: string;
 }
 
 export interface BalanceCacheEntry {
@@ -327,7 +311,6 @@ export interface AiCharacter {
   avatar_path?: string;
   personality?: string;
   expertise?: string[];
-  memory_config?: MemoryConfig;
   created_at: string;
   updated_at: string;
 }
@@ -1722,43 +1705,6 @@ export function isElementSelection(v: unknown): v is ElementSelection {
     return false;
   return true;
 }
-
-// ── Character Memory System types ──
-
-export interface MemorySource {
-  kind: "chat" | "manual" | "inference";
-  run_id?: string;
-  group_chat_id?: string;
-}
-
-export interface MemoryNode {
-  id: string;
-  character_id: string;
-  content: string;
-  type: "fact" | "experience" | "preference" | "rule" | "relationship" | "skill";
-  confidence: number;
-  source: MemorySource;
-  tags: string[];
-  created_at: string;
-  updated_at: string;
-  status: MemoryStatus;
-}
-
-export interface MemoryExtractionConfig {
-  enabled: boolean;
-  chat_endpoint?: string;
-  chat_model?: string;
-  chat_api_key?: string;
-}
-
-export interface MemoryConfig {
-  auto_learn: boolean;
-  retention_days?: number;
-  max_retrieval_count?: number;
-  relevance_threshold?: number;
-}
-
-export type MemoryStatus = "pending" | "approved" | "rejected";
 
 // ── Invest types (Phase 2) ──
 

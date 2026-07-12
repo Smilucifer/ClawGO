@@ -11,7 +11,6 @@ pub mod invest;
 pub mod managed_apps;
 pub mod mcp_registry;
 pub mod memos;
-pub mod memory_store;
 pub mod plugins;
 pub mod prompt_index;
 pub mod group_chats;

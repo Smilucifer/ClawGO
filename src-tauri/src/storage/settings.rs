@@ -1,5 +1,5 @@
 use crate::models::{
-    AgentSettings, AllSettings, BalanceHelperSettings, ConnectionProfile, EmbeddingConfig,
+    AgentSettings, AllSettings, BalanceHelperSettings, ConnectionProfile,
     UserSettings, WindowsMsvcEnvMode,
 };
 use once_cell::sync::Lazy;
@@ -516,19 +516,6 @@ pub fn get_user_settings() -> UserSettings {
     load().user
 }
 
-pub fn get_embedding_config() -> Option<EmbeddingConfig> {
-    load().user.embedding_config
-}
-
-pub fn update_embedding_config(config: EmbeddingConfig) -> Result<EmbeddingConfig, String> {
-    let _guard = SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let mut all = load();
-    all.user.embedding_config = Some(config.clone());
-    all.user.updated_at = crate::models::now_iso();
-    save(&all)?;
-    Ok(config)
-}
-
 /// Save web server config fields. Called by restart_with_config on success.
 pub fn save_web_server_config(
     enabled: bool,
@@ -639,12 +626,6 @@ pub fn update_user_settings(patch: serde_json::Value) -> Result<UserSettings, St
     apply_bool_field(&mut all.user.invest_miniqmt_enabled, &patch, "invest_miniqmt_enabled");
     apply_deser_vec_field(&mut all.user.invest_fee_profiles, &patch, "invest_fee_profiles")?;
     apply_optional_string_empty_as_none(&mut all.user.invest_default_fee_profile_id, &patch, "invest_default_fee_profile_id");
-    apply_embedding_config(&mut all.user.embedding_config, &patch)?;
-    apply_bool_field(&mut all.user.memory_dream_enabled, &patch, "memory_dream_enabled");
-    apply_bool_field(&mut all.user.memory_extraction_enabled, &patch, "memory_extraction_enabled");
-    if let Some(v) = patch.get("memory_extraction_min_confidence").and_then(|v| v.as_u64()) {
-        all.user.memory_extraction_min_confidence = v.min(100) as u8;
-    }
     all.user.updated_at = crate::models::now_iso();
     save(&all)?;
     Ok(all.user)
@@ -732,23 +713,6 @@ fn apply_hashmap_field<V: serde::de::DeserializeOwned + Default>(
         } else {
             *target = serde_json::from_value(v.clone())
                 .map_err(|e| format!("Invalid {}: {}", key, e))?;
-        }
-    }
-    Ok(())
-}
-
-fn apply_embedding_config(
-    target: &mut Option<crate::models::EmbeddingConfig>,
-    patch: &serde_json::Value,
-) -> Result<(), String> {
-    if let Some(v) = patch.get("embedding_config") {
-        if v.is_null() {
-            *target = None;
-        } else {
-            *target = Some(
-                serde_json::from_value(v.clone())
-                    .map_err(|e| format!("Invalid embedding_config: {}", e))?,
-            );
         }
     }
     Ok(())

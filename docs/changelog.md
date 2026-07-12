@@ -1,5 +1,16 @@
 # Changelog / 更新日志
 
+## v5.7.0 (2026-07-12)
+
+### 移除记忆子系统
+
+计划见 `docs/superpowers/plans/[done] 2026-07-11-remove-memory-subsystem.md`。此前默认关闭的自动记忆管线(提取/注入/做梦)整体删除,净删约 3600 行。
+
+- **后端:** 删除 `storage/memory_store.rs`(SQLite FTS5 记忆库)、`group_chat/memory_migration.rs` 及孤儿文件 `memory_dream.rs`/`memory_extraction.rs`/`memory_injection.rs`。`models.rs` 移除 `MemoryNode`/`MemoryConfig`/`EmbeddingConfig`/`KnowledgeGapInfo`/`TestEmbeddingResult`;`settings.rs` 移除 `embedding_config` 及 `memory_dream_enabled`/`memory_extraction_*` 字段与 patch helper;`commands/characters.rs` 移除记忆 CRUD 命令与 `memory_config` 字段;`lib.rs` 注销相关 IPC 命令。
+- **编排:** `group_chat/orchestrator.rs` 移除 `inject_memories` 调用及贯穿 `execute_group_chat_target`/`execute_actor_turn`/`execute_pipe_turn` 的死参数 `user_message`。
+- **前端:** 删除 `UserMemoryPanel`/`CharacterMemoryPanel`/`MemoryAddModal` 组件、`user-memory-store`/`character-memory-store`、`memory-panel-helpers`;`+layout.svelte` 移除面板挂载与 `clawgo:toggle-memory` 事件;`commands.ts`/`CommandPalette.svelte` 移除「User Memory」命令;设置页移除「记忆配置」表单与 Embedding 标签。`api.ts`/`types.ts` 移除记忆相关函数与类型;`zh-CN.json` 移除 `settings_tab_embedding` + 24 个 `settings_embedding_*` 键。
+- **保留:** 基于文件的 `/memory` 编辑器、全局 Memo、以及 invest 委员会的 dreaming 子系统均不受影响。
+
 ## v5.6.11 (2026-07-11)
 
 ### 每日盈记(Fortune Journal)
