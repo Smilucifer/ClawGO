@@ -214,3 +214,51 @@ def overseas_usdcny() -> dict:
         return {"value": round(float(row.iloc[0]["买报价"]), 4)}
     except (ValueError, KeyError, TypeError):
         return {}
+
+
+def overseas_us10y() -> dict:
+    """Fetch US 10-Year Treasury Yield via bond_zh_us_rate.
+
+    Fallback for eastmoney.overseas_indicator when push2.eastmoney.com is blocked.
+    Returns {"value": float, "date": "YYYY-MM-DD"} or {} on failure.
+    """
+    try:
+        import akshare as ak
+    except ImportError:
+        return {}
+    try:
+        from datetime import datetime, timedelta
+        start = (datetime.now() - timedelta(days=90)).strftime("%Y%m%d")
+        df = ak.bond_zh_us_rate(start_date=start)
+    except Exception:
+        return {}
+    if df is None or df.empty:
+        return {}
+
+    # Column layout: [日期, 中国2Y, 中国5Y, 中国10Y, 中国30Y, 中国10Y-2Y, 中国GDP,
+    #                 美国2Y, 美国5Y, 美国10Y, 美国30Y, 美国10Y-2Y, 美国GDP]
+    # US 10Y is at index 9 (or match by header containing "美国" and "10").
+    cols = list(df.columns)
+    us10y_col = None
+    for col in cols:
+        col_str = str(col)
+        if "10" in col_str and ("美" in col_str):
+            # Exclude "10Y-2Y" spread column
+            if "2" not in col_str.split("10")[-1][:3]:
+                us10y_col = col
+                break
+    if us10y_col is None and len(cols) > 9:
+        us10y_col = cols[9]  # positional fallback
+
+    if us10y_col is None:
+        return {}
+
+    df_clean = df.dropna(subset=[us10y_col])
+    if df_clean.empty:
+        return {}
+
+    latest = df_clean.iloc[-1]
+    date_val = str(latest.iloc[0])[:10]
+    yield_val = float(latest[us10y_col])
+
+    return {"value": round(yield_val, 4), "date": date_val}

@@ -30,28 +30,34 @@ pub async fn refresh_macro_cache(client: &TushareClient) -> Result<String, Strin
 
     // Clone the client for each task to satisfy 'static requirement on BoxFuture.
     // reqwest::Client is cheap to clone (shares the connection pool).
-    let tasks: Vec<BoxFuture<MacroResult>> = vec![
-        Box::pin(fetch_sh_composite(
+    //
+    // Each task is paired with its expected indicator count so that when a whole
+    // batch fails (e.g. Python runtime down), the failure count reflects the actual
+    // number of missing indicators rather than counting the batch as just 1.
+    let tasks: Vec<(u32, BoxFuture<MacroResult>)> = vec![
+        (2, Box::pin(fetch_sh_composite(
             client.clone(),
             start_date.clone(),
             end_date.clone(),
             miniqmt_on,
-        )),
-        Box::pin(fetch_northbound(client.clone(), start_date.clone(), end_date.clone())),
-        Box::pin(fetch_margin(client.clone(), start_date.clone(), end_date.clone())),
-        Box::pin(fetch_shibor(client.clone(), start_date.clone(), end_date.clone())),
-        Box::pin(fetch_cgb_10y(client.clone(), start_date.clone(), end_date.clone())),
-        Box::pin(fetch_international()),
-        Box::pin(fetch_breadth(miniqmt_on)),
-        Box::pin(fetch_two_market_volume()),
+        ))),
+        (1, Box::pin(fetch_northbound(client.clone(), start_date.clone(), end_date.clone()))),
+        (1, Box::pin(fetch_margin(client.clone(), start_date.clone(), end_date.clone()))),
+        (1, Box::pin(fetch_shibor(client.clone(), start_date.clone(), end_date.clone()))),
+        (1, Box::pin(fetch_cgb_10y(client.clone(), start_date.clone(), end_date.clone()))),
+        (6, Box::pin(fetch_international())),
+        (6, Box::pin(fetch_breadth(miniqmt_on))),
+        (1, Box::pin(fetch_two_market_volume())),
     ];
 
-    let results = futures_util::future::join_all(tasks).await;
+    let expected: Vec<u32> = tasks.iter().map(|(n, _)| *n).collect();
+    let futures = tasks.into_iter().map(|(_, f)| f);
+    let results = futures_util::future::join_all(futures).await;
 
     let mut ok_count = 0u32;
     let mut fail_count = 0u32;
 
-    for result in results {
+    for (result, exp) in results.into_iter().zip(expected) {
         match result {
             Ok(entries) => {
                 for (indicator, value, extra, source) in entries {
@@ -66,8 +72,8 @@ pub async fn refresh_macro_cache(client: &TushareClient) -> Result<String, Strin
                 }
             }
             Err(e) => {
-                log::warn!("macro_refresh: batch failed: {e}");
-                fail_count += 1;
+                log::warn!("macro_refresh: batch failed ({exp} indicators): {e}");
+                fail_count += exp;
             }
         }
     }
@@ -372,22 +378,45 @@ async fn fetch_cgb_10y(
 // 海外指标（东财直连 + akshare）
 // ---------------------------------------------------------------------------
 
-/// Fetch VIX / 美10Y / DXY / Gold / Oil / USDCNY —— akshare(4) + 东财直连(2)。
+/// Fetch VIX / 美10Y / DXY / Gold / Oil / USDCNY —— 东财直连(2) + akshare(4+1兜底)。
 /// 任一失败只 warn 跳过,不阻断其余。
+///
+/// 美10Y 有 akshare 兜底（`bond_zh_us_rate` 美国10年列），东财失败时自动降级。
+/// DXY 无 akshare 兜底源（`futures_foreign_hist('DX')` 数据停更），东财失败则缺失。
 async fn fetch_international() -> MacroResult {
     let client = crate::invest::international::InternationalClient::from_settings();
     let mut entries = Vec::new();
 
     // 东财直连:DXY / 美10Y(按 f59 解码,value 已是真值)
+    // Python 端在 API 数据缺失时返回空 dict → value=0, name="" — 跳过不计失败。
+    let mut us10y_ok = false;
     for (secid, indicator) in [("100.UDI", "dxy"), ("171.US10Y", "tnx")] {
         match client.fetch_eastmoney_overseas(secid).await {
-            Ok(q) => entries.push((
-                indicator.to_string(),
-                Some(q.value),
-                Some(serde_json::json!({ "change_pct": q.change_pct }).to_string()),
-                "eastmoney",
-            )),
+            Ok(q) if q.value != 0.0 || !q.name.is_empty() => {
+                if indicator == "tnx" {
+                    us10y_ok = true;
+                }
+                entries.push((
+                    indicator.to_string(),
+                    Some(q.value),
+                    Some(serde_json::json!({ "change_pct": q.change_pct }).to_string()),
+                    "eastmoney",
+                ))
+            }
+            Ok(_) => log::warn!("macro_refresh: eastmoney {secid}: empty response (API data unavailable)"),
             Err(e) => log::warn!("macro_refresh: eastmoney {secid}: {e}"),
+        }
+    }
+
+    // 美10Y akshare 兜底：东财失败时用 bond_zh_us_rate 的美国10年列。
+    if !us10y_ok {
+        match client.fetch_akshare_overseas("overseas_us10y").await {
+            Ok(v) if v.value != 0.0 => {
+                log::info!("macro_refresh: US10Y fallback to akshare (value={})", v.value);
+                entries.push(("tnx".to_string(), Some(v.value), None, "akshare"));
+            }
+            Ok(_) => log::warn!("macro_refresh: akshare overseas_us10y: empty response"),
+            Err(e) => log::warn!("macro_refresh: akshare overseas_us10y fallback: {e}"),
         }
     }
 

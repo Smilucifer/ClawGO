@@ -10,9 +10,12 @@ use serde::Deserialize;
 // ---------------------------------------------------------------------------
 
 /// 东财直连海外指标（DXY / 美10Y 等），Python eastmoney.overseas_indicator 返回。
+///
+/// Python 端在 API 数据缺失时返回空 dict `{}`，所有字段均需容错。
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OverseasIndicator {
+    #[serde(default)]
     pub value: f64,
     #[serde(default)]
     pub name: String,
@@ -20,10 +23,13 @@ pub struct OverseasIndicator {
     pub change_pct: f64,
 }
 
-/// akshare 海外标量指标（VIX / 金 / 油 / 汇率），Python akshare_market.overseas_* 返回。
+/// akshare 海外标量指标（VIX / 金 / 油 / 汇率 / US10Y），Python akshare_market.overseas_* 返回。
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct OverseasValue {
     pub value: f64,
+    /// 数据日期（部分指标返回，如 US10Y）；不返回时为空。
+    #[serde(default)]
+    pub date: String,
 }
 
 /// A single news item from various providers (AkShare, Jin10, etc.).

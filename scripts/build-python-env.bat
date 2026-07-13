@@ -48,15 +48,15 @@ if not exist "%PYTHON_DIR%\python.exe" (
 echo   Python extracted to %PYTHON_DIR%
 
 :install_deps
-echo [3/4] Installing Python dependencies (yfinance, orjson)...
-"%PYTHON_DIR%\python.exe" -m pip install --no-warn-script-location yfinance orjson
+echo [3/4] Installing Python dependencies...
+"%PYTHON_DIR%\python.exe" -m pip install --no-warn-script-location yfinance orjson akshare xtquant playwright patchright py_mini_racer scrapling
 if errorlevel 1 (
     echo ERROR: pip install failed.
     exit /b 1
 )
 
 echo [4/4] Verifying installation...
-"%PYTHON_DIR%\python.exe" -c "import yfinance; print('yfinance', yfinance.__version__); import orjson; print('orjson', orjson.__version__)"
+"%PYTHON_DIR%\python.exe" -c "import yfinance; print('yfinance', yfinance.__version__); import orjson; print('orjson', orjson.__version__); import akshare; print('akshare', akshare.__version__)"
 if errorlevel 1 (
     echo ERROR: Verification failed.
     exit /b 1

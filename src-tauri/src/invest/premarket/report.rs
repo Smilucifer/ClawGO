@@ -73,6 +73,8 @@ const AI_REVIEW_DROP_CIRCUIT: usize = 13;
 const AI_REVIEW_TIMEOUT_SECS: u64 = 60;
 
 /// 从盘后缓存读最新交易日整批 → 组装 SymbolScore。缓存缺失/过期时先兜底构建一次再读。
+///
+/// 缓存中 name 可能为空（构建时 stock_industry 表尚未刷新），此处批量回填。
 async fn collect_scores_from_cache(cfg: &PremarketConfig) -> Vec<SymbolScore> {
     use crate::storage::invest::premarket_cache::{is_fresh, load_latest_cache};
     let today = crate::invest::date_utils::get_invest_date();
@@ -81,7 +83,7 @@ async fn collect_scores_from_cache(cfg: &PremarketConfig) -> Vec<SymbolScore> {
         Ok(Some((td, rows))) if is_fresh(&td, &today, 4) && !rows.is_empty() => Some(rows),
         _ => None,
     };
-    let rows = match fresh_cache {
+    let mut rows = match fresh_cache {
         Some(r) => r,
         None => {
             log::warn!("[premarket] 缓存缺失/过期,兜底现场构建");
@@ -95,6 +97,32 @@ async fn collect_scores_from_cache(cfg: &PremarketConfig) -> Vec<SymbolScore> {
             }
         }
     };
+
+    // 批量回填空名：从 stock_industry 表查中文名，覆盖缓存中缺失的 name。
+    let empty_name_codes: Vec<String> = rows
+        .iter()
+        .filter(|c| c.name.is_empty())
+        .map(|c| c.symbol.split('.').next().unwrap_or(&c.symbol).to_string())
+        .collect();
+    if !empty_name_codes.is_empty() {
+        match crate::storage::invest::stock_industry::names_of(&empty_name_codes) {
+            Ok(name_map) if !name_map.is_empty() => {
+                let filled = name_map.len();
+                for c in &mut rows {
+                    if c.name.is_empty() {
+                        let code = c.symbol.split('.').next().unwrap_or(&c.symbol);
+                        if let Some(n) = name_map.get(code) {
+                            c.name = n.clone();
+                        }
+                    }
+                }
+                log::info!("[premarket] 回填空名 {filled}/{}", empty_name_codes.len());
+            }
+            Ok(_) => log::info!("[premarket] stock_industry 无匹配名,跳过回填"),
+            Err(e) => log::warn!("[premarket] names_of 回填失败: {e}"),
+        }
+    }
+
     rows.into_iter()
         .map(|c| {
             let factors = FactorBreakdown {

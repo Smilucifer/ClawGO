@@ -1,5 +1,31 @@
 # Changelog / 更新日志
 
+## v5.7.1 (2026-07-13)
+
+### eastmoney 反爬修复
+
+东财 push2 的 `/api/qt/stock/get` 被反爬 WAF 拦截(Connection reset),导致 `overseas_indicator()` 和 `quote()` 获取 DXY/US10Y/A 股行情失败。
+
+- **切换到 trends2 API:** `eastmoney.py` 的 `overseas_indicator()` 和 `quote()` 改用 `/api/qt/stock/trends2/get`。该 endpoint 不受反爬封锁。需要 `fields1=f1..f10` 才能返回 `name`/`decimal`/`preClose` 等元数据字段。
+- **Rust 端空值过滤:** `international.rs` 的 `OverseasIndicator.value` 加 `#[serde(default)]`,Python 返回空 dict `{}` 时不再反序列化报错;Rust 端过滤 `value==0 && name==""` 的空响应。
+- **User-Agent 补全:** `utils.py` 的 `_BASE_USER_AGENT` 从截断的 `AppleWebKit/537.36` 补全为完整 Chrome UA。
+
+### macro_refresh 失败计数修复
+
+`macro_refresh.rs` 中每个 task 配对预期指标数(u32),批量失败时 `fail_count += exp` 而非 `+= 1`。8 个 task 总计预期 19 个指标,失败计数现在准确反映实际丢失数。
+
+### US10Y akshare 兜底
+
+`akshare_market.py` 新增 `overseas_us10y()` 函数,使用 `bond_zh_us_rate` 取美国 10 年列。`fetch_international()` 中东财获取美10Y 失败时自动降级到 akshare。DXY 无兜底源(`futures_foreign_hist('DX')` 数据停更)。
+
+### 盘前报告名称回补
+
+`premarket/report.rs` 的 `collect_scores_from_cache()` 加载缓存后,检测 `name` 为空的标的,从 `stock_industry::names_of()` 批量补充。解决报告生成阶段标的仍显示代码的问题。
+
+### CI/依赖包对齐
+
+`build-python-env.bat`、`ci.yml`(Windows + macOS)、`release.yml` 统一为完整依赖清单: `yfinance orjson akshare xtquant playwright patchright py_mini_racer scrapling`。此前 build 脚本和 CI 缺少 xtquant/scrapling 等包。
+
 ## v5.7.0 (2026-07-12)
 
 ### 移除记忆子系统

@@ -116,20 +116,19 @@ def _fetch_7x24_news(count: int) -> list:
 
 
 def quote(symbol: str) -> dict:
-    """Fetch real-time quote for an A-share symbol from EastMoney.
+    """Fetch real-time quote for an A-share symbol from EastMoney trends2 API.
 
+    Uses /api/qt/stock/trends2/get which is NOT blocked by eastmoney anti-crawling WAF.
     Returns dict with quote fields:
     {symbol, name, price, change, change_pct, previous_close, timestamp}
     """
     # Determine market code (1=SH, 0=SZ)
     secid = f"1.{symbol}" if symbol.startswith("6") else f"0.{symbol}"
 
-    url = "https://push2.eastmoney.com/api/qt/stock/get"
-    params = {
-        "secid": secid,
-        "fields": "f43,f44,f45,f46,f47,f48,f58,f60,f170",
-        "ut": "fa5fd1943c7b386f172d6893dbbd1d0c",
-    }
+    url = "https://push2.eastmoney.com/api/qt/stock/trends2/get"
+    # fields1 controls top-level metadata (name, decimal, preClose)
+    # fields2 controls trend point fields (datetime, price, avg)
+    params = {"secid": secid, "fields1": "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10", "fields2": "f51,f52,f53"}
 
     session = _session.get()
     if session is None:
@@ -142,15 +141,23 @@ def quote(symbol: str) -> dict:
     except Exception:
         return _empty_quote(symbol)
 
-    # Prices are in cents (分) for A-shares
-    price = data.get("f43", 0) / 100.0
-    prev_close = data.get("f60", 0) / 100.0
+    if not data or not data.get("trends"):
+        return _empty_quote(symbol)
+
+    # Latest price from last trend point: "datetime,price,avg_price"
+    try:
+        latest_str = data["trends"][-1]
+        price = float(latest_str.split(",")[1])
+    except (IndexError, ValueError):
+        return _empty_quote(symbol)
+
+    prev_close = data.get("preClose", 0)
     change = price - prev_close if prev_close else 0.0
     change_pct = (change / prev_close * 100) if prev_close else 0.0
 
     return {
         "symbol": symbol,
-        "name": data.get("f58", symbol),
+        "name": data.get("name", symbol),
         "price": round(price, 3),
         "change": round(change, 3),
         "change_pct": round(change_pct, 1),
@@ -160,42 +167,47 @@ def quote(symbol: str) -> dict:
 
 
 def overseas_indicator(secid: str) -> dict:
-    """Fetch an overseas indicator (DXY / US10Y) from EastMoney push2.
+    """Fetch an overseas indicator (DXY / US10Y) from EastMoney trends2 API.
 
     secid examples: "100.UDI" (美元指数), "171.US10Y" (美国10年期国债收益率).
-    Decodes value = f43 / 10**f59 (dynamic decimals — NOT the /100 used for A-shares).
+    Uses /api/qt/stock/trends2/get which is NOT blocked by eastmoney anti-crawling WAF
+    (unlike /api/qt/stock/get which triggers Connection reset).
+
     Returns {"value": float, "name": str, "change_pct": float} or {} on failure.
     """
-    url = "https://push2.eastmoney.com/api/qt/stock/get"
-    params = {
-        "secid": secid,
-        "fields": "f43,f57,f58,f59,f170",
-        "ut": "fa5fd1943c7b386f172d6893dbbd1d0c",
-    }
+    import logging
+    url = "https://push2.eastmoney.com/api/qt/stock/trends2/get"
+    # fields1 controls top-level metadata (name, decimal, preClose, preSettlement)
+    # fields2 controls trend point fields (datetime, price, avg)
+    params = {"secid": secid, "fields1": "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10", "fields2": "f51,f52,f53"}
     session = _session.get()
     if session is None:
+        logging.warning("eastmoney.overseas_indicator(%s): session unavailable", secid)
         return {}
     try:
         resp = session.get(url, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json().get("data", {})
-    except Exception:
+    except Exception as e:
+        logging.warning("eastmoney.overseas_indicator(%s): request failed: %s", secid, e)
         return {}
-    if not data:
+    if not data or not data.get("trends"):
+        logging.warning("eastmoney.overseas_indicator(%s): empty data or no trends", secid)
         return {}
-    raw = data.get("f43")
-    dec = data.get("f59")
-    if raw is None or dec is None:
-        return {}
+    # Latest price from last trend point: "datetime,price,avg_price"
     try:
-        value = float(raw) / (10 ** int(dec))
-    except (ValueError, TypeError):
+        latest_str = data["trends"][-1]
+        price = float(latest_str.split(",")[1])
+    except (IndexError, ValueError) as e:
+        logging.warning("eastmoney.overseas_indicator(%s): trend parse failed: %s", secid, e)
         return {}
-    # f170 change_pct encoded as integer * 100 (2 decimal places)
-    chg_raw = data.get("f170")
-    change_pct = (float(chg_raw) / 100.0) if chg_raw is not None else 0.0
+    decimal = data.get("decimal", 2)
+    name = data.get("name", secid)
+    # Previous close
+    prev_close = data.get("preClose") or data.get("preSettlement")
+    change_pct = round((price / prev_close - 1) * 100, 2) if prev_close and prev_close > 0 else 0.0
     return {
-        "value": round(value, 4),
-        "name": data.get("f58", secid),
-        "change_pct": round(change_pct, 2),
+        "value": round(price, decimal),
+        "name": name,
+        "change_pct": change_pct,
     }
