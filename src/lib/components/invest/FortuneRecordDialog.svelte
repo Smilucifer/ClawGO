@@ -88,8 +88,8 @@
 
   function buildBatchEntries() {
     return dates
-      .filter((ds) => batchVals[ds]?.trim() !== '')
-      .map((ds) => ({ date: ds, returnPct: parseFloat(batchVals[ds]), note: '' }))
+      .filter((ds) => String(batchVals[ds] ?? '').trim() !== '')
+      .map((ds) => ({ date: ds, returnPct: parseFloat(String(batchVals[ds])), note: '' }))
       .filter((e) => !Number.isNaN(e.returnPct));
   }
 
