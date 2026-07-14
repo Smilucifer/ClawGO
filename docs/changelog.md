@@ -1,5 +1,31 @@
 # Changelog / 更新日志
 
+## v5.7.2 (2026-07-14)
+
+### 盘前舆论卡片重构 (section 01)
+
+`premarket/report.rs` 的 `AiSector` 结构体新增 `positive_count`/`negative_count` 字段(serde default)，`ai_commentary()` prompt 重写为新标签定义(利好密集/催化驱动/情绪转弱/分歧大/风险预警)并要求 AI 输出正/负面计数。`render_ai_commentary_md()` 渲染方向箭头(↑/↓/→)。
+
+`PremarketReportTab.svelte` 前端同步：AiSector 接口加 `positiveCount`/`negativeCount`，`evalClass()` 改为精确匹配映射(兼容旧标签名)，`wallClass` 重写为 3 列网格(5+ sectors)，卡片模板重构为 head+body 双行布局，`hasRisk` 死 derived 和旧 CSS 类清理。
+
+### 盈亏批量保存 bug 修复
+
+`FortuneRecordDialog.svelte` 的 `$effect` 用 `prevMonthKey` 替代 `batchInitialized` flag，仅在月份变化时重填 `batchVals`，解决保存后 effect 无条件重置用户输入导致静默失败的问题。新增 `batchError` 状态和 UI 反馈。
+
+`with-saving.ts` 的 `guardedSave` 从 imperative API(`saving, setSaving, fn`)重构为 higher-order function(`action, options`)，支持 `onError` 回调。
+
+`ConfirmDialog.svelte` 的 `onConfirm` 类型改为 `() => void | Promise<void>`，`handleConfirm` 改为 async 并 await onConfirm。Escape 键修正为调用 `handleCancel` 而非 `handleConfirm`。
+
+### 路由状态保持
+
+**Invest tab 保活:** `routes/invest/+page.svelte` 的顶层 tab 从 `{#if}/{:else if}` 改为 `<div style:display={activeTab === 'xxx' ? 'contents' : 'none'}>` 包裹，切换 tab 时组件保持挂载状态。子 tab 仍用 `{#if}`。
+
+**Chat 输入框自动暂存:** `routes/chat/+page.svelte` 的 runId `$effect` 中，调用 `loadRunProgressive` 前自动 stash 输入框内容(getInputSnapshot)，完成后 tick().then 自动 restore(restoreSnapshot)。复用已有的 `stashedInput` 状态和 `promptRef`。
+
+### CSS 清理
+
+`PremarketReportTab.svelte` 移除死 CSS：`.wall-n1`~`.wall-n4`、`.wall-1plus4`、重复的 bare `.wall-3col`、旧 eval-tag 变体(.news/.cata/.mood/.risk)。新增 `.wall-1`~`.wall-4` 选择器匹配 wallClass 输出。
+
 ## v5.7.1 (2026-07-13)
 
 ### eastmoney 反爬修复

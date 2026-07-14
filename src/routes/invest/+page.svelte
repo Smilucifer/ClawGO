@@ -175,7 +175,8 @@
 
   <!-- Content area -->
   <div class="min-h-0 flex-1 overflow-auto p-[var(--space-4)]">
-    {#if activeTab === 'dashboard'}
+    <!-- dashboard tab (always mounted, visibility via display:contents) -->
+    <div style:display={activeTab === 'dashboard' ? 'contents' : 'none'}>
       {#if !tushareToken}
         <div class="mb-[var(--space-4)] rounded-[var(--radius-lg)] border border-dashed border-border bg-[var(--bg-card)] p-[var(--space-4)] text-center text-[13px] text-[var(--text-tertiary)]">
           {t('invest_no_token')}
@@ -212,12 +213,20 @@
       <div class="mt-[var(--space-6)]">
         <PnlChart />
       </div>
+    </div>
 
-    {:else if activeTab === 'trades'}
+    <!-- trades tab -->
+    <div style:display={activeTab === 'trades' ? 'contents' : 'none'}>
       <TradeLogTab {tushareToken} />
-    {:else if activeTab === 'strategy'}
+    </div>
+
+    <!-- strategy tab -->
+    <div style:display={activeTab === 'strategy' ? 'contents' : 'none'}>
       <StrategyTab />
-    {:else if activeTab === 'committee'}
+    </div>
+
+    <!-- committee tab -->
+    <div style:display={activeTab === 'committee' ? 'contents' : 'none'}>
       <!-- Committee sub-tab navigation (pill style) -->
       <div class="mb-[var(--space-4)] flex flex-wrap gap-[var(--space-2)]">
         {#each committeeSubTabs as subTab}
@@ -251,7 +260,10 @@
       {:else if committeeSubTab === 'premarket'}
         <PremarketReportTab />
       {/if}
-    {:else if activeTab === 'system'}
+    </div>
+
+    <!-- system tab -->
+    <div style:display={activeTab === 'system' ? 'contents' : 'none'}>
       <!-- System sub-tab navigation (pill style) -->
       <div class="mb-[var(--space-4)] flex flex-wrap items-center gap-[var(--space-2)]">
         {#each systemSubTabs as subTab}
@@ -325,7 +337,10 @@
       {:else if systemSubTab === 'cleanup'}
         <SystemCleanupTab />
       {/if}
-    {:else if activeTab === 'fortune'}
+    </div>
+
+    <!-- fortune tab -->
+    <div style:display={activeTab === 'fortune' ? 'contents' : 'none'}>
       <div class="mb-[var(--space-4)] flex flex-wrap items-center gap-[var(--space-2)]">
         {#each fortuneSubTabs as subTab}
           <button
@@ -344,7 +359,7 @@
       {:else if fortuneSubTab === 'data'}
         <FortuneDataTab />
       {/if}
-    {/if}
+    </div>
   </div>
 </div>
 

@@ -1520,7 +1520,27 @@
         return;
       }
 
-      loadRunProgressive(id, xtermRef);
+      // Auto-stash current input before switching runs
+      const snapshot = promptRef?.getInputSnapshot();
+      if (
+        snapshot &&
+        (snapshot.text.trim() ||
+          snapshot.attachments.length ||
+          snapshot.pastedBlocks.length ||
+          (snapshot.pathRefs?.length ?? 0) > 0)
+      ) {
+        stashedInput = snapshot;
+      }
+
+      loadRunProgressive(id, xtermRef).then(() => {
+        // Auto-restore stashed input after new run loads
+        if (stashedInput) {
+          tick().then(() => {
+            promptRef?.restoreSnapshot(stashedInput);
+            stashedInput = null;
+          });
+        }
+      });
     });
   });
 

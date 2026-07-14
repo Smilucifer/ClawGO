@@ -40,16 +40,17 @@
 
   // 批量输入缓存：date → string（每月重置，避免无限增长）
   let batchVals = $state<Record<string, string>>({});
+  let prevMonthKey = '';
+  let batchError = $state('');
   // 进入某月时用已录旧值预填空白项
   $effect(() => {
-    // year, month, dates, recorded are tracked; batchVals is only written, not read
-    const _y = year; const _m = month; const _d = dates; const _r = recorded;
-    const newVals: Record<string, string> = {};
-    for (const ds of _d) {
-      const old = _r.get(ds);
-      newVals[ds] = old != null ? String(old) : '';
-    }
-    batchVals = newVals;
+    const key = `${year}-${month}`;
+    if (key === prevMonthKey) return;
+    prevMonthKey = key;
+    const r = recorded;
+    batchVals = Object.fromEntries(
+      dates.map((d) => [d, r.get(d)?.toString() ?? ''])
+    );
   });
 
   function prevMonth() {
@@ -60,7 +61,6 @@
     if (month === 12) { year += 1; month = 1; } else { month += 1; }
   }
 
-  let saving = $state(false);
   // 覆盖确认
   let overwriteConfirm = $state<{ date: string; val: number; note: string; batchCount?: number } | null>(null);
   let overwriteOpen = $state(false);
@@ -75,19 +75,16 @@
       })()
     : '');
 
-  async function checkOverwriteAndSubmit(date: string, val: number, note: string) {
-    if (saving) return;
+  const checkOverwriteAndSubmit = guardedSave(async (date: string, val: number, note: string) => {
     const existing = recorded.get(date);
     if (existing != null) {
       overwriteConfirm = { date, val, note };
       overwriteOpen = true;
       return;
     }
-    await guardedSave(saving, (v) => saving = v, async () => {
-      await fortuneStore.upsert(date, val, note);
-      onclose();
-    });
-  }
+    await fortuneStore.upsert(date, val, note);
+    onclose();
+  });
 
   function buildBatchEntries() {
     return dates
@@ -96,26 +93,22 @@
       .filter((e) => !Number.isNaN(e.returnPct));
   }
 
-  async function handleOverwriteConfirm() {
+  const handleOverwriteConfirm = guardedSave(async () => {
     const oc = overwriteConfirm;
     if (!oc) return;
     overwriteOpen = false;
     overwriteConfirm = null;
     if (mode === 'single') {
-      await guardedSave(saving, (v) => saving = v, async () => {
-        await fortuneStore.upsert(oc.date, oc.val, oc.note);
-        onclose();
-      });
+      await fortuneStore.upsert(oc.date, oc.val, oc.note);
+      onclose();
     } else {
       // 已确认覆盖，直接保存，不重新走 submitBatch（会再次触发冲突检查）
       const entries = buildBatchEntries();
       if (!entries.length) return;
-      await guardedSave(saving, (v) => saving = v, async () => {
-        await fortuneStore.batchUpsert(entries);
-        onclose();
-      });
+      await fortuneStore.batchUpsert(entries);
+      onclose();
     }
-  }
+  });
 
   async function submitSingle() {
     const v = parseFloat(singleVal);
@@ -123,24 +116,19 @@
     checkOverwriteAndSubmit(singleDate, v, singleNote);
   }
 
-  async function submitBatch() {
-    if (saving) return;
+  const submitBatch = guardedSave(async () => {
     const entries = buildBatchEntries();
-    if (!entries.length) return;
-    // 批量模式：检查是否有已录入日期需要覆盖
-    const conflicts = fortuneStore.findConflicts(entries.map((e) => e.date));
-    if (conflicts.length > 0 && !overwriteOpen) {
-      const first = entries.find((e) => e.date === conflicts[0].date)!;
-      overwriteConfirm = { date: first.date, val: first.returnPct, note: first.note, batchCount: conflicts.length };
-      overwriteOpen = true;
+    if (!entries.length) {
+      batchError = '没有可保存的收益数据';
       return;
     }
-    overwriteOpen = false;
-    await guardedSave(saving, (v) => saving = v, async () => {
-      await fortuneStore.batchUpsert(entries);
-      onclose();
-    });
-  }
+    batchError = '';
+    await fortuneStore.batchUpsert(entries);
+  }, {
+    onError: (e) => {
+      batchError = String(e);
+    },
+  });
 </script>
 
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onclick={onclose}>
@@ -183,6 +171,9 @@
       </div>
       <button class="mt-[var(--space-3)] rounded-[var(--radius-sm)] bg-[var(--accent)] px-[var(--space-4)] py-[var(--space-2)] text-[13px] font-semibold text-[var(--bg-base)]"
         onclick={submitBatch}>批量保存</button>
+      {#if batchError}
+        <p class="field-error">{batchError}</p>
+      {/if}
     {/if}
   </div>
 </div>

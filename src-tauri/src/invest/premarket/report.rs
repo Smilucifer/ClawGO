@@ -506,6 +506,10 @@ pub struct AiSector {
     pub name: String,
     pub tag: String,
     pub count: u32,
+    #[serde(default)]
+    pub positive_count: u32,
+    #[serde(default)]
+    pub negative_count: u32,
     pub note: String,
 }
 
@@ -524,9 +528,21 @@ async fn ai_commentary(news_block: &str) -> Option<AiCommentary> {
         return None;
     }
     let prompt = format!(
-        "你是A股盘前分析师。把以下新闻聚合成3-5个板块，每个给：name、tag(只能选:新闻强/催化强/情绪强/分歧大/风险预警)、count、note(一句话)。\
-         风险预警专收监管/政策转向/处罚退市/地缘扰动。输出JSON: {{\"sectors\":[...],\"tone\":\"基调总述\"}}。只输出JSON。\n\n{}",
-        news_block
+        "你是A股盘前分析师。把以下新闻聚合成3-5个板块，每个给：\n\
+         - name: 板块名\n\
+         - tag(只能选以下之一):\n\
+           * 利好密集: 正面新闻>2条，板块利好堆积\n\
+           * 催化驱动: 有明确事件/政策催化\n\
+           * 情绪转弱: 利空新闻多、板块走弱预期\n\
+           * 分歧大: 利好利空混合，观点对立\n\
+           * 风险预警: 重大利空、监管、黑天鹅\n\
+         - count: 新闻总条数\n\
+         - positive_count: 其中利好条数\n\
+         - negative_count: 其中利空条数\n\
+         - note: 一句话描述\n\n\
+         返回 JSON 数组。\n\n\
+         {news}",
+        news = news_block
     );
     let resp = crate::invest::event_analyzer::cli_complete(
         "你是严谨的金融分析师，只输出JSON。",
@@ -572,9 +588,16 @@ fn render_ai_commentary_md(ai: &AiCommentary) -> String {
     let mut md = String::new();
     md.push_str(&format!("**基调**：{}\n\n", ai.tone));
     for s in &ai.sectors {
+        let dir = if s.positive_count > s.negative_count {
+            "↑"
+        } else if s.positive_count < s.negative_count {
+            "↓"
+        } else {
+            "→"
+        };
         md.push_str(&format!(
-            "- **{}**（{}，{} 条）：{}\n",
-            s.name, s.tag, s.count, s.note
+            "- **{}** [{}] {}条新闻 ({}利空 {}利好 {})：{}\n",
+            s.name, s.tag, s.count, s.negative_count, s.positive_count, dir, s.note
         ));
     }
     md

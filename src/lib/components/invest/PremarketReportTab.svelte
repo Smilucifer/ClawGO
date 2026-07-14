@@ -43,8 +43,10 @@
   }
   interface AiSector {
     name: string;
-    tag: string; // 新闻强 / 催化强 / 情绪强 / 分歧大 / 风险预警
+    tag: string;
     count: number;
+    positiveCount: number;
+    negativeCount: number;
     note: string;
   }
   interface AiCommentary {
@@ -181,16 +183,13 @@
   const macro = $derived<MacroSnapshot | null>(report?.json?.macro ?? null);
   const commentary = $derived<AiCommentary | null>(report?.json?.aiCommentary ?? null);
 
-  const hasRisk = $derived(
-    !!commentary && commentary.sectors.some((s) => s.tag.includes('风险')),
-  );
   const wallClass = $derived.by(() => {
-    if (!commentary) return 'wall-3col';
-    const n = commentary.sectors.length;
-    if (hasRisk) return 'wall-3col';
-    if (n <= 4) return `wall-n${n}`;
-    if (n === 5) return 'wall-1plus4';
-    return 'wall-3col';
+    const n = mainLines.length;
+    if (n <= 0) return '';
+    if (n <= 2) return 'wall-' + n;
+    if (n === 3) return 'wall-3';
+    if (n === 4) return 'wall-4';
+    return 'wall-3col'; // 5+ sectors: 3-column grid
   });
 
   // Grouped by grade — cap 5 per bucket (server assigns grade by rank).
@@ -350,13 +349,12 @@
     return String(Math.round(v));
   }
   function evalClass(tag: string): string {
-    // Demo tags: 新闻强 / 催化强 / 情绪强 / 分歧大 / 风险预警
-    if (tag.includes('新闻')) return 'news';
-    if (tag.includes('催化')) return 'cata';
-    if (tag.includes('情绪')) return 'mood';
-    if (tag.includes('分歧')) return 'split';
-    if (tag.includes('风险')) return 'risk';
-    return 'mood';
+    if (tag === '利好密集' || tag === '催化强' || tag === '新闻强') return 'bull';
+    if (tag === '情绪转弱') return 'bear';
+    if (tag === '分歧大' || tag === '情绪强') return 'split';
+    if (tag === '风险预警') return 'warn';
+    if (tag === '催化驱动') return 'catalyst';
+    return '';
   }
   function gradeVar(g: Grade): string {
     return { S: 'var(--grade-s)', A: 'var(--grade-a)', B: 'var(--grade-b)', C: 'var(--grade-c)' }[g];
@@ -514,18 +512,24 @@
 
         {#if commentary && commentary.sectors.length > 0}
           <div class="theme-wall {wallClass}">
-            {#each commentary.sectors as sec, i}
-              <div
-                class="theme-tag-card"
-                class:ttc-first={i === 0 && wallClass === 'wall-1plus4'}
-                style={sec.tag.includes('风险') ? 'grid-column: 1 / -1;' : ''}
-              >
+            {#each mainLines as s}
+              {@const hasSentiment = s.positiveCount > 0 || s.negativeCount > 0}
+              {@const dir = s.positiveCount > s.negativeCount ? '↑' : s.positiveCount < s.negativeCount ? '↓' : '→'}
+              <div class="ttc-card">
                 <div class="ttc-head">
-                  <span class="ttc-name">{sec.name}</span>
-                  <span class="eval-tag {evalClass(sec.tag)}">{sec.tag}</span>
-                  <span class="ttc-count">{sec.count} {t('invest_premarket_news_count_unit')}</span>
+                  <span class="ttc-name">{s.name}</span>
+                  <span class="eval-tag {evalClass(s.tag)}">{s.tag}</span>
                 </div>
-                <div class="ttc-desc">{sec.note}</div>
+                <div class="ttc-body">
+                  {#if hasSentiment}
+                    <span class="ttc-sentiment">{s.positiveCount}↑ {s.negativeCount}↓ {dir}</span>
+                  {:else}
+                    <span class="ttc-count">{s.count}条</span>
+                  {/if}
+                  {#if s.note}
+                    <span class="ttc-note">{s.note}</span>
+                  {/if}
+                </div>
               </div>
             {/each}
           </div>
@@ -949,29 +953,47 @@
 
   /* 01 舆情标签墙 */
   .theme-wall { display: grid; gap: var(--space-2); grid-template-columns: repeat(4, 1fr); }
-  .theme-wall.wall-n1 { grid-template-columns: 1fr; }
-  .theme-wall.wall-n2 { grid-template-columns: repeat(2, 1fr); }
-  .theme-wall.wall-n3 { grid-template-columns: repeat(3, 1fr); }
-  .theme-wall.wall-n4 { grid-template-columns: repeat(4, 1fr); }
-  .theme-wall.wall-1plus4 { grid-template-columns: repeat(4, 1fr); }
+  .theme-wall.wall-1 { grid-template-columns: 1fr; }
+  .theme-wall.wall-2 { grid-template-columns: repeat(2, 1fr); }
+  .theme-wall.wall-3 { grid-template-columns: repeat(3, 1fr); }
+  .theme-wall.wall-4 { grid-template-columns: repeat(4, 1fr); }
   .theme-wall.wall-3col { grid-template-columns: repeat(3, 1fr); }
-  .theme-tag-card.ttc-first { grid-column: 1 / -1; }
-  .theme-tag-card {
-    display: flex; flex-direction: column; gap: var(--space-2);
-    padding: var(--space-3);
-    border-radius: var(--radius-sm);
-    background: var(--bg-hover);
-    border: 1px solid var(--border);
+  .ttc-card {
+    background: var(--card-bg);
+    border-radius: 6px;
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
-  .ttc-head { display: flex; align-items: center; gap: 6px; }
+
+  .ttc-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .ttc-body {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .ttc-sentiment {
+    font-size: 0.75rem;
+    color: var(--muted-fg);
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
   .ttc-name { font-size: 13px; font-weight: 600; }
-  .ttc-count { font-size: 9px; color: var(--text-tertiary); font-family: var(--font-mono); margin-left: auto; }
+  .ttc-count { font-size: 9px; color: var(--text-tertiary); font-family: var(--font-mono); }
   .eval-tag { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; white-space: nowrap; }
-  .eval-tag.news  { color: var(--accent);  background: var(--accent-muted); }
-  .eval-tag.cata  { color: var(--up);      background: rgba(192, 82, 74, 0.18); }
-  .eval-tag.mood  { color: var(--grade-b); background: rgba(124, 148, 168, 0.16); }
-  .eval-tag.split { color: var(--down);    background: rgba(78, 154, 95, 0.16); }
-  .eval-tag.risk  { color: var(--text-primary); background: rgba(168, 122, 122, 0.30); border: 1px solid var(--down); }
+  .eval-tag.bull     { color: var(--up);      background: rgba(192, 82, 74, 0.18); }
+  .eval-tag.bear     { color: var(--down);    background: rgba(78, 154, 95, 0.16); }
+  .eval-tag.split    { color: var(--down);    background: rgba(78, 154, 95, 0.16); }
+  .eval-tag.warn     { color: var(--text-primary); background: rgba(168, 122, 122, 0.30); border-left: 3px solid var(--down); }
+  .eval-tag.catalyst { color: var(--grade-b); background: rgba(124, 148, 168, 0.16); }
   .ttc-desc { font-size: 11px; color: var(--text-secondary); line-height: 1.5; }
   .ai-note {
     margin-top: var(--space-3);

@@ -18,12 +18,12 @@
     confirmLabel?: string;
     cancelLabel?: string;
     variant?: 'danger' | 'default';
-    onConfirm?: () => void;
+    onConfirm?: () => void | Promise<void>;
     onCancel?: () => void;
   } = $props();
 
-  function handleConfirm() {
-    onConfirm?.();
+  async function handleConfirm() {
+    await onConfirm?.();
     open = false;
   }
 
@@ -31,7 +31,16 @@
     onCancel?.();
     open = false;
   }
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && open) {
+      e.preventDefault();
+      handleCancel();
+    }
+  }
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <Modal bind:open title={title || t('invest_confirm_title')}>
   <p class="text-sm text-muted-foreground mb-6">{message}</p>
