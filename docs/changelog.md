@@ -16,6 +16,8 @@
 
 `ConfirmDialog.svelte` 的 `onConfirm` 类型改为 `() => void | Promise<void>`，`handleConfirm` 改为 async 并 await onConfirm。Escape 键修正为调用 `handleCancel` 而非 `handleConfirm`。
 
+`buildBatchEntries()` 中 `batchVals[ds]?.trim()` 在 Svelte 5 `<input type="number">` bind 下会报 `TypeError: trim is not a function`，因为 number 类型没有 `trim` 方法。修复为 `String(batchVals[ds] ?? '').trim()`。
+
 ### 路由状态保持
 
 **Invest tab 保活:** `routes/invest/+page.svelte` 的顶层 tab 从 `{#if}/{:else if}` 改为 `<div style:display={activeTab === 'xxx' ? 'contents' : 'none'}>` 包裹，切换 tab 时组件保持挂载状态。子 tab 仍用 `{#if}`。
