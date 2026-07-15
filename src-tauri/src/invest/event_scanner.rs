@@ -497,6 +497,45 @@ pub async fn scan_events(
     })
 }
 
+/// Attempt to extract a JSON array from LLM response text that may
+/// contain conversational wrapper text and/or markdown code fences.
+///
+/// Strategies (tried in order):
+/// 1. Trim markdown fences (` ```json ` / ` ``` ` / ` ```JSON `)
+/// 2. If the result still isn't pure JSON, search for `[{` and try
+///    parsing from that position
+/// 3. Fall through — return the trimmed/cleaned text for the caller
+///    to attempt parsing or fallback
+///
+/// Uses only safe string operations: no byte-index arithmetic, no
+/// loops that could fail to terminate.
+fn try_extract_json(content: &str) -> String {
+    // Strategy 1: trim markdown fences from the response.
+    // trim_start_matches / trim_end_matches are safe — they work on
+    // char boundaries and never panic.
+    let cleaned = content
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```JSON")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim()
+        .to_string();
+
+    // Strategy 2: find JSON array start marker [{ in the cleaned text.
+    // If found and the substring from that position parses as valid JSON,
+    // use it. This handles cases where conversational text appears before
+    // the JSON and markdown-fence trimming didn't fully clean it.
+    if let Some(pos) = cleaned.find("[{") {
+        let candidate = &cleaned[pos..];
+        if serde_json::from_str::<serde_json::Value>(candidate).is_ok() {
+            return candidate.to_string();
+        }
+    }
+
+    cleaned
+}
+
 /// Parse LLM JSON response, matching results to items by index.
 /// Generic over input type — callers provide a fallback closure.
 pub fn parse_normalized_response<T>(
@@ -504,34 +543,26 @@ pub fn parse_normalized_response<T>(
     items: &[T],
     fallback: impl Fn(&T) -> NormalizedEvent,
 ) -> Vec<NormalizedEvent> {
-    // Extract JSON array from response (handle markdown code blocks)
-    let json_str = content.trim();
-    let json_str = if json_str.starts_with("```") {
-        json_str
-            .lines()
-            .skip(1)
-            .filter(|l| l.trim() != "```")
-            .collect::<Vec<_>>()
-            .join("\n")
-            .trim()
-            .to_string()
-    } else {
-        json_str.to_string()
-    };
+    let json_str = try_extract_json(content);
 
     match serde_json::from_str::<Vec<NormalizedEvent>>(&json_str) {
-        Ok(results) => {
-            // Pad or truncate to match input length
-            let mut normalized = results;
-            normalized.truncate(items.len());
-            while normalized.len() < items.len() {
-                let idx = normalized.len();
-                normalized.push(fallback(&items[idx]));
+        Ok(mut results) => {
+            // Truncate or pad to match input length
+            results.truncate(items.len());
+            while results.len() < items.len() {
+                let idx = results.len();
+                results.push(fallback(&items[idx]));
             }
-            normalized
+            results
         }
         Err(e) => {
-            log::warn!("Failed to parse normalizer response: {}, falling back to rule-based", e);
+            log::warn!(
+                "Failed to parse normalizer response ({} bytes): {}. \
+                 First 400 chars of extracted: {}",
+                content.len(),
+                e,
+                &json_str[..json_str.len().min(400)]
+            );
             items.iter().map(fallback).collect()
         }
     }
