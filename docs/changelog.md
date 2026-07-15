@@ -8,6 +8,8 @@
 
 `PremarketReportTab.svelte` 前端同步：AiSector 接口加 `positiveCount`/`negativeCount`，`evalClass()` 改为精确匹配映射(兼容旧标签名)，`wallClass` 重写为 3 列网格(5+ sectors)，卡片模板重构为 head+body 双行布局，`hasRisk` 死 derived 和旧 CSS 类清理。
 
+**回归修复：AI 点评永远"暂缺"。** 上述重构把 `ai_commentary()` 的输出格式要求从 `{"sectors":[...],"tone":"..."}` 误改为"返回 JSON 数组"，但反序列化目标 `AiCommentary` 仍是对象(且 `tone` 为必填)，导致每次 `serde_json::from_str::<AiCommentary>` 必然失败、报告 `sectionsStatus.aiCommentary` 恒为 `failed`。prompt 改回明确要求返回对象 `{"sectors":[...],"tone":"..."}` 并强调"不是数组"。舆情数据与 provider 端点均正常，纯 prompt↔struct 契约脱钩。
+
 ### 盈亏批量保存 bug 修复
 
 `FortuneRecordDialog.svelte` 的 `$effect` 用 `prevMonthKey` 替代 `batchInitialized` flag，仅在月份变化时重填 `batchVals`，解决保存后 effect 无条件重置用户输入导致静默失败的问题。新增 `batchError` 状态和 UI 反馈。

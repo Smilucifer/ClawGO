@@ -544,7 +544,8 @@ async fn ai_commentary(news_block: &str) -> Option<AiCommentary> {
          - positive_count: 其中利好条数\n\
          - negative_count: 其中利空条数\n\
          - note: 一句话描述\n\n\
-         返回 JSON 数组。\n\n\
+         返回 JSON 对象（不是数组）：{{\"sectors\": [上述板块数组], \"tone\": \"一句话大盘基调总述\"}}。\n\
+         只输出 JSON，不要额外文字。\n\n\
          {news}",
         news = news_block
     );
