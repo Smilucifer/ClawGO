@@ -141,6 +141,22 @@ const MEDIUM_KEYWORDS: &[&str] = &[
     "merger", "acquisition", "downgrade", "debt", "credit",
 ];
 
+/// Keywords that hint at bullish (positive) sentiment.
+/// Used only in the fallback path when LLM parsing fails.
+const BULLISH_KEYWORDS: &[&str] = &[
+    "利好", "看多", "增持", "买入", "大涨", "涨停", "飙升",
+    "预增", "扭亏", "盈利", "降准", "降息", "放水", "突破",
+    "超预期", "创新高", "回暖", "反弹", "复苏",
+];
+
+/// Keywords that hint at bearish (negative) sentiment.
+/// Used only in the fallback path when LLM parsing fails.
+const BEARISH_KEYWORDS: &[&str] = &[
+    "利空", "看空", "减持", "卖出", "大跌", "跌停", "暴跌",
+    "预亏", "亏损", "暴雷", "违约", "处罚", "调查", "退市",
+    "不及预期", "创新低", "下滑", "萎缩", "下行",
+];
+
 /// Classify severity by keyword matching.
 /// Returns None for LOW (irrelevant) events that should be filtered out.
 pub fn classify_severity(title: &str, body: &str) -> Option<Severity> {
@@ -150,6 +166,21 @@ pub fn classify_severity(title: &str, body: &str) -> Option<Severity> {
         Some(Severity::Medium)
     } else {
         None
+    }
+}
+
+/// Simple keyword-based stance detection for the fallback path.
+/// No negation handling — this is a last-resort heuristic, and
+/// false positives are preferable to the prior behavior of
+/// hard-coding "neutral" for every item.
+fn detect_stance(title: &str, body: &str) -> &'static str {
+    let text = format!("{title} {body}");
+    let has_bullish = BULLISH_KEYWORDS.iter().any(|kw| text.contains(kw));
+    let has_bearish = BEARISH_KEYWORDS.iter().any(|kw| text.contains(kw));
+    match (has_bullish, has_bearish) {
+        (true, false) => "bullish",
+        (false, true) => "bearish",
+        _ => "neutral",
     }
 }
 
@@ -573,10 +604,11 @@ pub fn parse_normalized_response<T>(
 pub fn fallback_normalize_from(title: &str, body: &str) -> NormalizedEvent {
     let severity = classify_severity(title, body)
         .unwrap_or(Severity::Low);
+    let stance = detect_stance(title, body).to_string();
 
     NormalizedEvent {
         one_line_claim: title.chars().take(30).collect(),
-        stance: "neutral".to_string(),
+        stance,
         severity,
         affected_symbols: vec![],
         summary: String::new(),
