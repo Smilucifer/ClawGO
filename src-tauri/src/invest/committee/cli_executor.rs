@@ -105,7 +105,7 @@ impl CliCommitteeExecutor {
             "--system-prompt",
             system_prompt,
             "--permission-mode",
-            "plan",
+            "bypassPermissions",
             "--max-turns",
             "1",
             "--no-session-persistence",
