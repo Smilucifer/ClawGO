@@ -805,16 +805,32 @@ pub fn write_committee_settings_json(
     cleanup_old_committee_settings();
 
     let user_settings = get_user_settings();
-    let cred = user_settings
+    let cred = match user_settings
         .platform_credentials
         .iter()
         .find(|c| c.platform_id == platform_id)
-        .ok_or_else(|| {
-            format!(
+    {
+        Some(c) => c,
+        None => {
+            // No explicit credential for this platform in settings.
+            // If it's a known built-in (deepseek/zhipu/etc.), the native CC config
+            // (env vars / ~/.claude/settings.json) may already route to it.
+            // Return None so the CLI runs without --settings and picks up native routing.
+            let is_known = platform_to_provider_id(platform_id).is_some();
+            if is_known {
+                log::info!(
+                    "[cli_executor] platform '{}' has no credential in settings; \
+                     will use native CC provider routing (env / CC settings)",
+                    platform_id
+                );
+                return Ok(None);
+            }
+            return Err(format!(
                 "committee: platform credential '{}' not found in settings",
                 platform_id
-            )
-        })?;
+            ));
+        }
+    };
 
     let provider_id = platform_to_provider_id(platform_id)
         .unwrap_or("custom")
@@ -830,14 +846,24 @@ pub fn write_committee_settings_json(
         enabled_plugins: &std::collections::HashMap::new(),
     };
 
-    let materialized = write_provider_claude_config(
+    let materialized = match write_provider_claude_config(
         &provider_id,
         platform_id,
         cred,
         &run_id,
         &managed,
         true, // disable_hooks_and_plugins = true for committee
-    )?;
+    ) {
+        Ok(m) => m,
+        Err(e) => {
+            log::warn!(
+                "[cli_executor] write_provider_claude_config failed for platform '{}': {e}; \
+                 falling back to native CC routing",
+                platform_id
+            );
+            return Ok(None);
+        }
+    };
 
     // If model_override is set, patch the JSON to use it
     if let Some(model) = model_override.filter(|m| !m.is_empty()) {

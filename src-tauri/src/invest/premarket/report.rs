@@ -315,12 +315,7 @@ async fn run_ai_review(top_k: Vec<SymbolScore>) -> (Vec<SymbolScore>, Vec<Symbol
     };
 
     // 解析 JSON（容错：可能被 markdown 包裹）
-    let cleaned = resp
-        .trim()
-        .trim_start_matches("```json")
-        .trim_start_matches("```")
-        .trim_end_matches("```")
-        .trim();
+    let cleaned = clean_markdown_json_block(&resp);
 
     let decisions = match serde_json::from_str::<AiDecisions>(cleaned) {
         Ok(d) => d.decisions,
@@ -520,6 +515,15 @@ pub struct AiCommentary {
     pub tone: String,
 }
 
+/// Strip markdown code-fence markers that LLMs sometimes wrap around JSON output.
+fn clean_markdown_json_block(raw: &str) -> &str {
+    raw.trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim()
+}
+
 /// 采样最近舆情条目，拼一段供 AI 聚合板块 + 打标签 + 给基调。
 ///
 /// AI 失败或 JSON 解析失败均返回 None；调用方在 md 中显示占位文案，SABC 分级不受影响。
@@ -544,18 +548,19 @@ async fn ai_commentary(news_block: &str) -> Option<AiCommentary> {
          {news}",
         news = news_block
     );
-    let resp = crate::invest::event_analyzer::cli_complete(
+    let resp = match crate::invest::event_analyzer::cli_complete(
         "你是严谨的金融分析师，只输出JSON。",
         &prompt,
     )
     .await
-    .ok()?;
-    let cleaned = resp
-        .trim()
-        .trim_start_matches("```json")
-        .trim_start_matches("```")
-        .trim_end_matches("```")
-        .trim();
+    {
+        Ok(text) => text,
+        Err(e) => {
+            log::warn!("[premarket] ai_commentary CLI failed: {e}");
+            return None;
+        }
+    };
+    let cleaned = clean_markdown_json_block(&resp);
     match serde_json::from_str::<AiCommentary>(cleaned) {
         Ok(v) => Some(v),
         Err(e) => {
@@ -953,7 +958,12 @@ pub async fn generate_premarket_report(data_dir: &Path) -> Result<String, String
 
     // 4. AI 点评（结构化 JSON；失败 → None，不影响分数）
     let news_block = build_news_block_for_ai();
-    let ai = ai_commentary(&news_block).await;
+    let news_empty = news_block.trim().is_empty();
+    let ai = if !news_empty {
+        ai_commentary(&news_block).await
+    } else {
+        None
+    };
     let ai_md = ai
         .as_ref()
         .map(render_ai_commentary_md)
@@ -1006,6 +1016,9 @@ pub async fn generate_premarket_report(data_dir: &Path) -> Result<String, String
         "sectionsStatus": {
             "capitalFlow": if sector_flows_entries.is_empty() { "unavailable" } else { "ok" },
             "aiReview": ai_status.as_wire(),
+            "aiCommentary": if news_empty { "no_sentiment_data" }
+                            else if ai.is_some() { "ok" }
+                            else { "failed" },
         },
     });
     std::fs::write(

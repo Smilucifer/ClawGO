@@ -130,9 +130,9 @@
       aiCommentary: AiCommentary | null;
       sectorFlows?: SectorFlowEntry[] | null;
       themes?: ThemeEntry[] | null;
+      aiDropped?: AiDropped[];
+      sectionsStatus?: { capitalFlow?: string; aiReview?: string; aiCommentary?: string };
     } | null;
-    aiDropped?: AiDropped[];
-    sectionsStatus?: { capitalFlow?: string; aiReview?: string };
   }
 
   const invoke = <T,>(cmd: string, args?: Record<string, unknown>) =>
@@ -369,6 +369,20 @@
     if (flag === 'high') return 'risk-hard';
     return 'risk-none';
   }
+  const RISK_LABELS: Record<string, string> = {
+    regulatory: '监管风险',
+    sentiment_only: '纯情绪',
+    weak_fundamental: '基本面弱',
+    other: '其他',
+    none: '无',
+    low: '低风险',
+    medium: '中风险',
+    high: '高风险',
+  };
+  function riskLabel(flag: string | undefined): string {
+    if (!flag) return '—';
+    return RISK_LABELS[flag] ?? flag;
+  }
 
 </script>
 
@@ -515,14 +529,20 @@
             {#each mainLines as s}
               {@const hasSentiment = s.positiveCount > 0 || s.negativeCount > 0}
               {@const dir = s.positiveCount > s.negativeCount ? '↑' : s.positiveCount < s.negativeCount ? '↓' : '→'}
-              <div class="ttc-card">
+              {@const ec = evalClass(s.tag) || 'default'}
+              <div class="ttc-card card-{ec}">
                 <div class="ttc-head">
                   <span class="ttc-name">{s.name}</span>
-                  <span class="eval-tag {evalClass(s.tag)}">{s.tag}</span>
+                  <span class="eval-tag {ec}">{s.tag}</span>
                 </div>
                 <div class="ttc-body">
                   {#if hasSentiment}
-                    <span class="ttc-sentiment">{s.positiveCount}↑ {s.negativeCount}↓ {dir}</span>
+                    <span class="ttc-sentiment">
+                      <span class="sent-pos">{s.positiveCount}↑</span>
+                      <span class="sent-sep">/</span>
+                      <span class="sent-neg">{s.negativeCount}↓</span>
+                      <span class="sent-dir {dir === '↑' ? 'dir-up' : dir === '↓' ? 'dir-down' : 'dir-flat'}">{dir}</span>
+                    </span>
                   {:else}
                     <span class="ttc-count">{s.count}条</span>
                   {/if}
@@ -534,11 +554,13 @@
             {/each}
           </div>
           <div class="ai-note">
-            <span class="ai-tag">AI</span>{commentary.tone}
+            <span class="ai-tag">AI</span>
+            <span class="ai-tone-text">{commentary.tone}</span>
           </div>
         {:else}
-          <div class="ai-note placeholder">
-            <span class="ai-tag">AI</span>{t('invest_premarket_ai_missing')}
+          <div class="ai-note empty-note">
+            <span class="ai-tag">AI</span>
+            <span class="ai-empty-text">{t('invest_premarket_ai_missing')}</span>
           </div>
         {/if}
       </div>
@@ -781,21 +803,21 @@
       </div>
 
       <!-- 05 AI 剔除 -->
-      {#if report?.aiDropped?.length}
+      {#if report?.json?.aiDropped?.length}
         <details class="ai-dropped-section">
           <summary>
             <span class="section-title">{t('invest_premarket_ai_dropped_title')}</span>
-            <span class="badge">{report.aiDropped.length}</span>
+            <span class="badge">{report.json.aiDropped.length}</span>
           </summary>
           <div class="dropped-list">
-            {#each report.aiDropped as item}
+            {#each report.json.aiDropped as item}
               <div class="dropped-item">
                 <span class="dropped-symbol">{item.symbol}</span>
                 <span class="dropped-name">{item.name}</span>
                 <span class="dropped-total">{item.total.toFixed(1)}</span>
                 <span class="dropped-grade">{item.grade}</span>
                 <span class="risk-badge {riskClass(item.ai_review?.risk_flag)}">
-                  {item.ai_review?.risk_flag || '—'}
+                  {riskLabel(item.ai_review?.risk_flag)}
                 </span>
                 <span class="dropped-reason">{item.ai_review?.reason}</span>
               </div>
@@ -958,53 +980,136 @@
   .theme-wall.wall-3 { grid-template-columns: repeat(3, 1fr); }
   .theme-wall.wall-4 { grid-template-columns: repeat(4, 1fr); }
   .theme-wall.wall-3col { grid-template-columns: repeat(3, 1fr); }
+
   .ttc-card {
-    background: var(--card-bg);
-    border-radius: 6px;
-    padding: 6px 8px;
+    background: var(--bg-hover);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-2) var(--space-3);
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-1);
+    transition: background .15s var(--ease-out), border-color .15s var(--ease-out), transform .15s var(--ease-out);
   }
+  .ttc-card:hover {
+    background: var(--bg-active);
+    transform: translateY(-1px);
+  }
+  /* Card left-border accent by sentiment tag */
+  .ttc-card.card-bull     { border-left-color: var(--up); }
+  .ttc-card.card-bear     { border-left-color: var(--down); }
+  .ttc-card.card-split    { border-left-color: var(--flat); }
+  .ttc-card.card-warn     { border-left-color: var(--color-error); }
+  .ttc-card.card-catalyst { border-left-color: var(--grade-b); }
+  .ttc-card.card-default  { border-left-color: var(--border); }
 
   .ttc-head {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-2);
   }
 
   .ttc-body {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-2);
+    flex-wrap: wrap;
   }
 
+  .ttc-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+
+  .ttc-count {
+    font-size: 9px;
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    margin-left: auto;
+  }
+
+  /* Sentiment count badges — red-up green-down per 红涨绿跌 */
   .ttc-sentiment {
-    font-size: 0.75rem;
-    color: var(--muted-fg);
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    font-weight: 500;
     margin-left: auto;
     white-space: nowrap;
   }
+  .ttc-sentiment .sent-pos { color: var(--up); }
+  .ttc-sentiment .sent-neg { color: var(--down); }
+  .ttc-sentiment .sent-sep { color: var(--text-tertiary); font-weight: 400; font-size: 10px; }
+  .ttc-sentiment .sent-dir {
+    font-size: 13px;
+    font-weight: 700;
+    margin-left: 2px;
+  }
+  .ttc-sentiment .sent-dir.dir-up   { color: var(--up); }
+  .ttc-sentiment .sent-dir.dir-down { color: var(--down); }
+  .ttc-sentiment .sent-dir.dir-flat { color: var(--flat); }
 
-  .ttc-name { font-size: 13px; font-weight: 600; }
-  .ttc-count { font-size: 9px; color: var(--text-tertiary); font-family: var(--font-mono); }
-  .eval-tag { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; white-space: nowrap; }
-  .eval-tag.bull     { color: var(--up);      background: rgba(192, 82, 74, 0.18); }
-  .eval-tag.bear     { color: var(--down);    background: rgba(78, 154, 95, 0.16); }
-  .eval-tag.split    { color: var(--down);    background: rgba(78, 154, 95, 0.16); }
-  .eval-tag.warn     { color: var(--text-primary); background: rgba(168, 122, 122, 0.30); border-left: 3px solid var(--down); }
-  .eval-tag.catalyst { color: var(--grade-b); background: rgba(124, 148, 168, 0.16); }
-  .ttc-desc { font-size: 11px; color: var(--text-secondary); line-height: 1.5; }
+  .ttc-note {
+    font-size: 10px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    flex-basis: 100%;
+  }
+
+  /* Evaluation tags — sentiment signal badges */
+  .eval-tag {
+    font-size: 10px; font-weight: 700;
+    padding: 2px 8px; border-radius: 4px;
+    white-space: nowrap;
+    letter-spacing: 0.01em;
+  }
+  .eval-tag.bull     { color: var(--up);      background: rgba(192, 82, 74, 0.16); }     /* 利好/催化/新闻强 → 红涨 */
+  .eval-tag.bear     { color: var(--down);    background: rgba(127, 157, 109, 0.16); }    /* 情绪转弱 → 绿跌 */
+  .eval-tag.split    { color: var(--flat);    background: rgba(158, 154, 150, 0.16); }    /* 分歧大/情绪强 → 中性灰 */
+  .eval-tag.warn     {
+    color: var(--color-error);
+    background: rgba(168, 122, 122, 0.18);
+    border: 1px solid rgba(168, 122, 122, 0.35);
+  }
+  .eval-tag.catalyst { color: var(--grade-b); background: rgba(124, 148, 168, 0.16); }    /* 催化驱动 → 青蓝 */
+
+  /* AI commentary strip */
   .ai-note {
     margin-top: var(--space-3);
-    padding: var(--space-2) var(--space-3);
+    padding: var(--space-3) var(--space-4);
     border-radius: var(--radius-sm);
     background: var(--accent-subtle);
     border: 1px solid var(--border);
-    font-size: 12px; color: var(--text-secondary); line-height: 1.6;
+    border-left: 3px solid var(--accent);
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
   }
-  .ai-note.placeholder { font-style: italic; color: var(--text-tertiary); }
-  .ai-note .ai-tag { font-size: 9px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; margin-right: 6px; }
+  .ai-note .ai-tag {
+    flex-shrink: 0;
+    font-size: 10px; font-weight: 800;
+    color: var(--bg-base); background: var(--accent);
+    padding: 1px 8px; border-radius: 3px;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    margin-top: 1px;
+  }
+  .ai-note .ai-tone-text {
+    font-size: 12px; color: var(--text-secondary); line-height: 1.65;
+    flex: 1;
+  }
+  .ai-note.empty-note {
+    border-left-color: var(--border);
+    opacity: 0.65;
+  }
+  .ai-note.empty-note .ai-tag {
+    background: var(--bg-hover);
+    color: var(--text-tertiary);
+  }
+  .ai-note .ai-empty-text {
+    font-size: 12px; color: var(--text-tertiary); line-height: 1.65;
+    font-style: italic;
+    flex: 1;
+  }
 
   /* 02 宏观 & 广度 */
   .macro-sub { font-size: 10px; font-weight: 600; color: var(--text-tertiary); letter-spacing: 0.04em; margin: var(--space-3) 0 var(--space-1); }

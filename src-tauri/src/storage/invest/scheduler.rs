@@ -79,10 +79,12 @@ pub fn get_task_logs(task: &str, limit: Option<i64>) -> Result<Vec<SchedulerLog>
 }
 
 pub fn is_trading_day(date: &str) -> Result<bool, String> {
+    // Normalize to %Y%m%d for DB comparison (trade_calendar stores Tushare-native format).
+    let date_no_dash = date.replace('-', "");
     with_conn(|conn| {
         let result = conn.query_row(
             "SELECT is_open FROM trade_calendar WHERE cal_date = ?1",
-            params![date],
+            params![date_no_dash],
             |row| row.get::<_, i32>(0),
         );
         match result {
@@ -104,31 +106,49 @@ pub fn is_trading_day(date: &str) -> Result<bool, String> {
 }
 
 fn is_weekday(date: &str) -> bool {
-    if let Ok(d) = NaiveDate::parse_from_str(date, "%Y-%m-%d") {
-        let weekday = d.weekday();
-        weekday != chrono::Weekday::Sat && weekday != chrono::Weekday::Sun
-    } else if let Ok(d) = NaiveDate::parse_from_str(date, "%Y%m%d") {
-        let weekday = d.weekday();
-        weekday != chrono::Weekday::Sat && weekday != chrono::Weekday::Sun
-    } else {
-        false
+    match NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .or_else(|_| NaiveDate::parse_from_str(date, "%Y%m%d"))
+    {
+        Ok(d) => {
+            let w = d.weekday();
+            w != chrono::Weekday::Sat && w != chrono::Weekday::Sun
+        }
+        Err(_) => false,
     }
 }
 
-/// Returns the next trading day after the given date (YYYY-MM-DD).
+/// Normalize a trade_calendar `cal_date` from `%Y%m%d` (Tushare native) to `%Y-%m-%d`.
+/// Pass-through if already in dashed format or unparseable.
+fn normalize_cal_date(d: &str) -> String {
+    if d.len() == 8 && !d.contains('-') {
+        if let Ok(parsed) = NaiveDate::parse_from_str(d, "%Y%m%d") {
+            return parsed.format("%Y-%m-%d").to_string();
+        }
+    }
+    d.to_string()
+}
+
+/// Returns the next trading day after the given date (YYYY-MM-DD or YYYYMMDD).
 /// Prefers trade_calendar (is_open=1, cal_date > date, MIN);
 /// falls back to next weekday, max 10 days ahead.
+///
+/// Normalizes both input and output: trade_calendar stores %Y%m%d (Tushare native),
+/// but callers expect %Y-%m-%d. The SQL comparison strips dashes from the input so
+/// it matches the DB format, and the returned value is always %Y-%m-%d.
 pub fn next_trading_day(date: &str) -> Result<String, String> {
+    // Normalize input to %Y%m%d so SQL string comparison works against cal_date.
+    let date_no_dash = date.replace('-', "");
     let from_cal: Option<String> = with_conn(|conn| {
         conn.query_row(
             "SELECT MIN(cal_date) FROM trade_calendar WHERE is_open = 1 AND cal_date > ?1",
-            params![date],
+            params![date_no_dash],
             |row| row.get::<_, Option<String>>(0),
         )
         .map_err(|e| format!("next_trading_day query: {}", e))
     })?;
     if let Some(d) = from_cal {
-        return Ok(d);
+        // Normalize DB format (%Y%m%d) to canonical %Y-%m-%d.
+        return Ok(normalize_cal_date(&d));
     }
     let base = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
         .map_err(|e| format!("parse date: {}", e))?;

@@ -28,6 +28,12 @@
 
 `PremarketReportTab.svelte` 移除死 CSS：`.wall-n1`~`.wall-n4`、`.wall-1plus4`、重复的 bare `.wall-3col`、旧 eval-tag 变体(.news/.cata/.mood/.risk)。新增 `.wall-1`~`.wall-4` 选择器匹配 wallClass 输出。
 
+### 修复
+
+- **盘前报告预测交易日固定显示 20260603:** `trade_calendar` 表存储 Tushare 原生 `%Y%m%d` 格式，但 `is_trading_day`/`next_trading_day` 查询时传入 `%Y-%m-%d`。SQLite string 比较在位置 4 处所有数字(48-57) > '-' (45)，导致 `> '2026-07-14'` 错误匹配到 `20260**3**01` 等早期日期，`next_trading_day` 始终返回最早交易日。修复为查询前规范化输入(去横线)、查询后规范化输出(加横线)，新增 `normalize_cal_date` 辅助函数。同时简化 `is_weekday` 双格式分支为 `or_else` 链。
+- **外部舆论先验 AI 点评错误静默丢弃:** `ai_commentary()` 用 `.ok()?` 丢弃 CLI 调用错误，`generate_premarket_report` 无感知 AI 点评失败原因。修复为显式 `match` 记录 `log::warn!`，在 JSON `sectionsStatus` 新增 `aiCommentary` 字段（`ok`/`failed`/`no_sentiment_data`），前端 `PremarketReportTab.svelte` 同步类型。同时将重复的 markdown 围栏清理提取为 `clean_markdown_json_block()`，空新闻检查提到 async 调用前避免无谓挂起。
+- **委员会 LLM 调用不支持无 credential 的内置平台:** `write_committee_settings_json` 对 `platform_credentials` 中找不到的内置平台(如 zhipu/deepseek)直接报错 `credential not found`，不支持通过 native CC 环境变量路由。修复为两层优雅降级：credential 缺失时对已知平台(`platform_to_provider_id` 匹配)走 native CC；`write_provider_claude_config` 失败时同样回退到 native CC。自定义中转平台(`custom-*`)仍报错。
+
 ## v5.7.1 (2026-07-13)
 
 ### eastmoney 反爬修复
