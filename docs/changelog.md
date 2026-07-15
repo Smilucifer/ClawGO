@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## v5.7.3 (2026-07-15)
+
+### fix: DeepSeek V4 Pro sentiment 分析全中性
+
+`--permission-mode plan` 触发 V4 Pro Plan Mode → 配合 `--max-turns 1` 耗尽 turn 导致空响应，`cli_complete` 返回 Err → `normalize_events` 全部 fallback → `stance: "neutral"`。
+
+- 切换为 `bypassPermissions`（所有 committee CLI `run_role` 调用者均为 `--print` 非交互场景）
+- 新增 `try_extract_json`：`trim_start_matches`/`trim_end_matches` 剥 markdown fence + `find("[{")` 回退，不再依赖 fence 在开头
+- `fallback_normalize_from` 新增关键词 stance 检测（`BULLISH_KEYWORDS` / `BEARISH_KEYWORDS`），不再硬编码 neutral
+
 ## v5.7.2 (2026-07-14)
 
 ### 盘前舆论卡片重构 (section 01)
