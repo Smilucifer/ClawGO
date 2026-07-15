@@ -765,4 +765,88 @@ mod tests {
         // Second event falls back
         assert_eq!(result[1].stance, "neutral");
     }
+
+    // ── try_extract_json tests ──
+
+    #[test]
+    fn test_extract_clean_fenced_json() {
+        let input = "```json\n[{\"stance\":\"bullish\"}]\n```";
+        let result = try_extract_json(input);
+        assert_eq!(result, "[{\"stance\":\"bullish\"}]");
+    }
+
+    #[test]
+    fn test_extract_json_with_chinese_prefix() {
+        let input = "好的，以下是分析结果：\n\n```json\n[{\"stance\":\"bullish\"}]\n```";
+        let result = try_extract_json(input);
+        assert_eq!(result, "[{\"stance\":\"bullish\"}]");
+    }
+
+    #[test]
+    fn test_extract_json_bare_fence() {
+        let input = "```\n[{\"stance\":\"bearish\"}]\n```";
+        let result = try_extract_json(input);
+        assert_eq!(result, "[{\"stance\":\"bearish\"}]");
+    }
+
+    #[test]
+    fn test_extract_json_uppercase_fence() {
+        let input = "```JSON\n[{\"stance\":\"neutral\"}]\n```";
+        let result = try_extract_json(input);
+        assert_eq!(result, "[{\"stance\":\"neutral\"}]");
+    }
+
+    #[test]
+    fn test_extract_json_with_text_before_and_after() {
+        let input = "分析如下：[{\"stance\":\"bullish\"}] 仅供参考。";
+        let result = try_extract_json(input);
+        assert_eq!(result, "[{\"stance\":\"bullish\"}]");
+    }
+
+    #[test]
+    fn test_extract_json_multiple_objects() {
+        let input = "```json\n[{\"a\":1},{\"b\":2}]\n```";
+        let result = try_extract_json(input);
+        assert_eq!(result, "[{\"a\":1},{\"b\":2}]");
+    }
+
+    #[test]
+    fn test_extract_json_no_json_present() {
+        let input = "计划文件已创建。是否批准此计划？";
+        let result = try_extract_json(input);
+        // Should return cleaned text (fall through), not panic or loop
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_extract_json_fence_without_closing() {
+        let input = "```json\n[{\"stance\":\"bullish\"}]";
+        let result = try_extract_json(input);
+        assert_eq!(result, "[{\"stance\":\"bullish\"}]");
+    }
+
+    // ── detect_stance tests ──
+
+    #[test]
+    fn test_detect_bullish() {
+        assert_eq!(detect_stance("央行宣布降准50个基点", "释放万亿流动性"), "bullish");
+        assert_eq!(detect_stance("公司业绩预增200%", ""), "bullish");
+    }
+
+    #[test]
+    fn test_detect_bearish() {
+        assert_eq!(detect_stance("公司债务违约超百亿", "面临退市风险"), "bearish");
+        assert_eq!(detect_stance("业绩预亏", "大幅下滑"), "bearish");
+    }
+
+    #[test]
+    fn test_detect_neutral() {
+        assert_eq!(detect_stance("公司发布日常公告", ""), "neutral");
+    }
+
+    #[test]
+    fn test_detect_both_keywords() {
+        // Both bullish and bearish keywords present → neutral (contradictory)
+        assert_eq!(detect_stance("利好消息发布但大股东减持", ""), "neutral");
+    }
 }
