@@ -2,6 +2,12 @@
 
 面向用户的版本说明。技术实现细节请查阅 `docs/changelog.md`。
 
+## v5.7.3 (2026-07-15)
+
+### 修复
+
+- **DeepSeek V4 Pro 影响分析全中性:** 使用 DeepSeek V4 Pro 作为 provider 时，新闻舆论分析的所有条目均被错误标记为"中性"。修复后 bullish/bearish/neutral 恢复正常分布。
+
 ## v5.7.2 (2026-07-14)
 
 ### 优化
